@@ -233,10 +233,11 @@ def detect_spots_in_movie(detector, camera_calib, movie_iterator, sumframes, tot
                 if rois_in_batch >= batch_size:
                     save_rois()
                            
+                if pb is not None:
+                    pb.update()
+
             numframes += 1
             #pb.set_description(f"#detected spots: {numrois+rois_in_batch}")
-            if pb is not None:
-                pb.update()
             
         if rois_in_batch>0:
             save_rois()

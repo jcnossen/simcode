@@ -449,12 +449,15 @@ class SFLocalizer:
             #from smlmtorch.multipart_tiff import tiff_read_file
 
             with torch.no_grad():
+                npat = self.pattern_frames.size
+                pbar_totalframes = nframes-npat+1 if moving_window else nframes//npat
+
                 numrois, numframes = detection.detect_spots_in_movie(detector, 
                                       self.camera_calib, img_src,
                                       sumframes = self.pattern_frames.size, 
                                       output_fn = rois_path,
                                       batch_size = batch_size,
-                                      totalframes = nframes*self.pattern_frames.size if moving_window else self.numframes,
+                                      totalframes = pbar_totalframes,
                                       callback = modify_framenum if not moving_window else None)
             
             cache.save_cache_cfg(rois_path, cfg, self.src_path, numrois)
