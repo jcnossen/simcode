@@ -24,6 +24,7 @@ setuptools.setup(
 		'tqdm',
 		'tifffile',
         'h5py',
-		'pyyaml'
+		'pyyaml',
+        'lion-pytorch'
 	]
 )
