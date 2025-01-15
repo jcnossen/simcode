@@ -5,7 +5,7 @@ from torch.utils.data import IterableDataset
 import numpy as np
 from smlmtorch.nn.localization_detector import LocalizationDetector
 from smlmtorch import Dataset
-from smlmtorch.smlm.dataset import SFDataset
+from smlmtorch.simflux.dataset import SFDataset
 
 def iterate_moving_window(src, wndsize):
     buf = []
