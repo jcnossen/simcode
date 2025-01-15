@@ -78,12 +78,13 @@ def FRC(xy, photons, zoom, imgshape, pixelsize, display=True, smooth=0, mask=Non
     
     freq = np.fft.fftfreq(len(f1))
     
-    if smooth > 0:
-        frc = convolve(frc, np.ones(smooth)/smooth, mode='same')
-    
     frc = frc[:imgshape[0]*zoom//2]
     freq = freq[:imgshape[0]*zoom//2]
-    
+
+    if smooth > 0:
+        frc = convolve(frc, np.ones(smooth)/smooth, mode='valid')
+        freq = convolve(freq, np.ones(smooth)/smooth, mode='valid')
+        
     b = np.where(frc<1/7)[0]
     frc_res =  freq[b[0]] if len(b)>0 else freq[0] 
     

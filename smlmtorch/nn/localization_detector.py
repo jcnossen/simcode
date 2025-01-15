@@ -11,7 +11,7 @@ import torch
 from torch.nn.functional import conv2d
 
 class LocalizationDetector:
-    def __init__(self, prob_threshold=0.7, pool_size=3, border=1, use_prob_weights=True):
+    def __init__(self, prob_threshold=0.7, pool_size=3, border=1, use_prob_weights=False):
         self.prob_threshold = prob_threshold
         self.pool_size = pool_size
         self.border = border
