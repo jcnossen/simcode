@@ -45,9 +45,14 @@ class CRLBPlotGenerator:
         last axis being [N, x, y, z, bg]
         """
         params_ = params[:,[1,2,3,0,4]]
-        expval, crlb = self.psf.crlb(params_.to(self.device))
-        expval = expval.cpu()
+        params_crlb = params_*1
+        params_crlb[:,[3,4]] *= n_frames # scale photon count and bg with number of frames
+
+        _, crlb = self.psf.crlb(params_crlb.to(self.device))
         crlb = crlb.cpu()
+
+        expval = self.psf.forward(params_.to(self.device))
+        expval = expval.cpu()
         images = expval[:,None].repeat(1, n_frames, 1, 1)
 
         bs, h, w = expval.shape
