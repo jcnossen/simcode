@@ -1,15 +1,9 @@
 
 import torch
-import yaml
-from smlmtorch.util.config_dict import config_dict
 from smlmtorch.util.multipart_tiff import tiff_read_file, tiff_get_movie_size
-from torch.utils.data import DataLoader
-from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch.utils.data import Dataset, IterableDataset
 import numpy as np
 from smlmtorch.nn.localization_detector import LocalizationDetector
-from smlmtorch.nn.checkpoint import CheckpointManager
-
-from smlmtorch.simflux.dataset import SFDataset
 from smlmtorch import Dataset
 
 def iterate_moving_window(src, wndsize):
