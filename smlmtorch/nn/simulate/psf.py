@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 from torch import Tensor
 from abc import ABC, abstractmethod
 from typing import Optional
-from fastpsf import Context, CSplineCalibration, CSplineMethods
 from smlmtorch.smlm.gaussian_psf import gauss_psf_2D_fixed_sigma
 
 class PSFBase(torch.nn.Module):
@@ -118,6 +117,8 @@ class CubicSplinePSF(PSFBase):
         assert img_shape[0] == img_shape[1], "Only square images supported"
         self.roisize = img_shape[0]
         
+        from fastpsf import Context, CSplineCalibration, CSplineMethods
+
         self.ctx = Context()
         self.calib = CSplineCalibration.from_file(calib_file)
         self.psf_inst = CSplineMethods(self.ctx).CreatePSF_XYZIBg(self.roisize, self.calib)

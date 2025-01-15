@@ -12,8 +12,7 @@ def blinking_spots(numspots, numframes=2000, avg_on_time = 20, on_fraction=0.1, 
     on_fraction = min(0.999, on_fraction)
     p_off = 1-on_fraction
     k_off = 1/(avg_on_time * subframe_blink)
-    k_on = (k_off - p_off*k_off)/p_off
-    
+    k_on = k_off * on_fraction / (1-on_fraction)
     print(f"p_off={p_off:.3f}, k_on={k_on:.3f}, k_off={k_off:.3f}. avg #on={on_fraction*numspots:0.0f}",flush=True)
     
     blinkstate = np.random.binomial(1, on_fraction, size=numspots)
