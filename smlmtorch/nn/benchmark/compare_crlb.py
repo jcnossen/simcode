@@ -105,7 +105,7 @@ class CRLBPlotGenerator:
             params = torch.tensor(param_scale)[None] * (torch.rand(self.numsamples, 5, dtype=torch.float32)-0.5)
             params[:, 1:3] += self.psf.shape[0] // 2
             #params[:, 2] += torch.linspace(-3, 3, self.numsamples)
-            params[:, 0] = photons[i]
+            params[:, 0] = photons[i] / n_frames  # photons should indicate total signal photons over all frames
             params[:, 4] = background
             predicted, crlb_, errors_, pred_error_ = self.estimate_precision(params, n_frames)
             crlb.append( crlb_.mean(0) )
@@ -120,7 +120,8 @@ class CRLBPlotGenerator:
 
         def add_plot(ax, crlb, errors, rmsd, pred_error, label):
             if crlb is not None:
-                ax.plot(photons, crlb, 'k:', label='CRLB')
+                l_crlb = 'CRLB (On summed frames)' if n_frames > 1 else 'CRLB'
+                ax.plot(photons, crlb, 'k:', label=l_crlb)
             ax.plot(photons, errors, 'kx-', label='Std.Dev.')
             ax.plot(photons, rmsd, 'bo-', label='RMSD')
             ax.plot(photons, pred_error,'k--', label='Predicted error')
