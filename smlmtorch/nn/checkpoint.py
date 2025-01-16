@@ -39,7 +39,7 @@ class CheckpointManager:
             print(f"Removed old checkpoint: {checkpoint_path}")
 
     def load(self, path):
-        checkpoint = torch.load(path, map_location=torch.device('cpu'))
+        checkpoint = torch.load(path, map_location=torch.device('cpu'), weights_only=True)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         lr = self.optimizer.param_groups[0]['lr']

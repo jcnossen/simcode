@@ -133,9 +133,8 @@ class CRLBPlotGenerator:
             fig, ax = plt.subplots(1,errors.shape[-1], figsize=(3*errors.shape[-1],3))
             for i in range(len(ax)):
                 add_plot(ax[i], crlb[:,i], errors[:,i], rmsd[:,i], pred_error[:,i], self.param_list[i])
-            plt.tight_layout()
             if plot_title is not None: plt.suptitle(plot_title)
-            plt.show()
+            plt.tight_layout()
 
         if log_writer is not None:
             for i in range(errors.shape[-1]):
