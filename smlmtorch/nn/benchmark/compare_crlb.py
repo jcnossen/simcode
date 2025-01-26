@@ -18,7 +18,7 @@ class CRLBPlotGenerator:
                     device=None, background = 2):
         """
         param_list: which of the model.params are plotted
-        crlb_mapping: for each item in param_list, which of the PSF param's crlb have to be plotted with it
+        psf_param_mapping: for each item in param_list, which of the PSF param's crlb have to be plotted with it
         """
 
         self.model = model

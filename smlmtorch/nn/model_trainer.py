@@ -67,22 +67,26 @@ class LocalizationModelTrainer:
         else:
             self.optimizer = torch.optim.__dict__[config.optimizer_type](self.model.parameters(), **config.optimizer)
 
-        self.checkpoint_manager = CheckpointManager(self.model, self.optimizer, save_dir)
-
         if not ('type' in config.lr_scheduler):
-            lr_scheduler_type = 'StepLR'
+            self.lr_scheduler_type = 'StepLR'
         else:
-            lr_scheduler_type = config.lr_scheduler.type
+            self.lr_scheduler_type = config.lr_scheduler.type
             config.lr_scheduler.pop('type')
         
-        self.lr_scheduler = torch.optim.lr_scheduler.__dict__[lr_scheduler_type](self.optimizer, **config.lr_scheduler)
+        self.lr_scheduler = torch.optim.lr_scheduler.__dict__[self.lr_scheduler_type](self.optimizer, **self.config.lr_scheduler)
+
+        self.checkpoint_manager = CheckpointManager(self.model, 
+                                                    self.optimizer,
+                                                    self.lr_scheduler,
+                                                    save_dir)
 
         if load_previous_model:
-            self.epoch = self.checkpoint_manager.load_latest()
-            if self.epoch is None:
-                self.epoch = 0
+            epoch = self.checkpoint_manager.load_latest()
+            if epoch is None:
+                epoch = 0
         else:
-            self.epoch = 0
+            epoch = 0
+        self.epoch = epoch
 
         self.writer = SummaryWriter(os.path.join(self.save_dir, 'tensorboard_logs'))
         self.performance_logger = PerformanceLogger(self.writer, 
@@ -90,6 +94,7 @@ class LocalizationModelTrainer:
                     **self.config.benchmark)
 
         self.crlb_plot = None
+
 
     @property
     def psf(self):
@@ -193,7 +198,8 @@ class LocalizationModelTrainer:
                     self.optimizer.step()
 
                     pbar.update()
-                    pbar.set_description(f"Epoch {epoch} [{batch_idx}/{len(train_dataloader)}], Train Loss: {loss.item():.4e}")
+                    lr= self.optimizer.param_groups[0]['lr']
+                    pbar.set_description(f"Epoch {epoch} [{batch_idx}/{len(train_dataloader)}], Train Loss: {loss.item():.4e}, LR={lr:.1e}")
                 self.lr_scheduler.step()
 
             train_loss /= len(train_dataloader)
@@ -220,6 +226,9 @@ class LocalizationModelTrainer:
             if save_checkpoints:
                 print('saving checkpoint')
                 self.checkpoint_manager.save(epoch)
+
+            # update optimizer learning rate
+            
 
         self.writer.close()
 

@@ -9,9 +9,10 @@ import torch.nn as nn
 import torch.optim as optim
 
 class CheckpointManager:
-    def __init__(self, model, optimizer, save_dir, max_saves=5):
+    def __init__(self, model, optimizer, lr_scheduler, save_dir, max_saves=5):
         self.model = model
         self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
         self.save_dir = os.path.abspath(save_dir)
         self.max_saves = max_saves
 
@@ -25,7 +26,8 @@ class CheckpointManager:
         checkpoint = {
             'epoch': epoch,
             'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict()
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'lr_scheduler_state_dict': self.lr_scheduler.state_dict()
         }
         checkpoint_idx = (epoch - 1) % self.max_saves
         checkpoint_path = os.path.join(self.save_dir, f'checkpoint_{checkpoint_idx}.pt')
@@ -42,6 +44,8 @@ class CheckpointManager:
         checkpoint = torch.load(path, map_location=torch.device('cpu'), weights_only=True)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if 'lr_scheduler_state_dict' in checkpoint:
+            self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
         lr = self.optimizer.param_groups[0]['lr']
         print(f"Loaded checkpoint: {path}. Epoch: {checkpoint['epoch']}. Learning rate: {lr:.1e}")
         return checkpoint['epoch']
