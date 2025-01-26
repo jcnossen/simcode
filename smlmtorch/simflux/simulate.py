@@ -4,7 +4,6 @@ import numpy as np
 import smlmtorch.util.multipart_tiff as tif
 #import tqdm
 from smlmtorch.smlm.gaussian_psf import Gaussian2DFixedSigmaPSF, GaussAstigPSFCalib, Gaussian2DAstigmaticPSF
-from fastpsf import Context,CSplineMethods,CSplinePSF,GaussianPSFMethods
 import smlmtorch.simflux.pattern_estimator as pe
 from smlmtorch import progbar, pb_range
 

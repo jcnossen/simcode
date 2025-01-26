@@ -7,7 +7,7 @@ setuptools.setup(
     version="1.0",
     author="Jelmer Cnossen",
     author_email="j.cnossen@gmail.com",
-    description="SMLM and SIMFLUX processing code, using pytorch to speed up",
+    description="pytorch based SMLM package, including SIMCODE paper implementation",
     #long_description=long_description,
  #   long_description_content_type="text/markdown",
 #    url="https",
@@ -19,12 +19,16 @@ setuptools.setup(
         "Operating System :: Microsoft :: Windows"
     ],
 	install_requires=[
-		'numpy',
+		'numpy==1.26.4', # >2 seems to have a change in np.polyfit, breaking modulation pattern estimation (pattern_estimator.quadraticpeak)
 		'matplotlib',
 		'tqdm',
 		'tifffile',
         'h5py',
+        'scipy',
+        'numba',
+        'seaborn',
 		'pyyaml',
-        'lion-pytorch'
+        'lion-pytorch',
+        'tensorboard'
 	]
 )
