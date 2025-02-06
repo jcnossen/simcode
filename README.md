@@ -2,6 +2,10 @@
 This is the code accompanying the paper "Modulation-enhanced high density localization microscopy enabled by deep learning", 
 implementing a pytorch based pipeline for converting STORM/DNA-PAINT microscopy datasets into localizations, making use of illumination patterns to enhance resolution.
 
+## Reconstruction of a simulated live acquisition
+
+https://github.com/user-attachments/assets/dd39c2f7-47ac-4609-b0c6-b39743116feb
+
 ## Google Colab Notebooks
 
 An example notebook running within Google Colab can be found here:
