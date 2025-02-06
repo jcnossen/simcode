@@ -4,7 +4,7 @@ implementing a pytorch based pipeline for converting STORM/DNA-PAINT microscopy 
 
 ## Reconstruction of a simulated live acquisition
 
-https://github.com/user-attachments/assets/dd39c2f7-47ac-4609-b0c6-b39743116feb
+[Download avi](/moving_smlm_sim.mp4)
 
 ## Google Colab Notebooks
 
