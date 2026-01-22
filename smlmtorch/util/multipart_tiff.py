@@ -25,7 +25,7 @@ class MultipartTiffSaver:
             self.tif = tifffile.TiffWriter(fn2)
             self.tifFrame=0
             
-        self.tif.save(np.ascontiguousarray(img, dtype=np.uint16))
+        self.tif.write(np.ascontiguousarray(img, dtype=np.uint16))
         self.tifFrame+=1
         
     def close(self):
