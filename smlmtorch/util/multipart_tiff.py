@@ -3,8 +3,6 @@ import os
 import tifffile
 from smlmtorch.util.progbar import progbar
 
-imsave = tifffile.imsave
-
 class MultipartTiffSaver:
     def __init__(self, fn):
         self.tifIdx=1
