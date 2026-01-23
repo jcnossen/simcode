@@ -18,12 +18,14 @@ print(torch.__version__)
 
 #%%
 
-np.random.seed(2)
+np.random.seed(0)
+# Generate ground truth microtubule points
 W = 50
 pixelsize = 100 #nm
 
-pts = generate_microtubule_points(  W, depth=0, numtubules = 20, spl_knots=5,
-                linedensity=10, nudge_factor=0.1, margin=0.05, spl_degree=2)
+pts = generate_microtubule_points(W, depth=0, numtubules = 20, spl_knots=5,
+                linedensity=10, nudge_factor=0.1, margin=0.05, spl_degree=2,
+                tube_radius=12.5/pixelsize)
 
 gt_ds = Dataset(len(pts), 2, [W,W], pixelsize=pixelsize)
 gt_ds.pos = pts[:,:2]
@@ -41,7 +43,7 @@ plt.title("Simulated microtubules - ground truth")
 # Simulate an SMLM recording with modulated illumination
 on_fraction = 0.005 # controls density
 avg_on_time = 6
-nframes = 30000 # 50k frames gives a stable FRC result, shorter will impact FRC based improvement
+nframes = 30000 # +50k frames gives a stable FRC result, shorter will impact FRC based improvement
 intensity = 500
 psf_sigma = 1.3
 psf_calib = [psf_sigma, psf_sigma] # XY

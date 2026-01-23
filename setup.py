@@ -19,7 +19,8 @@ setuptools.setup(
         "Operating System :: Microsoft :: Windows"
     ],
 	install_requires=[
-		'numpy==1.26.4', # >2 seems to have a change in np.polyfit, breaking modulation pattern estimation (pattern_estimator.quadraticpeak)
+		#'numpy==1.26.4', # >2 seems to have a change in np.polyfit, breaking modulation pattern estimation (pattern_estimator.quadraticpeak)
+        'numpy', 
 		'matplotlib',
 		'tqdm',
 		'tifffile',

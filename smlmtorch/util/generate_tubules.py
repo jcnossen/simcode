@@ -123,8 +123,8 @@ def generate_microtubule_points(width, depth, numtubules, linedensity,
 if __name__ == '__main__':
     np.random.seed(0)
     pts, pts_1, knots = generate_microtubule_points(20, 0, 
-                linedensity=10, numtubules=10, spl_knots=4, spl_degree=3, 
-                tube_radius=0.2,
+                linedensity=40, numtubules=10, spl_knots=4, spl_degree=3, 
+                tube_radius=12.5/100,
                 return_knots=True)
 
     plt.figure()

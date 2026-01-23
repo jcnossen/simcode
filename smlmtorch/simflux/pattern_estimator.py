@@ -4,6 +4,7 @@ Find 2D SIM patterns in localization data, using pytorch to implement a fast DFT
 @author: jelmer
 """
 import numpy as np
+from numpy.polynomial import Polynomial
 import matplotlib.pyplot as plt
 import os
 #os.chdir('C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/bin')
@@ -300,7 +301,7 @@ def angles_to_mod(pitch_nm, pixelsize, angle_deg, depth, pattern_frames, z_pitch
     mod['depth'] = depth
     mod['relint'] = 1/pattern_frames.size
     return mod
-            
+
 
 # Curve-fit y around the peak to find subpixel peak x
 def quadraticpeak(y, x=None, npts=7, plotTitle=None):
@@ -310,19 +311,20 @@ def quadraticpeak(y, x=None, npts=7, plotTitle=None):
     W = int((npts + 1) / 2)
     window = np.arange(xmax - W + 1, xmax + W)
     window = np.clip(window, 0, len(x) - 1)
-    coeff = np.polyfit(x[window], y[window], 2)
+    
+    xw = x[window]
+    yw = y[window]
+    p = Polynomial.fit(xw, yw, 2)
 
     if plotTitle:
         plt.figure()
-        plt.plot(x[window], y[window], label="data")
+        plt.plot(xw, yw, label="data")
         sx = np.linspace(x[xmax - W], x[xmax + W], 100)
-        plt.plot(sx, np.polyval(coeff, sx), label="fit")
+        plt.plot(sx, p(sx), label="fit")
         plt.legend()
         plt.title(plotTitle)
 
-    return -coeff[1] / (2 * coeff[0])
-
-
+    return p.deriv().roots()[0]
 
 
 @torch.jit.script
