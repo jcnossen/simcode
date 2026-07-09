@@ -51,7 +51,9 @@ class LocalizationModel(nn.Module):
     def __init__(self, enable3D, param_scale,
                 enable_readnoise=False,
                  output_scale=None, input_scale=1, input_offset=0, param_names=None,
-                 eps_features=None, sigmoid_features=None, tanh_features=None, 
+                 input_transform='linear',
+                 eps_features=None, sigmoid_features=None, tanh_features=None,
+                 exp_features=None,
                  input_subpixel_index=True,
                  input_channels=1, # just image
                  input_upscale_features=None, output_grid_scale=None,
@@ -72,6 +74,9 @@ class LocalizationModel(nn.Module):
         self.input_channels = input_channels+1 if enable_readnoise else input_channels
         self.input_scale = input_scale
         self.input_offset = input_offset
+        if input_transform not in ('linear', 'anscombe'):
+            raise ValueError(f'input_transform must be "linear" or "anscombe", got {input_transform!r}')
+        self.input_transform = input_transform
         self.param_names = param_names
         self.feature_names = ['p', *param_names, *[f'{p}_sig' for p in param_names]]
         self.gmm_params = len(param_names)
@@ -98,6 +103,15 @@ class LocalizationModel(nn.Module):
             self.tanh_features = tanh_features
         else:
             self.tanh_features = np.arange(1,self.gmm_params+1)
+
+        # exp_features: output = exp(x) * output_scale.  For log-normal / positive
+        # quantities like bg or intensity, this gives the network log-space control
+        # over the output, uses the full raw activation range, and matches the
+        # log-normal (or log-uniform) training distribution.
+        if exp_features is not None:
+            self.exp_features = list(exp_features)
+        else:
+            self.exp_features = []
 
         # A resizing layer to process at a higher resolution than the input image
         # We'll add two extra channels that encode the subpixel index within the orginal pixels
@@ -149,7 +163,17 @@ class LocalizationModel(nn.Module):
     def prepare_input(self, images, camera_calib=None):
         batchsize, frames, height, width = images.shape
         images.unsqueeze_(2) # add channel dimension
-        images = (images.float() - self.input_offset) * self.input_scale
+        x = images.float() - self.input_offset
+        if self.input_transform == 'anscombe':
+            # Variance-stabilising transform for shot-noise-dominated pixels.
+            # 2*sqrt(x + 3/8) maps Poisson(lambda) to approximately N(2*sqrt(lambda), 1),
+            # so noise is roughly Gaussian with unit variance regardless of signal level.
+            # Amplifies low-signal differences (SNR ~ 1/sqrt(lambda)) which is what
+            # matters for detection.  Read noise (~1 photon in our setup) is absorbed
+            # into the pixel value and the clip below keeps the sqrt safe.
+            x = 2.0 * torch.sqrt(torch.clip(x, min=-3.0/8.0) + 3.0/8.0)
+        # else: 'linear' -- keep x as-is (post-offset), rely on input_scale below.
+        images = x * self.input_scale
         if self.enable_readnoise:
             readnoise = camera_calib[:,None,None].expand(-1, frames, 1, height, width)
             return torch.cat([images, readnoise], dim=2)
@@ -159,7 +183,13 @@ class LocalizationModel(nn.Module):
         batch_size, frames, features, height, width = x.shape
 
         x[:, :, self.tanh_features] = x[:, :, self.tanh_features].tanh()
-        x[:, :, self.sigmoid_features] = x[:, :, self.sigmoid_features].sigmoid() 
+        x[:, :, self.sigmoid_features] = x[:, :, self.sigmoid_features].sigmoid()
+        if len(self.exp_features):
+            # Soft clip raw logits to keep exp() in a numerically safe range.
+            # exp(-8)~3e-4, exp(8)~3e3; combined with the per-feature output_scale
+            # this covers the full expected dynamic range without ever saturating.
+            raw = torch.clamp(x[:, :, self.exp_features], min=-8.0, max=8.0)
+            x[:, :, self.exp_features] = raw.exp()
 
         # trick from decode to avoid near-zero sigmas
         x[:, :, self.eps_features] = torch.clip(x[:, :, self.eps_features], min=0) + 1e-3

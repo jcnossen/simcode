@@ -23,9 +23,15 @@ np.random.seed(0)
 W = 50
 pixelsize = 100 #nm
 
-pts = generate_microtubule_points(W, depth=0, numtubules = 20, spl_knots=5,
-                linedensity=10, nudge_factor=0.1, margin=0.05, spl_degree=2,
+pts = generate_microtubule_points(W, depth=0, numtubules = 10, spl_knots=5,
+                linedensity=20, nudge_factor=0.1, margin=0.05, spl_degree=2,
                 tube_radius=12.5/pixelsize)
+# crop all points to center region
+cropsize = 40
+mask = (pts[:,0]> (W - cropsize)/2) & (pts[:,0]< (W + cropsize)/2) & \
+       (pts[:,1]> (W - cropsize)/2) & (pts[:,1]< (W + cropsize)/2)
+pts = pts[mask]
+
 
 gt_ds = Dataset(len(pts), 2, [W,W], pixelsize=pixelsize)
 gt_ds.pos = pts[:,:2]

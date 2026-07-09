@@ -77,6 +77,11 @@ def _generate_spots(num_movies, num_frames, num_spots, k_on, k_off, pos_min, pos
     elif intensity_distr == 'log-normal':
         spot_intensity = torch.tensor(generate_log_normal_samples(intensity_mean, intensity_mode, num_movies * num_spots)).reshape(num_movies, num_spots)
         spot_intensity = torch.clamp(spot_intensity, intensity_mean_min, intensity_mean_max)
+    elif intensity_distr == 'log-uniform':
+        # Uniform in log-space: equal training weight to every photon decade.
+        log_min = float(np.log(intensity_mean_min))
+        log_max = float(np.log(intensity_mean_max))
+        spot_intensity = torch.exp(torch.rand(num_movies, num_spots) * (log_max - log_min) + log_min)
     elif intensity_distr == 'normal':
         spot_intensity = torch.randn(num_movies, num_spots) * intensity_sigma + intensity_mean
         spot_intensity = torch.clamp(spot_intensity, intensity_mean_min, intensity_mean_max)
@@ -100,15 +105,16 @@ def _generate_spots(num_movies, num_frames, num_spots, k_on, k_off, pos_min, pos
 
 
 class SpotDataset(Dataset):
-    def __init__(self, 
+    def __init__(self,
             spots,
             max_spots = 40,
             track_intensities = 0, # for SIMFLUX models that output a set of intensities
-            track_intensities_offset = 0, 
+            track_intensities_offset = 0,
             bg_min = 1,
             bg_max = 20,
+            bg_distr = 'uniform',  # 'uniform' or 'log-uniform'
             render_args = None):
-        
+
         self.num_movies = spots.shape[0]
         self.num_frames = spots.shape[1]
         num_spots = spots.shape[2]
@@ -118,13 +124,21 @@ class SpotDataset(Dataset):
         self.track_intensities_offset = track_intensities_offset
         self.bg_min = bg_min
         self.bg_max = bg_max
+        self.bg_distr = bg_distr
 
         # make frame numbers relative
         frame_ix = torch.arange(self.num_frames, device=spots.device)[None,:,None]
         spots[...,5] -= frame_ix
         spots[...,6] -= frame_ix
 
-        frame_bg = torch.rand(size=(self.num_movies, self.num_frames)) * (bg_max - bg_min) + bg_min
+        if bg_distr == 'log-uniform':
+            log_min = float(np.log(bg_min))
+            log_max = float(np.log(bg_max))
+            frame_bg = torch.exp(torch.rand(size=(self.num_movies, self.num_frames)) * (log_max - log_min) + log_min)
+        elif bg_distr == 'uniform':
+            frame_bg = torch.rand(size=(self.num_movies, self.num_frames)) * (bg_max - bg_min) + bg_min
+        else:
+            raise ValueError(f'Unknown bg distribution: {bg_distr}')
         spots = torch.cat( (spots, frame_bg[:,:,None,None].expand(-1,-1,num_spots,1)), -1)
 
         self.spots = spots
