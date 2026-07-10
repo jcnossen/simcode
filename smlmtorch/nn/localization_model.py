@@ -185,10 +185,15 @@ class LocalizationModel(nn.Module):
         x[:, :, self.tanh_features] = x[:, :, self.tanh_features].tanh()
         x[:, :, self.sigmoid_features] = x[:, :, self.sigmoid_features].sigmoid()
         if len(self.exp_features):
-            # Soft clip raw logits to keep exp() in a numerically safe range.
-            # exp(-8)~3e-4, exp(8)~3e3; combined with the per-feature output_scale
-            # this covers the full expected dynamic range without ever saturating.
-            raw = torch.clamp(x[:, :, self.exp_features], min=-8.0, max=8.0)
+            # Soft-clip raw logits into [-8, 8] via tanh before exp(), instead of a
+            # hard clamp.  A hard clamp has exactly zero gradient outside the range,
+            # so a pixel that saturates early in training gets permanently stuck
+            # with no corrective signal.  tanh saturates smoothly -- gradient decays
+            # toward zero but never hits it exactly -- so there's always some signal
+            # to pull a saturated output back.  exp(-8)~3e-4, exp(8)~3e3; combined
+            # with the per-feature output_scale this covers the full expected
+            # dynamic range without ever fully saturating.
+            raw = 8.0 * torch.tanh(x[:, :, self.exp_features])
             x[:, :, self.exp_features] = raw.exp()
 
         # trick from decode to avoid near-zero sigmas
