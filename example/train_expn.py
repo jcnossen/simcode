@@ -181,8 +181,8 @@ def make_config(save_dir=None):
             # bg_scale / intensity_scale are the multipliers applied to exp(x)
             # of the raw output.  Set to the geometric mean of the target range
             # so raw ~= 0 corresponds to a typical training spot.
-            bg_scale=5.0,
-            intensity_scale=700.0,
+            bg_scale=1.0,
+            intensity_scale=50.0,
 
             # --- Architecture (matches the shipped sf_conv model) ---
             enable_readnoise=False,       # read noise is low (~1 ph) & uniform; no channel needed

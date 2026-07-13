@@ -16,7 +16,6 @@ for three fitting strategies and plots CRLB versus total signal photons:
 Patterns are assumed known exactly. See:
   - smlmtorch/smlm/gaussian_psf.py       -- 2D Gaussian PSF derivatives
   - smlmtorch/smlm/crlb.py               -- poisson_crlb
-  - smlmtorch/simflux/model.py           -- SIMFLUXModel (PSF + modulation)
   - smlmtorch/simflux/ndi_fit_torch.py   -- ndi_model, intensity_bg_crlb, ndi_crlb
 """
 
@@ -37,7 +36,7 @@ PATTERN_FRAMES = np.array([[0, 1, 2], [3, 4, 5]])  # axis 0: X-modulated, axis 1
 
 
 def simflux_forward(theta, mod, roisize, sigma):
-    """Inlined SIMFLUX PSF + modulation model (see smlmtorch.simflux.model.SIMFLUXModel).
+    """Inlined SIMFLUX PSF + modulation model.
 
     theta : [B, 4] = [x, y, I_total, bg_per_frame]
     mod   : [B, K, 6] = [kx, ky, kz, depth, phase, relint]

@@ -120,7 +120,15 @@ def nn_estimate(model, images, edge=3, batch_size=64):
 
 def simcode_ndi_refine(pred, pred_sig, mod, pattern_frames, roisize):
     """Refine the NN position by fitting the NN's per-pattern intensities to
-    the known modulation model (second stage of the SIMCODE pipeline)."""
+    the known modulation model (second stage of the SIMCODE pipeline).
+
+    Uses the same defaults as ``smlmtorch.simflux.pattern_estimator.ndi_fit_dataset``
+    (which is what simulation_example.py runs), so this analysis stays consistent
+    with the real pipeline:
+      * ``lambda_=10`` (ndi_fit default)
+      * ``iterations=100`` (ndi_fit default)
+      * ``normalize_scale=True``
+    """
     dev = pred.device
     B = pred.shape[0]
     naxes, nphase = pattern_frames.shape
@@ -150,7 +158,7 @@ def simcode_ndi_refine(pred, pred_sig, mod, pattern_frames, roisize):
     ], device=dev)
 
     params, _, _, _ = ndi_fit(initial, I_mu, I_sig, mod_grouped, param_limits,
-                              ndims=2, lambda_=100, iterations=50, normalize_scale=True)
+                              ndims=2, lambda_=10, iterations=100, normalize_scale=True)
     return params  # [B, 4] = [x, y, I_ax0, I_ax1]
 
 
@@ -213,10 +221,10 @@ def sweep_photon_counts(photon_counts, bg_per_frame, N, roisize, edge, sigma,
         # Same jittered init fed to both LM variants for a fair comparison.
         init_smlm = theta.clone()
         init_smlm[:, 3] *= K
-        init_smlm[:, :2] += (torch.rand(N, 2, device=dev) - 0.5) * 0.5
+        init_smlm[:, :2] += (torch.rand(N, 2, device=dev) - 0.5) * 1.0
 
         init_sf = theta.clone()
-        init_sf[:, :2] += (torch.rand(N, 2, device=dev) - 0.5) * 0.5
+        init_sf[:, :2] += (torch.rand(N, 2, device=dev) - 0.5) * 1.0
 
         # SMLM MLE, both LM variants
         est = smlm_mle(stack.sum(1), init_smlm.clone(), None)
@@ -260,10 +268,12 @@ def rmsd_over_photons(errors, keep=1.0):
 
 
 def plot_comparison(photon_counts, res, bg, sigma, keep, savepath):
-    """1x2 figure (x, y).  CRLB dashed for reference; one RMSD line per estimator
-    at the given trim level (keep=1.0 means no trim).  Shows both LM variants
-    for SMLM MLE and SIMFLUX MLE."""
-    trim_label = 'no trim' if keep >= 1.0 else f'trim {int(round((1 - keep) * 100))}%'
+    """1x2 figure (x, y).  CRLB dashed for reference; one RMSD line per estimator.
+    MLE curves always use full RMSD -- LM converges (or fails to) as a whole,
+    it doesn't have "picks the wrong pixel" outliers that trim removes.  Trim
+    is applied only to the NN curves, which is where genuine detection failures
+    dominate the raw RMSD."""
+    trim_label = 'no trim' if keep >= 1.0 else f'NN trim {int(round((1 - keep) * 100))}%'
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))
     for i, name in enumerate(['x', 'y']):
         ax = axes[i]
@@ -271,16 +281,17 @@ def plot_comparison(photon_counts, res, bg, sigma, keep, savepath):
         ax.loglog(photon_counts, res['sf_c'][:, i],   'b--', label='SIMFLUX CRLB', alpha=0.7)
         ax.loglog(photon_counts, res['sc_c'][:, i],   'r--', label='SIMCODE CRLB (NDI)', alpha=0.7)
 
-        # Old LM_MLE (filled marker, solid line) vs LM_MLE_Adaptive (open marker, dotted line)
-        for key, fmt, lab in [
-            ('smlm_err',   dict(marker='o', mfc='k',   mec='k', color='k', ls='-'),  'SMLM MLE (LM)'),
-            ('smlm_err_a', dict(marker='o', mfc='none', mec='k', color='k', ls=':'), 'SMLM MLE (LM adapt)'),
-            ('sf_err',     dict(marker='s', mfc='b',   mec='b', color='b', ls='-'),  'SIMFLUX MLE (LM)'),
-            ('sf_err_a',   dict(marker='s', mfc='none', mec='b', color='b', ls=':'), 'SIMFLUX MLE (LM adapt)'),
-            ('sc_err',     dict(marker='^', mfc='g',   mec='g', color='g', ls='-'),  'SIMCODE NN'),
-            ('sc_ndi_err', dict(marker='D', mfc='r',   mec='r', color='r', ls='-'),  'SIMCODE NN+NDI'),
+        # (key, marker style, label, is_mle) -- MLE lines get keep=1.0 always.
+        for key, fmt, lab, is_mle in [
+            ('smlm_err',   dict(marker='o', mfc='k',   mec='k', color='k', ls='-'),  'SMLM MLE (LM)',         True),
+            ('smlm_err_a', dict(marker='o', mfc='none', mec='k', color='k', ls=':'), 'SMLM MLE (LM adapt)',   True),
+            ('sf_err',     dict(marker='s', mfc='b',   mec='b', color='b', ls='-'),  'SIMFLUX MLE (LM)',      True),
+            ('sf_err_a',   dict(marker='s', mfc='none', mec='b', color='b', ls=':'), 'SIMFLUX MLE (LM adapt)',True),
+            ('sc_err',     dict(marker='^', mfc='g',   mec='g', color='g', ls='-'),  'SIMCODE NN',            False),
+            ('sc_ndi_err', dict(marker='D', mfc='r',   mec='r', color='r', ls='-'),  'SIMCODE NN+NDI',        False),
         ]:
-            r = rmsd_over_photons(res[key], keep)
+            k = 1.0 if is_mle else keep
+            r = rmsd_over_photons(res[key], k)
             ax.loglog(photon_counts, r[:, i], **fmt, label=f'{lab} RMSD')
 
         ax.loglog(photon_counts, res['sc_pred_sig'][:, i], 'g:', alpha=0.6,
@@ -295,25 +306,34 @@ def plot_comparison(photon_counts, res, bg, sigma, keep, savepath):
     plt.close(fig)
 
 
-def plot_bg_sweep(photon_counts, bg_results, sigma, keep, savepath):
-    """SIMCODE NN+NDI RMSD vs photon count, one curve per background."""
-    trim_label = 'no trim' if keep >= 1.0 else f'trim {int(round((1 - keep) * 100))}%'
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+def plot_bg_sweep(photon_counts, bg_results, sigma, keep, savepath,
+                  sf_err_key='sf_err_a', lm_label='adaptive LM'):
+    """One curve per background for both SIMFLUX MLE and SIMCODE NN+NDI, plus
+    the SIMCODE CRLB reference.  SIMFLUX MLE always uses full RMSD (no trim
+    bias); NN+NDI uses the requested trim.  ``sf_err_key`` selects which LM's
+    SIMFLUX MLE errors to plot ('sf_err' fixed-lambda, 'sf_err_a' adaptive)."""
+    trim_label = 'no trim' if keep >= 1.0 else f'NN trim {int(round((1 - keep) * 100))}%'
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
+    fig.suptitle(f'SIMFLUX MLE + SIMCODE NN+NDI vs background  '
+                 f'({lm_label}, sigma={sigma} px, {trim_label})', fontsize=11)
     colors = plt.cm.viridis(np.linspace(0.15, 0.85, len(bg_results)))
     for i, name in enumerate(['x', 'y']):
         ax = axes[i]
         for (bg, res), c in zip(bg_results.items(), colors):
-            r = rmsd_over_photons(res['sc_ndi_err'], keep)
+            r_sf = rmsd_over_photons(res[sf_err_key], 1.0)   # MLE: no trim
+            r_nn = rmsd_over_photons(res['sc_ndi_err'], keep)  # NN: user-requested trim
             ax.loglog(photon_counts, res['sc_c'][:, i], '--', color=c, alpha=0.5,
                       label=f'SIMCODE CRLB, bg={bg}')
-            ax.loglog(photon_counts, r[:, i], 'o-', color=c,
-                      label=f'NN+NDI RMSD, bg={bg}')
+            ax.loglog(photon_counts, r_sf[:, i], '^--', color=c, alpha=0.75, mfc='none',
+                      label=f'SIMFLUX MLE, bg={bg}')
+            ax.loglog(photon_counts, r_nn[:, i], 'o-', color=c,
+                      label=f'NN+NDI, bg={bg}')
         ax.set_xlabel('Total signal [photons]')
         ax.set_ylabel(f'{name} error [pixels]')
-        ax.set_title(f'{name}: SIMCODE NN+NDI vs background  (sigma={sigma} px, {trim_label})')
+        ax.set_title(f'{name} precision')
         ax.grid(True, which='both', alpha=0.3)
-        ax.legend(fontsize=8, loc='lower left', ncol=2)
-    fig.tight_layout()
+        ax.legend(fontsize=7, loc='lower left', ncol=3)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
     fig.savefig(savepath, dpi=150)
     plt.close(fig)
 
@@ -347,8 +367,14 @@ def main():
         [1.0, 1e9],
         [1e-6, 1e6],
     ], device=dev)
+    # Per-model lambda tuning: SMLM MLE fits the summed frame, so its Fisher
+    # matrix is roughly K times larger than SIMFLUX's per-frame model.  The
+    # scale-invariant damping heuristic in LM_MLE therefore scales up too much
+    # for SMLM at lambda=1e3, leaving fits stuck at init at low SNR.  Lambda=1e2
+    # for SMLM is the smallest damping that stays stable across the range.
+    # LM_MLE_Adaptive avoids this coupling entirely by adapting per sample.
     smlm_mle = LM_MLE(GaussPSFModule(roisize, sigma), param_range,
-                      iterations=50, lambda_=1e3).to(dev)
+                      iterations=50, lambda_=1e2).to(dev)
     sf_mle = LM_MLE(SIMFLUXPSFModule(roisize, sigma), param_range,
                     iterations=50, lambda_=1e3).to(dev)
     smlm_mle_a = LM_MLE_Adaptive(GaussPSFModule(roisize, sigma), param_range,
@@ -383,11 +409,18 @@ def main():
             plot_comparison(photon_counts, res, bg, sigma, keep, fn)
             print(f'  wrote {os.path.relpath(fn)}')
 
-    # SIMCODE NN+NDI across backgrounds -- shows the training-distribution edge.
+    # Per-background SIMFLUX MLE + SIMCODE NN+NDI, one plot per LM variant so
+    # the LM effect on the MLE curves (SF MLE, which does depend on LM) is
+    # visible; the NN+NDI curves are LM-independent and should look identical
+    # across the two plots (any residual diff is CUDA reduction non-determinism).
     for keep, tag in [(1.0, 'notrim'), (0.90, 'trim10')]:
-        fn = os.path.join(plot_dir, f'estimation_vs_crlb_bg_sweep_{tag}.png')
-        plot_bg_sweep(photon_counts, bg_results, sigma, keep, fn)
-        print(f'  wrote {os.path.relpath(fn)}')
+        for sf_key, lm_tag, lm_lab in [('sf_err',   'lmfixed', 'fixed-lambda LM'),
+                                        ('sf_err_a', 'lmadapt', 'adaptive LM')]:
+            fn = os.path.join(plot_dir,
+                              f'estimation_vs_crlb_bg_sweep_{tag}_{lm_tag}.png')
+            plot_bg_sweep(photon_counts, bg_results, sigma, keep, fn,
+                          sf_err_key=sf_key, lm_label=lm_lab)
+            print(f'  wrote {os.path.relpath(fn)}')
 
 
 if __name__ == '__main__':
