@@ -35,6 +35,11 @@ class CheckpointManager:
         torch.save(checkpoint, checkpoint_path)
         print(f"Checkpoint saved: {checkpoint_path}")
 
+        # Also save a plain state_dict as weights.pt so inference code
+        # (MovieProcessor) can load without pulling in optimizer/scheduler state.
+        weights_path = os.path.join(self.save_dir, 'weights.pt')
+        torch.save(self.model.state_dict(), weights_path)
+
     def _remove_old_checkpoint(self, checkpoint_path):
         if os.path.exists(checkpoint_path):
             os.remove(checkpoint_path)

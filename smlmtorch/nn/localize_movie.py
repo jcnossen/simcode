@@ -82,8 +82,10 @@ class MovieProcessor:
         self.model.eval()
         self.detector = LocalizationDetector(**config.detector)
 
-        checkpoint = torch.load(model_chkpt, map_location=torch.device('cpu'))
-        model_state = checkpoint['model_state_dict']
+        # Accept either a full checkpoint dict ({'model_state_dict': ..., 'epoch': ...})
+        # or a plain state_dict written as weights.pt.
+        loaded = torch.load(model_chkpt, map_location=torch.device('cpu'))
+        model_state = loaded['model_state_dict'] if isinstance(loaded, dict) and 'model_state_dict' in loaded else loaded
         if 'output_scale' in model_state:
             model_state.pop('output_scale')
         self.model.load_state_dict(model_state)
