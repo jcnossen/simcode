@@ -182,7 +182,7 @@ def make_config(save_dir=None):
             # of the raw output.  Set to the geometric mean of the target range
             # so raw ~= 0 corresponds to a typical training spot.
             bg_scale=1.0,
-            intensity_scale=50.0,
+            intensity_scale=400.0,
 
             # --- Architecture (matches the shipped sf_conv model) ---
             enable_readnoise=False,       # read noise is low (~1 ph) & uniform; no channel needed
@@ -212,7 +212,7 @@ def make_config(save_dir=None):
 
         loss=dict(
             gmm_components=0,
-            count_loss_weight=0.05,       # <-- ExpN change: bumped from 0.01
+            count_loss_weight=0.01,       # reverted to notebook value
             track_intensities_offset=CENTER_FRAME_IX,
         ),
 
@@ -222,14 +222,9 @@ def make_config(save_dir=None):
             weight_decay=0.01,
         ),
 
-        # <-- ExpN change: cosine annealing across the full 300 epochs
-        lr_scheduler=dict(
-            type='CosineAnnealingLR',
-            T_max=DEFAULT_EPOCHS,
-            eta_min=1e-7,
-        ),
+        lr_scheduler=dict(step_size=30, gamma=0.5),
 
-        clip_grad_norm=dict(max_norm=1.0),
+        clip_grad_norm=dict(max_norm=2.0),
 
         train_size=8 * 1024,
         test_size=1024,
@@ -247,8 +242,8 @@ def make_config(save_dir=None):
             track_intensities_offset=CENTER_FRAME_IX,
 
             # --- ExpN training-distribution changes ---
-            intensity_distr='log-uniform',        # was 'log-normal'
-            intensity_fluctuation_std=0.9,        # was 0.5, now matches depth=0.9
+            intensity_distr='log-normal',         # reverted to notebook value
+            intensity_fluctuation_std=0.5,        # reverted to notebook value
             intensity_mean_min=50,
             intensity_mean_max=10000,
             intensity_mode=400,                   # kept for backward compat, unused for log-uniform
@@ -298,9 +293,6 @@ def main():
     config = make_config(save_dir=args.save_dir)
     if args.batch_size is not None:
         config['batch_size'] = args.batch_size
-    # Keep the scheduler T_max in sync with --epochs so cosine annealing
-    # finishes exactly at the last epoch.
-    config.lr_scheduler.T_max = args.epochs
 
     print('=' * 72)
     print('Training SFLocalizationModelExpN')
@@ -321,9 +313,9 @@ def main():
 
     trainer.train(num_epochs=args.epochs,
                   batch_size=config.batch_size,
-                  log_interval=5,
-                  report_interval=20,
-                  data_refresh_interval=20,
+                  log_interval=1,
+                  report_interval=5,
+                  data_refresh_interval=1,
                   save_checkpoints=True)
 
 

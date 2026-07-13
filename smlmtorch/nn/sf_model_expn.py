@@ -56,6 +56,7 @@ Same as SFLocalizationModel plus:
 """
 
 import numpy as np
+import torch
 import torch.nn as nn
 
 from smlmtorch.nn.sf_model import SFLocalizationModel
@@ -68,6 +69,7 @@ class SFLocalizationModelExpN(SFLocalizationModel):
                  enable3D,
                  bg_scale=5.0,
                  intensity_scale=700.0,
+                 exp_init_weight_scale=0.05,
                  **kwargs):
 
         # ExpN uses exp() * scale for bg and intensity -- these arguments are
@@ -102,3 +104,21 @@ class SFLocalizationModelExpN(SFLocalizationModel):
                          xyz_scale=xyz_scale,
                          enable3D=enable3D,
                          **kwargs)
+
+        # exp() compounds any initialization bias multiplicatively: the default
+        # Kaiming-normal init on the final output conv left raw bg logits with
+        # a median around ~1.3 for a typical seed -- small in absolute terms,
+        # but exp(8*tanh(1.3)) ~= 975 vs a real bg median of ~3, a ~300x
+        # mismatch at epoch 0 (see scale_diag.py).  Shrinking (not zeroing)
+        # just the final layer's weight for the exp-activated channels keeps
+        # some per-pixel initial variation but pulls raw logits close enough
+        # to 0 that exp(scale*tanh(raw)) starts near output_scale, matching
+        # the "raw~=0 -> typical spot" assumption bg_scale/intensity_scale
+        # were picked under.  Bias is already zeroed by weight_init.
+        with torch.no_grad():
+            bg_ix_in_xmain = 1 + bg_ix
+            main_final_conv = self.output_heads_layer_main[-1]
+            main_final_conv.weight[bg_ix_in_xmain] *= exp_init_weight_scale
+
+            intensity_final_conv = self.output_heads_intensities[-1]
+            intensity_final_conv.weight[0] *= exp_init_weight_scale  # N_k mean channel, shared across N0..N5
