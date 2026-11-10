@@ -1,0 +1,120 @@
+# hd_compare m20qh: <out>/sb_m20qh
+GT (crop 5-115 px): emitters on per frame 524.9 (3.697 /um2), on per 6-frame window 564.9, targets per W3 window 517.1; target window photons (label) p10/25/50/75/90 862/1255/1833/2621/3599 (SIMCODE-net units ~ /1.45)
+
+== detection (targets >= 200 label ph; W3 windows)
+method                 out/win recall rec_any  FP/win FPfrac    JI | recall @ FPfrac<=5% / 1% | offset nm
+SMLM (paper pipeline)     32.6  0.058   0.096    2.10  0.066 0.058 | 0.042 / 0.007 | [ 0.12542021 -0.9392052 ]
+SMLM tuned                32.5  0.060   0.110    0.75  0.024 0.060 | 0.060 / 0.042 | [ 0.62524143 -3.72086838]
+SF (paper pipeline)        2.2  0.004   0.014    0.00  0.001 0.004 | 0.004 / 0.004 | [-1.04303329  0.19009323]
+DECODE                   472.0  0.767   0.767   54.24  0.120 0.694 | 0.355 / 0.031 | [ 0.74797554 -0.19257271]
+DECODE per-frame         616.6  0.840   0.840  153.72  0.262 0.647 | 0.459 / 0.100 | [ 0.5500208  -0.33764764]
+SIMCODE                   61.6  0.119   0.178    0.00  0.000 0.119 | 0.119 / 0.119 | [ 0.46366219 -1.3331321 ]
+SIMCODE-net              239.7  0.453   0.759    1.19  0.005 0.452 | 0.453 / 0.453 | [ 1.35792686 -1.43850986]
+ours p1                  466.5  0.814   0.814   35.17  0.077 0.762 | 0.777 / 0.582 | [-0.07107834 -0.87194939]
+ours p2                  477.6  0.863   0.863   23.39  0.050 0.825 | 0.863 / 0.758 | [-0.02572457 -0.75758351]
+
+== localization error, own matched targets, label-photon bins: n | recall | RMS nm | RMS/CRLB_ref | trim/C | gross>50nm % | zcal
+       200-700 SMLM (paper pipeline)  n    221 rec 0.005 rms  43.43 nm  rms/C  2.86 trim/C  2.08 gross50 53.85% zcal 3.86
+       200-700 SMLM tuned             n    201 rec 0.004 rms  41.76 nm  rms/C  2.81 trim/C  2.02 gross50 51.74% zcal 2.69
+       200-700 SF (paper pipeline)    n    <15 rec 0.000
+       200-700 DECODE                 n  15876 rec 0.350 rms  36.50 nm  rms/C  2.49 trim/C  1.88 gross50 36.85% zcal 1.31
+       200-700 DECODE per-frame       n  18921 rec 0.417 rms  40.07 nm  rms/C  2.69 trim/C  1.98 gross50 45.61% zcal 1.58
+       200-700 SIMCODE                n    135 rec 0.003 rms  18.04 nm  rms/C  1.18 trim/C  1.16 gross50  5.19% zcal 3.87
+       200-700 SIMCODE-net            n   2207 rec 0.049 rms  35.01 nm  rms/C  2.38 trim/C  1.80 gross50 35.84% zcal 2.18
+       200-700 ours p1                n  15488 rec 0.341 rms  33.40 nm  rms/C  2.32 trim/C  1.75 gross50 26.55% zcal 1.15
+       200-700 ours p2                n  17808 rec 0.392 rms  28.32 nm  rms/C  2.00 trim/C  1.65 gross50 18.74% zcal 1.20
+
+      700-2000 SMLM (paper pipeline)  n  13602 rec 0.032 rms  40.65 nm  rms/C  6.90 trim/C  2.45 gross50 48.04% zcal 3.41
+      700-2000 SMLM tuned             n  17691 rec 0.042 rms  36.00 nm  rms/C  6.06 trim/C  2.37 gross50 36.85% zcal 2.56
+      700-2000 SF (paper pipeline)    n    532 rec 0.001 rms  28.20 nm  rms/C  5.13 trim/C  1.97 gross50 10.34% zcal 3.39
+      700-2000 DECODE                 n 302865 rec 0.721 rms  26.41 nm  rms/C  4.07 trim/C  2.10 gross50 17.12% zcal 1.22
+      700-2000 DECODE per-frame       n 336630 rec 0.801 rms  28.12 nm  rms/C  4.32 trim/C  2.19 gross50 19.68% zcal 1.60
+      700-2000 SIMCODE                n  21048 rec 0.050 rms  12.96 nm  rms/C  2.30 trim/C  1.85 gross50  0.70% zcal 2.40
+      700-2000 SIMCODE-net            n 142953 rec 0.340 rms  27.23 nm  rms/C  4.51 trim/C  2.29 gross50 18.12% zcal 1.88
+      700-2000 ours p1                n 322235 rec 0.767 rms  20.27 nm  rms/C  3.14 trim/C  1.88 gross50  7.43% zcal 1.02
+      700-2000 ours p2                n 353628 rec 0.842 rms  16.57 nm  rms/C  2.54 trim/C  1.82 gross50  3.73% zcal 1.12
+
+     2000-4000 SMLM (paper pipeline)  n  27054 rec 0.089 rms  35.47 nm  rms/C 10.18 trim/C  2.43 gross50 35.00% zcal 3.80
+     2000-4000 SMLM tuned             n  25942 rec 0.085 rms  28.92 nm  rms/C  8.19 trim/C  2.40 gross50 22.07% zcal 2.97
+     2000-4000 SF (paper pipeline)    n   1955 rec 0.006 rms  24.83 nm  rms/C  7.39 trim/C  2.14 gross50  4.76% zcal 3.18
+     2000-4000 DECODE                 n 263908 rec 0.864 rms  19.50 nm  rms/C  5.45 trim/C  2.11 gross50  7.74% zcal 1.13
+     2000-4000 DECODE per-frame       n 284741 rec 0.932 rms  18.86 nm  rms/C  5.27 trim/C  2.21 gross50  6.40% zcal 1.63
+     2000-4000 SIMCODE                n  56766 rec 0.186 rms  10.12 nm  rms/C  2.94 trim/C  2.06 gross50  0.17% zcal 2.64
+     2000-4000 SIMCODE-net            n 187485 rec 0.614 rms  19.76 nm  rms/C  5.58 trim/C  2.34 gross50  6.47% zcal 1.83
+     2000-4000 ours p1                n 281124 rec 0.920 rms  13.40 nm  rms/C  3.74 trim/C  1.99 gross50  2.29% zcal 0.93
+     2000-4000 ours p2                n 287931 rec 0.942 rms  10.93 nm  rms/C  3.05 trim/C  1.97 gross50  0.77% zcal 1.05
+
+  4000-1000000000 SMLM (paper pipeline)  n   6857 rec 0.124 rms  26.53 nm  rms/C 10.95 trim/C  2.38 gross50 18.21% zcal 3.96
+  4000-1000000000 SMLM tuned             n   5921 rec 0.107 rms  19.84 nm  rms/C  8.17 trim/C  2.33 gross50  7.74% zcal 2.88
+  4000-1000000000 SF (paper pipeline)    n    958 rec 0.017 rms  19.27 nm  rms/C  8.06 trim/C  2.13 gross50  1.98% zcal 3.36
+  4000-1000000000 DECODE                 n  50892 rec 0.923 rms  15.62 nm  rms/C  6.43 trim/C  2.07 gross50  4.34% zcal 1.04
+  4000-1000000000 DECODE per-frame       n  53620 rec 0.973 rms  12.68 nm  rms/C  5.21 trim/C  2.20 gross50  1.68% zcal 1.59
+  4000-1000000000 SIMCODE                n  20355 rec 0.369 rms   8.25 nm  rms/C  3.42 trim/C  2.18 gross50  0.01% zcal 3.09
+  4000-1000000000 SIMCODE-net            n  41927 rec 0.761 rms  13.91 nm  rms/C  5.73 trim/C  2.33 gross50  1.89% zcal 1.77
+  4000-1000000000 ours p1                n  53319 rec 0.967 rms   9.42 nm  rms/C  3.88 trim/C  2.04 gross50  0.78% zcal 0.79
+  4000-1000000000 ours p2                n  53554 rec 0.971 rms   8.09 nm  rms/C  3.33 trim/C  2.04 gross50  0.25% zcal 0.98
+
+      200-2000 SMLM (paper pipeline)  n  13823 rec 0.030 rms  40.70 nm  rms/C  6.62 trim/C  2.36 gross50 48.14% zcal 3.42
+      200-2000 SMLM tuned             n  17892 rec 0.038 rms  36.07 nm  rms/C  5.90 trim/C  2.32 gross50 37.02% zcal 2.56
+      200-2000 SF (paper pipeline)    n    535 rec 0.001 rms  28.18 nm  rms/C  5.07 trim/C  1.97 gross50 10.28% zcal 3.41
+      200-2000 DECODE                 n 318741 rec 0.685 rms  27.00 nm  rms/C  3.79 trim/C  2.04 gross50 18.10% zcal 1.22
+      200-2000 DECODE per-frame       n 355551 rec 0.764 rms  28.88 nm  rms/C  4.01 trim/C  2.13 gross50 21.06% zcal 1.59
+      200-2000 SIMCODE                n  21183 rec 0.045 rms  12.99 nm  rms/C  2.26 trim/C  1.82 gross50  0.73% zcal 2.41
+      200-2000 SIMCODE-net            n 145160 rec 0.312 rms  27.37 nm  rms/C  4.37 trim/C  2.23 gross50 18.39% zcal 1.89
+      200-2000 ours p1                n 337723 rec 0.725 rms  21.06 nm  rms/C  3.00 trim/C  1.85 gross50  8.31% zcal 1.03
+      200-2000 ours p2                n 371436 rec 0.798 rms  17.32 nm  rms/C  2.45 trim/C  1.79 gross50  4.45% zcal 1.12
+
+  200-1000000000 SMLM (paper pipeline)  n  47734 rec 0.058 rms  35.97 nm  rms/C  8.32 trim/C  2.38 gross50 36.40% zcal 3.71
+  200-1000000000 SMLM tuned             n  49755 rec 0.060 rms  30.83 nm  rms/C  6.79 trim/C  2.34 gross50 25.74% zcal 2.80
+  200-1000000000 SF (paper pipeline)    n   3448 rec 0.004 rms  24.00 nm  rms/C  6.71 trim/C  2.08 gross50  4.84% zcal 3.27
+  200-1000000000 DECODE                 n 633541 rec 0.767 rms  23.34 nm  rms/C  4.17 trim/C  2.05 gross50 12.68% zcal 1.16
+  200-1000000000 DECODE per-frame       n 693912 rec 0.840 rms  24.21 nm  rms/C  4.26 trim/C  2.14 gross50 13.54% zcal 1.61
+  200-1000000000 SIMCODE                n  98304 rec 0.119 rms  10.47 nm  rms/C  2.69 trim/C  1.95 gross50  0.26% zcal 2.67
+  200-1000000000 SIMCODE-net            n 374572 rec 0.453 rms  22.52 nm  rms/C  4.79 trim/C  2.26 gross50 10.58% zcal 1.85
+  200-1000000000 ours p1                n 672166 rec 0.814 rms  17.46 nm  rms/C  3.15 trim/C  1.88 gross50  5.20% zcal 0.96
+  200-1000000000 ours p2                n 712921 rec 0.863 rms  14.47 nm  rms/C  2.57 trim/C  1.82 gross50  2.65% zcal 1.08
+
+== paired with ours p2 (targets matched by both): n | method RMS/C | p2 RMS/C
+  SMLM (paper pipeline)  200-700 n 62 3.54 vs 1.91 | 700-2000 n 12144 7.18 vs 2.26 | 2000-4000 n 26274 10.25 vs 2.56 | 4000-1000000000 n 6768 10.96 vs 2.89 | 200-2000 n 12206 7.11 vs 2.25 | 200-1000000000 n 45248 8.76 vs 2.42
+  SMLM tuned             200-700 n 91 3.46 vs 1.94 | 700-2000 n 16562 6.18 vs 2.06 | 2000-4000 n 25370 8.21 vs 2.51 | 4000-1000000000 n 5864 8.17 vs 2.82 | 200-2000 n 16653 6.12 vs 2.06 | 200-1000000000 n 47887 6.98 vs 2.25
+  SF (paper pipeline)    200-700 n 0 - vs - | 700-2000 n 443 5.29 vs 2.22 | 2000-4000 n 1882 7.35 vs 2.60 | 4000-1000000000 n 947 8.06 vs 2.77 | 200-2000 n 443 5.29 vs 2.22 | 200-1000000000 n 3272 6.87 vs 2.51
+  DECODE                 200-700 n 10058 2.53 vs 1.90 | 700-2000 n 280028 4.02 vs 2.35 | 2000-4000 n 255395 5.38 vs 2.87 | 4000-1000000000 n 49917 6.36 vs 3.22 | 200-2000 n 290086 3.85 vs 2.29 | 200-1000000000 n 595398 4.24 vs 2.43
+  DECODE per-frame       200-700 n 12443 2.70 vs 1.93 | 700-2000 n 310118 4.23 vs 2.40 | 2000-4000 n 275386 5.18 vs 2.94 | 4000-1000000000 n 52605 5.14 vs 3.27 | 200-2000 n 322561 4.03 vs 2.33 | 200-1000000000 n 650552 4.29 vs 2.47
+  SIMCODE                200-700 n 89 1.14 vs 1.00 | 700-2000 n 19790 2.23 vs 1.93 | 2000-4000 n 55447 2.86 vs 2.41 | 4000-1000000000 n 20118 3.36 vs 2.70 | 200-2000 n 19879 2.20 vs 1.91 | 200-1000000000 n 95444 2.63 vs 2.23
+  SIMCODE-net            200-700 n 1445 2.70 vs 1.84 | 700-2000 n 135545 4.55 vs 2.27 | 2000-4000 n 183082 5.57 vs 2.76 | 4000-1000000000 n 41360 5.72 vs 3.09 | 200-2000 n 136990 4.47 vs 2.25 | 200-1000000000 n 361432 4.87 vs 2.44
+  ours p1                200-700 n 12554 2.16 vs 1.88 | 700-2000 n 307240 2.98 vs 2.37 | 2000-4000 n 274983 3.59 vs 2.92 | 4000-1000000000 n 52622 3.72 vs 3.25 | 200-2000 n 319794 2.86 vs 2.30 | 200-1000000000 n 647399 3.03 vs 2.44
+
+== nearest-neighbour bins (targets >= 200 ph): matched / merged / undetected
+  d    0-0.5 n  60237 SMLM (paper pipeline) 0.03/0.03/0.93 | SMLM tuned 0.03/0.03/0.94 | SF (paper pipeline) 0.00/0.00/0.99 | DECODE 0.50/0.40/0.10 | DECODE per-frame 0.60/0.34/0.05 | SIMCODE 0.12/0.12/0.75 | SIMCODE-net 0.32/0.31/0.37 | ours p1 0.51/0.42/0.07 | ours p2 0.50/0.45/0.05
+  d  0.5-1.0 n 100161 SMLM (paper pipeline) 0.04/0.04/0.92 | SMLM tuned 0.04/0.04/0.92 | SF (paper pipeline) 0.00/0.00/0.99 | DECODE 0.54/0.39/0.07 | DECODE per-frame 0.64/0.33/0.03 | SIMCODE 0.07/0.07/0.86 | SIMCODE-net 0.31/0.31/0.38 | ours p1 0.57/0.38/0.05 | ours p2 0.62/0.35/0.03
+  d    0-1.0 n 160398 SMLM (paper pipeline) 0.04/0.04/0.92 | SMLM tuned 0.03/0.03/0.93 | SF (paper pipeline) 0.00/0.00/0.99 | DECODE 0.52/0.40/0.08 | DECODE per-frame 0.62/0.33/0.04 | SIMCODE 0.09/0.09/0.82 | SIMCODE-net 0.31/0.31/0.38 | ours p1 0.55/0.40/0.05 | ours p2 0.57/0.39/0.04
+  d  1.0-1.5 n 119846 SMLM (paper pipeline) 0.05/0.05/0.90 | SMLM tuned 0.04/0.05/0.91 | SF (paper pipeline) 0.00/0.00/0.99 | DECODE 0.64/0.31/0.05 | DECODE per-frame 0.75/0.23/0.02 | SIMCODE 0.04/0.04/0.92 | SIMCODE-net 0.30/0.27/0.43 | ours p1 0.71/0.25/0.03 | ours p2 0.84/0.14/0.02
+  d   1.5-99 n 546011 SMLM (paper pipeline) 0.07/0.06/0.88 | SMLM tuned 0.07/0.04/0.89 | SF (paper pipeline) 0.00/0.00/0.99 | DECODE 0.87/0.10/0.03 | DECODE per-frame 0.92/0.07/0.01 | SIMCODE 0.14/0.08/0.78 | SIMCODE-net 0.53/0.18/0.29 | ours p1 0.91/0.07/0.01 | ours p2 0.95/0.04/0.01
+
+== FRC (nm), common window-start grid A (starts % 6 == 0, disjoint windows), alternating-window halves, common N (mean +- sd over 5 draws); available N: SMLM (paper pipeline) 26068, SMLM tuned 26037, SF (paper pipeline) 1742, DECODE 377638, DECODE per-frame 498845, SIMCODE 49731, SIMCODE-net 195306, ours p1 373536, ours p2 382441
+  random N   26037: SMLM (paper pipeline) 34.3+-0.0 | SMLM tuned 34.3+-0.0 | SF (paper pipeline) - | DECODE 59.4+-1.3 | DECODE per-frame 90.3+-4.2 | SIMCODE 19.5+-0.1 | SIMCODE-net 56.7+-1.5 | ours p1 47.4+-2.3 | ours p2 43.1+-1.2
+  random N   26068: SMLM (paper pipeline) 34.3+-0.0 | SMLM tuned - | SF (paper pipeline) - | DECODE 61.2+-2.8 | DECODE per-frame 88.6+-2.6 | SIMCODE 19.6+-0.1 | SIMCODE-net 56.1+-1.5 | ours p1 48.4+-1.4 | ours p2 43.4+-0.8
+  random N   49731: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 43.4+-1.0 | DECODE per-frame 67.2+-2.2 | SIMCODE 16.6+-0.0 | SIMCODE-net 45.8+-0.4 | ours p1 34.5+-0.5 | ours p2 31.9+-0.6
+  random N  195306: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 24.4+-0.3 | DECODE per-frame 40.7+-0.4 | SIMCODE - | SIMCODE-net 31.1+-0.0 | ours p1 22.4+-0.1 | ours p2 21.5+-0.1
+  random N  373536: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 19.9+-0.0 | DECODE per-frame 33.2+-0.3 | SIMCODE - | SIMCODE-net - | ours p1 19.5+-0.0 | ours p2 18.6+-0.0
+  random N  377638: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 19.9+-0.0 | DECODE per-frame 33.1+-0.1 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.6+-0.0
+  random N  382441: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 33.3+-0.2 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.6+-0.0
+  random N  498845: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 31.4+-0.0 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 -
+  (grid B, window starts % 6 == 3: random subsampling, 5 draws)
+  random N   26037: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 61.5+-2.8 | DECODE per-frame 88.0+-2.0 | SIMCODE 19.5+-0.2 | SIMCODE-net 58.7+-0.9 | ours p1 45.3+-0.8 | ours p2 43.6+-0.6
+  random N   26068: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 61.6+-1.3 | DECODE per-frame 89.2+-4.0 | SIMCODE 19.5+-0.4 | SIMCODE-net 57.2+-1.2 | ours p1 47.7+-0.8 | ours p2 43.9+-1.0
+  random N   49731: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 43.1+-0.6 | DECODE per-frame 67.4+-0.0 | SIMCODE - | SIMCODE-net 44.7+-0.9 | ours p1 34.8+-0.4 | ours p2 32.3+-0.5
+  random N  195306: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 24.5+-0.2 | DECODE per-frame 41.3+-0.4 | SIMCODE - | SIMCODE-net - | ours p1 22.5+-0.2 | ours p2 21.7+-0.1
+  random N  373536: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 20.1+-0.0 | DECODE per-frame 34.8+-0.2 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.9+-0.1
+  random N  377638: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 34.7+-0.3 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.8+-0.0
+  random N  382441: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 34.8+-0.3 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 -
+  random N  498845: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame - | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 -
+  (top-N by own reported sigma, grid A)
+  top    N   26037: SMLM (paper pipeline) 34.3 | SMLM tuned 34.3 | SF (paper pipeline) - | DECODE 11.7 | DECODE per-frame 19.0 | SIMCODE 14.7 | SIMCODE-net 21.7 | ours p1 14.6 | ours p2 13.4
+  top    N   26068: SMLM (paper pipeline) 34.3 | SMLM tuned - | SF (paper pipeline) - | DECODE 11.7 | DECODE per-frame 19.0 | SIMCODE 14.7 | SIMCODE-net 21.7 | ours p1 14.6 | ours p2 13.4
+  top    N   49731: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 12.9 | DECODE per-frame 20.8 | SIMCODE 16.6 | SIMCODE-net 24.1 | ours p1 15.3 | ours p2 14.1
+  top    N  195306: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 16.7 | DECODE per-frame 25.8 | SIMCODE - | SIMCODE-net 31.1 | ours p1 17.4 | ours p2 16.6
+  top    N  373536: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 19.9 | DECODE per-frame 29.9 | SIMCODE - | SIMCODE-net - | ours p1 19.5 | ours p2 18.5
+  top    N  377638: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE 19.9 | DECODE per-frame 29.9 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.5
+  top    N  382441: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 29.9 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 18.6
+  top    N  498845: SMLM (paper pipeline) - | SMLM tuned - | SF (paper pipeline) - | DECODE - | DECODE per-frame 31.4 | SIMCODE - | SIMCODE-net - | ours p1 - | ours p2 -

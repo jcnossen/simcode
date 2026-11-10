@@ -1,0 +1,108 @@
+# real 20 nM movie 2 (120000 frames): sets ['smlm', 'sf', 'decode_summed', 'sc_b', 'decode', 'p1G', 'p1P', 'acG', 'acP', 'p2G', 'p2P']
+
+## counts and DME v2 (own drift per method; ours: drift from its G6 rows, per selection)
+| set | rows (all) | rows crop | rows G6 crop | DME chosen | split-half ref fpb10 / fpb20 (nm, rss < 5000 fr) | FRC full set (nm) |
+|---|---|---|---|---|---|---|
+| SMLM | 3312055 | 3183574 | 530394 | ('smooth', 725, 12) | 3.81 / 3.76 | 37.7 |
+| SF | 266482 | 255379 | 42491 | ('smooth', 200, 192) | 2.00 / 2.12 | 24.8 |
+| DECODE (summed) | 4735871 | 4068579 | 4068579 | ('smooth', 507, 48) | 1.60 / 1.59 | 34.4 |
+| SIMCODE | 1343489 | 1268865 | 410088 | ('smooth', 1793, 48) | 1.34 / 1.33 | 20.0 |
+| DECODE | 10611573 | 9454999 | per-frame | ('smooth', 226, 24) | 1.34 / 1.33 | 31.0 |
+| ours pass 1 [G] | 7120125 | 7097638 | 3557287 | ('smooth', 67, 48) | 1.13 / 1.13 | 19.4 |
+| ours pass 1 [P] | 7261963 | 7238881 | 3628340 | ('smooth', 65, 48) | 1.15 / 1.15 | 19.4 |
+| ours pass 1 autoc [G] | 7120125 | 7097785 | 3557350 | ('smooth', 673, 48) | 1.17 / 1.17 | 19.4 |
+| ours pass 1 autoc [P] | 7274695 | 7251729 | 3634655 | ('smooth', 65, 48) | 1.19 / 1.18 | 19.4 |
+| ours pass 2 [G] | 12625813 | 12609386 | 6304585 | ('smooth', 380, 24) | 0.87 / 0.87 | 19.3 |
+| ours pass 2 [P] | 12761965 | 12745943 | 6371986 | ('smooth', 376, 24) | 0.90 / 0.89 | 19.2 |
+
+## FRC on a COMMON window-start grid (G6: f % 6 == 0, G3: f % 3 == 0; decode_summed has G6 starts only; decode per frame is not window-based -> excluded). random equal N (3 seeds, mean ± sd) at N_SC (SIMCODE rows on that grid) and N_min (smallest window method on that grid); own-sigma best-N at N_SC / 2 and N_SC
+
+### G6: rows per set SMLM 530394, SF 42491, DECODE (summed) 4068579, SIMCODE 410088, ours pass 1 [G] 3557287, ours pass 1 [P] 3628340, ours pass 1 autoc [G] 3557350, ours pass 1 autoc [P] 3634655, ours pass 2 [G] 6304585, ours pass 2 [P] 6371986
+| set | random N_min = 42491 | random N_SC = 410088 | best-N 205044 | best-N 410088 |
+|---|---|---|---|---|
+| SMLM | 67.5 ± 0.5 | 46.4 ± 0.1 | 39.5 | 43.2 |
+| SF | 33.6 | – | – | – |
+| DECODE (summed) | 66.9 ± 2.3 | 46.4 ± 0.2 | 30.0 | 29.8 |
+| SIMCODE | 29.2 ± 0.4 | 20.9 | 19.3 | 20.9 |
+| ours pass 1 [G] | 45.3 ± 0.2 | 28.1 ± 0.2 | 16.9 | 17.4 |
+| ours pass 1 [P] | 45.4 ± 0.4 | 28.2 ± 0.4 | 16.9 | 17.4 |
+| ours pass 1 autoc [G] | 45.1 ± 0.6 | 28.3 ± 0.1 | 17.0 | 17.7 |
+| ours pass 1 autoc [P] | 45.5 ± 0.9 | 28.7 ± 0.3 | 17.0 | 17.4 |
+| ours pass 2 [G] | 47.6 ± 0.3 | 30.9 ± 0.3 | 16.4 | 16.4 |
+| ours pass 2 [P] | 50.0 ± 0.7 | 30.9 ± 0.2 | 16.4 | 16.4 |
+
+### G3: rows per set SMLM 1060882, SF 84601, SIMCODE 814631, ours pass 1 [G] 7097638, ours pass 1 [P] 7238881, ours pass 1 autoc [G] 7097785, ours pass 1 autoc [P] 7251729, ours pass 2 [G] 12609386, ours pass 2 [P] 12745943
+| set | random N_min = 84601 | random N_SC = 814631 | best-N 407315 | best-N 814631 |
+|---|---|---|---|---|
+| SMLM | 60.0 ± 1.8 | 42.8 ± 0.1 | 38.2 | 39.6 |
+| SF | 30.6 | – | – | – |
+| SIMCODE | 26.9 ± 0.4 | 19.6 | 18.4 | 19.6 |
+| ours pass 1 [G] | 38.0 ± 0.5 | 25.6 ± 0.2 | 16.4 | 16.6 |
+| ours pass 1 [P] | 38.4 ± 0.8 | 25.5 ± 0.1 | 16.4 | 16.6 |
+| ours pass 1 autoc [G] | 37.6 ± 0.5 | 25.4 ± 0.5 | 16.5 | 16.6 |
+| ours pass 1 autoc [P] | 38.8 ± 0.7 | 25.7 ± 0.1 | 16.5 | 16.6 |
+| ours pass 2 [G] | 41.4 ± 0.6 | 28.0 ± 0.0 | 15.6 | 15.8 |
+| ours pass 2 [P] | 41.2 ± 0.8 | 27.9 ± 0.2 | 15.6 | 15.6 |
+
+## identical rows, ours vs SIMCODE (exact window start, mutual nearest < 0.5 px, own drift): FRC of the shared rows; fair NN proxy (realgap nn_exact dt = 6 on DOUBLY-shared pairs: both windows shared), sigma per axis (nm)
+| ours set | shared rows (G3) | FRC shared ours / SC | doubly-shared pairs | NN sigma ours / SC (ratio) |
+|---|---|---|---|---|
+| ours pass 1 [G] | 679241 | 18.1 / 19.5 | 168332 | 5.80 / 6.30 (0.921) |
+| ours pass 1 [P] | 694919 | 18.1 / 19.5 | 173833 | 5.80 / 6.30 (0.921) |
+| ours pass 1 autoc [G] | 679239 | 18.1 / 19.5 | 168322 | 5.85 / 6.30 (0.929) |
+| ours pass 1 autoc [P] | 695607 | 18.1 / 19.5 | 174005 | 5.85 / 6.30 (0.929) |
+| ours pass 2 [G] | 778841 | 17.2 / 19.5 | 193640 | 5.85 / 6.45 (0.907) |
+| ours pass 2 [P] | 796696 | 17.8 / 19.6 | 199141 | 5.90 / 6.45 (0.915) |
+
+## fractional-pixel uniformity (min / mean of the 20-bin frac histogram, x and y pooled, raw sensor px; 1 = uniform); own photon units (ours network photons; SIMCODE NDI photons; SMLM / SF / DECODE their own); bands 0-700 / 700-2000 / > 2000 / all
+| set | 0-700 | 700-2000 | > 2000 | all rows |
+|---|---|---|---|---|
+| SMLM | 0.98 | 0.98 | 0.93 | 0.99 |
+| SF | 0.77 | 0.74 | 0.73 | 0.75 |
+| DECODE (summed) | 0.39 | 0.66 | 0.78 | 0.70 |
+| SIMCODE | 0.83 | 0.85 | 0.90 | 0.86 |
+| DECODE | 0.33 | 0.52 | 0.60 | 0.40 |
+| ours pass 1 [G] | 0.82 | 0.74 | 0.77 | 0.76 |
+| ours pass 1 [P] | 0.73 | 0.78 | 0.87 | 0.79 |
+| ours pass 1 autoc [G] | 0.82 | 0.73 | 0.76 | 0.75 |
+| ours pass 1 autoc [P] | 0.74 | 0.78 | 0.87 | 0.79 |
+| ours pass 2 [G] | 0.39 | 0.49 | 0.64 | 0.48 |
+| ours pass 2 [P] | 0.52 | 0.66 | 0.76 | 0.64 |
+  ours pass 1: median detector p at 700-2000 ph, pixel edge 0.615 vs centre 0.619; stored candidates p >= 0.5 (no CLI option for a lower cut); fraction of stored rows with p < 0.63: 0.621
+  ours pass 2: median detector p at 700-2000 ph, pixel edge 0.641 vs centre 0.761; stored candidates p >= 0.5 (no CLI option for a lower cut); fraction of stored rows with p < 0.63: 0.384
+
+## relative locking (critic35/static.py (1)): median(ours - SC) vs frac(SMLM) in 20 bins on triplets (ours-SC exact-start pairs < 0.5 px + SMLM loc at the same start < 0.75 px), raw sensor px, global median removed; noise-corrected rms over bins (nm), x / y; SC photon bands. Also ours - SMLM vs frac(SC) and SC - SMLM vs frac(ours).
+| ours set | photons (SC) | triplets | ours - SC vs frac(SMLM) | ours - SMLM vs frac(SC) | SC - SMLM vs frac(ours) |
+|---|---|---|---|---|---|
+| ours pass 1 [G] | 300-700 | 9184 | 0.00 / 0.00 | 2.33 / 2.24 | 1.41 / 1.92 |
+| ours pass 1 [G] | 700-1300 | 37634 | 0.09 / 0.05 | 2.25 / 1.63 | 1.94 / 1.29 |
+| ours pass 1 [G] | > 1300 | 35171 | 0.17 / 0.00 | 1.01 / 0.73 | 0.71 / 0.90 |
+| ours pass 1 [G] | all | 82010 | 0.13 / 0.00 | 1.65 / 1.20 | 1.31 / 1.10 |
+| ours pass 1 [P] | 300-700 | 9279 | 0.00 / 0.00 | 2.27 / 2.33 | 1.41 / 1.98 |
+| ours pass 1 [P] | 700-1300 | 38288 | 0.06 / 0.02 | 2.29 / 1.67 | 1.99 / 1.31 |
+| ours pass 1 [P] | > 1300 | 35894 | 0.17 / 0.00 | 1.07 / 0.73 | 0.85 / 0.88 |
+| ours pass 1 [P] | all | 83481 | 0.13 / 0.00 | 1.71 / 1.22 | 1.38 / 1.11 |
+| ours pass 1 autoc [G] | 300-700 | 9185 | 0.00 / 0.00 | 2.36 / 2.27 | 1.46 / 1.80 |
+| ours pass 1 autoc [G] | 700-1300 | 37639 | 0.07 / 0.11 | 2.25 / 1.64 | 1.95 / 1.28 |
+| ours pass 1 autoc [G] | > 1300 | 35170 | 0.18 / 0.00 | 1.01 / 0.72 | 0.73 / 0.88 |
+| ours pass 1 autoc [G] | all | 82015 | 0.13 / 0.02 | 1.67 / 1.17 | 1.32 / 1.09 |
+| ours pass 1 autoc [P] | 300-700 | 9282 | 0.00 / 0.00 | 2.37 / 2.35 | 1.55 / 1.98 |
+| ours pass 1 autoc [P] | 700-1300 | 38328 | 0.04 / 0.09 | 2.30 / 1.67 | 2.02 / 1.31 |
+| ours pass 1 autoc [P] | > 1300 | 35905 | 0.19 / 0.00 | 1.08 / 0.69 | 0.83 / 0.87 |
+| ours pass 1 autoc [P] | all | 83535 | 0.12 / 0.03 | 1.72 / 1.20 | 1.38 / 1.10 |
+| ours pass 2 [G] | 300-700 | 9982 | 0.00 / 0.09 | 2.41 / 2.31 | 1.95 / 2.30 |
+| ours pass 2 [G] | 700-1300 | 40429 | 0.09 / 0.05 | 2.57 / 1.61 | 2.30 / 1.68 |
+| ours pass 2 [G] | > 1300 | 36762 | 0.22 / 0.05 | 1.41 / 1.01 | 1.01 / 1.05 |
+| ours pass 2 [G] | all | 87195 | 0.13 / 0.09 | 2.01 / 1.32 | 1.65 / 1.38 |
+| ours pass 2 [P] | 300-700 | 10140 | 0.00 / 0.06 | 2.64 / 2.27 | 2.16 / 2.38 |
+| ours pass 2 [P] | 700-1300 | 41167 | 0.09 / 0.06 | 2.56 / 1.60 | 2.31 / 1.69 |
+| ours pass 2 [P] | > 1300 | 37292 | 0.22 / 0.06 | 1.45 / 1.02 | 1.07 / 1.06 |
+| ours pass 2 [P] | all | 88622 | 0.12 / 0.09 | 2.05 / 1.31 | 1.69 / 1.39 |
+
+## M4 zcal (consecutive photon-disjoint windows w, w + 6 on the G6 rows, mutual nearest < 1 px; z by own sigma), per our-photon bin: zcal (|z| > 4 %). Repeatability only (critic 35 #4).
+  ours pass 1 [G]              200-400:1.05(0.2) 400-700:1.05(1.1) 700-1200:1.05(1.8) 1200-2000:1.06(2.2) 2000-4000:0.97(2.1) 4000-1000000000:0.79(1.3) 200-2000:1.05(2.0)
+  ours pass 1 [P]              200-400:1.03(0.2) 400-700:1.05(1.1) 700-1200:1.05(1.8) 1200-2000:1.06(2.3) 2000-4000:0.98(2.2) 4000-1000000000:0.80(1.3) 200-2000:1.06(2.0)
+  ours pass 1 autoc [G]        200-400:1.02(0.1) 400-700:1.01(0.9) 700-1200:0.94(1.2) 1200-2000:0.90(1.3) 2000-4000:0.86(1.5) 4000-1000000000:0.86(1.6) 200-2000:0.93(1.2)
+  ours pass 1 autoc [P]        200-400:1.02(0.1) 400-700:1.00(0.8) 700-1200:0.94(1.2) 1200-2000:0.91(1.3) 2000-4000:0.87(1.5) 4000-1000000000:0.87(1.6) 200-2000:0.93(1.2)
+  ours pass 2 [G]              200-400:1.01(0.4) 400-700:1.07(1.7) 700-1200:1.07(2.2) 1200-2000:1.05(1.9) 2000-4000:0.97(1.5) 4000-1000000000:0.89(1.3) 200-2000:1.06(2.0)
+  ours pass 2 [P]              200-400:1.06(0.4) 400-700:1.10(1.8) 700-1200:1.10(2.3) 1200-2000:1.06(2.0) 2000-4000:0.98(1.6) 4000-1000000000:0.90(1.4) 200-2000:1.08(2.1)

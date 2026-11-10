@@ -1,0 +1,6 @@
+{"name": "m05pd", "mode": "sim", "grid": 3, "gt": "sb_m05pd/sim_gt.npz", "reference": "SIMCODE (b)",
+ "_comment": "punctate sim (analysis/simreal/recipes.sh): ours = a simcode2.run output on the sim movie (pass2_est / pass2_est2), SIMCODE (b) = analysis/baselines/run_simcode.py <sim_dir> <out.npz> --model ni6_3 (0.5 nM-like) | L64_5 (2.5 nM-like) --cam paper --fix_sign 1, DECODE (valid.py only) = analysis/baselines/decode output npz (frame, x, y, sx, sy, phot, prob). spatial.py also reads true_field.pt next to the gt.",
+ "sets": {"ours p1":     {"kind": "ours", "dir": "ours_m05pd", "tag": "est"},
+          "ours p2L":    {"kind": "ours", "dir": "ours_m05pd", "tag": "est2"},
+          "SIMCODE (b)": {"kind": "simcode", "npz": "m05pd_ni6_3c3_paper_fix.npz"},
+          "DECODE":      {"kind": "decode", "npz": "m05pd_hd_sum6.npz", "baseline": true}}}

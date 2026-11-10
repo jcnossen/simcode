@@ -1,0 +1,65 @@
+{
+ "source": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660 (180000 frames): PSF/Zernike fields copied from calib_1809_2.json (originally calib_0.5nM); camera maps per movie; NO pattern (uncalibrated pipeline)",
+ "pixelsize_um": 0.10833,
+ "wavelength_um": 0.7,
+ "NA": 1.4900000095367432,
+ "n_imm": 1.518,
+ "n_med": 1.33,
+ "apod": [
+  0.0,
+  0.0,
+  0.0
+ ],
+ "zernike_noll": [
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21
+ ],
+ "zernike_waves": [
+  0.014039948582649231,
+  -0.05565023049712181,
+  -0.005982013884931803,
+  0.012341876514256,
+  0.0050261616706848145,
+  0.002382662845775485,
+  0.04117048159241676,
+  0.009722516871988773,
+  0.004876596387475729,
+  -0.016910359263420105,
+  0.002598212566226721,
+  0.006378159858286381,
+  -0.0026583706494420767,
+  0.007835390977561474,
+  0.001319121103733778,
+  0.003950533457100391,
+  0.004798754118382931
+ ],
+ "focus_um": 0.1127590760588646,
+ "camera": {
+  "gain_e_per_adu": 0.56,
+  "offset_adu": 99.3,
+  "readnoise_e": 0.9,
+  "note": "gain 0.56; offset map = loc-masked temporal median minus smooth of this movie (masked by baseline smlm.hdf5, frames 0-20000); read noise = 0.5 nM map shifted by the sensor ROI offset (dy,dx)=22,2 + high-passed own estimate where uncovered",
+  "maps": "camera_maps_2p5nM_m2.npz",
+  "sensor_shift_vs_0.5nM": [
+   22,
+   2
+  ]
+ },
+ "tirf_depth_um": 0.082,
+ "emitter_z_median_um": 0.055
+}

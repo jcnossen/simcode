@@ -1,0 +1,5 @@
+# m20qh: ours top-N by own sigma, N = SIMCODE W3 rows = 98535
+SIMCODE  recall 0.119 FPfrac 0.0000 FP/win 0.00 gross>50nm 0.26% | 200-2000 n 21183 rms 12.99 nm rms/C 2.26 | 2000-4000 n 56766 rms 10.12 nm rms/C 2.94 | 4000-1000000000 n 20355 rms 8.25 nm rms/C 3.42
+DECODE   recall 0.113 FPfrac 0.0278 FP/win 1.67 gross>50nm 0.66% | 200-2000 n 9252 rms 14.46 nm rms/C 2.70 | 2000-4000 n 62919 rms 9.38 nm rms/C 2.74 | 4000-1000000000 n 20988 rms 7.12 nm rms/C 2.94
+ours p1  recall 0.119 FPfrac 0.0000 FP/win 0.00 gross>50nm 0.08% | 200-2000 n 11397 rms 10.52 nm rms/C 1.97 | 2000-4000 n 65157 rms 7.40 nm rms/C 2.18 | 4000-1000000000 n 21792 rms 5.79 nm rms/C 2.39
+ours p2  recall 0.119 FPfrac 0.0000 FP/win 0.00 gross>50nm 0.01% | 200-2000 n 4549 rms 9.42 nm rms/C 1.75 | 2000-4000 n 64316 rms 7.04 nm rms/C 2.14 | 4000-1000000000 n 29551 rms 5.86 nm rms/C 2.43

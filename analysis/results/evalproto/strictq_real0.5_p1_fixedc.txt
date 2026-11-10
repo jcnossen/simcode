@@ -1,0 +1,6 @@
+# real 0.5 nM, pass 1, fixed c: ours <out>/full_0.5nM_sc5nb_bright_real (est), grid G3; SIMCODE <out>/drift/simcode_real/sc_b.npz: 397842 rows, 42593 occupied 20-nm bins
+| mode | sigma_ref (nm) | q (all rows) | strict rows on grid | occupied bins | bins / SIMCODE |
+|---|---|---|---|---|---|
+| density rho 0.488 | - | 0.275 | 572169 | 42044 | 0.987 |
+| sigma_ref | 7.0 | 0.279 | 581341 | 42350 | 0.994 |
+coverage-matched on G3: global sigma_cov = 7.02 nm (N 818550), per-tile q_cov = 0.283 (N 589307); ours good rows on grid 2080595, 91509 bins

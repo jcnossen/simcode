@@ -1,0 +1,23 @@
+# <out>/sb_m25qh: gross (> 50 nm, % of matched) and d <= 1 px merged fractions; W3 windows, 1 px matching on detection points
+
+== gross > 50 nm, own matched targets: p1 | p2L | SC_net | SC_mrg_fix
+     200-700 p1 16.90% (n 11506) | p2L 12.31% (n 13482) | SC_net 32.32% (n 1782) | SC_mrg_fix  4.11% (n 73)
+    700-2000 p1  3.16% (n 208131) | p2L  1.72% (n 218122) | SC_net 10.65% (n 105114) | SC_mrg_fix  0.20% (n 21373)
+   2000-4000 p1  0.73% (n 152548) | p2L  0.28% (n 154015) | SC_net  2.56% (n 106778) | SC_mrg_fix  0.06% (n 41878)
+  4000-1000000000 p1  0.25% (n 26000) | p2L  0.15% (n 26002) | SC_net  0.75% (n 20332) | SC_mrg_fix  0.02% (n 11384)
+    200-2000 p1  3.88% (n 219637) | p2L  2.33% (n 231604) | SC_net 11.01% (n 106896) | SC_mrg_fix  0.21% (n 21446)
+  200-1000000000 p1  2.44% (n 398185) | p2L  1.43% (n 411621) | SC_net  6.26% (n 234006) | SC_mrg_fix  0.10% (n 74708)
+
+== gross > 50 nm, PAIRED (targets matched by all methods)
+     200-700 n     50 p1  4.00% | p2L  2.00% | SC_net  6.00% | SC_mrg_fix  6.00%
+    700-2000 n  20621 p1  0.13% | p2L  0.07% | SC_net  0.18% | SC_mrg_fix  0.16%
+   2000-4000 n  41199 p1  0.04% | p2L  0.02% | SC_net  0.03% | SC_mrg_fix  0.04%
+  4000-1000000000 n  11299 p1  0.01% | p2L  0.02% | SC_net  0.00% | SC_mrg_fix  0.01%
+    200-2000 n  20671 p1  0.14% | p2L  0.07% | SC_net  0.20% | SC_mrg_fix  0.17%
+  200-1000000000 n  73169 p1  0.06% | p2L  0.04% | SC_net  0.07% | SC_mrg_fix  0.07%
+
+== targets >= 200 label ph by nearest-GT-neighbour distance d (px): matched / merged / undetected fractions
+  d    0-0.5 n  19239 p1 0.512/0.454/0.034 | p2L 0.506/0.465/0.029 | SC_net 0.336/0.329/0.335 | SC_mrg_fix 0.157/0.155/0.688
+  d  0.5-1.0 n  31853 p1 0.581/0.390/0.028 | p2L 0.633/0.348/0.019 | SC_net 0.319/0.303/0.378 | SC_mrg_fix 0.089/0.085/0.826
+  d    0-1.0 n  51092 p1 0.555/0.415/0.030 | p2L 0.585/0.392/0.023 | SC_net 0.325/0.313/0.362 | SC_mrg_fix 0.114/0.112/0.774
+  d  1.0-1.5 n  41653 p1 0.758/0.222/0.020 | p2L 0.869/0.120/0.011 | SC_net 0.297/0.244/0.459 | SC_mrg_fix 0.051/0.042/0.907

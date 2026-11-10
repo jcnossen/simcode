@@ -1,0 +1,14 @@
+{
+ "SIMCODE published (sfhd-ndi.hdf5)": {
+  "n_all": 1077778,
+  "frc_all": 24.9895178197065,
+  "n_grid": 701122,
+  "frc_grid": 25.361702127659573
+ },
+ "SIMCODE (b), sign-fixed": {
+  "n_all": 1311137,
+  "frc_all": 24.93723849372385,
+  "n_grid": 855097,
+  "frc_grid": 24.781704781704782
+ }
+}

@@ -1,0 +1,47 @@
+# <out>/sb_m25qh | CRLB_ref gate rs25pm | event-block bootstrap (400) 95 % CIs | label-photon bins
+
+== matched n per bin (vs GT) and recall: ours | SC_net | SC_mrg_fix | SC_mrg_mapGT
+     200-400 targets   4341 | ours n    568 rec 0.131 | SC_net n     56 rec 0.013 | SC_mrg_fix n      4 rec 0.001 | SC_mrg_mapGT n      5 rec 0.001
+     400-700 targets  22801 | ours n  12914 rec 0.566 | SC_net n   1726 rec 0.076 | SC_mrg_fix n     69 rec 0.003 | SC_mrg_mapGT n     59 rec 0.003
+    700-1200 targets  81445 | ours n  70130 rec 0.861 | SC_net n  23948 rec 0.294 | SC_mrg_fix n   2767 rec 0.034 | SC_mrg_mapGT n   2786 rec 0.034
+   1200-2000 targets 157325 | ours n 147992 rec 0.941 | SC_net n  81166 rec 0.516 | SC_mrg_fix n  18606 rec 0.118 | SC_mrg_mapGT n  21580 rec 0.137
+   2000-4000 targets 158694 | ours n 154015 rec 0.971 | SC_net n 106778 rec 0.673 | SC_mrg_fix n  41878 rec 0.264 | SC_mrg_mapGT n  48164 rec 0.304
+       >4000 targets  26342 | ours n  26002 rec 0.987 | SC_net n  20332 rec 0.772 | SC_mrg_fix n  11384 rec 0.432 | SC_mrg_mapGT n  12914 rec 0.490
+    200-2000 targets 265912 | ours n 231604 rec 0.871 | SC_net n 106896 rec 0.402 | SC_mrg_fix n  21446 rec 0.081 | SC_mrg_mapGT n  24430 rec 0.092
+
+== ours: zcal (1.4826 med |e / s_cal|) / gross |e| > 4 s (%) per bin, 95 % CI
+  ours         200-400 n    568 zcal 1.16 [1.02, 1.27] gross  7.22 % [4.91, 10.01]
+  ours         400-700 n  12914 zcal 1.11 [1.09, 1.14] gross  3.07 % [2.72, 3.41]
+  ours        700-1200 n  70130 zcal 1.10 [1.09, 1.11] gross  1.95 % [1.77, 2.11]
+  ours       1200-2000 n 147992 zcal 1.09 [1.08, 1.09] gross  1.05 % [0.96, 1.12]
+  ours       2000-4000 n 154015 zcal 1.02 [1.01, 1.03] gross  0.69 % [0.61, 0.78]
+  ours           >4000 n  26002 zcal 0.95 [0.93, 0.97] gross  0.33 % [0.25, 0.44]
+  ours         200-400 n    568 zcal 1.16 [1.02, 1.27] gross  7.22 % [4.91, 10.01]
+  ours         400-700 n  12914 zcal 1.11 [1.09, 1.14] gross  3.07 % [2.72, 3.41]
+  ours        700-1200 n  70130 zcal 1.10 [1.09, 1.11] gross  1.95 % [1.77, 2.11]
+  ours       1200-2000 n 147992 zcal 1.09 [1.08, 1.09] gross  1.05 % [0.96, 1.12]
+  ours       2000-4000 n 154015 zcal 1.02 [1.01, 1.03] gross  0.69 % [0.61, 0.78]
+  ours           >4000 n  26002 zcal 0.95 [0.93, 0.97] gross  0.33 % [0.25, 0.44]
+
+== SC_mrg_fix vs ours: PAIRED (primary; same targets) | matched recall (n = SIMCODE matched; ours top-n by sigma_cal sqrt(q))
+         bin      n            SIMCODE               ours              ours - SC ||      n            SIMCODE               ours              ours - SC
+     200-700     53   1.42 [1.09,1.77]   1.19 [0.99,1.43] -0.229 [-0.416,-0.048] ||     73   1.46 [1.15,1.75]   0.90 [0.62,1.19] -0.554 [-0.930,-0.203]
+    700-2000  20808   1.92 [1.90,1.95]   1.65 [1.63,1.68] -0.269 [-0.284,-0.252] ||  21373   1.96 [1.94,1.99]   1.62 [1.59,1.64] -0.347 [-0.373,-0.321]
+   2000-4000  41400   2.52 [2.48,2.55]   2.05 [2.03,2.08] -0.462 [-0.483,-0.434] ||  41878   2.56 [2.53,2.60]   1.92 [1.89,1.94] -0.647 [-0.677,-0.613]
+       >4000  11333   3.10 [3.00,3.21]   2.36 [2.28,2.45] -0.742 [-0.836,-0.644] ||  11384   3.12 [3.02,3.23]   2.24 [2.17,2.31] -0.881 [-0.984,-0.781]
+    200-2000  20861   1.92 [1.89,1.94]   1.65 [1.63,1.67] -0.269 [-0.283,-0.251] ||  21446   1.95 [1.93,1.98]   1.61 [1.58,1.63] -0.345 [-0.373,-0.319]
+
+== SC_mrg_mapGT vs ours: PAIRED (primary; same targets) | matched recall (n = SIMCODE matched; ours top-n by sigma_cal sqrt(q))
+         bin      n            SIMCODE               ours              ours - SC ||      n            SIMCODE               ours              ours - SC
+     200-700     39   1.50 [1.03,1.96]   1.26 [0.83,1.69] -0.246 [-0.487,-0.079] ||     64   1.52 [1.21,1.80]   0.89 [0.52,1.20] -0.634 [-1.071,-0.252]
+    700-2000  23633   1.97 [1.94,1.99]   1.71 [1.69,1.73] -0.254 [-0.273,-0.235] ||  24366   2.02 [1.99,2.05]   1.62 [1.60,1.64] -0.399 [-0.428,-0.374]
+   2000-4000  47486   2.50 [2.46,2.54]   2.12 [2.08,2.15] -0.386 [-0.413,-0.356] ||  48164   2.56 [2.52,2.60]   1.93 [1.91,1.96] -0.628 [-0.663,-0.591]
+       >4000  12844   3.01 [2.90,3.10]   2.44 [2.35,2.53] -0.568 [-0.643,-0.480] ||  12914   3.03 [2.92,3.12]   2.27 [2.20,2.33] -0.763 [-0.851,-0.667]
+    200-2000  23672   1.96 [1.93,1.99]   1.71 [1.69,1.73] -0.254 [-0.273,-0.235] ||  24430   2.01 [1.98,2.04]   1.61 [1.59,1.64] -0.400 [-0.430,-0.373]
+
+== matched-FP curve (targets >= 200 label ph; FP = unmatched W3 outputs)
+  ours (by detection p): p>0.95: rec 0.055 FPf 0.0000; p>0.90: rec 0.198 FPf 0.0000; p>0.80: rec 0.448 FPf 0.0000; p>0.70: rec 0.674 FPf 0.0007; p>0.63: rec 0.823 FPf 0.0026; p>0.50: rec 0.913 FPf 0.0203;
+  ours recall at FP fraction: 0.001:0.716 0.002:0.800 0.005:0.869 0.007:0.888 0.010:0.897 0.015:0.907 0.020:0.913 0.030:0.913
+  SC_net (by its photons): recall at FP fraction: 0.001:0.168 0.002:0.272 0.005:0.433 0.007:0.504 0.010:0.519 0.015:0.519 0.020:0.519 0.030:0.519 | all: recall 0.519 FPf 0.0080
+  SC_mrg_fix: recall 0.166 FP 13 | ours at FP <= 13: 0.464
+  SC_mrg_mapGT: recall 0.190 FP 10 | ours at FP <= 10: 0.461

@@ -1,0 +1,192 @@
+{
+ "gpu": "NVIDIA GeForce RTX 3090",
+ "frames": 6000,
+ "orig_pass1": {
+  "read": 0.744,
+  "detector": 2.416,
+  "head": 9.404,
+  "wall": 12.72,
+  "peak_gb": 2.12,
+  "n_det": 267403,
+  "n_out": 238169
+ },
+ "orig_solve": {
+  "solve": 29.649,
+  "wall": 29.655,
+  "peak_gb": 0.68
+ },
+ "orig_pass2": {
+  "read": 0.745,
+  "detector": 2.544,
+  "head": 10.101,
+  "solve": 32.646,
+  "wall": 46.257,
+  "peak_gb": 2.25,
+  "n": 247349
+ },
+ "fast_pass1": {
+  "read": 0.741,
+  "detector": 2.093,
+  "head": 9.207,
+  "wall": 12.281,
+  "peak_gb": 4.18,
+  "n_det": 267403,
+  "n_out": 238172,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "fast_solve": {
+  "solve": 2.403,
+  "wall": 2.41,
+  "peak_gb": 0.41
+ },
+ "fast_pass2": {
+  "read": 0.747,
+  "detector": 2.17,
+  "head": 10.084,
+  "solve": 2.292,
+  "wall": 15.485,
+  "peak_gb": 4.31,
+  "n": 247356
+ },
+ "fastc_pass1": {
+  "read": 0.767,
+  "detector": 2.088,
+  "head": 9.21,
+  "wall": 12.269,
+  "peak_gb": 4.23,
+  "n_det": 267403,
+  "n_out": 238172,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "fastc_solve": {
+  "solve": 1.602,
+  "wall": 1.609,
+  "peak_gb": 0.38
+ },
+ "fastc_pass2": {
+  "read": 0.757,
+  "detector": 2.172,
+  "head": 10.072,
+  "solve": 1.373,
+  "wall": 14.573,
+  "peak_gb": 4.33,
+  "n": 247356
+ },
+ "head_hb4096": {
+  "read": 0.742,
+  "detector": 2.099,
+  "head": 9.234,
+  "wall": 12.284,
+  "peak_gb": 4.26,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "head_hb8192": {
+  "read": 0.759,
+  "detector": 2.111,
+  "head": 9.463,
+  "wall": 12.602,
+  "peak_gb": 7.19,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477758407592773,
+   "dI_med": 0.07696533203125
+  }
+ },
+ "head_hb2048": {
+  "read": 0.753,
+  "detector": 2.086,
+  "head": 9.299,
+  "wall": 12.31,
+  "peak_gb": 2.81,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.002887725830078125,
+   "dx_med": 0.0,
+   "dI_max": 1.313720703125,
+   "dI_med": 1.52587890625e-05
+  }
+ },
+ "head_det128": {
+  "read": 0.751,
+  "detector": 2.351,
+  "head": 10.532,
+  "wall": 13.869,
+  "peak_gb": 4.33,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "head_nostreams": {
+  "read": 0.75,
+  "detector": 3.347,
+  "head": 14.772,
+  "wall": 19.033,
+  "peak_gb": 4.28,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "head_cudnn_benchmark": {
+  "read": 0.804,
+  "detector": 4.627,
+  "head": 20.119,
+  "wall": 25.735,
+  "peak_gb": 4.29,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696723937988281
+  }
+ },
+ "head_channels_last": {
+  "read": 0.792,
+  "detector": 3.713,
+  "head": 16.224,
+  "wall": 20.966,
+  "peak_gb": 4.61,
+  "frames": 6000,
+  "vs_orig": {
+   "same_list": true,
+   "dx_max": 0.0030517578125,
+   "dx_med": 0.00017547607421875,
+   "dI_max": 1.4477548599243164,
+   "dI_med": 0.07696914672851562
+  }
+ }
+}

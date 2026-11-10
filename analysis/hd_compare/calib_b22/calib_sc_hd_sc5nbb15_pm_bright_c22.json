@@ -1,0 +1,85 @@
+{
+ "kap_p": 0.8945592641830444,
+ "kap_I2": 0.7926290588403049,
+ "sig_a": 1.4126241928985401,
+ "sig_g": 0.41589644697367406,
+ "n": 32239,
+ "sig_fit_with": {
+  "kap_p": 0.8945592641830444,
+  "kap_I2": 0.7926290588403049
+ },
+ "kap_p_raw": 0.8945196270942688,
+ "kap_I2_raw": 0.7926039058284609,
+ "box": 1.5,
+ "ms_xdet": false,
+ "mix": "pm",
+ "mix_T": 1.0,
+ "note": "2026-11-09 bright-regime calibration (<out>/bright/fit_cal.py): base calib_sc_hd_sc5nbb15.json + fringe-start posterior mean / mi...; nuisance Sigma {'cmult': 0.1, 'cmult_ang': 0.1}; per-network-photon-bin kap_p / kap_I2 / sigma factor fitted on the tuning seed 202 of ['rs05qm', 'rs25qm', 'rs05pm']",
+ "cmult": 0.22,
+ "cmult_ang": 0.1,
+ "kap_bins": {
+  "ph": [
+   270.3898620605469,
+   400.2667236328125,
+   644.213134765625,
+   988.0208740234375,
+   1536.6240234375,
+   2358.29931640625,
+   3565.533203125,
+   5604.91162109375
+  ],
+  "kap_p": [
+   0.9902076171831108,
+   0.9929952479768989,
+   0.9180120647791445,
+   0.9483125555977812,
+   0.9400056159459206,
+   0.9548144492073322,
+   0.9854642888228474,
+   1.0523967566375265
+  ],
+  "kap_I2": [
+   0.9208443459397451,
+   1.021513259705685,
+   0.9968446389303978,
+   0.9551269174314179,
+   0.8591095214535791,
+   0.8402449226941968,
+   0.8452142280423267,
+   1.1036059266732678
+  ]
+ },
+ "sig_ph": {
+  "ph": [
+   270.3898620605469,
+   400.2667236328125,
+   644.213134765625,
+   988.0208740234375,
+   1536.6240234375,
+   2358.29931640625,
+   3565.533203125,
+   5604.91162109375
+  ],
+  "f": [
+   0.8191555738449097,
+   0.834104597568512,
+   0.8739484548568726,
+   0.9159147143363953,
+   0.89947509765625,
+   0.9123691320419312,
+   0.9359751343727112,
+   1.0581852197647095
+  ]
+ },
+ "fit_scenes": [
+  "rs05qm",
+  "rs25qm",
+  "rs05pm"
+ ],
+ "prior_off": [
+  0.010708021785285701,
+  -0.006646358349487676
+ ],
+ "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+ "note_c22": "2026-11-09 simcode_base2: = calib_sc_hd_sc5nbb15_pm_bright.json with cmult (per-frame diagonal multiplicative nuisance) 0.10 -> 0.22 = measured real c_total (realism/c_calib.txt: 0.21 [0.18, 0.29] 0.5 nM, 0.24 [0.20, 0.33] 1809_2; the within-angle modulation-ratio statistic measures the per-frame-independent part, which is what cmult models); cmult_ang 0.10 unchanged (not measured); per-bin kap / sig_ph factors unchanged (fitted with cmult 0.10 -> check zcal)"
+}

@@ -1,0 +1,18 @@
+{
+ "kap_p": 0.8945592641830444,
+ "kap_I2": 0.7926290588403049,
+ "sig_a": 1.4126241928985401,
+ "sig_g": 0.41589644697367406,
+ "n": 32239,
+ "sig_fit_with": {
+  "kap_p": 0.8945592641830444,
+  "kap_I2": 0.7926290588403049
+ },
+ "kap_p_raw": 0.8945196270942688,
+ "kap_I2_raw": 0.7926039058284609,
+ "box": 1.5,
+ "ms_xdet": false,
+ "mix": "pm",
+ "mix_T": 1.0,
+ "note": "calib_sc_hd_sc5nbb15.json + fringe-start posterior mean / mixture sigma (PM, T = 1; as calib_sc_hd_sc5nb15_pm.json for sc5n, sigma calibration not refitted; iteration 32, no training)"
+}

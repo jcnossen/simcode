@@ -1,0 +1,20 @@
+{
+ "default_None": {
+  "info_mode": "density",
+  "q": 0.1,
+  "n": 637090,
+  "bins": 37089,
+  "ratio": 1.0125030711692282
+ },
+ "sigma_ref_7.4": {
+  "info_mode": "sigma_ref",
+  "q": 0.09351436075574007,
+  "n": 595704,
+  "bins": 35893,
+  "ratio": 0.9798531298626846
+ },
+ "name": "real 20 nM, pass 2 (p2L)",
+ "sc_bins": 36631,
+ "sigma_cov": 7.368480803221464,
+ "q_cov": 0.09914157131783842
+}

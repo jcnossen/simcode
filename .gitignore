@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.egg-info/
+simcode2_out/
+simcode2.json
+runs/
+*.tif
+out/

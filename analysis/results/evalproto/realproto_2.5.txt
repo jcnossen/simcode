@@ -1,0 +1,25 @@
+# real 2.5 nM, grid G3; rows: SIMCODE 855097; ours p1 7411174, ours p2L 14380930
+
+## identical rows vs SIMCODE (same windows): FRC (nm), NN = doubly-shared consecutive-window proxy (nm / axis), revisit proxy
+| method | n | FRC std A / SC | adj300 A / SC | gap300 A / SC | gap600 A / SC | NN doubly-shared A / SC (n) | NN12 doubly-shared A / SC (n) | revisit A / SC | rev static A / SC |
+|---|---|---|---|---|---|---|---|---|---|
+| ours p1 | 638696 | 22.84 / 24.78 | 27.66 / 28.99 | 29.74 / 30.09 | 33.44 / 34.32 | 6.25 / 6.55 (128509) | 6.65 / 6.75 (113095) | 7.25 / 7.18 | 5.96 / 5.80 |
+| ours p2L | 796224 | 22.92 / 24.68 | 26.73 / 28.16 | 29.31 / 30.05 | 32.37 / 33.87 | 6.40 / 6.60 (163502) | 6.75 / 6.95 (144559) | 7.00 / 7.07 | 5.58 / 5.57 |
+
+## sensitivity: ours p1 identical rows + injected noise (iid per row / static per linked G3 event)
+| injection | std | adj300 | gap300 | gap600 | nn | nn12 | rev | rev_st |
+|---|---|---|---|---|---|---|---|---|
+| none | 22.84 | 27.66 | 29.74 | 33.44 | 6.25 | 6.65 | 7.25 | 5.96 |
+| iid +3 nm | 24.46 | 29.21 | 31.17 | 35.16 | 7.15 | 7.30 | 7.11 | 5.31 |
+| iid +6 nm | 29.30 | 33.90 | 35.63 | 38.13 | 8.80 | 9.15 | 7.35 | 4.52 |
+| event +3 nm | 24.65 | 29.41 | 31.44 | 35.10 | 6.60 | 7.20 | 7.25 | 5.79 |
+| event +6 nm | 31.34 | 35.27 | 37.06 | 38.97 | 7.35 | 8.60 | 7.50 | 5.72 |
+
+## pools (selection level): random N = N_SC and photon-matched (own photons / kappa from the identical pairs, 200-3000 SC ph)
+| method | pool | N | std | adj300 | gap300 | gap600 | nn | nn12 | rev | rev_st |
+|---|---|---|---|---|---|---|---|---|---|---|
+| SIMCODE | all | 855097 | 24.78 | 28.35 | 30.30 | 33.87 | 6.70 | 7.10 | 7.04 | 5.47 |
+| ours p1 | random | 855097 | 30.49 | 36.01 | 36.29 | 38.96 | 8.60 | 9.00 | 8.73 | 6.35 |
+| ours p1 | photon-matched | 855097 | 27.15 | 31.09 | 32.93 | 35.92 | 7.45 | 7.90 | 8.45 | 6.72 |
+| ours p2L | random | 855097 | 32.84 | 37.25 | 37.93 | 40.82 | 9.20 | 9.55 | 8.84 | 6.04 |
+| ours p2L | photon-matched | 855097 | 26.91 | 30.81 | 32.90 | 35.98 | 7.35 | 7.65 | 8.34 | 6.63 |

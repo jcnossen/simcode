@@ -1,0 +1,7 @@
+# real 0.5: grid G3; NN = doubly-shared, identical rows (exact start, mutual nearest < 0.5 px); lags (12, 18, 24, 30, 36); sigma grid 0.01 nm; CI = event-block Poisson bootstrap (200, events = linked G3 events of the method rows)
+| method | identical rows | NN ours | NN SC | ratio (mean over lags) | 95 % CI | uniform w ours / SC | quadrature SC excess (nm) |
+|---|---|---|---|---|---|---|---|
+| ours p1 | 353703 | 5.21 | 5.60 | **0.930** | 0.927–0.932 | 0.028 / 0.024 | 2.06 |
+    per lag: 12: 5.08/5.47 = 0.929 (n 109281); 18: 5.13/5.52 = 0.929 (n 100252); 24: 5.20/5.59 = 0.930 (n 92812); 30: 5.29/5.67 = 0.933 (n 85924); 36: 5.33/5.75 = 0.927 (n 79766)
+| ours p2L | 379773 | 5.33 | 5.66 | **0.942** | 0.940–0.944 | 0.026 / 0.025 | 1.89 |
+    per lag: 12: 5.20/5.50 = 0.945 (n 119222); 18: 5.25/5.59 = 0.939 (n 109368); 24: 5.36/5.67 = 0.945 (n 101261); 30: 5.40/5.73 = 0.942 (n 93845); 36: 5.46/5.81 = 0.940 (n 87119)

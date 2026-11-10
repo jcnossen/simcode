@@ -1,0 +1,5 @@
+# real 0.5 nM: FRC std (nm), own DME v2 drift, 5-115 px crop, alternating 300-frame halves, 1/7
+| set | rows all (crop) | FRC all rows | rows G3 (crop) | FRC G3 |
+|---|---|---|---|---|
+| SIMCODE published (sfhd-ndi.hdf5) | 463005 | 19.26 | 310577 | 18.86 |
+| SIMCODE (b), sign-fixed | 593980 | 18.25 | 397842 | 17.74 |

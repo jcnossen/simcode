@@ -1,0 +1,115 @@
+## 1. DME v2 choice and realcheck2 split-half held-out error (half-data, nm; bands 2-100 / 100-500 / 500-5000 / >5000; rss<5000)
+ours disjoint p>=0.63          chosen ('smooth', 1722, 12)  full-data ptp x/y [ 43. 149.] nm  time 57 s
+    ref grid_fpb10 DME v2        [0.47 1.15 1.15 0.68]  rss<5000  1.70
+    ref grid_fpb10 grid_rule     [0.46 1.46 3.21 0.74]  rss<5000  3.55
+    ref grid_fpb10 grid_fpb200   [0.46 1.37 1.22 0.66]  rss<5000  1.89
+    ref grid_fpb10 grid_fpb50    [0.49 1.   1.23 0.66]  rss<5000  1.66
+    ref grid_fpb10 exact_fpb200  [0.46 1.37 1.22 0.66]  rss<5000  1.89
+    ref grid_fpb10 exact_fpb50   [0.49 1.   1.23 0.66]  rss<5000  1.66
+    ref grid_fpb10 grid_fpb20    [0.87 1.02 1.23 0.66]  rss<5000  1.82
+    ref grid_fpb20 DME v2        [0.44 1.15 1.15 0.68]  rss<5000  1.69
+    ref grid_fpb20 grid_rule     [0.44 1.46 3.21 0.74]  rss<5000  3.55
+    ref grid_fpb20 grid_fpb200   [0.44 1.37 1.22 0.66]  rss<5000  1.89
+    ref grid_fpb20 grid_fpb50    [0.47 1.   1.23 0.66]  rss<5000  1.65
+    ref grid_fpb20 exact_fpb200  [0.44 1.37 1.22 0.66]  rss<5000  1.89
+    ref grid_fpb20 exact_fpb50   [0.47 1.   1.23 0.66]  rss<5000  1.65
+    ref grid_fpb20 grid_fpb10    [1.34 1.03 1.24 0.66]  rss<5000  2.09
+ours stride-3 p>=0.63          chosen ('smooth', 862, 24)  full-data ptp x/y [ 43.9 149.7] nm  time 60 s
+    ref grid_fpb10 DME v2        [0.44 0.87 1.16 0.69]  rss<5000  1.52
+    ref grid_fpb10 grid_rule     [0.46 1.46 2.99 0.69]  rss<5000  3.36
+    ref grid_fpb10 grid_fpb200   [0.46 1.37 1.19 0.65]  rss<5000  1.87
+    ref grid_fpb10 grid_fpb50    [0.48 0.96 1.2  0.65]  rss<5000  1.61
+    ref grid_fpb10 exact_fpb200  [0.46 1.37 1.19 0.65]  rss<5000  1.87
+    ref grid_fpb10 exact_fpb50   [0.48 0.96 1.2  0.65]  rss<5000  1.61
+    ref grid_fpb10 grid_fpb20    [0.77 0.98 1.2  0.65]  rss<5000  1.73
+    ref grid_fpb20 DME v2        [0.42 0.87 1.16 0.69]  rss<5000  1.51
+    ref grid_fpb20 grid_rule     [0.44 1.46 2.99 0.69]  rss<5000  3.35
+    ref grid_fpb20 grid_fpb200   [0.44 1.37 1.19 0.65]  rss<5000  1.87
+    ref grid_fpb20 grid_fpb50    [0.47 0.96 1.2  0.65]  rss<5000  1.61
+    ref grid_fpb20 exact_fpb200  [0.44 1.37 1.19 0.65]  rss<5000  1.87
+    ref grid_fpb20 exact_fpb50   [0.47 0.96 1.2  0.65]  rss<5000  1.61
+    ref grid_fpb20 grid_fpb10    [1.15 0.98 1.2  0.65]  rss<5000  1.93
+SIMCODE published sfhd-ndi     chosen ('smooth', 200, 48)  full-data ptp x/y [ 59.6 112.4] nm  time 78 s
+    ref grid_fpb10 DME v2        [0.62 1.2  1.74 1.1 ]  rss<5000  2.20
+    ref grid_fpb10 grid_rule     [0.64 1.41 3.35 1.16]  rss<5000  3.69
+    ref grid_fpb10 grid_fpb200   [0.61 1.44 2.   1.12]  rss<5000  2.54
+    ref grid_fpb10 grid_fpb50    [0.81 1.91 2.01 1.11]  rss<5000  2.89
+    ref grid_fpb10 exact_fpb200  [0.61 1.44 2.   1.12]  rss<5000  2.54
+    ref grid_fpb10 exact_fpb50   [0.81 1.92 2.01 1.11]  rss<5000  2.89
+    ref grid_fpb10 grid_fpb20    [2.08 2.13 2.09 1.16]  rss<5000  3.63
+    ref grid_fpb20 DME v2        [0.5  1.28 1.74 1.11]  rss<5000  2.22
+    ref grid_fpb20 grid_rule     [0.49 1.49 3.36 1.17]  rss<5000  3.71
+    ref grid_fpb20 grid_fpb200   [0.5  1.52 2.01 1.12]  rss<5000  2.56
+    ref grid_fpb20 grid_fpb50    [0.67 1.91 2.02 1.11]  rss<5000  2.86
+    ref grid_fpb20 exact_fpb200  [0.5  1.52 2.01 1.13]  rss<5000  2.57
+    ref grid_fpb20 exact_fpb50   [0.68 1.92 2.02 1.11]  rss<5000  2.87
+    ref grid_fpb20 grid_fpb10    [3.54 2.41 2.2  1.18]  rss<5000  4.82
+SIMCODE rerun (a) paper sign   chosen ('smooth', 200, 48)  full-data ptp x/y [ 58.9 112.7] nm  time 50 s
+    ref grid_fpb10 DME v2        [0.58 1.15 1.76 1.13]  rss<5000  2.18
+    ref grid_fpb10 grid_rule     [0.6  1.42 3.34 1.18]  rss<5000  3.68
+    ref grid_fpb10 grid_fpb200   [0.57 1.45 2.   1.14]  rss<5000  2.54
+    ref grid_fpb10 grid_fpb50    [0.75 1.91 2.05 1.13]  rss<5000  2.90
+    ref grid_fpb10 exact_fpb200  [0.57 1.46 2.   1.14]  rss<5000  2.54
+    ref grid_fpb10 exact_fpb50   [0.75 1.9  2.01 1.14]  rss<5000  2.86
+    ref grid_fpb10 grid_fpb20    [2.09 2.13 2.09 1.17]  rss<5000  3.64
+    ref grid_fpb20 DME v2        [0.51 1.2  1.76 1.13]  rss<5000  2.19
+    ref grid_fpb20 grid_rule     [0.51 1.47 3.35 1.19]  rss<5000  3.70
+    ref grid_fpb20 grid_fpb200   [0.51 1.5  2.01 1.14]  rss<5000  2.56
+    ref grid_fpb20 grid_fpb50    [0.69 1.91 2.05 1.14]  rss<5000  2.89
+    ref grid_fpb20 exact_fpb200  [0.51 1.5  2.01 1.14]  rss<5000  2.56
+    ref grid_fpb20 exact_fpb50   [0.68 1.91 2.01 1.14]  rss<5000  2.86
+    ref grid_fpb20 grid_fpb10    [3.53 2.38 2.2  1.16]  rss<5000  4.79
+SIMCODE rerun (b) sign fixed   chosen ('smooth', 2000, 48)  full-data ptp x/y [ 40.4 147. ] nm  time 63 s
+    ref grid_fpb10 DME v2        [0.48 1.15 1.62 1.02]  rss<5000  2.04
+    ref grid_fpb10 grid_rule     [0.48 1.42 3.46 1.1 ]  rss<5000  3.77
+    ref grid_fpb10 grid_fpb200   [0.48 1.41 1.84 1.  ]  rss<5000  2.37
+    ref grid_fpb10 grid_fpb50    [0.62 1.64 1.88 0.97]  rss<5000  2.57
+    ref grid_fpb10 exact_fpb200  [0.48 1.41 1.85 1.  ]  rss<5000  2.37
+    ref grid_fpb10 exact_fpb50   [0.62 1.64 1.87 0.98]  rss<5000  2.57
+    ref grid_fpb10 grid_fpb20    [1.5  1.73 1.88 0.99]  rss<5000  2.96
+    ref grid_fpb20 DME v2        [0.41 1.15 1.61 1.02]  rss<5000  2.02
+    ref grid_fpb20 grid_rule     [0.4  1.42 3.45 1.1 ]  rss<5000  3.75
+    ref grid_fpb20 grid_fpb200   [0.4  1.42 1.85 1.  ]  rss<5000  2.36
+    ref grid_fpb20 grid_fpb50    [0.56 1.64 1.87 0.98]  rss<5000  2.55
+    ref grid_fpb20 exact_fpb200  [0.4  1.42 1.85 1.  ]  rss<5000  2.36
+    ref grid_fpb20 exact_fpb50   [0.56 1.64 1.87 0.98]  rss<5000  2.55
+    ref grid_fpb20 grid_fpb10    [2.39 1.82 1.92 1.02]  rss<5000  3.56
+
+## 2. drift difference (DME v2, mean removed), rms per axis x/y and per band (axis-avg) [<100, 100-500, 500-5000, >5000]
+  ours disjoint p>=0.63    - SIMCODE published sfhd-ndi    : rms [ 8.13 11.68] nm  bands [0.35 0.9  3.98 9.19]
+  ours disjoint p>=0.63    - SIMCODE rerun (a) paper sign  : rms [ 8.12 11.71] nm  bands [0.35 0.91 3.99 9.2 ]
+  ours disjoint p>=0.63    - SIMCODE rerun (b) sign fixed  : rms [1.67 1.56] nm  bands [0.2  0.63 1.27 0.74]
+  ours disjoint p>=0.63    - ours stride-3 p>=0.63         : rms [0.46 0.46] nm  bands [0.15 0.37 0.21 0.08]
+  SIMCODE rerun (a) paper sign - SIMCODE published sfhd-ndi    : rms [0.19 0.18] nm  bands [0.02 0.1  0.14 0.06]
+  SIMCODE rerun (a) paper sign - SIMCODE rerun (b) sign fixed  : rms [ 8.56 11.4 ] nm  bands [0.3  0.81 4.23 9.11]
+  ours stride-3 p>=0.63    - SIMCODE rerun (b) sign fixed  : rms [1.71 1.6 ] nm  bands [0.23 0.75 1.26 0.74]
+
+## 3. DME v2 vs exact DME at fixed fpb (drift_*_fpb*.npy from dme_full05.py), rms difference x/y nm
+  ours disjoint p>=0.63          vs exact fpb  200: rms [0.98 1.11]  bands [0.18 0.97 0.31 0.14]
+  ours disjoint p>=0.63          vs exact fpb   50: rms [0.72 0.73]  bands [0.28 0.59 0.29 0.13]
+  ours disjoint p>=0.63          vs exact fpb   10: rms [1.14 1.16]  bands [0.91 0.62 0.29 0.13]
+  ours disjoint p>=0.63          vs exact fpb    1: rms [5.36 4.55]  bands [2.16 0.87 2.87 3.33]
+  SIMCODE published sfhd-ndi     vs exact fpb  200: rms [1.14 1.38]  bands [0.15 1.04 0.69 0.16]
+  SIMCODE published sfhd-ndi     vs exact fpb   50: rms [1.25 1.54]  bands [0.4  1.11 0.73 0.19]
+  SIMCODE published sfhd-ndi     vs exact fpb   10: rms [2.66 2.82]  bands [2.27 1.29 0.8  0.23]
+  SIMCODE published sfhd-ndi     vs exact fpb    1: rms [9.55 9.84]  bands [9.46 1.48 0.96 1.17]
+
+## 4. exact pairs (same window start, < 0.5 px), ours (all windows, p>=0.63) - SIMCODE, raw coordinates, nm
+  SIMCODE published sfhd-ndi     n  275097 | sd of 6000-blk medians x/y [ 6.69 10.73] | range [23.5  39.25] | overall robust sd [ 8.94 11.25] | mean within-blk robust sd [6.14 6.09] | corr(1000-blk offset, drift) x/y [-0.11  0.94]
+     blk medians x: +6.8 +9.3 +6.0 +1.0 +1.4 +1.3 -0.9 -4.0 -4.3 -4.4 -9.7 -2.2 -8.3 -12.4 -14.2
+     blk medians y: +19.8 +17.6 +10.4 +7.9 +3.9 +4.7 -0.8 +2.0 -0.3 -4.1 -5.3 -10.6 -10.4 -13.0 -19.5
+  SIMCODE rerun (a) paper sign   n  275073 | sd of 6000-blk medians x/y [ 6.68 10.74] | range [23.46 39.3 ] | overall robust sd [ 8.93 11.26] | mean within-blk robust sd [6.14 6.08] | corr(1000-blk offset, drift) x/y [-0.11  0.94]
+     blk medians x: +6.9 +9.3 +6.0 +1.0 +1.4 +1.3 -0.9 -4.0 -4.3 -4.4 -9.7 -2.2 -8.2 -12.4 -14.1
+     blk medians y: +19.8 +17.6 +10.4 +7.9 +3.9 +4.7 -0.8 +2.0 -0.3 -4.1 -5.3 -10.6 -10.4 -13.0 -19.5
+  SIMCODE rerun (b) sign fixed   n  354174 | sd of 6000-blk medians x/y [0.29 0.36] | range [0.96 1.37] | overall robust sd [4.09 4.04] | mean within-blk robust sd [4.08 4.03] | corr(1000-blk offset, drift) x/y [0.01 0.41]
+     blk medians x: -2.3 -2.7 -2.6 -2.1 -2.4 -2.6 -2.6 -2.1 -2.8 -2.2 -2.8 -2.9 -3.0 -2.6 -2.1
+     blk medians y: +0.2 +0.4 +0.3 +0.8 +0.3 +0.4 +0.6 -0.3 +0.2 -0.2 -0.2 -0.2 -0.6 -0.1 -0.2
+
+## 5. FRC (1/7; 5 nm render px) after each set's own DME v2 correction, crop 5-115 px
+  SIMCODE published sfhd-ndi     N   463005  300-frame alternating halves  19.3 nm | first vs second half of movie  43.2 nm
+  SIMCODE rerun (a) paper sign   N   463064  300-frame alternating halves  19.2 nm | first vs second half of movie  44.1 nm
+  SIMCODE rerun (b) sign fixed   N   593980  300-frame alternating halves  18.3 nm | first vs second half of movie  40.3 nm
+  ours disjoint p>=0.63          N  1042139  300-frame alternating halves  18.7 nm | first vs second half of movie  36.9 nm
+  ours stride-3 p>=0.63          N  2080606  300-frame alternating halves  17.2 nm | first vs second half of movie  36.8 nm
+  SIMCODE (b), ours DME v2 drift N   593979  300-frame alternating halves  18.8 nm | first vs second half  43.0 nm
+zooms (x0,x1,y0,y1 px): [(np.float64(50.050000000000004), np.float64(58.050000000000004), np.float64(58.75), np.float64(66.75)), (np.float64(47.5), np.float64(55.5), np.float64(9.700000000000001), np.float64(17.700000000000003)), (np.float64(61.25), np.float64(69.25), np.float64(37.45), np.float64(45.45))]

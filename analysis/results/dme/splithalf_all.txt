@@ -1,0 +1,42 @@
+drift/dmev2/ours_disj          N ? chosen ('smooth', 1722, 12)
+  split-half v3e ref grid_fpb10: bands [0.47 1.15 1.15 0.68] rss<5000 1.70 nm
+  split-half v3e ref grid_fpb20: bands [0.44 1.15 1.15 0.68] rss<5000 1.69 nm
+drift/dmev2/sc_b               N ? chosen ('smooth', 2000, 48)
+  split-half v3e ref grid_fpb10: bands [0.48 1.15 1.62 1.02] rss<5000 2.04 nm
+  split-half v3e ref grid_fpb20: bands [0.41 1.15 1.61 1.02] rss<5000 2.02 nm
+drift/dmev2/sc_paper_h5        N ? chosen ('smooth', 200, 48)
+  split-half v3e ref grid_fpb10: bands [0.62 1.2  1.74 1.1 ] rss<5000 2.20 nm
+  split-half v3e ref grid_fpb20: bands [0.5  1.28 1.74 1.11] rss<5000 2.22 nm
+p2real/dmev2_05/p2_disj        N 1368863 chosen ('smooth', 1315, 48)
+  split-half v3e ref grid_fpb10: bands [0.45 1.01 1.14 0.67] rss<5000 1.59 nm
+  split-half v3e ref grid_fpb20: bands [0.43 1.01 1.14 0.67] rss<5000 1.58 nm
+drift25/dmev2/ours_disj        N ? chosen ('smooth', 965, 48)
+  split-half v3e ref grid_fpb10: bands [0.37 0.87 0.98 0.47] rss<5000 1.36 nm
+  split-half v3e ref grid_fpb20: bands [0.36 0.87 0.98 0.47] rss<5000 1.36 nm
+drift25/dmev2/sc_b             N ? chosen ('smooth', 2000, 96)
+  split-half v3e ref grid_fpb10: bands [0.14 0.9  1.33 0.57] rss<5000 1.61 nm
+  split-half v3e ref grid_fpb20: bands [0.21 0.94 1.35 0.58] rss<5000 1.66 nm
+drift25/dmev2/sc_paper_h5      N ? chosen ('smooth', 2000, 96)
+  split-half v3e ref grid_fpb10: bands [0.34 0.96 1.42 0.64] rss<5000 1.74 nm
+  split-half v3e ref grid_fpb20: bands [0.25 0.96 1.42 0.63] rss<5000 1.73 nm
+p2real/dmev2_25/p2_disj        N 7218126 chosen ('smooth', 49, 48)
+  split-half v3e ref grid_fpb10: bands [0.37 0.7  0.81 0.38] rss<5000 1.13 nm
+  split-half v3e ref grid_fpb20: bands [0.35 0.7  0.81 0.38] rss<5000 1.13 nm
+real20/dmev2/p1G_disj          N 3568498 chosen ('smooth', 67, 48)
+  split-half v3e ref grid_fpb10: bands [0.33 0.8  0.72 0.32] rss<5000 1.13 nm
+  split-half v3e ref grid_fpb20: bands [0.32 0.8  0.72 0.32] rss<5000 1.13 nm
+real20/dmev2/p2G_disj          N 6312739 chosen ('smooth', 380, 24)
+  split-half v3e ref grid_fpb10: bands [0.29 0.6  0.57 0.25] rss<5000 0.87 nm
+  split-half v3e ref grid_fpb20: bands [0.29 0.6  0.57 0.25] rss<5000 0.87 nm
+real20/dmev2/sc_b              N 1338801 chosen ('smooth', 1793, 48)
+  split-half v3e ref grid_fpb10: bands [0.25 0.9  0.95 0.36] rss<5000 1.34 nm
+  split-half v3e ref grid_fpb20: bands [0.19 0.9  0.95 0.36] rss<5000 1.33 nm
+real20/dmev2/smlm              N 3311955 chosen ('smooth', 725, 12)
+  split-half v3e ref grid_fpb10: bands [1.16 2.5  2.63 1.29] rss<5000 3.81 nm
+  split-half v3e ref grid_fpb20: bands [1.05 2.48 2.62 1.28] rss<5000 3.76 nm
+real20/dmev2/sf                N 266482 chosen ('smooth', 200, 192)
+  split-half v3e ref grid_fpb10: bands [0.4  0.27 1.94 1.09] rss<5000 2.00 nm
+  split-half v3e ref grid_fpb20: bands [0.28 0.72 1.98 1.09] rss<5000 2.12 nm
+real20/dmev2/decode_summed     N 4735863 chosen ('smooth', 507, 48)
+  split-half v3e ref grid_fpb10: bands [0.56 1.19 0.91 0.64] rss<5000 1.60 nm
+  split-half v3e ref grid_fpb20: bands [0.55 1.19 0.91 0.64] rss<5000 1.59 nm

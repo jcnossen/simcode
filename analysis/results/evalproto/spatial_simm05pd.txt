@@ -1,0 +1,18 @@
+# sim m05pd: kept fraction low / high tercile (relative to ours-all of the same pass); env = illumination envelope, depth = pattern modulation-depth factor; 1 = spatially neutral
+| set | N | env low/high | depth low/high |
+|---|---|---|---|
+| SIMCODE (b) all | 136580 | – | 1.05 |
+| ours p1 all | 766686 | – | 1.00 |
+| ours p1 random_N_SC | 136580 | – | 0.99 |
+| ours p1 topN_SC | 136580 | – | 1.16 |
+| ours p1 cov | 270600 | – | 1.07 |
+| ours p1 tileN | 136580 | – | 1.05 |
+| ours p1 tilecov | 267185 | – | 1.02 |
+| ours p1 tileq | 267420 | – | 1.00 |
+| ours p2L all | 1066942 | – | 1.00 |
+| ours p2L random_N_SC | 136580 | – | 1.01 |
+| ours p2L topN_SC | 136580 | – | 1.04 |
+| ours p2L cov | 306692 | – | 1.00 |
+| ours p2L tileN | 136580 | – | 1.10 |
+| ours p2L tilecov | 301615 | – | 1.03 |
+| ours p2L tileq | 302312 | – | 1.00 |
