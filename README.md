@@ -33,9 +33,10 @@ pip install -e /home/jc/simcode2        # or: export PYTHONPATH=/home/jc/simcode
 
 Dependencies:
 
-- numpy, scipy, tifffile, torch (CUDA GPU required); h5py only for `--format hdf5`
-- `torch_convspline`: the user's Catmull-Rom spline package, `~/torch-spline-3d`, installed editable in the env; used by
-  the PSF LUT
+- numpy, scipy, tifffile, torch (CUDA GPU required); matplotlib for the calibration / figure scripts; h5py for
+  `--format hdf5` and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
+- The PSF LUT's Catmull-Rom spline basis is vendored from torch-spline-3d (`simcode2/psf/lut.py`), so that package is no
+  longer needed.
 
 Only the baselines need more:
 
@@ -140,7 +141,7 @@ The config file is `$SIMCODE2_CONFIG`, else `<repo>/simcode2.json`, else `~/.con
 | `p2_det.pt`, `p2_head_long.pt` | pass-2 (pattern-aware) detector and head (p2L) |
 | `hd_sc7bg.pt` | optional head with a dense BgNet background; not production |
 | `calib/` | solve calibrations: pass 1 real / sim / autoc, the full-run autoc results r05 / r25 / r20, pass 2 real / sim / gate; see `docs/METHOD.md` |
-| `insitu/` | in-situ PSF + camera calibrations of the 0.5 nM, 2.5 nM movie 2 and 20 nM movie 2 data, with their camera maps |
+| `insitu/` | in-situ PSF + camera calibrations of the 0.5 nM, 2.5 nM movie 2 and 20 nM movie 2 data, with their camera maps; `beads/` = the bead z-stack PSF fit (Zernike init of the in-situ fit); recipe in `simcode2/insitu/README.md` |
 
 ## Repository layout
 
@@ -157,16 +158,28 @@ simcode2/            the package
   det/                 detector (model.py, up2.py = det_n1 trainer, data.py, psfpert.py)
   p2/                  pass 2 (front, det2, head2, data, illum, dump)
   sim/                 simulator.py (calibrated renderer), crlb.py (scenes + multi-emitter CRLB), simtools.py (gate layouts)
-  psf/, core.py, nn/blocks.py, fastutil.py   vectorial PSF + LUT, pattern helpers, network blocks, torch.compile helper
+  psf/, core.py, nn/blocks.py, fastutil.py   vectorial PSF + LUT (+ fit_beads.py bead z-stack fit), pattern helpers,
+                       network blocks, torch.compile helper
+  insitu/              in-situ calibration: camera_maps, extract_tracks, fit_insitu (stage A + camera), fit_insitu2
+                       (stage A, variable projection), fit_pattern (stage B), diagnostics fit_psf_sums / coma_anchor_scan
+                       (+ lm_refine); recipe in insitu/README.md
+  util/neighbours.py   nn_overlap (temporal-overlap nearest neighbour)
+  pipeline/compare_pattern.py   estimated vs reference pattern
+  det/train.py         earlier pattern-free detector trainer (det_stem lineage; det_n1 is det/up2.py)
   eff/                 simcode_gate.py (SIMCODE on the gate scenes), crlb_nuis.py (nuisance CRLB)
   evalproto/lib.py     evaluation-protocol metrics
 analysis/            scripts (not imported by the package)
   evalproto/           nnlag, blockphase, covpool + datasets.py (json dataset specs)
-  simreal/             sim_movie_r.py, recipes.sh (m05r / m25rc / m05pd / m25pd / m05pe / m25pe), eval_movie.sh, fields/
+  simreal/             sim_movie_r.py, sim_movie.py / sim_movie20.py (m05qh / m25qh / m20qh), merged_gross.py,
+                       recipes.sh (m05r / m25rc / m05pd / m25pd / m05pe / m25pe / m05qh / m25qh / m20qh), eval_movie.sh, fields/
   baselines/           run_simcode.py (sims) / run_simcode_real.py (real; --fix_sign 1 = sign-fixed SIMCODE (b)),
-                       decode/ (DECODE retrain + inference), dme_drift.py (DME v2, read-only import)
-  gate/run_gate.sh     gate scenes + report
+                       decode/ (DECODE retrain + inference), dme_drift.py (DME v2, read-only import),
+                       run_classic.py / run_smlm_tuned.py (classical SMLM + SF and tuned-SMLM inputs of the dense sims)
+  gate/                run_gate.sh (gate scenes + report), gate_paired.py, merged_d1.py + vs_simcode_p2.py (pass-2 gate vs SIMCODE)
   calib/               sigma-calibration fitting on the gate tuning seed (dump_fe.py -> fit_cal.py; plib.py for pass 2)
+  figures/             paper figures and renders (CRLB, reconstructions, summary plots); see its README
+                       figures/field/: field-dependent offset / pattern checks (check1_offsets, field_maps, check3_pattern)
+  hd_compare/          dense-sim comparison (score.py, render.py)
 models/              networks and calibrations
 tests/               test_fast_paths.py (fast vs reference paths; GPU, ~1 min) + data/
 docs/                METHOD, RESULTS, EVALUATION

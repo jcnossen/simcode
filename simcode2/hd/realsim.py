@@ -25,7 +25,12 @@ Iteration 27 (critic review 26): fine static bg scaled to the measured high-pass
 density per area, frame_sd 0.10, halo jitter (0-5 % in a sigma-4 px component), fluct amplitude reduced (x0.15 / x0.35 of
 the measured upper estimate: at full amplitude the pf front-end found 36-44 % false positives and 2-3x the real
 low-photon detection fraction); dens / bg_sd re-tuned uncapped (validate_sim k = 1500, real-like crop + selection). Values were tuned against
-<out>/realstats.json (simcode2/hd/realstats.py) with simcode2/hd/validate_sim.py.
+the real-output statistics realstats.json with the development scripts realstats.py / validate_sim.py. Those ran the legacy
+pattern-free + hybrid (pixel-fit) front-end on real and simulated windows; that front-end is not part of simcode2, so the
+tuning check is not reproducible here. Snapshots of its statistics and of the final sim-vs-real tables:
+analysis/results/realism/ (realstats.json, validate_{0.5,2.5}nM_final.txt). The realism check against the simcode2 front-end
+itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is analysis/figures/scorecard.py
+(-> realism_scorecard.png).
 API: RealSim(preset, H, W, T).scene(nb, em=None, **overrides) -> dict as crlb_dense.make_scene (+ patt_est,
 illum_est, shift_est, bg_static); .emitters(nb, **kw) -> em dict.
 (2026-11-10/11 critic 37 #2, opt-in; absent keys = unchanged, no extra random draws) smooth illumination envelope across the

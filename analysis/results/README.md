@@ -12,8 +12,10 @@ them are in `analysis/` (see `docs/RESULTS.md`, "Reproduce").
 | `hd_compare/score_*.txt`, `topn_vs_sc_*.txt`, `summary.txt` (hand-written summary) | `hd_compare/` | `analysis/hd_compare/score.py` |
 | `simcode_base2/cmp_*.txt`, `summary*.txt`, `gate_paired_*.txt`, `simcode_config.txt` | `simcode_base2/` | `analysis/baselines/compare.py`, `analysis/gate/gate_paired.py` |
 | `simreal/cci_*.txt` | `simreal2/` | `analysis/simreal/compare_ci_r.py` |
-| `simreal/cci_m20qh_*.txt`, `merged_gross_m{20,25}qh.txt`; `simreal/cci_m25qh_*.txt` | `n20/`; `p2/long/` | `analysis/simreal/compare_ci_r.py` |
-| `gate/gate_long_vs_simcode.txt`, `merged_d1_vs_simcode.txt` | `p2/long/` | (not yet ported) |
+| `simreal/cci_m20qh_*.txt`, `merged_gross_m{20,25}qh.txt`; `simreal/cci_m25qh_*.txt` | `n20/`; `p2/long/` | `analysis/simreal/compare_ci_r.py`, `analysis/simreal/merged_gross.py` |
+| `realism/realstats.json`, `validate_{0.5,2.5}nM_final.{json,txt}` | `realstats.json`, `validate_*_final.*` (input paths rewritten to `dev:`) | development realstats.py / validate_sim.py (legacy hybrid front-end; not ported, see `simcode2/hd/realsim.py`) |
+| `plots/*.png` (crlb_all_v2, crlb_sc6_all, crlb_vs_simcode, crlb_gate, recon_full_0.5nM[_dc\|_dme_cross], recon_full_20nM_{dense,matched,strict}, realgap_summary, realism_scorecard, frc_vs_N, field_dep_offsets; not copied here) | sc7/, plots/, realgap/, simreal2/, critic34/, field/, scratch/hdzoom/, real20/ | `analysis/figures/` |
+| `gate/gate_long_vs_simcode.txt`, `merged_d1_vs_simcode.txt` | `p2/long/` | `analysis/gate/vs_simcode_p2.py` (+ `merged_d1.py` for ideal_C) |
 | `tput/bench_*.json`, `clean_*.json` | `tput/` | `analysis/tput/bench_tput.py`, `summarize.py` |
 | `tput/stages_real20.log` | `real20/stages.log` | (wall time per stage of the 20 nM run) |
 | `tput/summarize.txt` | `summarize.py` run on a copy of the dev `tput/` (2026-11-11) | `analysis/tput/summarize.py` |

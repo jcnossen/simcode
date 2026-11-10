@@ -1,6 +1,7 @@
 """
 Cached PSF for the fast LM: an oversampled z-stack of the calibrated VectorialPSF, interpolated with the user's
-conv2d-based Catmull-Rom 3D spline (torch_convspline, ~/torch-spline-3d, used unmodified), which also gives d/d(z, y, x).
+conv2d-based Catmull-Rom 3D spline (as in torch-spline-3d / torch_convspline, J. Cnossen, MIT licence; the only piece
+needed, the Catmull-Rom geometry matrix, is vendored below), which also gives d/d(z, y, x).
 
 The pixel-integrated PSF is shift invariant: psf(x, y, z)[i, j] = g(o_j - x, o_i - y, z), o = pixel offset from the ROI
 centre. g is sampled once on a uniform grid (spacing 1/S px in u, v; hz um in z) by evaluating the same VectorialPSF
@@ -18,8 +19,18 @@ lut.evaluate(pos, grad=True) also returns d/dx, d/dy (px) and d/dz (um).
 """
 import math
 import torch
-from torch_convspline.conv_spline import geometry_matrix
 from simcode2.psf.vectorial import VectorialPSF
+
+
+def geometry_matrix(device, tau: float = 0.5):
+    """Catmull-Rom basis as in torch-spline-3d (torch_convspline.conv_spline.geometry_matrix, MIT licence, (c) 2023/2024
+    Jelmer Cnossen), vendored unchanged: per-axis weights w = [1, t, t^2, t^3] @ G."""
+    return torch.tensor([
+        [0.0, 1.0, 0.0, 0.0],
+        [-tau, 0.0, tau, 0.0],
+        [2 * tau, tau - 3, 3 - 2 * tau, -tau],
+        [-tau, 2 - tau, tau - 2, tau]
+    ], device=device, dtype=torch.float32)
 
 
 class PSFLUT:
@@ -54,7 +65,7 @@ class PSFLUT:
         self.Lw = Lw = (P - 1) * S + 4
         r = lambda n_: torch.arange(n_, device=self.dev)
         self.pat = (r(4)[:, None, None] * H * W + r(Lw)[None, :, None] * W + r(Lw)[None, None, :]).reshape(-1)
-        self.G = geometry_matrix(self.dev)                                # torch_convspline Catmull-Rom basis (tau 0.5)
+        self.G = geometry_matrix(self.dev)                                # Catmull-Rom basis (tau 0.5)
         e = torch.arange(4, device=self.dev)
         self.e, self.em1 = e, (e - 1).clamp_min(0)
         o = torch.arange(P, device=self.dev, dtype=torch.float32) - (P - 1) / 2

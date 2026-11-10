@@ -378,12 +378,18 @@ separately; SIMCODE uses all its rows.
   - Gate: `GPU=1 bash analysis/gate/run_gate.sh iso` (expect iso 1.17 [1.14, 1.20]).
     - SIMCODE on the gate: `python -m simcode2.eff.simcode_gate --model ni6_3 --scen iso,pair2,rs05qm`.
     - Paired comparison: `analysis/gate/gate_paired.py _scode_ni6_3 _hd_sc5nbb15pmb10 iso,pair2,rs05qm --offset`.
-    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): not yet ported (to be regenerated). The snapshot is `analysis/results/gate/gate_long_vs_simcode.txt`.
+    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `python -m simcode2.eff.simcode_gate --model ni6_3 --scen pair1,pair1.5,rs05qm`
+      and `--model L64_5 --scen rs25qm` (gate npz `_scode_<net>` / `_scodenf_<net>`), then `analysis/gate/merged_d1.py` and
+      `analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
+      (reproduces the snapshots in `analysis/results/gate/` exactly).
   - m05q / m25q / m05qh / m25qh vs SIMCODE: `analysis/baselines/compare.py`, CRLB_ref = gate rs05pm / rs25pm
     (`SIMCODE2_GATE_DIR`).
   - m25qh / m20qh (§3b †): `analysis/hd_compare/score.py <spec>`, with ours b22 = `analysis/hd_compare/calib_b22/*`.
     - Paired CIs: `compare_ci_r.py` with rs25pm.
-    - The movies come from the development `sc6/sim_movie.py` and `n20/sim_movie20.py`; they are not in `recipes.sh`.
+    - Movies: `analysis/simreal/recipes.sh m25qh | m20qh` (`sim_movie.py` / `sim_movie20.py`; m05qh too). Classical inputs:
+      `analysis/baselines/run_classic.py <sim> <work> classic_<m>.npz` (SMLM + SF, paper pipeline) and
+      `analysis/baselines/run_smlm_tuned.py <sim> <work> smlmt_<m>_r6_m4_dt3.5.npz 6 4`; renders `analysis/hd_compare/render.py <spec>`;
+      gross / merged: `analysis/simreal/merged_gross.py <sim> <out.txt> p1=ours_est:<dir> p2L=ours_p2L:<dir> SC_net=sc_net:<paper_est.npz> SC_mrg_fix=sc_mrg:<paper_fix.npz>`.
 - **§4, counts / drift / throughput:**
   - Row counts: `realproto.py` header, or `dme_splithalf.py dry`.
   - Split-half: `dme_splithalf.py report <npz>` (reference grid_fpb10; snapshot `analysis/results/dme/splithalf_all.txt`).
@@ -393,9 +399,12 @@ separately; SIMCODE uses all its rows.
 - **§5 checks:**
   - `analysis/evalproto/strictq.py` (strict q)
   - `analysis/checks/cand_pmin_check.py` (cand_pmin)
+- **Figures:** `analysis/figures/` (README there): CRLB (`crlb_all_v2.py`, references via `run_crlb_refs.sh`: LM `lm_gate.py` /
+  `lm_icrlb.py`, joint SIMFLUX MLE `sf_gate.py`, `icrlb.py`), real renders (`recon_full*.py`, `hdzoom.py`, `render_matched20.py`,
+  `render_strict20.py`, zooms `zoompick.py`), summaries (`fig_gap.py`, `scorecard.py --stack`, `frc_plot.py`,
+  `field/plot_field_offsets.py` with its inputs `field/check1_offsets.py`, `field_maps.py`, `check3_pattern.py`).
+- **In-situ PSF / camera calibration:** `simcode2/insitu/README.md`.
 - **Not reproducible from this repo alone:**
-  - the m25qh / m20qh movies
-  - the classical / tuned-SMLM inputs (development `run_classic.py` / `run_smlm_tuned.py`)
   - the injection movies of evalgt
   - the real depth fields (`field/depth/real05|real25/field_own.pt`)
 

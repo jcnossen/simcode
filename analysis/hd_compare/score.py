@@ -27,9 +27,11 @@ and the output dir come from a json spec instead of hard-coded paths:
                ["SF (paper pipeline)", "sf", "<classic_<m>.npz>"], ["DECODE", "decode_sum6", "<m>_hd_sum6.npz"],
                ["DECODE per-frame", "decode_frame", "<m>_hd_frame.npz"], ["SIMCODE", "sc_mrg", "<m>_L64_5c3_paper_fix.npz"],
                ["SIMCODE-net", "sc_net", "<same npz>"], ["ours p1", "ours_est", "<pass-1 run dir>"], ["ours p2", "ours_p2L", "<p2L dir>"]]}
-  (methods whose path does not exist are skipped). The classical / tuned-SMLM inputs were produced by scripts
-  that are not yet part of simcode2; analysis/baselines/decode has
-  the DECODE runner. crlb_ref: see analysis/baselines/compare.py (SIMCODE2_GATE_DIR).
+  (methods whose path does not exist are skipped). Inputs: the movie from analysis/simreal/recipes.sh m25qh | m20qh; the
+  classical inputs from analysis/baselines/run_classic.py <sim> <work> classic_<m>.npz (SMLM + SF), the tuned SMLM from
+  analysis/baselines/run_smlm_tuned.py <sim> <work> smlmt_<m>_r6_m4_dt3.5.npz 6 4; DECODE from analysis/baselines/decode;
+  SIMCODE from analysis/baselines/run_simcode.py --model L64_5 --cam paper --fix_sign 1. Renders: analysis/hd_compare/render.py
+  <spec>. crlb_ref: see analysis/baselines/compare.py (SIMCODE2_GATE_DIR).
 usage: python analysis/hd_compare/score.py <spec.json>   -> <out>/score_<name>.txt / .json
 """
 import os, sys, json, glob

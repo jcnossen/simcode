@@ -1,0 +1,25 @@
+stat                           sim      real
+locs/win/px                  0.029     0.026
+lowphot (<300) frac          0.193     0.101
+p 0.50-0.75 frac             0.266     0.139
+p 0.95-1 frac                0.582     0.599
+phot q25                   363.695   484.143
+phot q50                   778.586   799.949
+phot q75                  1176.850  1178.495
+phot q95                  1873.004  1894.984
+bg0 q50                     13.429    12.159
+bg1 q50                     11.167     9.768
+bg0 q05-q95                 10.691     9.910
+bg1/bg0                      0.832     0.825
+nn q25                       2.768     2.422
+nn q50                       3.539     3.076
+nn frac<2                    0.034     0.051
+angle logratio med          -0.203    -0.219
+angle logratio robsd         0.301     0.288
+chi2 med 300+                2.883       nan
+chi2 med 500+                3.032       nan
+chi2 med 800+                3.445       nan
+chi2 med 1300+               4.539       nan
+chi2 med 2000+               6.668       nan
+chi2 med 3200+               7.584       nan
+kin_frac                     0.064       nan
