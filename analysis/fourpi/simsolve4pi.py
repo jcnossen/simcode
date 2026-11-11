@@ -48,7 +48,7 @@ def main():
         patf = {f'angle{i}': dict(k=meta['k'][i], psi_deg=meta['psi_deg'][i], m_median=meta['m']) for i in range(2)}
     elif a.pattern == 'net':
         patf = SR.repattern(o, mt, ref)
-    else:   # relaxed selection at the prior positions
+    else:   # 'iter' / 'iter_gauge': relaxed selection at the prior positions
         I = o['T'].sum(2).cpu().numpy(); mI = I.mean(1)
         Xp = np.stack([cx + o['dxy'][:, 0].cpu().numpy(), cy + o['dxy'][:, 1].cpu().numpy()], 1)
         patf = repattern_xy(I, Xp, ref, (mI * 6 > 800) & (mt['nn'] > 3) & (I.min(1) > 0.25 * mI))
@@ -75,13 +75,34 @@ def main():
     r2 = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='kin', kin0s=torch.cat([k[1] for k in ks]))
     ron = best_of(r1, r2)
     use = (ron['chi2'] - rfr['chi2'] < a.dchi)
-    if a.pattern == 'iter':   # one refinement: pattern from the solved positions of the kinetics-accepted, on-through rows
+    if a.pattern in ('iter', 'iter_gauge'):   # one refinement (re-estimating from solved positions has no restoring force on the gauge): pattern from the solved positions of the kinetics-accepted, on-through rows
         I = o['T'].sum(2).cpu().numpy()
         Xs = np.stack([cx + ron['th'][:, 0].cpu().numpy(), cy + ron['th'][:, 1].cpu().numpy()], 1)
         onth = ((ron['th'][:, 4] <= 0) & (ron['th'][:, 5] >= 6)).cpu().numpy()
         patf = repattern_xy(I, Xs, patf, use.cpu().numpy() & onth & (I.sum(1) > 800))
         psi, m, kk = SR.pattern_psi(patf, cx, cy, dev)
         sv.k = kk
+        rfr = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='free')
+        ks = [kin_starts({'th': rfr['th'][i:i + 4096]}, m[i:i + 4096], psi[i:i + 4096], sv) for i in range(0, n, 4096)]
+        r1 = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='kin', kin0s=torch.cat([k[0] for k in ks]))
+        r2 = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='kin', kin0s=torch.cat([k[1] for k in ks]))
+        ron = best_of(r1, r2)
+        use = (ron['chi2'] - rfr['chi2'] < a.dchi)
+    if a.pattern == 'iter_gauge':
+        # fix ONLY the common pattern phase per angle (the gauge) with pattern-independent anchors: the filtered classical
+        # summed-fit positions. Model I ~ 1 + m cos(k.r - psi): per-emitter phase phi_e (with the current psi) minus
+        # k.r_anchor has circular mean g = -(psi_true - psi) -> psi_true = psi - g.
+        from pattern import emitter_phase
+        C = dict(np.load(f'{d}/classical_{a.model}_q.npz'))
+        I = o['T'].sum(2).cpu().numpy(); mI = I.mean(1)
+        q = (C['chi2px'] <= 4) & ~C['at_bound'] & C['conv'] & (C['N'] > 800) & (I.min(1) > 0.25 * mI)
+        Xc = np.stack([C['x'], C['y']], 1)
+        for an in range(2):
+            A = patf[f'angle{an}']; k = np.array(A['k']); psi_ = np.radians(A['psi_deg'])
+            ph, _, _ = emitter_phase(I[q, 3 * an:3 * an + 3], psi_)
+            g = np.angle(np.mean(np.exp(1j * (ph - Xc[q] @ k))))
+            A['psi_deg'] = np.degrees(psi_ - g).tolist(); A['gauge_deg'] = float(-np.degrees(g)); A['n_anchor'] = int(q.sum())
+        psi, m, kk = SR.pattern_psi(patf, cx, cy, dev); sv.k = kk
         rfr = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='free')
         ks = [kin_starts({'th': rfr['th'][i:i + 4096]}, m[i:i + 4096], psi[i:i + 4096], sv) for i in range(0, n, 4096)]
         r1 = SR.solve_all(sv, o, idx, Phi0, mt['doff'], m, psi, mode='kin', kin0s=torch.cat([k[0] for k in ks]))

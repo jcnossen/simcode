@@ -63,7 +63,7 @@ class Sim4Pi:
         return torch.stack([self.lut.evaluate(pos, Phi + DELTA_A[a]) for a in range(2)], 1)
 
     def sample(self, n, F=(60.0, 2500.0), zr=(-0.45, 0.45), bg=(0.2, 2.0), p_nb=0.5, nb_max=3, jit=0.35,
-               m=(0.6, 0.95), rn=1.14, offerr=0.2, p_on=0.6):
+               m=(0.6, 0.95), rn=1.14, offerr=0.2, p_on=0.6, eps_range=0.3):
         d, P = self.dev, self.P
         x = torch.randn(n, device=d, generator=self.g) * jit
         y = torch.randn(n, device=d, generator=self.g) * jit
@@ -72,7 +72,10 @@ class Sim4Pi:
         Fm = self.lu(n, *F)
         q = self.kinetics(n, p_on)
         mm = self.u(n, *m)
-        eps = self.u(n * 2, -0.3, 0.3).reshape(n, 2)
+        # per-window pattern phase offset at the patch centre. eps_range = pi makes it arbitrary, as in a movie (the
+        # candidate pixel's pattern phase k . r is arbitrary); the default 0.3 rad (v1/v2 training) lets the head learn a
+        # pattern-phase position cue that breaks on real movies (2026-11-11, see out/4pi/PROCESSING_STATUS.md)
+        eps = self.u(n * 2, -eps_range, eps_range).reshape(n, 2)
         doff = self.u(n * 8, -0.5, 0.5).reshape(n, 4, 2)        # fractional channel offsets (x, y)
         doff[:, 0] = 0.0
         Nt = Fm[:, None] * q * self.pattern(x, y, mm, eps)       # [n,6] photons per frame
