@@ -69,6 +69,8 @@ def main(argv=None):
     ap.add_argument('--head_batch', type=int, default=4096)
     ap.add_argument('--solve_batch', type=int, default=16384)
     ap.add_argument('--solve_opts', default='{}')       # json, msolve_fast options, e.g. '{"prune_k": 0.2}'
+    ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) fast path: read the next chunk's frames in a background thread
+                                                        # (pipeline/common.PrefetchMovie; identical data); 0 = synchronous reads
     ap.add_argument('--p1_solve', type=int, default=1)  # sc2p: 0 skips the pass-1 pattern solve (pass2_est files; not needed by pass 2)
     a = ap.parse_args(argv)
     for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'p2_pf_head', 'ref_pattern'):
@@ -113,12 +115,17 @@ def main(argv=None):
             RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
         torch.cuda.synchronize(); RT['setup_nets_s'] = time.time() - t0
         RT.setdefault('pass1', {})
+        mv1 = movie
+        if fast and a.prefetch:
+            from simcode2.pipeline.common import PrefetchMovie, chunk_read_plan
+            todo = [f0 for f0 in chunks if a.redo or not os.path.exists(f'{a.out}/pass1_{f0}.npz')]
+            mv1 = PrefetchMovie(movie, chunk_read_plan(movie, todo, a.chunk, nf, crop, a.margin))
         for f0 in chunks:
             fn = f'{a.out}/pass1_{f0}.npz'
             if os.path.exists(fn) and not a.redo: continue
             tm = {}; t0 = time.time()
             if fast:
-                R, info = p1.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm,
+                R, info = p1.run_chunk(mv1, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm,
                                        det_batch=a.det_batch, head_batch=a.head_batch)
             else:
                 R, info = p1.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm)
@@ -212,12 +219,17 @@ def main(argv=None):
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})
+            mv2 = movie
+            if fast and a.prefetch:
+                from simcode2.pipeline.common import PrefetchMovie, chunk_read_plan
+                todo = [f0 for f0 in chunks if a.redo or not os.path.exists(f'{a.out}/pass2_{tag}_{f0}.npz')]
+                mv2 = PrefetchMovie(movie, chunk_read_plan(movie, todo, a.chunk, nf, crop, a.margin))
             for f0 in chunks:
                 fn = f'{a.out}/pass2_{tag}_{f0}.npz'
                 if os.path.exists(fn) and not a.redo: continue
                 tm = {}; t0 = time.time()
                 if fast:
-                    O = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
+                    O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
                                      det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch, solve_opts=solve_opts)
                 else:
                     O = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm)

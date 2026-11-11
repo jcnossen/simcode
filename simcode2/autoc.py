@@ -34,7 +34,7 @@ def iso_flag(key, x, y, r=R_ISO):
     """True if no other point with the same key (window / FOV) within r px"""
     P = np.c_[x, y, key.astype(np.float64) * 1e4]
     tr = cKDTree(P)
-    cnt = tr.query_ball_point(P, r, return_length=True)
+    cnt = tr.query_ball_point(P, r, return_length=True, workers=-1)   # (speed branch) parallel, exact
     return cnt <= 1
 
 

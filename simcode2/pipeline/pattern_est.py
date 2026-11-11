@@ -37,6 +37,8 @@ import math
 import numpy as np, torch
 from scipy.spatial import cKDTree
 
+KD_WORKERS = -1      # (2026-11-11, speed branch) parallel cKDTree queries: exact (per-point queries are independent)
+
 T = 6
 
 
@@ -54,10 +56,10 @@ def select(R, nn_min=3.0, min_phot=300.0, link_r=1.0):
     P_all = np.c_[x, y, ws * 1e4]
     tr = cKDTree(P_all)
     io = np.nonzero(out)[0]
-    dd, _ = tr.query(P_all[io], k=2)
+    dd, _ = tr.query(P_all[io], k=2, workers=KD_WORKERS)
     nn = dd[:, 1]
     # linked detections in windows w - 6 and w + 6 (any detection, nearest < link_r)
-    q = lambda dt: tr.query(np.c_[x[io], y[io], (ws[io] + dt) * 1e4], distance_upper_bound=link_r)
+    q = lambda dt: tr.query(np.c_[x[io], y[io], (ws[io] + dt) * 1e4], distance_upper_bound=link_r, workers=KD_WORKERS)
     dm, jm = q(-6); dp, jp = q(6)
     on = np.isfinite(dm) & np.isfinite(dp)
     jm = np.where(on, jm, 0); jp = np.where(on, jp, 0)
@@ -218,7 +220,7 @@ def fit_depth(D, sel, K, psi, rel, eps_knots, kf, verbose=print, pbins=(0, 1000,
     idx = np.nonzero(sel)[0]
     P = np.c_[D['x1'][idx], D['y1'][idx], D['w'][idx] * 1e4]
     tr = cKDTree(P)
-    d, j = tr.query(np.c_[D['x1'][idx], D['y1'][idx], (D['w'][idx] + 6) * 1e4], distance_upper_bound=1.0)
+    d, j = tr.query(np.c_[D['x1'][idx], D['y1'][idx], (D['w'][idx] + 6) * 1e4], distance_upper_bound=1.0, workers=KD_WORKERS)
     ok = np.isfinite(d)
     i1, i2 = idx[ok], idx[j[ok]]
     res = {}

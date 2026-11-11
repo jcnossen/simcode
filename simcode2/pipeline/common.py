@@ -28,6 +28,58 @@ class Movie:
         return out
 
 
+class PrefetchMovie:
+    """(2026-11-11, speed branch) Movie wrapper that reads the NEXT chunk's frames in a background thread while the current
+    chunk is processed. `plan` = the expected read() calls in order [(f0, f1, y0, x0, S), ...]; a read() that matches the
+    prefetched request returns it (identical data, same Movie.read), any other request is read synchronously. Attributes
+    other than read() are those of the wrapped Movie."""
+    def __init__(self, movie, plan):
+        import threading
+        self._m, self._plan, self._i = movie, list(plan), 0
+        self._lock = threading.Lock(); self._fut = None
+        self.stats = dict(hits=0, misses=0, wait_s=0.0)
+        self._start(0)
+
+    def __getattr__(self, k):
+        return getattr(self._m, k)
+
+    def _start(self, i):
+        import threading
+        if i >= len(self._plan): self._fut = None; return
+        key = tuple(self._plan[i]); box = {}
+        def work():
+            try: box['a'] = self._m.read(*key)
+            except Exception as e: box['e'] = e
+        th = threading.Thread(target=work, daemon=True); th.start()
+        self._fut = (key, th, box)
+
+    def read(self, f0, f1, y0, x0, S):
+        import time
+        key = (f0, f1, y0, x0, S)
+        if self._fut is not None and self._fut[0] == key:
+            _, th, box = self._fut
+            t = time.time(); th.join(); self.stats['wait_s'] += time.time() - t
+            self._i += 1; self._start(self._i)
+            if 'e' in box: raise box['e']
+            self.stats['hits'] += 1
+            return box['a']
+        self.stats['misses'] += 1
+        if self._fut is not None:          # never two readers on the TIFF handles at once
+            self._fut[1].join(); self._fut = None
+        return self._m.read(f0, f1, y0, x0, S)
+
+
+def chunk_read_plan(movie, chunks, chunk, nf, crop, margin, pad=12):
+    """the movie.read() calls of Pass1SCFast / Pass2P2Fast.run_chunk for these chunk starts (same l0 / l1 rule)"""
+    X0, Y0, S = region(movie, crop, margin)
+    plan = []
+    for f0 in chunks:
+        f1 = min(f0 + chunk, nf); own1 = min(f1, movie.n)
+        l0 = max(f0 - pad, 0) // 6 * 6; l1 = min(own1 + pad, movie.n)
+        plan.append((l0, l1, Y0, X0, S))
+    return plan
+
+
 def camera_maps_path(path, c=None):
     """camera-map npz of a calib json: 'camera.maps', relative to the json's directory unless absolute"""
     c = c if c is not None else json.load(open(path))
