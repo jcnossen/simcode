@@ -66,7 +66,7 @@ def main(argv=None):
     ap.add_argument('--compile', default='off')         # fast path: torch.compile of the pattern-solve LM step: auto | on | off
     ap.add_argument('--compile_head', default='off')    # fast path, opt-in, NOT bf16-noise equivalent: 'blk' compiles the head's conv stack
     ap.add_argument('--det_batch', type=int, default=64)
-    ap.add_argument('--head_batch', type=int, default=4096)
+    ap.add_argument('--head_batch', type=int, default=1024)
     ap.add_argument('--solve_batch', type=int, default=16384)
     ap.add_argument('--solve_opts', default='{}')       # json, msolve_fast options, e.g. '{"prune_k": 0.2}'
     ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) fast path: read the next chunk's frames in a background thread
