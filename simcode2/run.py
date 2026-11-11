@@ -43,7 +43,7 @@ def main(argv=None):
     ap.add_argument('--fast', type=int, default=1)
     ap.add_argument('--compile', default='auto', help='torch.compile of the solve LM step: auto | on | off')
     ap.add_argument('--compile_head', default='off', help="opt-in: 'trunk' = torch.compile of the heads' bf16 CNN trunk when available "
-                    "(~1.5x faster heads; not bit-equivalent: |dI| p99 0.7 ph vs the eager head, see docs/SPEED.md); 'off' (default)")
+                    "(~1.5x faster heads; not bit-equivalent to the eager bf16 head: |dI| p99 ~0.7 ph, but at least as close to the fp32 head); 'off' (default)")
     ap.add_argument('--prefetch', type=int, default=1, help='read the next chunk in a background thread (identical data); 0 = off')
     ap.add_argument('--crop', default='5,5,110', help='output region x0,y0,size (px)')
     ap.add_argument('--chunk', type=int, default=6000)

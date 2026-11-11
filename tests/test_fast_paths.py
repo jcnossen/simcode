@@ -201,7 +201,54 @@ def test_pass2_p2_fp32():
     print(f'  ok pass2 (p2) fp32: n {len(d)} prior max|d| {dp:.1e} solve median {np.median(d):.1e} p99 {np.quantile(d, 0.99):.1e}')
 
 
+def test_prefetch_reader():
+    """PrefetchMovie (background read of the next chunk) returns the same frames as Movie.read, in plan order and on a miss"""
+    from simcode2.pipeline.common import PrefetchMovie, chunk_read_plan
+    mov, _ = sim_movie()
+    plan = chunk_read_plan(mov, [0, 60, 120, 180], 60, mov.n, (5, 5, 110), 5)
+    pm = PrefetchMovie(mov, plan)
+    for k in plan + [plan[0]]:                      # 4 hits, then 1 miss
+        assert np.array_equal(pm.read(*k), mov.read(*k))
+    assert pm.stats['hits'] == 4 and pm.stats['misses'] == 1, pm.stats
+    print(f'  ok prefetch reader {pm.stats}')
+
+
+def test_trunk_compile_bf16():
+    """opt-in compiled head trunk (compile_head 'trunk'): same candidates; on the head outputs it must be at least as close
+    to the fp32 head as the production eager bf16 head is (it is not bit-equivalent to the eager bf16 head)"""
+    from simcode2 import fastutil
+    if not fastutil.compile_available():
+        print('  skip (compile unavailable)'); return
+    from simcode2.pipeline.sc_front_fast import Pass1SCFast, QueuedFront
+    mov, cal = sim_movie()
+    _pass1(False)
+    A, B = _C['p1']
+    Re = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
+    B.front.heads = QueuedFront(B.det, False, {'h': (A.head, 'sc')}, B.col, compile_head='trunk').heads
+    try:
+        Rc = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
+    finally:
+        B.front.heads = {'h': (A.head, 'sc', A.head)}
+    # fp32 reference of the HEAD only (the detector stays bf16, so that the candidate list is the same)
+    A.head.bf16 = False
+    tf = (torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32)
+    torch.backends.cudnn.allow_tf32 = False; torch.backends.cuda.matmul.allow_tf32 = False
+    try:
+        R32 = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
+    finally:
+        A.head.bf16 = True
+        torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32 = tf
+    for R in (Rc, R32):
+        ok, dd = same_cands(Re, R, BF16_DET); assert ok, f'candidate lists differ {dd}'
+    e = lambda R: np.quantile(np.abs(R['I'] - R32['I']), 0.99)
+    ex = lambda R: np.quantile(np.abs(np.c_[R['x'] - R32['x'], R['y'] - R32['y']]), 0.99)
+    print(f'  trunk compile vs fp32: |dI| p99 {e(Rc):.3f} (eager {e(Re):.3f}), |dx| p99 {ex(Rc):.2e} (eager {ex(Re):.2e})')
+    assert e(Rc) <= 1.1 * e(Re) and ex(Rc) <= 1.1 * ex(Re), 'compiled trunk further from fp32 than the eager bf16 head'
+    print('  ok trunk compile')
+
+
 if __name__ == '__main__':
-    for f in (test_pass1_fp32, test_pass1_bf16, test_pass1_compiled_fp32, test_pattern_solve, test_pass2_p2_fp32):
+    for f in (test_pass1_fp32, test_pass1_bf16, test_pass1_compiled_fp32, test_pattern_solve, test_pass2_p2_fp32, test_prefetch_reader,
+              test_trunk_compile_bf16):
         print(f.__name__, flush=True); f()
     print('ALL OK')
