@@ -342,7 +342,7 @@ python analysis/baselines/run_simcode_real.py net <cache.npy> --movie <tif> --mo
 python analysis/baselines/run_simcode_real.py ndi <cache.npy> sc_b.npz --fix_sign 1
 ```
 
-**Drift: DME v2** (= v3e, `~/dme`, read-only import). Each method gets its own drift, at time = window start + 3, with
+**Drift: DME v2** (the `dme` package, `github.com/jcnossen/drift-estimation`, through `simcode2/util/drift.py`; 'v3e' in file and method names is its development name). Each method gets its own drift, at time = window start + 3, with
 crlb = its own σ and crlb < 1 px. Ours uses the disjoint rows (window start % 6 == 0, p ≥ 0.63) of pass 1 and pass 2
 separately; SIMCODE uses all its rows.
 

@@ -39,7 +39,7 @@ outputs.
 |---|---|---|
 | `recon_full.py` | `recon_full_0.5nM.png` | `<out>/full_0.5nM_sc5nb_bright_real` (`--run`), SIMCODE `sfhd-ndi.hdf5` under `<data>` (`--simcode`) |
 | `recon_full_dc.py` | `recon_full_0.5nM_dc.png`, `drift_full_0.5nM.png` | same; RCC drift `rcc_drift.py` |
-| `recon_full_dme_cross.py` | `recon_full_0.5nM_dme_cross.png` | same + `<out>/drift/drift_{ours,simcode}_fpb50.npy` (`dme_full05.py`, DME via `$DME_PATH`) |
+| `recon_full_dme_cross.py` | `recon_full_0.5nM_dme_cross.png` | same + `<out>/drift/drift_{ours,simcode}_fpb50.npy` (`dme_full05.py`, DME via the `dme` package) |
 | `hdzoom.py` | `recon_full_20nM_dense.png`, `<out>/real20/zooms_dense.json` | `lib20.py` sets: `<out>/full_20nM_m2_fast`, `<out>/real20/{simcode_real,dmev2}`, published hdf5 and the 20 nM movie under `<data>` |
 | `render_matched20.py` | `recon_full_20nM_matched.png` | as `hdzoom.py` + `<out>/real20/zooms.json` |
 | `render_strict20.py` | `recon_full_20nM_strict.png` | same |

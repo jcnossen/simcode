@@ -5,6 +5,8 @@ Three roots, each set by (in order of precedence) an environment variable, a key
   models   trained networks (*.pt) and calibrations (calib/, insitu/)   SIMCODE2_MODELS   default <repo>/models
   data     raw movies (the DNA-PAINT TIFF stacks)                         SIMCODE2_DATA     default: none (pass full paths)
   out      outputs of the benchmark / analysis scripts                    SIMCODE2_OUT      default ./simcode2_out
+One optional path, set the same way: dme = a checkout of the DME drift-estimation package (DME_PATH; default: the installed
+package; see simcode2/util/drift.py).
 Config file: $SIMCODE2_CONFIG, else <repo>/simcode2.json, else ~/.config/simcode2.json; keys "models", "data", "out"
 (see simcode2.example.json). Relative paths in the config file are relative to the file's directory.
 
@@ -15,8 +17,8 @@ import json, os
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-_ENV = {'models': 'SIMCODE2_MODELS', 'data': 'SIMCODE2_DATA', 'out': 'SIMCODE2_OUT'}
-_DEF = {'models': str(REPO / 'models'), 'data': '', 'out': 'simcode2_out'}
+_ENV = {'models': 'SIMCODE2_MODELS', 'data': 'SIMCODE2_DATA', 'out': 'SIMCODE2_OUT', 'dme': 'DME_PATH'}
+_DEF = {'models': str(REPO / 'models'), 'data': '', 'out': 'simcode2_out', 'dme': ''}
 _cfg = None
 
 
@@ -36,7 +38,7 @@ def _config():
 
 
 def root(kind):
-    """'models' | 'data' | 'out' -> directory (str; '' if unset)"""
+    """'models' | 'data' | 'out' | 'dme' -> directory (str; '' if unset)"""
     return os.environ.get(_ENV[kind]) or _config().get(kind) or _DEF[kind]
 
 

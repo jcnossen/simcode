@@ -20,7 +20,7 @@ on punctate repeated-site sims.
     (`analysis/baselines/run_simcode*.py --fix_sign 1`).
   - Its window starts are stride 1.
 - **Drift and crop.** Each method is drift-corrected with its own DME v2 drift, at time f + 3 (`analysis/baselines/dme_drift.py`,
-  using the read-only DME project). Crop 5–115 px after correction.
+  using the external `dme` package). Crop 5–115 px after correction.
 - **Common window grid.** Comparisons use G3 (f % 3 == 0) at 0.5 / 2.5 nM and G6 (f % 6 == 0) at 20 nM. Mixing grids was
   an artefact (critic 35).
 

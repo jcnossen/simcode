@@ -1,5 +1,5 @@
 {
-  "_comment": "copy to <repo>/simcode2.json or ~/.config/simcode2.json (or point SIMCODE2_CONFIG at it). Relative paths are relative to this file; env vars SIMCODE2_MODELS / SIMCODE2_DATA / SIMCODE2_OUT override. 'models' defaults to <repo>/models.",
+  "_comment": "copy to <repo>/simcode2.json or ~/.config/simcode2.json (or point SIMCODE2_CONFIG at it). Relative paths are relative to this file; env vars SIMCODE2_MODELS / SIMCODE2_DATA / SIMCODE2_OUT override. 'models' defaults to <repo>/models. Optional key 'dme' (or env DME_PATH): a checkout of github.com/jcnossen/drift-estimation; without it the installed dme package is used.",
   "data": "/mnt/data/dmdsf/bn_dnapaint/dnapaint",
   "out": "simcode2_out",
   "smlmtorch_models": "~/smlmtorch/scripts/models"

@@ -1,4 +1,4 @@
-"""DME (exact, GPU port of the original algorithm; $DME_PATH/gpu/dme_pipeline.py, default ~/dme, imported read-only) on the full
+"""DME (exact, GPU port of the original algorithm; dme.dme_pipeline of the `dme` package, see simcode2/util/drift.py) on the full
 0.5 nM movie: ours (sc5nb, disjoint windows p>=0.63, time = window centre) vs SIMCODE sfhd-ndi, at several frames-per-bin down
 to 1. Input of recon_full_dme_cross.py.
 usage: CUDA_VISIBLE_DEVICES=1 python dme_full05.py [--run full_0.5nM_sc5nb_bright_real] [--simcode <sfhd-ndi.hdf5>] [--out_dir drift]
@@ -12,9 +12,9 @@ ap.add_argument('--run', default='full_0.5nM_sc5nb_bright_real', help='relative:
 ap.add_argument('--simcode', default=SM.SIMCODE_05, help='relative: under the data root')
 ap.add_argument('--out_dir', default='drift', help='relative: under the out root')
 a = ap.parse_args()
-_D = os.path.expanduser(os.environ.get('DME_PATH', '~/dme'))
-sys.path[:0] = [f'{_D}/gpu']
-from dme_pipeline import dme_estimate_gpu
+from simcode2.util import drift as _DR
+_DR.dme_package()
+from dme.dme_pipeline import dme_estimate_gpu
 SIMH5 = config.resolve(a.simcode, 'data'); OD = config.out_dir(a.out_dir)
 A = SM.load_ours(os.path.join(config.root('out'), a.run), 'est')
 dj = (A['wstart'] % 6 == 0) & (A['p'] >= 0.63)

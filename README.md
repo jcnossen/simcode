@@ -44,7 +44,7 @@ Only the baselines need more:
 |---|---|
 | SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`~/smlmtorch/scripts/models`, or env `SMLMTORCH_MODELS`) |
 | DECODE | the `decode` fork (`~/decode2`) |
-| DME v2 drift | `~/dme` (env `DME_PATH`), imported read-only |
+| DME v2 drift | the `dme` package ≥ 2.0 (`github.com/jcnossen/drift-estimation`): `pip install git+https://github.com/jcnossen/drift-estimation`, or a checkout given by env `DME_PATH` / config key `dme`; used through `simcode2/util/drift.py` |
 
 ## Run
 
@@ -173,7 +173,7 @@ analysis/            scripts (not imported by the package)
   simreal/             sim_movie_r.py, sim_movie.py / sim_movie20.py (m05qh / m25qh / m20qh), merged_gross.py,
                        recipes.sh (m05r / m25rc / m05pd / m25pd / m05pe / m25pe / m05qh / m25qh / m20qh), eval_movie.sh, fields/
   baselines/           run_simcode.py (sims) / run_simcode_real.py (real; --fix_sign 1 = sign-fixed SIMCODE (b)),
-                       decode/ (DECODE retrain + inference), dme_drift.py (DME v2, read-only import),
+                       decode/ (DECODE retrain + inference), dme_drift.py (DME v2, the external `dme` package),
                        run_classic.py / run_smlm_tuned.py (classical SMLM + SF and tuned-SMLM inputs of the dense sims)
   gate/                run_gate.sh (gate scenes + report), gate_paired.py, merged_d1.py + vs_simcode_p2.py (pass-2 gate vs SIMCODE)
   calib/               sigma-calibration fitting on the gate tuning seed (dump_fe.py -> fit_cal.py; plib.py for pass 2)

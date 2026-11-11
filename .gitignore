@@ -6,3 +6,4 @@ simcode2.json
 runs/
 *.tif
 out/
+external/

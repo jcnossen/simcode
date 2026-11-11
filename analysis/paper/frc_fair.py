@@ -9,7 +9,7 @@ Protocol (every method identically; README.md in this directory):
   3. Uncertainty filter, the same rule for all: max(sigma_x, sigma_y) < 0.15 px (16.2 nm), the paper's crlb_filter(0.15), with
      each method's own per-localization sigma (SMLM / SIMFLUX: CRLB; DECODE: its predicted sigma; SIMCODE v2: calibrated sigma).
   4. Common region: the evalproto crop (x, y in [5, 115) px) for every method (excludes the sensor edge).
-  5. Drift: each method's OWN DME v2 drift (v3e, analysis/baselines/dme_drift.py), estimated on that method's rows from 2-4
+  5. Drift: each method's OWN DME v2 drift (analysis/baselines/dme_drift.py), estimated on that method's rows from 2-4
      (time = window start + 3, crlb = its sigma), subtracted at window start + 3.
   6. FRC: alternating 300-frame halves (half = window start // 300 % 2), 5-nm histogram renders, 5-bin smoothed curve, 1/7
      threshold = simcode2.evalproto.lib.frc_std (= frc_split, blk 300); frc_curve() below is the same computation that also
@@ -65,17 +65,12 @@ def masks(T, sigma_max=SIGMA_MAX, grid=GRID, crop=CROP):
 
 
 def dme_v2(x, y, t, sx, sy, F):
-    """DME v2 (v3e, ~/dme read-only, as analysis/baselines/dme_drift.py) -> drift [F, 2] px, info"""
-    D = os.path.expanduser(os.environ.get('DME_PATH', '~/dme'))
-    p = [f'{D}/gpu', f'{D}/gpu/loop', f'{D}/gpu/loop/methods']
-    for q in p:
-        if q not in sys.path: sys.path.insert(0, q)
-    import learned_smoother3e as V3E
+    """DME v2 (simcode2/util/drift.py, as analysis/baselines/dme_drift.py) -> drift [F, 2] px, info"""
+    from simcode2.util import drift as DR
     pos = np.c_[x, y].astype(np.float32); crlb = np.c_[sx, sy].astype(np.float32)
     ok = (t >= 0) & (t < F) & (crlb.max(1) < 1.0) & (crlb.min(1) > 0)
-    with contextlib.redirect_stdout(io.StringIO()):
-        d, info = V3E.estimate(pos[ok], t[ok].astype(np.int64), crlb[ok], F, return_info=True)
-    return np.asarray(d)[:F, :2], dict(chosen=str(info.get('chosen')), n=int(ok.sum()))
+    d, info = DR.dme_v2(pos[ok], t[ok].astype(np.int64), crlb[ok], F, return_info=True)
+    return np.asarray(d)[:F, :2], dict(chosen=str(info['chosen']), n=int(ok.sum()), dme=info['version'])
 
 
 def frc_curve(xa, ya, xb, yb, px=5.0):
