@@ -89,6 +89,12 @@ def classical(d, meta, F, lut, dev):
             b = ll > best[1]; best = (torch.where(b[:, None], th, best[0]), torch.where(b, ll, best[1]))
     th_s = best[0]
     cr = crlb(fisher_j(fj, th_s, v))
+    mu_f, _ = fj(th_s)
+    chi2px = (((dd - mu_f) ** 2) / (mu_f.clamp(min=1e-6) + v)).mean(1)              # Pearson chi2 per pixel
+    # convergence: 10 more LM iterations from the solution must not move it (|dx|, |dy| < 0.01 px, |dz| < 2 nm)
+    th_c, _, _ = lm_poisson_j(fj, dd, th_s, v, lo=lo, hi=hi, iters=10)
+    conv = ((th_c[:, :2] - th_s[:, :2]).abs().max(1).values < 0.01) & ((th_c[:, 2] - th_s[:, 2]).abs() < 0.002)
+    at_bound = (th_s[:, :2].abs() >= 2.95).any(1) | (th_s[:, 2].abs() >= 0.595) | (th_s[:, 3] <= 1.5) | (th_s[:, 4] <= 1e-3) | (th_s[:, 4] >= 999)
     # aperture photometry per channel from the movie (frames summed), at the SMLM position mapped into each channel
     raw = np.load(f'{d}/movie.npy', mmap_mode='r'); Wd = W
     xs = F['cx'] + th_s[:, 0].cpu().numpy(); ys = F['cy'] + th_s[:, 1].cpu().numpy(); w = F['w']
@@ -130,7 +136,9 @@ def classical(d, meta, F, lut, dev):
         e = ((fa_t - mp) ** 2).sum(1)
         upd = sel & (e < best_e)
         best_z = torch.where(upd, zz, best_z); best_e = torch.where(upd, e, best_e)
-    return dict(x=xs, y=ys, z=th_s[:, 2].cpu().numpy(), z_ap=best_z.cpu().numpy(), sx=cr[:, 0].cpu().numpy(), sy=cr[:, 1].cpu().numpy(),
+    ap_edge = ((best_z - th_s[:, 2]).abs() >= 0.12) | (best_z.abs() >= 0.595)          # aperture z at its search limit
+    return dict(chi2px=chi2px.cpu().numpy(), conv=conv.cpu().numpy(), at_bound=at_bound.cpu().numpy(), ap_edge=ap_edge.cpu().numpy(),
+                x=xs, y=ys, z=th_s[:, 2].cpu().numpy(), z_ap=best_z.cpu().numpy(), sx=cr[:, 0].cpu().numpy(), sy=cr[:, 1].cpu().numpy(),
                 sz=cr[:, 2].cpu().numpy(), N=th_s[:, 3].cpu().numpy(), w=w)
 
 
@@ -206,7 +214,7 @@ def render_xz(x, z, ax, title, sr=6.0, zr=(-0.35, 0.35)):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--tag', default='d1'); p.add_argument('--model', default='v2'); p.add_argument('--pattern', default='iter')
-    p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
+    p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--chi2_max', type=float, default=4.0); p.add_argument('--sxy_max', type=float, default=0.12)
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-sim')
     d = f'{REPO}/out/4pi/simmovie/{a.tag}'; dev = 'cuda'
@@ -220,7 +228,7 @@ def main():
     L = dict(np.load(f'{d}/locs_SIM_000_{a.model}_{a.pattern}.npz'))  # pattern tag may carry the _phiO suffix
     F = dict(np.load(f'{d}/front_SIM_000_{a.model}.npz'))
     t0 = time.time()
-    fc = f'{d}/classical_{a.model}.npz'
+    fc = f'{d}/classical_{a.model}_q.npz'      # with fit-quality fields (chi2, bounds, convergence)
     if os.path.exists(fc):
         C = dict(np.load(fc))
     else:
@@ -233,8 +241,17 @@ def main():
     tabs = {}
     sets = {'network (head4pi v2 + explicit solve)': dict(x=L['x'], y=L['y'], z=L['z'], ok=(L['sz'] < a.sz_max) & (L['sx'] < a.sxy_max) & (L['sy'] < a.sxy_max) & (L['N'] > 300), w=L['w']),
             'network, all candidates': dict(x=L['x'], y=L['y'], z=L['z'], ok=np.ones(len(L['x']), bool), w=L['w']),
-            'classical summed SMLM (astig z)': dict(x=C['x'], y=C['y'], z=C['z'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w']),
-            'classical + published-style aperture z (oracle phase field)': dict(x=C['x'], y=C['y'], z=C['z_ap'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w'])}
+            'classical summed SMLM (astig z), unfiltered': dict(x=C['x'], y=C['y'], z=C['z'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w']),
+            'classical + published-style aperture z (oracle phase field), unfiltered': dict(x=C['x'], y=C['y'], z=C['z_ap'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w'])}
+    # standard classical rejections: chi2/px <= 4 (Pearson, i.e. chi2 <= 4 ROI^2), no parameter at a bound, converged,
+    # and the network's uncertainty thresholds (sigma_xy < sxy_max px, N > 300; sigma_z < sz_max um or, as a variant,
+    # without the sigma_z cut because the astigmatic CRLB alone is 15-60 nm)
+    qok = (C['chi2px'] <= a.chi2_max) & ~C['at_bound'] & C['conv'] & (C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300)
+    sets['classical summed SMLM (astig z), filtered'] = dict(x=C['x'], y=C['y'], z=C['z'], ok=qok, w=C['w'])
+    sets['classical summed SMLM (astig z), filtered + sigma_z cut'] = dict(x=C['x'], y=C['y'], z=C['z'], ok=qok & (C['sz'] < a.sz_max), w=C['w'])
+    sets['classical + published-style aperture z (oracle phase field), filtered'] = dict(x=C['x'], y=C['y'], z=C['z_ap'], ok=qok & ~C['ap_edge'], w=C['w'])
+    print('classical rows %d: chi2/px > %.0f %.3f, at bound %.3f, not converged %.3f, pass all + sigma_xy %.3f' % (
+        len(C['x']), a.chi2_max, np.mean(C['chi2px'] > a.chi2_max), np.mean(C['at_bound']), np.mean(~C['conv']), np.mean(qok)), flush=True)
     # CRLB for all GT units in the region (isolated-emitter bound)
     cr = crlb_units(G, np.arange(len(G['x'])), meta, lut, dev) * np.array([PX * 1000, PX * 1000, 1000])
     for nm, S in sets.items():
@@ -263,13 +280,13 @@ def main():
             print(f"  {r['lo']}-{r['hi']} e: n {r['n_gt']} recall {r['recall']:.2f} | robust x/y/z {r['x_rob']:.1f}/{r['y_rob']:.1f}/{r['z_rob']:.1f} "
                   f"| RMS (no fringe err) {r['x_rms']:.1f}/{r['y_rms']:.1f}/{r['z_rms']:.1f} | CRLB {r['crlb'][0]:.1f}/{r['crlb'][1]:.1f}/{r['crlb'][2]:.1f} | fringe {r['fringe']:.3f}")
     res['methods'] = tabs
-    json.dump(res, open(f'{d}/eval_{a.model}_{a.pattern}.json', 'w'), indent=1)
+    json.dump(res, open(f'{d}/eval_{a.model}_{a.pattern}_filtered.json', 'w'), indent=1)
     # renders: GT, network, classical summed SMLM, published-style z
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     zr = (-0.3, 0.3)
     fig, axs = plt.subplots(2, 4, figsize=(18, 7.2), gridspec_kw=dict(height_ratios=[3.2, 1]))
     panels = [('ground truth (sites of GT units)', G['x'], G['y'], G['z'])]
-    for nm in ('network (head4pi v2 + explicit solve)', 'classical summed SMLM (astig z)', 'classical + published-style aperture z (oracle phase field)'):
+    for nm in ('network (head4pi v2 + explicit solve)', 'classical summed SMLM (astig z), filtered', 'classical + published-style aperture z (oracle phase field), filtered'):
         S = sets[nm]; ok = S['ok'] & inr(S['x'], S['y'])
         panels.append((nm, S['x'][ok], S['y'][ok], S['z'][ok]))
     ystrip = (24.0, 28.0)
@@ -282,7 +299,7 @@ def main():
                 axs[0, 0].axhline((yy_ - LO) * PX * 1000 / 6.0, color='w', lw=0.5, ls='--')
     fig.suptitle(f'4Pi-SIMFLUX simulation {a.tag}: {meta["dens_actual"]:.2f} emitters/um^2/frame, {meta["T"]} frames, '
                  f'{(HI-LO)*PX:.2f} x {(HI-LO)*PX:.2f} um usable (6 nm render px)', fontsize=10)
-    plt.tight_layout(); fn = f'{d}/render_{a.model}_{a.pattern}.png'; plt.savefig(fn, dpi=130); plt.close()
+    plt.tight_layout(); fn = f'{d}/render_{a.model}_{a.pattern}_filtered.png'; plt.savefig(fn, dpi=130); plt.close()
     print('render ->', fn)
 
 

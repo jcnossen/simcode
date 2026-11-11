@@ -67,18 +67,28 @@ def main():
         C = np.load(fp1, allow_pickle=True, mmap_mode='r')
         g, cr = np.asarray(C['gfit']), np.asarray(C['gcrlb'])
         s = (cr[:, 0] < 0.15) & (cr[:, 1] < 0.15) & (g[:, 2] > 300)
-        R.append(analyse('classical pass 1 (Gaussian, summed)', np.asarray(C['w'])[s], np.asarray(C['x'])[s], np.asarray(C['y'])[s],
+        R.append(analyse('classical pass 1 (Gaussian, summed), unfiltered', np.asarray(C['w'])[s], np.asarray(C['x'])[s], np.asarray(C['y'])[s],
                          cr[s, 0], cr[s, 1], g[s, 2] * 1.35))
+        # standard rejections: Pearson chi2 <= 4 x ROI^2 (ROI 15), no parameter at a bound (sigma at 0.6 / 4.5 px, centre
+        # within 1 px of the ROI edge), N > 300, CRLB < 0.15 px
+        c2 = np.asarray(C['gchi2'])
+        q = s & (c2 <= 4 * 15 * 15) & (g[:, 4] > 0.61) & (g[:, 4] < 4.49) & (g[:, 5] > 0.61) & (g[:, 5] < 4.49) & (np.abs(g[:, :2]) < 6).all(1)
+        R.append(analyse('classical pass 1 (Gaussian, summed), filtered', np.asarray(C['w'])[q], np.asarray(C['x'])[q], np.asarray(C['y'])[q],
+                         cr[q, 0], cr[q, 1], g[q, 2] * 1.35))
+        R[-1]['kept_frac'] = float(q.sum() / max(s.sum(), 1))
     fp2 = f'{REPO}/out/4pi/smlm/p1/p2_{a.cell}_{a.file:03d}.npz'
     if os.path.exists(fp2):
         C = np.load(fp2, allow_pickle=True)
         pf, pc = C['pfit'], C['pcrlb']
         s = (pc[:, 0] < 0.15) & (pc[:, 1] < 0.15) & (pf[:, 3] > 300)
-        R.append(analyse('classical PSF refit (summed 3D PSF)', C['w'][s], C['x'][s], C['y'][s], pc[s, 0], pc[s, 1], pf[s, 3], pf[s, 2], pc[s, 2]))
+        R.append(analyse('classical PSF refit (summed 3D PSF), unfiltered', C['w'][s], C['x'][s], C['y'][s], pc[s, 0], pc[s, 1], pf[s, 3], pf[s, 2], pc[s, 2]))
+        q = s & (C['pchi2'] <= 4 * 15 * 15) & (np.abs(pf[:, 2]) < 0.88) & (pc[:, 2] < 0.06)
+        R.append(analyse('classical PSF refit (summed 3D PSF), filtered', C['w'][q], C['x'][q], C['y'][q], pc[q, 0], pc[q, 1], pf[q, 3], pf[q, 2], pc[q, 2]))
+        R[-1]['kept_frac'] = float(q.sum() / max(s.sum(), 1))
     os.makedirs(f'{REPO}/out/4pi/net/check', exist_ok=True)
     json.dump(R, open(f'{REPO}/out/4pi/net/check/dafl_{a.cell}_{a.file:03d}_{a.model}.json', 'w'), indent=1)
     for r in R:
-        print(f"\n{r['name']} ({r['n_pairs']} pairs)")
+        print(f"\n{r['name']} ({r['n_pairs']} pairs" + (f", kept {r['kept_frac']:.2f} of the unfiltered rows" if 'kept_frac' in r else '') + ')')
         for b in r['bins']:
             s = '  '.join(f"{k}: {b[k]['dafl_nm']:.2f} (rep {b[k]['reported_nm']:.2f}, x{b[k]['ratio']:.2f})" for k in ('x', 'y', 'z') if k in b)
             print(f"  N {b['lo']}-{b['hi']} n {b['n']}: {s}")
