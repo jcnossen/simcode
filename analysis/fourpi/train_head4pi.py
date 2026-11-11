@@ -22,7 +22,9 @@ def main():
     p.add_argument('--ch', type=int, default=96); p.add_argument('--nblk', type=int, default=4)
     p.add_argument('--psf', default='NPC_f_dxy15'); p.add_argument('--seed', type=int, default=1)
     p.add_argument('--wprior', type=float, default=1.0)
+    p.add_argument('--eps_range', type=float, default=0.3, help='pattern phase range at the patch centre (rad); pi = arbitrary (v3)')
     a = p.parse_args()
+    from simcode2.util.proctitle import auto; auto('4pi-train')     # recognizable name in nvidia-smi / ps
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
@@ -35,7 +37,7 @@ def main():
     t0 = time.time(); acc = []
     for it in range(a.steps):
         with torch.no_grad():
-            S = sim.sample(a.batch)
+            S = sim.sample(a.batch, eps_range=a.eps_range)
         o = net(S['img'], S['doff'])
         lI = nll_2x2(S['T'], S['C'], o).sum((1, 2)) / 48
         lp = nll_prior(S['x'], S['y'], S['z'], o) / 3
