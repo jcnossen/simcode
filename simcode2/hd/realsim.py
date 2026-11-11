@@ -157,6 +157,9 @@ class RealSim:
         self.zmax = self.sim.zmax; self.focus = self.sim.focus
         self.rn_map = torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float()
         self.luts = [self.sim.lut]
+        # (2026-11-11, opt-in per-angle PSF calib) every LUT-bank entry is a tuple (angle-0 LUT, angle-1 LUT); same jitter draws
+        ang = self.sim.lut_angle is not None
+        if ang: self.luts = [tuple(self.sim.lut_angle)]
         if psf_jitter and npsf > 1:
             from simcode2.det.psfpert import build_lut
             g = torch.Generator().manual_seed(1234 + seed)
@@ -166,8 +169,10 @@ class RealSim:
                 # (2026-11-10 simreal2) opt-in jitter widths: psf_wr (width range, 0.06), psf_fr (focus range um, 0.03), psf_zs (Zernike sd waves, 0.008)
                 w = 1.0 + self.p.get('psf_wr', 0.06) * (float(u[0]) - 0.5); fs = (float(u[1]) - 0.5) * self.p.get('psf_fr', 0.03)
                 zd = (torch.randn(nz, generator=g) * self.p.get('psf_zs', 0.008)).to(dev)
-                self.luts.append(build_lut(self.sim, w, zd, fs, self.zmax)[0])
-        if self.p.get('psfdiv'):   # (2026-11-11 PSF-shape mismatch, opt-in) PSF-diversity LUT bank, see psf_div_luts
+                self.luts.append(tuple(build_lut(self.sim, w, zd, fs, self.zmax, angle=k)[0] for k in range(2)) if ang
+                                 else build_lut(self.sim, w, zd, fs, self.zmax)[0])
+        if self.p.get('psfdiv'):
+            assert not ang, 'psfdiv bank: no per-angle PSF support'    # (2026-11-11 PSF-shape mismatch, opt-in) PSF-diversity LUT bank, see psf_div_luts
             self.luts = psf_div_luts(self, self.p['psfdiv'], seed)
 
     # ----------------------------------------------------------------------------------------------- emitters
@@ -464,12 +469,15 @@ class RealSim:
             xr_ = x + p['ev_shift'] / PX_NM * torch.randn(N, device=dev); yr_ = y + p['ev_shift'] / PX_NM * torch.randn(N, device=dev)   # per axis; illumination / GT stay at r
         if N > 0:
             grp = torch.randint(0, len(self.luts) if psf_var else 1, (N,), device=dev)
+            ang = isinstance(self.luts[0], tuple)
             psf = torch.zeros(N, R, R, device=dev)
+            if ang: psf1 = torch.zeros(N, R, R, device=dev)       # angle-1 PSF (psf = angle 0)
             base = sim.lut
             for gi, lut in enumerate(self.luts):
                 m_ = grp == gi
                 if m_.any():
-                    sim.lut = lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
+                    sim.lut = lut[0] if ang else lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
+                    if ang: sim.lut = lut[1]; psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
             sim.lut = base
             # halo-amplitude jitter: a fraction h ~ U(0, halo) of each emitter's light in a broad Gaussian (sigma 4 px)
             hmax = p.get('halo', 0.0) if emitter_var else 0.0
@@ -480,14 +488,21 @@ class RealSim:
                 gb = gb / gb.sum((1, 2), keepdim=True) * psf.sum((1, 2), keepdim=True)
                 hh = hmax * torch.rand(N, 1, 1, device=dev)
                 psf = (1 - hh) * psf + hh * gb
+                if ang: psf1 = (1 - hh) * psf1 + hh * gb
             if p.get('halo2', 0.0) > 0:    # broad halo (default off; see add_halo2)
                 psf = add_halo2(psf, xr_, yr_, p['halo2'], p.get('halo2_sig', 4.0))
+                if ang: psf1 = add_halo2(psf1, xr_, yr_, p['halo2'], p.get('halo2_sig', 4.0))
             cx = torch.round(xr_).long() + margin + 1; cy = torch.round(yr_).long() + margin + 1
             oy, ox = torch.meshgrid(torch.arange(R, device=dev), torch.arange(R, device=dev), indexing='ij')
             iy = (cy[:, None, None] + oy).reshape(N, -1); ix = (cx[:, None, None] + ox).reshape(N, -1)
             Wp, Hp = img.shape[-1], img.shape[-2]
             lin = fov[:, None, None] * T * Hp * Wp + torch.arange(T, device=dev)[None, :, None] * Hp * Wp + (iy * Wp + ix)[:, None, :]
-            img.view(-1).index_add_(0, lin.reshape(-1), (phot[:, :, None] * psf.reshape(N, 1, -1)).reshape(-1))
+            if ang:   # each frame's PSF follows its pattern angle (step // 3)
+                sel_ = ((steps // 3)[fov] == 0)[..., None]
+                val_ = phot[:, :, None] * torch.where(sel_, psf.reshape(N, 1, -1), psf1.reshape(N, 1, -1))
+            else:
+                val_ = phot[:, :, None] * psf.reshape(N, 1, -1)
+            img.view(-1).index_add_(0, lin.reshape(-1), val_.reshape(-1))
         off = margin + hr + 1
         img = img[:, :, off:off + H, off:off + W]
         bgt, bst = self.background(nb, steps, mode=bgmode, **bgkw)

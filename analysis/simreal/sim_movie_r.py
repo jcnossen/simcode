@@ -8,6 +8,8 @@
   SIM_PSF_BLUR=sx,sy  (2026-11-11, opt-in) anisotropic Gaussian blur (px) of every rendered PSF (after the halo)
   SIM_PSFDIV=<json>   (2026-11-11, opt-in) PSF-diversity LUT bank replacing rs.luts (realsim.psf_div_luts); with SIM_SITE_PSF=0 one LUT per event
   SIM_EV_SHIFT=<nm>   (2026-11-11, opt-in) per-event emission offset sd per axis (PSF rendered at r + d; GT / illumination at r; stored in shift_dx / dy)
+  (2026-11-11) a SIM_CALIB with a per-pattern-angle PSF (psf_dipole_M_angle / psf_blur_angle_px2; RealSim LUT tuples) renders
+                      each frame with its angle's PSF (frame % 6 // 3); not combined with SIM_LAZY / SIM_PSF_DYN / SIM_HALO2 / SIM_PSF_BLUR
   SIM_PSF_DYN=1       per-frame PSF shape fluctuation (random jittered LUT per emitter per frame), SIMP_npsf-free: uses rs.luts
 [2026-11-10 field copy of sc6/sim_movie.py] + SIM_PFIELD=<field .pt> (simcode2/pipeline/pattern_field.py format): a static
 per-position pattern phase field phi_a(r) and depth factor f_a(r) are injected into the illumination
@@ -161,15 +163,19 @@ def main():
         gb_ = gb_ / gb_.sum((1, 2), keepdim=True) * P_.sum((1, 2), keepdim=True)
         P_ = (1 - hh[ix_]) * P_ + hh[ix_] * gb_
         return psf_blur(P_, *BLUR) if BLUR else P_
+    ANG = isinstance(rs.luts[0], tuple); psf1 = None
+    if ANG: assert not (LAZY or os.environ.get('SIM_PSF_DYN') or os.environ.get('SIM_HALO2') or BLUR), 'per-angle PSF: unsupported combination'
     if LAZY:
         hh = p['halo'] * torch.rand(N, 1, 1, device=dev)
         psf = None
     else:
         psf = torch.zeros(N, R, R, device=dev); base = sim.lut
+        if ANG: psf1 = torch.zeros(N, R, R, device=dev)
         for gi, lut in enumerate(rs.luts):
             m_ = grp == gi
             if m_.any():
-                sim.lut = lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
+                sim.lut = lut[0] if ANG else lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
+                if ANG: sim.lut = lut[1]; psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
         sim.lut = base
         o_ = torch.arange(R, device=dev, dtype=torch.float32) - R // 2
         fx_, fy_ = xr_ - torch.round(xr_), yr_ - torch.round(yr_)
@@ -177,6 +183,7 @@ def main():
         gb = gb / gb.sum((1, 2), keepdim=True) * psf.sum((1, 2), keepdim=True)
         hh = p['halo'] * torch.rand(N, 1, 1, device=dev)
         psf = (1 - hh) * psf + hh * gb
+        if ANG: psf1 = (1 - hh) * psf1 + hh * gb
         if BLUR: psf = torch.cat([psf_blur(psf[i_:i_ + 4096], *BLUR) for i_ in range(0, len(psf), 4096)])
         del gb
     PSFD = None
@@ -251,7 +258,11 @@ def main():
             iy = (cy[act, None, None] - hr + oy).reshape(len(act), -1); ix = (cx[act, None, None] - hr + ox).reshape(len(act), -1)
             Hp, Wp = img.shape[-2], img.shape[-1]
             lin = torch.arange(Tb, device=dev)[None, :, None] * Hp * Wp + (iy * Wp + ix)[:, None, :]
-            if PSFD is None:
+            if psf1 is not None:   # per-angle PSF: frame angle = (frame % 6) // 3
+                a1 = (st // 3 == 1)[None, :, None]
+                img.view(-1).index_add_(0, lin.reshape(-1), (ph[:, :, None] * torch.where(a1, psf1[act].reshape(len(act), 1, -1),
+                                                                                           psf[act].reshape(len(act), 1, -1))).reshape(-1))
+            elif PSFD is None:
                 pa_ = psf[act] if psf is not None else mkpsf(act)
                 img.view(-1).index_add_(0, lin.reshape(-1), (ph[:, :, None] * pa_.reshape(len(act), 1, -1)).reshape(-1))
             else:

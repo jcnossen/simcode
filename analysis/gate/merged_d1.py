@@ -38,6 +38,7 @@ class BD:
             c = json.load(open(config.model('insitu/calib_0.5nM.json'))); RR = 21
             psf = VectorialPSF(RR, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'], oversample=3, device=dev)
             psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
+            from simcode2.psf.vectorial import set_psf_extras; set_psf_extras(psf, c)   # opt-in calib PSF terms
             BD._psf, BD._focus = psf, c['focus_um']
         return torch.cat([BD._psf(p, torch.full((len(p),), BD._focus, device=dev)) for p in xyz.split(2048)])
 

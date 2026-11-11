@@ -14,7 +14,7 @@ Ground truth: emitter table with per-frame photons (= brightness * illumination 
 import json, math
 import numpy as np
 import torch
-from simcode2.psf.vectorial import VectorialPSF
+from simcode2.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
 
 
 class Simulator:
@@ -33,6 +33,7 @@ class Simulator:
         with torch.no_grad():
             self.psf.zcoef.copy_(torch.tensor(self.c['zernike_waves'], device=self.dev))
             self.psf.apod.copy_(torch.tensor(self.c['apod'], device=self.dev))
+        set_psf_extras(self.psf, self.c)   # (2026-11-11, opt-in calib keys; absent = unchanged) blur / dipole tensor / SAF
         self.focus = self.c['focus_um']
         # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
         self.lz, self.ls = psf_lut_z, psf_lut_sub
@@ -43,6 +44,19 @@ class Simulator:
         with torch.no_grad():
             lut = torch.cat([self.psf(p, torch.full((len(p),), self.focus, device=self.dev)) for p in pos.split(1024)])
         self.lut = lut.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi)
+        # (2026-11-11, opt-in) per-pattern-angle PSF (calib 'psf_dipole_M_angle' / 'psf_blur_angle_px2'): one LUT per angle;
+        # self.lut = the exact average of the two angle LUTs (pattern-free consumers: templates, sums); self.psf = the
+        # angle-averaged model of set_psf_extras(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
+        self.lut_angle = None
+        if has_angle_psf(self.c):
+            self.lut_angle = []
+            for k in range(2):
+                set_psf_extras(self.psf, self.c, angle=k)
+                with torch.no_grad():
+                    la = torch.cat([self.psf(p, torch.full((len(p),), self.focus, device=self.dev)) for p in pos.split(1024)])
+                self.lut_angle.append(la.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi))
+            set_psf_extras(self.psf, self.c)
+            self.lut = 0.5 * (self.lut_angle[0] + self.lut_angle[1])   # exact angle average (equal light per angle)
         self.zs = zs
         cam = self.c['camera']
         self.gain, self.offset, self.rn = cam['gain_e_per_adu'], cam['offset_adu'], cam['readnoise_e']
@@ -56,6 +70,16 @@ class Simulator:
         self.depth0 = torch.tensor(p['depth'], device=self.dev)
 
     # ------------------------------------------------------------------
+    def render_psf_angles(self, x, y, z):
+        """(per-angle PSF) [2,N,R,R] rendered with lut_angle[0 / 1]; [1,N,R,R] with self.lut otherwise"""
+        if self.lut_angle is None:
+            return self.render_psf(x, y, z)[None]
+        base = self.lut; out = []
+        for la in self.lut_angle:
+            self.lut = la; out.append(self.render_psf(x, y, z))
+        self.lut = base
+        return torch.stack(out)
+
     def render_psf(self, x, y, z):
         """Interpolated PSF images [N,R,R] for emitters with subpixel offsets relative to their pixel center."""
         fx, fy = x - torch.round(x), y - torch.round(y)                     # [-0.5, 0.5]
@@ -163,7 +187,12 @@ class Simulator:
             Wp = img.shape[-1]; Hp = img.shape[-2]
             lin = (fov[:, None, None] * T * Hp * Wp + torch.arange(T, device=dev)[None, :, None] * Hp * Wp
                    + (iy * Wp + ix)[:, None, :])                                          # [N,T,R*R]
-            val = phot[:, :, None] * psf.reshape(N, 1, -1)
+            if self.lut_angle is None:
+                val = phot[:, :, None] * psf.reshape(N, 1, -1)
+            else:   # each frame's PSF follows its pattern angle
+                psfA = self.render_psf_angles(x, y, z).reshape(2, N, 1, -1)
+                ang_e = angle[fov][..., None]                                             # [N,T,1]
+                val = phot[:, :, None] * torch.where(ang_e == 0, psfA[0], psfA[1])
             img.view(-1).index_add_(0, lin.reshape(-1), val.reshape(-1))
         off = margin + hr + 1
         img = img[:, :, off:off + H, off:off + W]

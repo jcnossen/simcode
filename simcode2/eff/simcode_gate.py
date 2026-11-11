@@ -169,7 +169,7 @@ def main():
                     fov0 += nb; need -= len(tg); torch.cuda.empty_cache(); continue
                 nn = ST.nn_dist(G, tg)
                 fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
-                psS = torch.zeros(len(G['x']), 4, CD.R, CD.R, device=dev)
+                psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
                 psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai], sim.focus)
                 Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
                 n = len(G['x'])

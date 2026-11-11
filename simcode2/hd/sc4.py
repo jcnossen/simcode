@@ -258,7 +258,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
             if len(tg) == 0: continue
             nnd = ST.nn_dist(G, tg)
             fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
-            psS = torch.zeros(len(G['x']), 4, CD.R, CD.R, device=dev)
+            psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
             psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai], sim.focus)
             Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
             cov = Cb['cov_or'].double(); ok = torch.isfinite(cov).all(2).all(1) & torch.isfinite(Cb['sf_m']).all(1)

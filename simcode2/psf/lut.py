@@ -19,7 +19,7 @@ lut.evaluate(pos, grad=True) also returns d/dx, d/dy (px) and d/dz (um).
 """
 import math
 import torch
-from simcode2.psf.vectorial import VectorialPSF
+from simcode2.psf.vectorial import VectorialPSF, copy_psf_extras
 
 
 def geometry_matrix(device, tau: float = 0.5):
@@ -48,6 +48,7 @@ class PSFLUT:
                            device=self.dev)
         with torch.no_grad():
             big.zcoef.copy_(psf.zcoef); big.apod.copy_(psf.apod); big.saf.copy_(psf.saf)
+        copy_psf_extras(big, psf)   # (2026-11-11) opt-in blur / dipole tensor; none set = unchanged
         nz = int(round(zmax / hz)) + 1 + 2 * zpad
         self.z0, self.hz, self.nz = -zpad * hz, hz, nz
         zs = self.z0 + hz * torch.arange(nz, device=self.dev, dtype=torch.float64)
@@ -121,4 +122,5 @@ def make_lut(sim, P):
                   wavelength=p0.wavelength, oversample=3, device=p0.u.device)
     with torch.no_grad():
         rp.zcoef.copy_(p0.zcoef); rp.apod.copy_(p0.apod)
+    copy_psf_extras(rp, p0)         # (2026-11-11) opt-in terms of the simulator's calib (angle average)
     return PSFLUT(rp, sim.focus, sim.zmax)

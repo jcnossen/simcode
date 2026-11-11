@@ -168,17 +168,26 @@ def shift_region(img, ox, oy):
     return img * (vy[:, :, None, :, None] & vx[:, :, None, None, :]).float()
 
 
+def psf_channels(rpsf):
+    """4 (p, dx, dy, dz), or 8 = angle-0 then angle-1 stacks when rpsf carries a per-pattern-angle PSF (rpsf.angle_kw)"""
+    return 8 if getattr(rpsf, 'angle_kw', None) else 4
+
+
 def psf_stack(rpsf, x, y, z, focus, chunk=1024):
-    """Exact vectorial PSF on each emitter's own 15x15 ROI + central-difference derivatives: [N,4,R,R] (p, dx, dy, dz)."""
+    """Exact vectorial PSF on each emitter's own 15x15 ROI + central-difference derivatives: [N,4,R,R] (p, dx, dy, dz).
+    (2026-11-11) [N,8,R,R] (angle 0 | angle 1) if rpsf has a per-angle PSF (models() of a per-angle calib)."""
     pos = torch.stack([x - torch.round(x), y - torch.round(y), z], 1)
+    kws = getattr(rpsf, 'angle_kw', None) or [{}]
     out = []
     for p in pos.split(chunk):
-        f = torch.full((len(p),), focus, device=dev); im = [rpsf(p, f)]
-        for i, hh in ((0, 1e-3), (1, 1e-3), (2, 1e-3)):
-            dd = torch.zeros_like(p); dd[:, i] = hh
-            im.append((rpsf(p + dd, f) - rpsf(p - dd, f)) / (2 * hh))
+        f = torch.full((len(p),), focus, device=dev); im = []
+        for kw in kws:
+            im.append(rpsf(p, f, **kw))
+            for i, hh in ((0, 1e-3), (1, 1e-3), (2, 1e-3)):
+                dd = torch.zeros_like(p); dd[:, i] = hh
+                im.append((rpsf(p + dd, f, **kw) - rpsf(p - dd, f, **kw)) / (2 * hh))
         out.append(torch.stack(im, 1))
-    return torch.cat(out) if out else torch.zeros(0, 4, R, R, device=dev)
+    return torch.cat(out) if out else torch.zeros(0, 4 * len(kws), R, R, device=dev)
 
 
 def scaled_solve(FI, cols):
@@ -212,6 +221,12 @@ def crlb_all(G, o, psS, tg, T, focus):
     patt = o['patt']; ang_f = (patt[..., 0].abs() < patt[..., 1].abs()).long()
     # per-emitter time factors (true parameters)
     pt_e = patt[G['fov']]
+    if psS.shape[1] == 8:   # (2026-11-11) per-angle PSF: [Np, 4, T, R, R], each frame's PSF follows its pattern angle
+        ae = ang_f[G['fov']][:, None, :, None, None]
+        psS = torch.where(ae == 0, psS[:, None, :4].transpose(1, 2), psS[:, None, 4:].transpose(1, 2))
+        PT = T
+    else:
+        PT = 1
     il, dilx, dily = illum_at(pt_e, G['x'], G['y'])
     a_, da0, da1 = onfrac(G['t0'], G['t1'], T)
     Bv = G['bright']
@@ -223,7 +238,7 @@ def crlb_all(G, o, psS, tg, T, focus):
     oy, ox = torch.meshgrid(torch.arange(R, device=dev), torch.arange(R, device=dev), indexing='ij')
     lin = (G['fov'][:, None, None] * T * Sp * Sp + torch.arange(T, device=dev)[None, :, None] * Sp * Sp
            + ((pyi[:, None, None] + pad - HR + oy) * Sp + pxi[:, None, None] + pad - HR + ox).reshape(Np, 1, -1))
-    canvas.view(-1).index_add_(0, lin.reshape(-1), (Ie[:, :, None] * psS[:, 0].reshape(Np, 1, -1)).reshape(-1))
+    canvas.view(-1).index_add_(0, lin.reshape(-1), (Ie[:, :, None] * psS[:, 0].reshape(Np, PT, -1)).reshape(-1))
     mu_full = canvas[:, :, pad:pad + S, pad:pad + S] + o['bg']
     rn2_full = (o['rn'] ** 2).expand(nb, 1, S, S)
     n = len(tg)
@@ -231,7 +246,7 @@ def crlb_all(G, o, psS, tg, T, focus):
     mu_m = extract_patches(mu_full, tb, tcy, tcx, R).reshape(n, T, -1)
     bg_r = extract_patches(o['bg'], tb, tcy, tcx, R).reshape(n, T, -1)
     rn2_r = extract_patches(rn2_full, tb, tcy, tcx, R).reshape(n, 1, -1)
-    mu_i = bg_r + Ie[tg][:, :, None] * psS[tg, 0].reshape(n, 1, -1)
+    mu_i = bg_r + Ie[tg][:, :, None] * psS[tg, 0].reshape(n, PT, -1)
     # parameter sets: target first, then active emitters within BOXP px
     sets = []
     for i in range(n):
@@ -253,8 +268,12 @@ def crlb_all(G, o, psS, tg, T, focus):
         else:
             S_ = torch.stack([torch.cat([sets[i], torch.full((K - len(sets[i]),), -1, dtype=torch.long, device=dev)]) for i in idx.tolist()])
         valid = (S_ >= 0).float(); Sc = S_.clamp(min=0); Kk = S_.shape[1]
-        ps = shift_region(psS[Sc], pxi[Sc] - tcx[idx][:, None], pyi[Sc] - tcy[idx][:, None]) * valid[:, :, None, None, None]
-        ps = ps.reshape(m_, Kk, 4, 1, R * R)
+        if PT == 1:
+            ps = shift_region(psS[Sc], pxi[Sc] - tcx[idx][:, None], pyi[Sc] - tcy[idx][:, None]) * valid[:, :, None, None, None]
+        else:
+            ps = shift_region(psS[Sc].reshape(m_, Kk, 4 * T, R, R), pxi[Sc] - tcx[idx][:, None], pyi[Sc] - tcy[idx][:, None]) \
+                * valid[:, :, None, None, None]
+        ps = ps.reshape(m_, Kk, 4, PT, R * R)
         B_ = Bv[Sc][..., None]; A_ = a_[Sc]; IL = il[Sc]
         w = 1.0 / ((mu_i[idx] if iso else mu_m[idx]) + rn2_r[idx])         # [m,T,RR]
         # SMLM model: Fisher weights must come from the flat-illumination expected image (critic review 22 #1:
@@ -363,4 +382,7 @@ def models(T):
     rpsf = mk(R); rp11 = mk(P)
     with torch.no_grad():
         for q in (rpsf, rp11): q.zcoef.copy_(p0.zcoef); q.apod.copy_(p0.apod)
+    from simcode2.psf.vectorial import copy_psf_extras, angle_kwargs
+    for q in (rpsf, rp11): copy_psf_extras(q, p0)       # opt-in calib terms (angle average); absent = unchanged
+    rpsf.angle_kw = angle_kwargs(sim.c, dev)             # per-angle PSF for psf_stack / crlb_all (None = off)
     return sim, rpsf, PSFLUT(rp11, sim.focus, sim.zmax)

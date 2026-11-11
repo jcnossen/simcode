@@ -7,8 +7,10 @@ import torch
 
 @torch.no_grad()
 def solve_linear(psf, data, mask, group, rn2, ngroups=2, iters=3, I_min=0.0):
-    """psf [B,P], data [B,T,P], mask [B,T] bool, group [B,T] long in [0,ngroups). Returns I [B,T], bg [B,ngroups]."""
+    """psf [B,P] (or [B,T,P]: per-frame PSF, 2026-11-11 opt-in), data [B,T,P], mask [B,T] bool, group [B,T] long in
+    [0,ngroups). Returns I [B,T], bg [B,ngroups]."""
     B, T, P = data.shape
+    pf = psf[:, None, :] if psf.dim() == 2 else psf                  # [B,1|T,P]
     n = T + ngroups
     m = mask.float()
     G = torch.nn.functional.one_hot(group.clamp(min=0), ngroups).float() * m[..., None]   # [B,T,ng]
@@ -17,8 +19,8 @@ def solve_linear(psf, data, mask, group, rn2, ngroups=2, iters=3, I_min=0.0):
     I = torch.zeros(B, T, device=data.device); bg = torch.zeros(B, ngroups, device=data.device)
     for _ in range(iters):
         # normal equations. columns: I_t (psf on frame t), bg_g (ones on frames in group g)
-        pw = psf[:, None, :] * w                                     # [B,T,P]
-        A_II = torch.diag_embed((pw * psf[:, None, :]).sum(-1))      # [B,T,T]
+        pw = pf * w                                                  # [B,T,P]
+        A_II = torch.diag_embed((pw * pf).sum(-1))                   # [B,T,T]
         A_Ib = (pw.sum(-1)[..., None] * G)                           # [B,T,ng]
         A_bb = torch.diag_embed((w.sum(-1)[..., None] * G).sum(1))   # [B,ng,ng]
         rhs_I = (pw * data).sum(-1)                                  # [B,T]
@@ -31,6 +33,6 @@ def solve_linear(psf, data, mask, group, rn2, ngroups=2, iters=3, I_min=0.0):
         A = A + torch.diag_embed(pad)
         x = torch.linalg.solve(A, torch.cat([rhs_I, rhs_b], 1))
         I = x[:, :T].clamp(min=I_min) * m; bg = x[:, T:]
-        mu = I[..., None] * psf[:, None, :] + (G * bg[:, None, :]).sum(-1, keepdim=True)     # [B,T,P] (no bmm: ng=1 fails on cuda)
+        mu = I[..., None] * pf + (G * bg[:, None, :]).sum(-1, keepdim=True)     # [B,T,P] (no bmm: ng=1 fails on cuda)
         w = m[..., None] / (mu.clamp(min=1e-3) + rn2)
     return I, bg

@@ -10,13 +10,14 @@ converted with gain (1 + eg) and offset + eo ADU instead of the true ones).
 import math, copy
 import numpy as np, torch
 from simcode2.sim.simulator import Simulator
-from simcode2.psf.vectorial import VectorialPSF
+from simcode2.psf.vectorial import VectorialPSF, set_psf_extras
 
 dev = 'cuda'
 
 
-def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None):
-    """returns (lut [nz, ls+1, ls+1, R, R], zmax) for a perturbed PSF, rendered like Simulator.__init__"""
+def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle=None):
+    """returns (lut [nz, ls+1, ls+1, R, R], zmax) for a perturbed PSF, rendered like Simulator.__init__
+    (2026-11-11) with the calib's opt-in PSF terms (vectorial.set_psf_extras; angle = that pattern angle's PSF, None = average)"""
     c = sim.c
     zmax = zmax or sim.zmax
     psf = VectorialPSF(sim.R, pixelsize=c['pixelsize_um'] / width, NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'],
@@ -25,6 +26,7 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None):
         zc = torch.tensor(c['zernike_waves'], device=dev)
         if zern_delta is not None: zc = zc + zern_delta
         psf.zcoef.copy_(zc); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
+    set_psf_extras(psf, c, angle)
     zs = torch.linspace(0, zmax, sim.lz, device=dev)
     sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
     Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')

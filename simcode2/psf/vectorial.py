@@ -45,6 +45,107 @@ def zernike(j, rho, phi):
     return math.sqrt(2 * (n + 1)) * R * f
 
 
+def gauss_blur_os(I, cov, os_, pad):
+    """Anisotropic Gaussian blur of oversampled intensity images I [B, n, n] (n = (R + 2 pad) os) with covariance
+    cov = [sxx, syy, sxy] (px^2; [3] or [B, 3]), by multiplication with exp(-2 pi^2 f^T C f) in the Fourier domain (exact for
+    the band-limited intensity; os >= 2 samples it above Nyquist), then cropped by `pad` px per side -> [B, n - 2 pad os, ...].
+    The padding keeps the circular wrap out of the ROI. A negative-definite cov (deblur) is allowed but its gain is capped."""
+    B, n = I.shape[0], I.shape[-1]
+    cov = torch.as_tensor(cov, device=I.device, dtype=torch.float32)
+    cov = cov.reshape(-1, 3)
+    f = torch.fft.fftfreq(n, d=1.0 / os_, device=I.device)            # cycles / px
+    fr = torch.fft.rfftfreq(n, d=1.0 / os_, device=I.device)
+    fy, fx = f[:, None], fr[None, :]
+    q = (cov[:, 0, None, None] * fx ** 2 + cov[:, 1, None, None] * fy ** 2 + 2 * cov[:, 2, None, None] * fx * fy)
+    H = torch.exp((-2 * math.pi ** 2 * q).clamp(max=3.0))
+    J = torch.fft.irfft2(torch.fft.rfft2(I) * H, s=(n, n))
+    c = pad * os_
+    return J[:, c:n - c, c:n - c] if c > 0 else J
+
+
+def dipole_tensor(M=None, w=None, dev=None):
+    """emission-dipole second-moment tensor (trace 1) from M ([3,3] or [B,3,3]) or diagonal weights w ([3], mean 1); None if both None"""
+    if M is not None:
+        return torch.as_tensor(M, device=dev, dtype=torch.float32)
+    if w is not None:
+        return torch.diag_embed(torch.as_tensor(w, device=dev, dtype=torch.float32)) / 3
+    return None
+
+
+def photosel_tensor(gamma, e_inplane, eps=0.0, k_dir=None, ck=0.153):
+    """M = (1 - gamma) I / 3 + gamma K, K = excitation polarisation tensor (trace 1):
+    K = (1 - eps) e e^T + eps (ck kk^T + (1 - ck) zz^T) (eps = p-polarised fraction of the evanescent excitation intensity;
+    ck = |E_x|^2 / |E|^2 of the evanescent p wave = (n_eff^2 - n_med^2) / (2 n_eff^2 - n_med^2), 0.153 at n_eff 1.47, n_med 1.33).
+    e_inplane, k_dir: in-plane unit 2-vectors (x = column, y = row)."""
+    dev = gamma.device if torch.is_tensor(gamma) else None
+    e = torch.zeros(3, device=dev); e[:2] = torch.as_tensor(e_inplane, device=dev, dtype=torch.float32)
+    K = e[:, None] * e[None, :]
+    if k_dir is not None:
+        kk = torch.zeros(3, device=dev); kk[:2] = torch.as_tensor(k_dir, device=dev, dtype=torch.float32)
+        z = torch.zeros(3, device=dev); z[2] = 1
+        Kp = ck * kk[:, None] * kk[None, :] + (1 - ck) * z[:, None] * z[None, :]
+        K = (1 - eps) * K + eps * Kp
+    return (1 - gamma) * torch.eye(3, device=dev) / 3 + gamma * K
+
+
+ANGLE_KEYS = ('psf_dipole_M_angle', 'psf_blur_angle_px2')
+
+
+def has_angle_psf(c):
+    """True if the calib dict c has a per-pattern-angle PSF (angle = step // 3 = frame % 6 // 3)"""
+    return any(c.get(k) is not None for k in ANGLE_KEYS)
+
+
+def set_psf_extras(psf, c, angle=None):
+    """Opt-in PSF terms of a calib json dict c -> attributes of a VectorialPSF (absent keys: unchanged). Returns psf.
+    Global keys: 'psf_blur_px2' [sxx, syy, sxy] px^2 (image-plane blur), 'psf_dipole_M' (3 x 3, trace 1) / 'psf_dipole_w' [wx, wy, wz]
+    (emission-dipole tensor), 'saf' [tx, ty, ax, ay] (supercritical-annulus tilts).
+    Per pattern angle: 'psf_dipole_M_angle' [2][3][3], 'psf_blur_angle_px2' [2][3] (total blur of that angle, replaces the
+    global blur). angle = 0 / 1 selects that angle's PSF; angle None = the angle-averaged PSF: the mean dipole tensor (exact for
+    equal light per angle, the image is linear in M) and the mean blur covariance (an approximation)."""
+    dv = psf.u.device
+    t = lambda v: torch.tensor(v, device=dv, dtype=torch.float32)
+    if c.get('psf_blur_px2') is not None:
+        psf.blur = t([float(v) for v in c['psf_blur_px2']])
+    if c.get('psf_dipole_M') is not None:
+        psf.dipM = t(c['psf_dipole_M'])
+    if c.get('psf_dipole_w') is not None:
+        psf.dipw = t([float(v) for v in c['psf_dipole_w']])
+    if c.get('saf') is not None:
+        with torch.no_grad(): psf.saf.copy_(t([float(v) for v in c['saf']]))
+    if c.get('psf_dipole_M_angle') is not None:
+        M = t(c['psf_dipole_M_angle'])
+        psf.dipM = M.mean(0) if angle is None else M[angle]
+    if c.get('psf_blur_angle_px2') is not None:
+        Bc = t(c['psf_blur_angle_px2'])
+        psf.blur = Bc.mean(0) if angle is None else Bc[angle]
+    return psf
+
+
+def angle_kwargs(c, dev):
+    """per-pattern-angle forward() kwargs [kw0, kw1] (dipM / blur of that angle) of a calib dict, or None if it has none"""
+    if not has_angle_psf(c):
+        return None
+    out = []
+    for k in range(2):
+        kw = {}
+        if c.get('psf_dipole_M_angle') is not None: kw['dipM'] = torch.tensor(c['psf_dipole_M_angle'][k], device=dev, dtype=torch.float32)
+        if c.get('psf_blur_angle_px2') is not None: kw['blur'] = torch.tensor(c['psf_blur_angle_px2'][k], device=dev, dtype=torch.float32)
+        out.append(kw)
+    return out
+
+
+def copy_psf_extras(dst, src):
+    """copy the opt-in attributes (blur, diat, dipw; saf is a parameter, copied by the callers / here) of VectorialPSF src
+    to dst (the LUT / CRLB copies of a calibrated PSF)"""
+    with torch.no_grad(): dst.saf.copy_(src.saf)
+    for k in ('blur', 'diat', 'dipw', 'dipM'):
+        v = getattr(src, k, None)
+        if v is not None:
+            setattr(dst, k, v.detach().clone() if torch.is_tensor(v) else v)
+    return dst
+
+
 class VectorialPSF(torch.nn.Module):
     def __init__(self, roisize, pixelsize=0.10833, NA=1.49, n_imm=1.518, n_med=1.33, wavelength=0.68,
                  zernike_indices=tuple(range(5, 22)), npupil=64, oversample=3, device='cuda', fit_NA=False, fit_nmed=False):
@@ -68,6 +169,16 @@ class VectorialPSF(torch.nn.Module):
         # are scaled by sqrt(1 + d), Ey by sqrt(1 - d) (intensity transmission ratio (1 + d) / (1 - d)).  None / 0 = unchanged.
         # A plain attribute (float or tensor, may carry grad), not a parameter / buffer: state dicts are unaffected.
         self.diat = None
+        # (2026-11-11 in-situ 3D PSF, opt-in) image-plane Gaussian blur, applied to the oversampled intensity before pixel
+        # integration: covariance [sxx, syy, sxy] in px^2 (list / tensor, may carry grad; [B,3] = per emitter).  Plain
+        # attribute like diat; None = unchanged (bit-identical).  calib json key 'psf_blur_px2' (set_psf_extras).
+        self.blur = None
+        # (2026-11-11, opt-in) emission-dipole second-moment tensor M (3 x 3, trace 1; isotropic = I / 3), e.g. photoselection
+        # by a polarised excitation: the image is sum_ij M_ij Re[E_i . E_j*] (E_i = image field of a unit dipole along i) instead
+        # of sum_i |E_i|^2 / 3.  dipw [wx, wy, wz] (mean 1) is the diagonal shortcut M = diag(w) / 3.  None = unchanged.
+        # calib keys 'psf_dipole_M' / 'psf_dipole_w' (global) and 'psf_dipole_M_angle' (per pattern angle, see simulator).
+        self.dipw = None
+        self.dipM = None
 
         # normalized pupil grid (unit disk), fixed; physical k scales with NA
         g = (torch.arange(npupil, device=self.dev) - (npupil - 1) / 2) / (npupil / 2)
@@ -124,15 +235,20 @@ class VectorialPSF(torch.nn.Module):
         ky = k0 * NA * self.py
         return P, k0 * self.n_med * c_med, k0 * self.n_imm * c_imm, kx, ky
 
-    def forward(self, pos, focus, zcoef_offset=None, intensity=None, bg=None):
+    BLUR_PAD = 3   # px of padding per side for the image-plane blur (kernel sd <~ 0.7 px)
+
+    def forward(self, pos, focus, zcoef_offset=None, intensity=None, bg=None, blur=None, dipw=None, dipM=None):
         """
         pos: [B,3] (x, y relative to ROI center in pixels, z_e emitter height in um)
         focus: [B] focal plane position in um (relative to coverslip)
         zcoef_offset: optional [B,nz] per-emitter Zernike offsets (field dependence)
+        blur: optional image-plane blur covariance [3] or [B,3] (sxx, syy, sxy; px^2), overrides self.blur
         Returns [B, roisize, roisize] expected image (normalized PSF * intensity + bg if given).
         """
         B = pos.shape[0]
         P, kz_med, kz_imm, kx, ky = self.pupil_fields()
+        Mt = dipole_tensor(dipM if dipM is not None else (None if dipw is not None else getattr(self, 'dipM', None)),
+                           dipw if dipw is not None else getattr(self, 'dipw', None), self.dev)
         zc = self.zcoef[None].expand(B, -1)
         if zcoef_offset is not None:
             zc = zc + zcoef_offset
@@ -147,15 +263,30 @@ class VectorialPSF(torch.nn.Module):
         # matrix Fourier transform: E(u,v) = sum_k P(kx,ky) exp(i (kx u + ky v))
         kx1 = kx[0]  # [N]
         ky1 = ky[:, 0]
-        Fx = torch.exp(1j * self.u[:, None] * kx1[None, :])  # [ns, N]
-        Fy = torch.exp(1j * self.u[:, None] * ky1[None, :])
+        bl = blur if blur is not None else getattr(self, 'blur', None)   # getattr: modules pickled before 2026-11-11
+        u, pad = self.u, 0
+        if bl is not None:   # blur: evaluate on a grid padded by `pad` px per side, so the kernel sees the PSF beyond the ROI
+            pad = self.BLUR_PAD
+            ns_p = (self.roisize + 2 * pad) * self.os
+            u = (torch.arange(ns_p, device=self.dev) - (ns_p - 1) / 2) / self.os * self.pixelsize
+        Fx = torch.exp(1j * u[:, None] * kx1[None, :])  # [ns, N]
+        Fy = torch.exp(1j * u[:, None] * ky1[None, :])
         E = Fy @ Pb.to(torch.complex64) @ Fx.T  # [B,6,ns,ns]
-        I = (E.real ** 2 + E.imag ** 2).sum(1) / 3
+        if Mt is None:
+            I = (E.real ** 2 + E.imag ** 2).sum(1) / 3
+        else:   # sum_ij M_ij Re[E_i . E_j*], E_i = (Ex, Ey) of dipole i = channels (2i, 2i+1)
+            Ed = E.reshape(B, 3, 2, *E.shape[-2:])
+            Mc = Mt.to(Ed.real.dtype)
+            F = torch.einsum('ij,bjcuv->bicuv', Mc, Ed.real) + 1j * torch.einsum('ij,bjcuv->bicuv', Mc, Ed.imag) \
+                if Mc.dim() == 2 else torch.einsum('bij,bjcuv->bicuv', Mc, Ed.real) + 1j * torch.einsum('bij,bjcuv->bicuv', Mc, Ed.imag)
+            I = (Ed.real * F.real + Ed.imag * F.imag).sum((1, 2))
         # normalization: Parseval energy of aberration-free emitter at z=0 -> sum over plane = 1
         dk = (kx1[1] - kx1[0]) * (ky1[1] - ky1[0])
         energy = (P.real ** 2 + P.imag ** 2).sum() / 3 * dk / (2 * math.pi) ** 2
         # continuous field E = sum(...) * dk/(2pi)^2, so |E|^2 gets that factor squared
         I = I * (dk / (2 * math.pi) ** 2) ** 2
+        if bl is not None:
+            I = gauss_blur_os(I, bl, self.os, pad)
         # pixel integration: average over oversampled subpixels * pixel area
         R, o = self.roisize, self.os
         I = I.reshape(B, R, o, R, o).mean((2, 4)) * self.pixelsize ** 2

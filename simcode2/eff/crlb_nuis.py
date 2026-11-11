@@ -148,7 +148,7 @@ def main():
                 tg = torch.nonzero(inter & vis)[:, 0]
                 if len(tg) == 0: continue
                 fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
-                psS = torch.zeros(len(G['x']), 4, R, R, device=dev)
+                psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), R, R, device=dev)
                 psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai], sim.focus)
                 Cb = crlb_nuis(G, o, psS, tg, T, a.c, a.ca); del psS
                 nn = len(G['x'])

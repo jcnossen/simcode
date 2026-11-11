@@ -45,6 +45,8 @@ def load_calib(path, dev='cuda'):
                        wavelength=c['wavelength_um'], oversample=3, device=dev)
     with torch.no_grad():
         psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
+    from simcode2.psf.vectorial import set_psf_extras
+    set_psf_extras(psf, c)   # (2026-11-11) opt-in calib PSF terms (angle average); absent = unchanged
     from simcode2.psf.lut import PSFLUT
     zmax = 0.2
     lut = PSFLUT(psf, c['focus_um'], zmax)

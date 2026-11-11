@@ -1,0 +1,164 @@
+{
+ "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_20nM_m2_sc.json",
+ "pixelsize_um": 0.10833,
+ "wavelength_um": 0.7,
+ "NA": 1.4900000095367432,
+ "n_imm": 1.518,
+ "n_med": 1.33,
+ "apod": [
+  0.0,
+  0.0,
+  0.0
+ ],
+ "zernike_noll": [
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21
+ ],
+ "zernike_waves": [
+  0.005539545789361,
+  -0.06711643934249878,
+  -0.01575157418847084,
+  -0.0036591053940355778,
+  -0.004812521860003471,
+  -0.010954851284623146,
+  0.07348256558179855,
+  0.0312676839530468,
+  -0.00901307724416256,
+  -0.03783099725842476,
+  0.011170175857841969,
+  -0.01093002688139677,
+  -0.0104067362844944,
+  0.027197910472750664,
+  0.018131403252482414,
+  0.01844172738492489,
+  0.028066808357834816
+ ],
+ "focus_um": 0.07762141525745392,
+ "camera": {
+  "gain_e_per_adu": 0.56,
+  "offset_adu": 99.27886199951172,
+  "readnoise_e": 0.8999999761581421,
+  "note": "gain 0.56 (text.txt); offset map = 0.5 nM in-situ map shifted by the sensor ROI offset (22,2), uncovered pixels from the high-passed 2.5 nM m2 own map (same ROI); text.txt global offset 106.4 is the SIMCODE paper value (over-subtracts ~7 ADU); read noise = 2.5 nM m2 map",
+  "maps": "camera_maps_20nM_m2.npz",
+  "sensor_shift_vs_0p5nM": [
+   22,
+   2
+  ],
+  "text_txt": {
+   "gain": 0.56,
+   "offset": 106.4
+  }
+ },
+ "tirf_depth_um": 0.082,
+ "emitter_z_median_um": 0.055,
+ "pattern": {
+  "k_rad_per_px": [
+   [
+    3.036344289779663,
+    0.06330520659685135
+   ],
+   [
+    -0.07080129534006119,
+    3.034219980239868
+   ]
+  ],
+  "pitch_nm": [
+   224.121337890625,
+   224.26596069335938
+  ],
+  "depth": [
+   0.925,
+   0.925,
+   0.925,
+   0.955,
+   0.955,
+   0.955
+  ],
+  "phase": [
+   2.031055212020874,
+   4.125450134277344,
+   6.219845294952393,
+   -1.6966813802719116,
+   0.3977137506008148,
+   2.4921088218688965
+  ],
+  "relint": [
+   0.961512565612793,
+   0.9895035028457642,
+   1.0487782955169678,
+   1.0109901428222656,
+   0.9690952897071838,
+   1.022894024848938
+  ],
+  "steps": "frame%6; angle=step//3; I = A*relint*(1+depth*cos(k.r - phase - dphi(t))), r=(x=col,y=row) px",
+  "depth_old_diluted": [
+   0.6456789970397949,
+   0.5496817231178284,
+   0.626079797744751,
+   0.657852053642273,
+   0.5702526569366455,
+   0.6599825024604797
+  ],
+  "depth_note": "0.925/0.955: cross-cycle estimator, nn_overlap>=3 subset (real 0.920-0.927 / 0.953-0.954); bench v2 shows this subset within ~+0.02 of truth (worker, 2026-11-08). step_fit regression depth is diluted and must not be written to pattern files."
+ },
+ "pattern_note": "placeholder from calib_0.5nM.json; unused (pattern estimated from data)",
+ "psf_blur_px2": [
+  0.14601729810237885,
+  0.00016154666082002223,
+  0.004856810439378023
+ ],
+ "psf_dipole_M": [
+  [
+   0.30664683878421783,
+   6.22120569460094e-05,
+   0.0
+  ],
+  [
+   6.22120569460094e-05,
+   0.30665235221385956,
+   0.0
+  ],
+  [
+   0.0,
+   0.0,
+   0.3867008090019226
+  ]
+ ],
+ "psf3d": {
+  "fit": "out/psf3d/final/m20_blps3_psf.pt",
+  "mode": {
+   "blur": "none",
+   "dipole": "none",
+   "fit_saf": 0
+  },
+  "gamma": 0.05014115199446678,
+  "zeta": 0.4071139693260193,
+  "e_dir": [
+   [
+    -0.02084462158381939,
+    0.9997826814651489
+   ],
+   [
+    -0.9997279047966003,
+    -0.023327916860580444
+   ]
+  ],
+  "resid_var": 1.6750688552856445,
+  "note": "image-plane blur covariance px^2 [sxx, syy, sxy] (VectorialPSF.blur); psf_dipole_M_angle = emission-dipole tensor per pattern angle (frame % 6 // 3), M_a = (1 - gamma) diag((1 - zeta)/2, (1 - zeta)/2, zeta) + gamma e_a e_a^T; see docs/PSF_POLARIZATION.md; THIS FILE = the average of the two axis PSFs (pattern-free consumers)"
+ }
+}

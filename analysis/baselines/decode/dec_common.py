@@ -170,8 +170,12 @@ def sim_luts(device='cuda'):
     global _LUTS
     if _LUTS is None:
         from simcode2.hd.realsim import RealSim
-        rs = RealSim('2.5nM', 40, 40, 6, seed=3)
-        _LUTS = (rs.luts, rs.zmax, rs.p['halo'])
+        # (2026-11-11, opt-in) DEC_CALIB=<calib json>: the movie's in-situ 3D PSF (e.g. models/insitu/calib_*_psf3d.json) instead of
+        # the preset's; a per-pattern-angle PSF enters as its angle average (DECODE is pattern-free; exact for the 6-frame sums)
+        over = {'calib': os.environ['DEC_CALIB']} if os.environ.get('DEC_CALIB') else {}
+        rs = RealSim('2.5nM', 40, 40, 6, seed=3, **over)
+        luts = [(l[0] + l[1]) / 2 if isinstance(l, tuple) else l for l in rs.luts]
+        _LUTS = (luts, rs.zmax, rs.p['halo'])
     return _LUTS
 
 

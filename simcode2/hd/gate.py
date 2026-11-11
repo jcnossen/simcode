@@ -201,7 +201,7 @@ def main():
                 if len(tg) == 0: continue
                 nn = ST.nn_dist(G, tg)
                 fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
-                psS = torch.zeros(len(G['x']), 4, CD.R, CD.R, device=dev)
+                psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
                 _ck = int(os.environ.get('GATE_PSF_CHUNK', '0'))    # 2026-11-09 simcode_base2: optional chunking (memory cap); default unchanged
                 if _ck:
                     for _i in range(0, len(ai), _ck):

@@ -1,0 +1,178 @@
+{
+ "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_1809_2.json",
+ "pixelsize_um": 0.10833,
+ "wavelength_um": 0.7,
+ "NA": 1.4900000095367432,
+ "n_imm": 1.518,
+ "n_med": 1.33,
+ "apod": [
+  0.0,
+  0.0,
+  0.0
+ ],
+ "zernike_noll": [
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21
+ ],
+ "zernike_waves": [
+  0.01809302717447281,
+  -0.043412163853645325,
+  -0.011072858236730099,
+  0.012850778177380562,
+  0.005119589157402515,
+  -0.0009876425610855222,
+  0.028240572661161423,
+  0.010281485505402088,
+  0.0054824198596179485,
+  -0.003140326589345932,
+  0.0015139508759602904,
+  -0.00202815979719162,
+  -0.005117509514093399,
+  0.01106103416532278,
+  -0.002715462353080511,
+  0.00792615208774805,
+  0.002645468572154641
+ ],
+ "focus_um": 0.14754445850849152,
+ "camera": {
+  "gain_e_per_adu": 0.56,
+  "offset_adu": 99.30000305175781,
+  "readnoise_e": 0.9,
+  "note": "gain 0.56; offset map = loc-masked median - smooth of this movie (masked by baseline smlm.hdf5, frames 0-20000); read noise = 0.5 nM map shifted by the sensor ROI offset (dy 15, dx -6; 83% covered) + high-passed own estimate elsewhere",
+  "maps": "camera_maps_1809_2.npz",
+  "sensor_shift_vs_0.5nM": [
+   15,
+   -6
+  ]
+ },
+ "pattern": {
+  "k_rad_per_px": [
+   [
+    3.036344289779663,
+    0.06330520659685135
+   ],
+   [
+    -0.07080129534006119,
+    3.034219980239868
+   ]
+  ],
+  "pitch_nm": [
+   224.121337890625,
+   224.26596069335938
+  ],
+  "depth": [
+   0.925,
+   0.925,
+   0.925,
+   0.955,
+   0.955,
+   0.955
+  ],
+  "phase": [
+   2.031055212020874,
+   4.125450134277344,
+   6.219845294952393,
+   -1.6966813802719116,
+   0.3977137506008148,
+   2.4921088218688965
+  ],
+  "relint": [
+   0.961512565612793,
+   0.9895035028457642,
+   1.0487782955169678,
+   1.0109901428222656,
+   0.9690952897071838,
+   1.022894024848938
+  ],
+  "steps": "frame%6; angle=step//3; I = A*relint*(1+depth*cos(k.r - phase - dphi(t))), r=(x=col,y=row) px",
+  "depth_old_diluted": [
+   0.6456789970397949,
+   0.5496817231178284,
+   0.626079797744751,
+   0.657852053642273,
+   0.5702526569366455,
+   0.6599825024604797
+  ],
+  "depth_note": "0.925/0.955: cross-cycle estimator, nn_overlap>=3 subset (real 0.920-0.927 / 0.953-0.954); bench v2 shows this subset within ~+0.02 of truth (worker, 2026-11-08). step_fit regression depth is diluted and must not be written to pattern files."
+ },
+ "tirf_depth_um": 0.082,
+ "emitter_z_median_um": 0.055,
+ "psf_blur_px2": [
+  0.20419517159461975,
+  0.0006423935410566628,
+  -0.011453106999397278
+ ],
+ "psf_dipole_M_angle": [
+  [
+   [
+    0.2895413935184479,
+    -0.001959641231223941,
+    0.0
+   ],
+   [
+    -0.001959640998393297,
+    0.3834919333457947,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.32696664333343506
+   ]
+  ],
+  [
+   [
+    0.38348162174224854,
+    0.0021929799113422632,
+    0.0
+   ],
+   [
+    0.0021929799113422632,
+    0.289551705121994,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.32696664333343506
+   ]
+  ]
+ ],
+ "psf3d": {
+  "fit": "out/psf3d/final/m1809_blps3_psf.pt",
+  "mode": {
+   "blur": "none",
+   "dipole": "none",
+   "fit_saf": 0
+  },
+  "gamma": 0.09403226524591446,
+  "zeta": 0.36090320348739624,
+  "e_dir": [
+   [
+    -0.02084462158381939,
+    0.9997826814651489
+   ],
+   [
+    -0.9997279047966003,
+    -0.023327916860580444
+   ]
+  ],
+  "resid_var": 0.9284642934799194,
+  "note": "image-plane blur covariance px^2 [sxx, syy, sxy] (VectorialPSF.blur); psf_dipole_M_angle = emission-dipole tensor per pattern angle (frame % 6 // 3), M_a = (1 - gamma) diag((1 - zeta)/2, (1 - zeta)/2, zeta) + gamma e_a e_a^T; see docs/PSF_POLARIZATION.md"
+ }
+}

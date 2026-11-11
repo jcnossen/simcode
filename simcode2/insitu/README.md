@@ -99,3 +99,33 @@ copied to `<out>/insitu/legacy/`; that front-end is not part of simcode2.
   (rms 0.0014).
 - Fresh tracks from frames 0–6000 only (10576 samples): focus 0.1116 um, Zernikes within 0.010 waves (rms 0.0035; largest:
   Noll 5 −0.010, Noll 15 −0.007), residual variance 1.006.
+
+## 3D PSF extension (psf3d, 2026-11-11; opt-in, defaults unchanged)
+
+`fit_insitu2` has extra in-situ PSF freedom. A calib json without the new keys gives exactly the old PSF.
+
+| flag | calib key | model |
+|---|---|---|
+| `--blur line` | `psf_blur_px2` [sxx, syy, sxy] px² | constant image-plane blur, rank 1 (σ ≈ 0.46 px along x at 0.5 nM). Applied to the oversampled intensity before pixel integration (`VectorialPSF.blur`, FFT on a grid padded by 3 px). |
+| `--init-fit <stage-1 _psf.pt> --freeze-base 1 --blur angle_delta` | `psf_blur_angle_px2` [2][3] | per pattern angle (frame % 6 // 3), the total blur covariance: base ± (d, −d, e) |
+| `--photosel 1/2/3` | `psf_dipole_M_angle` [2][3][3] | photoselection: emission-dipole tensor per angle (`VectorialPSF.dipM`); see `docs/PSF_POLARIZATION.md` |
+
+Other flags:
+- `--split cb0` trains on one checkerboard parity. `psf_heldout.py --test cb1` evaluates the other parity, and
+  `psf_compare.py` compares the outputs (paired NLL, residual second moments per angle).
+
+Consumers of the new keys:
+- `sim.simulator.Simulator` builds one LUT per angle (`lut_angle`; `lut` = their exact average) and renders each frame with its
+  angle's PSF.
+- So do `hd.realsim.RealSim` (LUT-bank entries are (angle 0, angle 1) tuples), `analysis/simreal/sim_movie_r.py` and
+  `sim.crlb` (`psf_stack` returns 8 channels and `crlb_all` uses the per-frame PSF).
+- The pattern-free consumers (`pipeline.common.load_calib`, `psf.lut.make_lut`, the DECODE LUT with `DEC_CALIB=...`) use the
+  angle average.
+
+The recipe for the paper movies is in `out/psf3d/run_final.sh` and `out/psf3d/run_final_ps.sh`:
+- stage 1: line blur (`run_final.sh`)
+- stage 2: frozen + `--photosel 3` (the recommended per-axis model, `run_final_ps.sh`)
+- or stage 2: frozen + `angle_delta` (the alternative, `run_final.sh`)
+
+`analysis/psf3d/make_calib.py` writes `calib_<movie>_psf3d.json` (per axis) and `..._psf3d_avg.json` (average).
+`analysis/psf3d/export_zstack.py` writes plain z-stacks for spline PSFs.
