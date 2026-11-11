@@ -10,7 +10,8 @@ from common import OUT, gpu_state, dump
 from simcode2 import config
 from simcode2.util import spatial_hash as SH
 from simcode2.pipeline import pattern_est as PE
-from simcode2.pipeline.common import Movie
+import tifffile
+shape_of = lambda mv: tuple(tifffile.TiffFile(mv).pages[0].shape)      # (Movie() would index all pages of the TIFF)
 A = sys.argv[1:]
 sc_cal = 'calib/calib_sc_hd_sc5nbb15_pm_bright_real.json'
 if '--sc_cal' in A: i = A.index('--sc_cal'); sc_cal = A[i + 1]; del A[i:i + 2]
@@ -85,7 +86,7 @@ REP['exact']['iso_count'] = dict(count_equal=bool(np.array_equal(ck, ch)), flag_
 print('iso', REP['exact']['iso_count'], flush=True)
 del KS, HG
 # ---- whole pattern estimation: kdtree serial (original) vs hash gpu (vs hash cpu)
-shape = Movie(mv).shape
+shape = shape_of(mv)
 res = {}
 for lab, be, dev in [('kdtree_serial', 'kdtree', None), ('hash_gpu', 'hash', 'cuda')] + ([] if skip_cpu else [('hash_cpu', 'hash', 'cpu')]):
     PE.NB_BACKEND, PE.NB_DEVICE, PE.KD_WORKERS = be, dev, 1
