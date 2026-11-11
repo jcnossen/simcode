@@ -103,7 +103,27 @@ class SCHead4(nn.Module):
         nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)
         self.tril = torch.tril_indices(T, T, -1)
 
-    def forward(self, pt, rn2p, off, psf=None, nbrp=None):
+    def trunk(self, x, b0, off, illp=None):
+        """bf16 CNN trunk + MLP (the autocast region of forward) -> m1, d1 (bf16 maps before the fp32 1x1 read-outs), hm.
+        Separate method (2026-11-11, speed branch; identical ops) so that the fast path can torch.compile this part only."""
+        n, T = x.shape[0], self.T
+        with torch.autocast('cuda', dtype=torch.bfloat16, enabled=self.bf16):
+            hmap = self.blk(F.gelu(self.cin(x) if illp is None else self.cin(x) + self.cin_il(illp)))
+            m1 = F.gelu(self.wmap[0](hmap)); d1 = F.gelu(self.dmap[0](hmap))
+            h = self.down(hmap).flatten(1)
+            sc = torch.cat([norm_photons(b0), off, torch.zeros(n, T, device=x.device)], 1)
+            hm = self.mlp(torch.cat([h, sc], 1))
+        return m1, d1, hm
+
+    def _diag_idx(self, dev):
+        """(2026-11-11) device copies of the Cholesky index tensors: CPU index tensors in the index_put below forced a
+        blocking host-to-device copy (a host sync) in every forward; same values -> identical output"""
+        c = getattr(self, '_idx_cache', None)
+        if c is None or c[0] != dev:
+            c = (dev, torch.arange(self.T, device=dev), self.tril[0].to(dev), self.tril[1].to(dev)); self._idx_cache = c
+        return c[1:]
+
+    def forward(self, pt, rn2p, off, psf=None, nbrp=None, trunk_fn=None):
         n, T, P, _ = pt.shape
         flat = pt.reshape(n, T, -1)
         border = torch.cat([pt[:, :, 0], pt[:, :, -1], pt[:, :, 1:-1, 0], pt[:, :, 1:-1, -1]], -1)
@@ -115,12 +135,7 @@ class SCHead4(nn.Module):
         lin = (pt - lvl) / 100.0
         x = torch.cat([norm_photons(pt), norm_photons(pt.mean(1, keepdim=True)), lin, lin.mean(1, keepdim=True),
                        cx[:, None], cy[:, None], nbrp], 1)
-        with torch.autocast('cuda', dtype=torch.bfloat16, enabled=self.bf16):
-            hmap = self.blk(F.gelu(self.cin(x)))
-            m1 = F.gelu(self.wmap[0](hmap)); d1 = F.gelu(self.dmap[0](hmap))
-            h = self.down(hmap).flatten(1)
-            sc = torch.cat([norm_photons(b0), off, torch.zeros(n, T, device=pt.device)], 1)
-            hm = self.mlp(torch.cat([h, sc], 1))
+        m1, d1, hm = (trunk_fn or self.trunk)(x, b0, off)
         m = self.wmap[2](m1.float())[:, 0]; d = self.dmap[2](d1.float())
         q = self.out(hm.float())
         if psf is not None:
@@ -143,8 +158,9 @@ class SCHead4(nn.Module):
         dI = q[:, :T]
         ld = q[:, T:2 * T]; od = q[:, 2 * T:T + nt]
         L = torch.zeros(n, T, T, device=pt.device)
-        L[:, torch.arange(T), torch.arange(T)] = c * torch.exp(ld.clamp(-4, 4)) * 1.5
-        L[:, self.tril[0], self.tril[1]] = c * od
+        ar, t0, t1 = self._diag_idx(pt.device)
+        L[:, ar, ar] = c * torch.exp(ld.clamp(-4, 4)) * 1.5
+        L[:, t0, t1] = c * od
         I = Ilin + c * dI
         dxy = 0.5 * torch.tanh(q[:, T + nt:T + nt + 2])
         lsxy = -4.5 + 5.0 * torch.sigmoid(q[:, T + nt + 2:T + nt + 4])

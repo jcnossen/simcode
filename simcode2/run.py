@@ -42,6 +42,9 @@ def main(argv=None):
     ap.add_argument('--cand_pmin', type=float, default=CAND_PMIN)
     ap.add_argument('--fast', type=int, default=1)
     ap.add_argument('--compile', default='auto', help='torch.compile of the solve LM step: auto | on | off')
+    ap.add_argument('--compile_head', default='off', help="opt-in: 'trunk' = torch.compile of the heads' bf16 CNN trunk when available "
+                    "(~1.5x faster heads; not bit-equivalent to the eager bf16 head: |dI| p99 ~0.7 ph, but at least as close to the fp32 head); 'off' (default)")
+    ap.add_argument('--prefetch', type=int, default=1, help='read the next chunk in a background thread (identical data); 0 = off')
     ap.add_argument('--crop', default='5,5,110', help='output region x0,y0,size (px)')
     ap.add_argument('--chunk', type=int, default=6000)
     ap.add_argument('--chunk_list', default='', help="process only these chunk starts, e.g. '12000'")
@@ -62,7 +65,7 @@ def main(argv=None):
     os.makedirs(a.out, exist_ok=True)
     t00 = time.time(); ST = {}
     common = ['--movie', a.movie, '--calib', a.calib, '--out', a.out, '--crop', a.crop, '--chunk', str(a.chunk),
-              '--fast', str(a.fast), '--compile', a.compile, '--cand_pmin', str(a.cand_pmin), '--redo', str(a.redo),
+              '--fast', str(a.fast), '--compile', a.compile, '--compile_head', a.compile_head, '--prefetch', str(a.prefetch), '--cand_pmin', str(a.cand_pmin), '--redo', str(a.redo),
               '--sc_det', a.det, '--sc_head', a.head]
     if a.chunk_list: common += ['--chunk_list', a.chunk_list]
     if a.nframes: common += ['--nframes', str(a.nframes)]

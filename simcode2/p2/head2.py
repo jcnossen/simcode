@@ -32,7 +32,7 @@ class SCHeadP2(SCHead4):
         self.cin_il = nn.Conv2d(2 * T, ch, 3, padding=1, bias=False)
         nn.init.zeros_(self.cin_il.weight)
 
-    def forward(self, pt, rn2p, off, psf=None, nbrp=None, illp=None):
+    def forward(self, pt, rn2p, off, psf=None, nbrp=None, illp=None, trunk_fn=None):
         n, T, P, _ = pt.shape
         flat = pt.reshape(n, T, -1)
         border = torch.cat([pt[:, :, 0], pt[:, :, -1], pt[:, :, 1:-1, 0], pt[:, :, 1:-1, -1]], -1)
@@ -44,12 +44,7 @@ class SCHeadP2(SCHead4):
         lin = (pt - lvl) / 100.0
         x = torch.cat([norm_photons(pt), norm_photons(pt.mean(1, keepdim=True)), lin, lin.mean(1, keepdim=True),
                        cx[:, None], cy[:, None], nbrp], 1)
-        with torch.autocast('cuda', dtype=torch.bfloat16, enabled=self.bf16):
-            hmap = self.blk(F.gelu(self.cin(x) + self.cin_il(illp)))
-            m1 = F.gelu(self.wmap[0](hmap)); d1 = F.gelu(self.dmap[0](hmap))
-            h = self.down(hmap).flatten(1)
-            sc = torch.cat([norm_photons(b0), off, torch.zeros(n, T, device=pt.device)], 1)
-            hm = self.mlp(torch.cat([h, sc], 1))
+        m1, d1, hm = (trunk_fn or self.trunk)(x, b0, off, illp)
         m = self.wmap[2](m1.float())[:, 0]; d = self.dmap[2](d1.float())
         q = self.out(hm.float())
         if psf is not None:
@@ -71,8 +66,9 @@ class SCHeadP2(SCHead4):
         dI = q[:, :T]
         ld = q[:, T:2 * T]; od = q[:, 2 * T:T + nt]
         L = torch.zeros(n, T, T, device=pt.device)
-        L[:, torch.arange(T), torch.arange(T)] = c * torch.exp(ld.clamp(-4, 4)) * 1.5
-        L[:, self.tril[0], self.tril[1]] = c * od
+        ar, t0, t1 = self._diag_idx(pt.device)
+        L[:, ar, ar] = c * torch.exp(ld.clamp(-4, 4)) * 1.5
+        L[:, t0, t1] = c * od
         I = Ilin + c * dI
         dxy = 0.5 * torch.tanh(q[:, T + nt:T + nt + 2])
         lsxy = -4.5 + 5.0 * torch.sigmoid(q[:, T + nt + 2:T + nt + 4])

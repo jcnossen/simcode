@@ -21,7 +21,6 @@ absorbed into phi (and then into the final positions). Validate by time-split CV
 """
 import math
 import numpy as np
-from scipy.spatial import cKDTree
 from simcode2.pipeline.pattern_est import select, angle_Z, _interp_eps, T
 
 
@@ -55,8 +54,8 @@ def row_phasors(D, idx, P):
 def depth_pairs(D, idx, P):
     """cross-cycle pairs (w, w+6) of the same clean emitter: per pair and angle cross = Re(Z1 Z2*), aa = A1 A2; index of pair."""
     K, psi, rel, m, eps, kf = _pattern_np(P)
-    Pt = np.c_[D['x1'][idx], D['y1'][idx], D['w'][idx] * 1e4]
-    dd, jj = cKDTree(Pt).query(np.c_[D['x1'][idx], D['y1'][idx], (D['w'][idx] + 6) * 1e4], distance_upper_bound=1.0)
+    from simcode2.pipeline.pattern_est import depth_pair_query
+    dd, jj = depth_pair_query(D, idx)          # (speed branch) same query as pattern_est.fit_depth (spatial hash by default)
     ok = np.isfinite(dd); i1, i2 = idx[ok], idx[jj[ok]]
     CR = np.zeros((len(i1), 2)); AA = np.zeros((len(i1), 2))
     for a in (0, 1):

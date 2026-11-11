@@ -8,7 +8,7 @@ Queued fixed-size batching (shared by pass 1 and pass 2):
             boolean compaction needed; invalid entries carry p = 0) -> the p >= 0.5 candidates (one index compaction per
             detector batch) are appended to a GPU queue of (window index, pixel, sub-pixel point, logit); the chunk's frames
             and neighbour maps stay on the GPU (zero-padded once per chunk), so a queue entry needs no patch storage
-  head      drains the queue in fixed batches of `head_batch` (default 4096; the last one padded by repeating the last
+  head      drains the queue in fixed batches of `head_batch` (default 1024; the last one padded by repeating the last
             entry) -> static shapes; patches are gathered from the padded chunk buffers (identical values to sc.patches);
             pass 2's illumination patches are evaluated analytically per candidate (= illum.illum_maps + zero padding)
   streams   detector and head on two CUDA streams (the head of batch k overlaps the detector of batch k+1; the only host
@@ -109,28 +109,37 @@ class QueuedFront:
         self.heads = {}
         for nm, (h, kind) in heads.items():
             if channels_last: h = h.to(memory_format=torch.channels_last)
+            if compile_head in ('trunk', 'trunk_on'):
+                # (2026-11-11, speed branch) torch.compile of the bf16 CNN trunk + MLP only (SCHead4.trunk); the fp32 read-out,
+                # covariance and intensity algebra stay eager. 'trunk' = compile when available (else eager), 'trunk_on' =
+                # compile or raise. The module itself is not modified (a reference path sharing it stays eager).
+                bm = h.trunk
+                tf = fastutil.maybe_compile(bm, 'auto' if compile_head == 'trunk' else 'on', dynamic=False)
+                self.heads[nm] = (h, kind, h, tf if tf is not bm else None)
+                continue
             if compile_head == 'blk':
                 # only the residual conv stack compiled (opt-in): head 30 % faster on a busy GPU, but I / x differences 4x the
                 # bf16 run-to-run noise on the real 0.5 nM chunk (dI median 0.30 vs 0.08 ph, max 4.3 vs 1.2 ph) -> not default
                 if fastutil.resolve('auto') and not hasattr(h, '_blk_eager'):
                     h._blk_eager = h.blk; h.blk = fastutil.maybe_compile(h.blk, 'auto', dynamic=False)
-                self.heads[nm] = (h, kind, h)
+                self.heads[nm] = (h, kind, h, None)
             else:
-                self.heads[nm] = (fastutil.maybe_compile(h, compile_head, dynamic=False), kind, h)
+                self.heads[nm] = (fastutil.maybe_compile(h, compile_head, dynamic=False), kind, h, None)
 
     def _head_call(self, nm, pt, off, nbp, ilp):
-        hc, kind, h = self.heads[nm]
+        hc, kind, h, tf = (self.heads[nm] + (None,))[:4]
         psf = self.col(off) if self.col is not None else None
+        kw = {} if tf is None else dict(trunk_fn=tf)
         if kind == 'p2':
-            return hc(pt, None, off, psf, nbp, ilp)
+            return hc(pt, None, off, psf, nbp, ilp, **kw)
         if getattr(h, 'bgmap', False):
             raise NotImplementedError('sc7bg head: use the original sc_front path')
         if getattr(h, 'nbr', False):
-            return hc(pt, None, off, psf, nbp)
+            return hc(pt, None, off, psf, nbp, **kw)
         return hc(pt, None, off, psf)
 
     @torch.no_grad()
-    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=4096, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy'),
+    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy'),
             ev=None):
         """frames [F,S,S] (photons, chunk), starts: window starts (relative frame index), PWall [nW,T,5] (pass 2) ->
         dict of per-candidate GPU tensors (queue order = window order, top-k order within a window, as the originals):
@@ -251,7 +260,7 @@ class Pass1SCFast:
         self.front = QueuedFront(self.det, False, {'h': (self.head, 'sc')}, self.col, dev, compile_head=compile_head, channels_last=channels_last)
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=4096, streams=True,
+    def run_chunk(self, movie: Movie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
                   timing=None, keep_gpu=False):
         dev = self.dev
         timing = timing if timing is not None else {}
@@ -369,7 +378,7 @@ class Pass2P2Fast:
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=4096,
+    def run_chunk(self, movie: Movie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024,
                   streams=True, solve_batch=16384, timing=None, solve_opts=None, return_head=False):
         from simcode2.hd import msolve_fast as MF
         dev = self.dev; SCM = self.SCM

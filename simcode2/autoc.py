@@ -20,6 +20,7 @@ import json, os, glob
 import numpy as np, torch
 from scipy.optimize import minimize
 from scipy.spatial import cKDTree
+from simcode2.util import spatial_hash as SH
 
 T = 6
 PHB = [(200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 4000), (4000, 1e9)]
@@ -30,8 +31,14 @@ tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
 
 
 # ------------------------------------------------------------------------------------------------------------- sources
+ISO_BACKEND = 'hash'      # (2026-11-11, speed branch) 'hash' = simcode2/util/spatial_hash (exact count); 'kdtree' = scipy reference
+
+
 def iso_flag(key, x, y, r=R_ISO):
     """True if no other point with the same key (window / FOV) within r px"""
+    if ISO_BACKEND == 'hash':
+        x = np.asarray(x, np.float64); y = np.asarray(y, np.float64); key = np.asarray(key).astype(np.int64)
+        return SH.count(x, y, key, x, y, key, r) <= 1
     P = np.c_[x, y, key.astype(np.float64) * 1e4]
     tr = cKDTree(P)
     cnt = tr.query_ball_point(P, r, return_length=True)
