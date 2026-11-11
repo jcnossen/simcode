@@ -1,11 +1,11 @@
 """Paper Fig 3 / Fig 4 (+ the 20 nM movie) regenerated for the 4 reprocessed methods (SMLM, SIMFLUX, DECODE, SIMCODE v2) with
-the fair FRC (frc_fair.py). Layout as the paper's plot_results (fig_exp.py): overview (SIMCODE v2) with the 2 zoom boxes, the 2
-zooms x 4 methods, FRC curves, localization counts, Pearson correlation (RSP) with the widefield mean image (fig_exp.compute_pc
+the fair FRC (frc_fair.py). Layout as the preprint's experimental figures: overview (SIMCODE v2) with the 2 zoom boxes, the 2
+zooms x 4 methods, FRC curves, localization counts, Pearson correlation (RSP) with the widefield mean image (paper_common.compute_pc
 = the paper's pearson_corr.compute_correlation, read-only from ~/smlmtorch/scripts).
 
 What every panel shows (all methods identical): the frc_fair set = disjoint windows (start % 6 == 0), max(sigma) < 0.15 px,
 crop [5, 115) px, each method's own DME v2 drift. Counts = that set's size (the rows in the FRC). RSP = compute_pc on that set.
-Zoom AOIs: the paper's (fig_exp.FIGS) for 1809/2 and 2.5 nM/2; 20 nM/2: analysis/figures/zoompick.py crossings, picked once
+Zoom AOIs: the preprint's (paper_common.ZOOMS) for 1809/2 and 2.5 nM/2; 20 nM/2: analysis/figures/zoompick.py crossings, picked once
 on the union of the 4 methods' sets (the same boxes for every method; written to <out>_values.json).
 
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM_2|20nM_2> [--nframes N] [--tag t]
@@ -16,15 +16,14 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path[:0] = [HERE, os.path.join(REPO, 'analysis', 'figures')]
-import fig_exp as FE                          # paper helpers (draw_rect, compute_pc) and rc params
-from fig_exp import plt, Dataset, draw_rect, compute_pc
+from paper_common import plt, Dataset, draw_rect, compute_pc, ZOOMS     # also sets the matplotlib rc params
 import frc_fair as FF
 
 P2 = f'{REPO}/out/paper2'
 SETS = {
-    '1809_2': dict(renders=FE.FIGS[3]['renders'], render_args=FE.FIGS[3]['render_args'], nframes=120000,
+    '1809_2': dict(**ZOOMS['1809_2'], nframes=120000,
                    tif=f'{P2}/1809_2/movie/simflux_5.5ms_500mW.tif', title='Low density (1809/cover1/2)'),
-    '2.5nM_2': dict(renders=FE.FIGS[4]['renders'], render_args=FE.FIGS[4]['render_args'], nframes=180000,
+    '2.5nM_2': dict(**ZOOMS['2.5nM_2'], nframes=180000,
                     tif=f'{P2}/2.5nM_2/movie/cover1_600mW_5.5ms_cf660.tif', title='Medium density (2.5 nM/2)'),
     '20nM_2': dict(renders=None, render_args={'clip_percentile': 98}, nframes=120000,
                    tif=f'{P2}/20nM_2/movie/cover1_500mW_5.5ms_cf660.tif', title='High density (20 nM/2)'),
