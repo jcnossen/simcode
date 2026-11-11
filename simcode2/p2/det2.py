@@ -153,6 +153,11 @@ def train(argv):
     ap.add_argument('--init', default='')                  # fine-tune from a DetP2 checkpoint (default: det_n1 zero-init)
     ap.add_argument('--psum', type=float, default=0.0)     # stored in args: summed-p output radius at inference (eval too)
     ap.add_argument('--band', type=float, default=0.0)     # sub-pixel-invariant target band (det/up2.band_extra), 0 = off
+    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list, hd/data.Gen calib), close-pair
+    # enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
+    ap.add_argument('--calib', default='')
+    ap.add_argument('--pair_sub', default='')
+    ap.add_argument('--init_n1', default='')               # (opt-in) det_n1-type checkpoint for the zero-init (default det_n1.pt)
     a = ap.parse_args(argv)
     from simcode2.p2.data import Gen2
     from simcode2.hd.sc4 import nn_weights
@@ -164,17 +169,18 @@ def train(argv):
         from simcode2.hd.realgen import RGen
         gen = RGen(a.size, a.size, 6, seed=a.seed)
     else:
-        gen = Gen2(a.size, a.size, 6, seed=a.seed)
+        gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None)
+    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
     if a.init:
         net = build().to(dev); net.load_state_dict(torch.load(__import__('simcode2.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
     else:
-        net = load_init()
+        net = load_init(_cfg.resolve(a.init_n1) if a.init_n1 else DET_N1)
     net.psum = a.psum
     print('params', n_params(net), flush=True)
     Hd = make_hold(gen)
     if a.no_illum:
         for h in Hd: h['illum'] = torch.zeros_like(h['illum'])
-    n1, _ = load_n1(DET_N1)
+    n1, _ = load_n1(_cfg.resolve(a.init_n1) if a.init_n1 else DET_N1)
     ref = eval_hold(n1, Hd, p2=False); del n1
     ev0 = eval_hold(net, Hd)
     json.dump(dict(det_n1=ref, p2_init=ev0), open(a.out + '/eval_ref.json', 'w'), indent=1)
@@ -186,7 +192,7 @@ def train(argv):
     for step in range(a.steps + 1):
         with torch.no_grad():
             mix = 'paper' if step % 2 == 0 else 'det'
-            o = gen.batch2(a.batch, mix=mix, pair_sep=(0.3, 3.0))
+            o = gen.batch2(a.batch, mix=mix, pair_sep=(0.3, 3.0), **psub)
             label, ign, tid, off = targets(o, 1, S, S)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)

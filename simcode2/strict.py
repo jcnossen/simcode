@@ -157,8 +157,10 @@ def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, y
 SIGMA_REF = {'est': 7.0, 'est2': 7.4}   # the earlier sigma_ref rule's values (fixed-c calibration); opt-in only
 
 
-def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_ref_nm=None):
-    """pipeline output dir -> (table dict of numpy columns, info dict)"""
+def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_ref_nm=None, sig_u=None):
+    """pipeline output dir -> (table dict of numpy columns, info dict). sig_u (2026-11-11, opt-in; None = unchanged): json of a
+    selection-aware sigma rescale sx, sy x g(strict_u) (analysis/psf3d_nets/sigcal.py; keys u_mid, g), applied to the good rows after
+    the strict product is formed (the selection is unchanged)"""
     R = load_rows(out, tag)
     n = len(R['x_hy0'])
     T = dict(frame=R['wstart'].astype(np.int64), t=R['frame'].astype(np.float64), x=R['x_hy0'].astype(np.float64),
@@ -182,6 +184,11 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_
     u, strict, info = strict_product(T['x'], T['y'], sig, T['good'], px_nm, q=strict_q, sigma_ref_nm=sigma_ref_nm, xc=xc, yc=yc,
                                      frame=T['frame'], tag='est2' if tag.startswith('est2') else 'est')
     T['strict_u'] = u.astype(np.float32); T['strict'] = strict
+    if sig_u:
+        G_ = json.load(open(sig_u)); fu = np.isfinite(u)
+        g_ = np.interp(u[fu], G_['u_mid'], G_['g']).astype(np.float32)
+        T['sx'][fu] *= g_; T['sy'][fu] *= g_
+        info['sig_u'] = sig_u
     info['median_photons'] = float(np.median(T['photons'][strict])) if strict.any() else float('nan')
     info.update(tag=tag, n_rows=int(n), n_good=int(T['good'].sum()), n_sel=int(T['sel'].sum()), drift=drift or '',
                 columns={k: str(v.dtype) + ('' if v.ndim == 1 else f'[{v.shape[1]}]') for k, v in T.items()})
@@ -216,9 +223,10 @@ def main(argv=None):
     ap.add_argument('--strict_sigma_ref', type=float, default=None,
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2, valid with the fixed-c calibration --autoc 0 only)')
     ap.add_argument('--format', default='npz')
+    ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json (analysis/psf3d_nets/sigcal.py)')
     a = ap.parse_args(argv)
     px = a.px_nm or PX_NM_DEFAULT
-    T, info = build_table(a.out, a.tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref)
+    T, info = build_table(a.out, a.tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref, a.sig_u or None)
     base = os.path.join(a.out, a.name or ('locs_p1' if a.tag == 'est' else 'locs_p2' if a.tag == 'est2' else f'locs_{a.tag}'))
     files = write_table(T, info, base, a.format.split(','))
     json.dump(info, open(base + '_info.json', 'w'), indent=1, default=str)

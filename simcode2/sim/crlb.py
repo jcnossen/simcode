@@ -21,6 +21,8 @@ from simcode2.nn.blocks import extract_patches
 from simcode2 import config as _cfg
 
 a = types.SimpleNamespace(calib=_cfg.model(_cfg.INSITU_05))
+import os as _os
+_CDIV = int(_os.environ.get('GATE_CRLB_DIV', '3'))   # (2026-11-11) per-angle PSF CRLB batch divisor (memory only; same results)
 dev = 'cuda'; S = 64; P = 11; h = P // 2; R = 15; HR = R // 2
 BOXP, BOXM = 9, 14          # parameter set / expected-image set (Chebyshev px from the target pixel)
 
@@ -173,11 +175,13 @@ def psf_channels(rpsf):
     return 8 if getattr(rpsf, 'angle_kw', None) else 4
 
 
+@torch.no_grad()   # (2026-11-11) no autograd graph (memory; same values)
 def psf_stack(rpsf, x, y, z, focus, chunk=1024):
     """Exact vectorial PSF on each emitter's own 15x15 ROI + central-difference derivatives: [N,4,R,R] (p, dx, dy, dz).
     (2026-11-11) [N,8,R,R] (angle 0 | angle 1) if rpsf has a per-angle PSF (models() of a per-angle calib)."""
     pos = torch.stack([x - torch.round(x), y - torch.round(y), z], 1)
     kws = getattr(rpsf, 'angle_kw', None) or [{}]
+    if len(kws) > 1: chunk = min(chunk, int(_os.environ.get('GATE_PSF_INNER', chunk)))   # (2026-11-11) opt-in memory cap, per-angle PSF
     out = []
     for p in pos.split(chunk):
         f = torch.full((len(p),), focus, device=dev); im = []
@@ -326,11 +330,11 @@ def crlb_all(G, o, psS, tg, T, focus):
         while i0 < n:
             K = 1 if iso else int(Ks[order[i0]])
             npar = K * (3 + T) + 2
-            nbat = max(1, min(512, int(3e7 // (npar * T * R * R))))
+            nbat = max(1, min(512, int(3e7 // (npar * T * R * R * (_CDIV if PT > 1 else 1)))))   # (2026-11-11) per-angle PSF: a third of the batch (memory; same results)
             idx = order[i0:i0 + nbat]
             if not iso:
                 K = int(Ks[idx].max()); npar = K * (3 + T) + 2
-                nbat = max(1, min(len(idx), int(3e7 // (npar * T * R * R)))); idx = idx[:nbat]
+                nbat = max(1, min(len(idx), int(3e7 // (npar * T * R * R * (_CDIV if PT > 1 else 1))))); idx = idx[:nbat]
             idx = idx.to(dev)
             out = run(idx, K, iso)
             sfx = '_i' if iso else '_m'

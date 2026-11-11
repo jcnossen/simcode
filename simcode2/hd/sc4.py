@@ -398,6 +398,10 @@ def train(argv):
     ap.add_argument('--psfdiv', default='')   # (2026-11-11, opt-in) json dict for realsim.psf_div_luts (PSF-diversity bank), D.Gen only
     ap.add_argument('--gen', default='')      # (2026-11-10) 'r1' = realistic batches (simcode2/hd/realgen.RGen 'paper' mix; the
                                               # photon / density / pair options above are then set by the recipe)
+    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list; hd/data.Gen calib; the PSF-template
+    # column follows the batch's calib) and close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
+    ap.add_argument('--calib', default='')
+    ap.add_argument('--pair_sub', default='')
     a = ap.parse_args(argv)
     from simcode2.sim import crlb as crlb_dense  # noqa
     os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
@@ -410,7 +414,9 @@ def train(argv):
         from simcode2.hd.realgen import RGen
         gen = RGen(64, 64, 6, seed=a.seed)
     else:
-        gen = D.Gen(64, 64, 6, seed=a.seed, psfdiv=json.loads(a.psfdiv) if a.psfdiv else None)
+        gen = D.Gen(64, 64, 6, seed=a.seed, psfdiv=json.loads(a.psfdiv) if a.psfdiv else None,
+                    calib=[config.resolve(c) for c in a.calib.split(',')] if a.calib else None)
+    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
     nbr_on = a.arch == 'sc4n'
     head = (SCHead4(6, a.ch, P=PP, bf16=bool(a.bf16)) if nbr_on else SCHead(6, a.ch, P=PP)).to(dev)
     if a.init:
@@ -419,6 +425,7 @@ def train(argv):
     pmed = dict(zip(('0.5nM', '2.5nM'), (float(v) for v in a.paper_med.split(',')))) if a.paper_med else None
     psd = a.paper_sd or None
     col = PSFCol(gen.rs['0.5nM'].sim)
+    cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
     Hd = torch.load(a.hold, weights_only=False)
     sc5 = os.path.abspath(a.hold) == HOLD5
     tau_r = tuple(float(v) for v in a.tau.split(','))
@@ -433,7 +440,8 @@ def train(argv):
                 o = gen.rbatch(a.batch, mix='paper', tau_r=tau_r, pair_curr=True)
             else:
                 o = gen.batch(a.batch, dens=dens, med_photons=med, pair_frac=a.pair_frac, pair_curr=True, paper=bool(a.paper), tau_r=tau_r,
-                              bright_tail=btail, paper_med=pmed, paper_sd=psd)
+                              bright_tail=btail, paper_med=pmed, paper_sd=psd, **psub)
+            if cols is not None: col = cols[o['calib_i']]
             fr = o['frames']
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 dd = det(fr)

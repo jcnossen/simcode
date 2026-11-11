@@ -17,27 +17,51 @@ dev = 'cuda'
 
 
 class Gen:
-    def __init__(self, H=64, W=64, T=6, seed=0, psfdiv=None):
+    def __init__(self, H=64, W=64, T=6, seed=0, psfdiv=None, calib=None):
         # psfdiv (2026-11-11, opt-in): RealSim PSF-diversity bank (realsim.psf_div_luts), built once and shared by both presets
         # (psfdiv key 'ev_shift' = per-event emission offset sd nm, realsim.scene, both presets)
+        # calib (2026-11-11 psf3d retrain, opt-in; None = unchanged): list of in-situ calib jsons (e.g. the per-axis
+        # *_psf3d.json of the paper movies) replacing the presets' PSF; one is drawn uniformly per batch (o['calib_i']), the
+        # preset (pattern / camera / emitter model) is drawn as before. Both presets of one calib share its Simulator / LUT bank.
         ev = {'ev_shift': float(psfdiv['ev_shift'])} if psfdiv and psfdiv.get('ev_shift') else {}
-        self.rs = {p: RealSim(p, H, W, T, seed=seed, **({'psfdiv': psfdiv} if psfdiv and p == '0.5nM' else {}), **ev) for p in ('0.5nM', '2.5nM')}
-        if psfdiv: self.rs['2.5nM'].luts = self.rs['0.5nM'].luts
+        self.calibs = None
+        if calib:
+            assert not psfdiv, 'calib mixture: no psfdiv support'
+            self.calibs = list(calib); self.rsm = []
+            for c in self.calibs:
+                d_ = {p: RealSim(p, H, W, T, seed=seed, calib=c) for p in ('0.5nM', '2.5nM')}
+                d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].luts = d_['0.5nM'].luts
+                self.rsm.append(d_)
+            torch.cuda.empty_cache()
+            self.rs = self.rsm[0]; self.ci = 0
+        else:
+            self.rs = {p: RealSim(p, H, W, T, seed=seed, **({'psfdiv': psfdiv} if psfdiv and p == '0.5nM' else {}), **ev) for p in ('0.5nM', '2.5nM')}
+            if psfdiv: self.rs['2.5nM'].luts = self.rs['0.5nM'].luts
         self.H, self.W, self.T = H, W, T
 
+    def all_rs(self):
+        return [r for d_ in self.rsm for r in d_.values()] if self.calibs else list(self.rs.values())
+
+    def pick(self, pre):
+        """RealSim of preset `pre`; with a calib mixture, first draws the calib of this batch (self.ci, one extra draw)"""
+        if self.calibs:
+            self.ci = int(torch.randint(0, len(self.calibs), (1,)).item()); self.rs = self.rsm[self.ci]
+        return self.rs[pre]
+
     def batch(self, nb, dens=(0.0005, 0.06), photons=(40.0, 6000.0), pair_frac=0.25, bgr=(1.0, 30.0), pair_curr=False,
-              med_photons=None, em_photons=None, paper=False, tau_r=(2.0, 80.0), bright_tail=None, paper_med=None, paper_sd=None):
+              med_photons=None, em_photons=None, paper=False, tau_r=(2.0, 80.0), bright_tail=None, paper_med=None, paper_sd=None,
+              pair_sub=None):
         # bright_tail (iteration 31, critic 30 #5): (frac, lo, hi) -> that fraction of the emitters gets log-uniform lo-hi
         # fully-on window photons (x the TIRF factor) after the paper draw; paper_med / paper_sd: {preset: median} / log-sd
         # overrides of PAPER_MED / PAPER_SD (None = unchanged)
         # med_photons: per-FOV median range (default = photons); em_photons: per-emitter draw range (default = photons)
         # (iteration 30 sc4 mix; defaults reproduce the sc2 / sc2L batches exactly)
         pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
-        rs = self.rs[pre]
+        rs = self.pick(pre)
         g = lambda *s: torch.rand(*s, device=dev)
         d = lu(*dens, nb); tau = lu(*tau_r, nb)
         med = lu(*(med_photons or photons), nb)
-        em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_curr=pair_curr)
+        em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_curr=pair_curr, pair_sub=pair_sub)
         N = len(em['fov'])
         per_em = (g(nb) < 0.5)[em['fov']]
         b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
@@ -61,6 +85,7 @@ class Gen:
         finally:
             rs.p.clear(); rs.p.update(save)
         o['preset'] = pre; o['bgmode'] = mode
+        if self.calibs: o['calib_i'] = self.ci
         return o
 
 

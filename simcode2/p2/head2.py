@@ -167,7 +167,7 @@ def eval_hold(det, needs_il, head, col, H, il_on=True):
         m = match_gt(o, c5)
         if m is None: continue
         p_own = torch.sigmoid(lgm[m['b'], m['iy'], m['ix']])
-        out = head_apply(head, col, o['frames'], il, m['b'], m['iy'], m['ix'], m['x'], m['y'], nbr, p_own)
+        out = head_apply(head, col[o['calib_i']] if isinstance(col, list) else col, o['frames'], il, m['b'], m['iy'], m['ix'], m['x'], m['y'], nbr, p_own)
         G = o['gt']; g = m['g']; Ig = G['phot'][g]
         nll, _ = nll_full(Ig, out['I'].float(), out['L'].float())
         ep = torch.stack([out['x'] - G['x'][g], out['y'] - G['y'][g]], 1)
@@ -207,6 +207,10 @@ def train(argv):
     ap.add_argument('--pert_model', default='v1')           # pattern-error model of the input estimate (illum.MODELS)
     ap.add_argument('--hold_v1', type=int, default=0)       # also a held-out set with the v1 error model (n batches)
     ap.add_argument('--gen', default='')                    # (2026-11-10) 'r1' = simcode2/hd/realgen.RGen (held-out too)
+    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list, hd/data.Gen calib; the PSF-template
+    # column follows the batch's calib), close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
+    ap.add_argument('--calib', default='')
+    ap.add_argument('--pair_sub', default='')
     a = ap.parse_args(argv)
     from simcode2.p2.data import Gen2
     from simcode2.hd.sc4 import match_gt, targets
@@ -217,10 +221,13 @@ def train(argv):
         from simcode2.hd.realgen import RGen
         gen = RGen(64, 64, 6, seed=a.seed)
     else:
-        gen = Gen2(64, 64, 6, seed=a.seed)
+        gen = Gen2(64, 64, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None)
+    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
     det, needs_il = load_det(a.det)
     head = load_init(a.init)
     col = PSFCol(gen.rs['0.5nM'].sim)
+    if getattr(gen, 'calibs', None): col = [PSFCol(r['0.5nM'].sim) for r in gen.rsm]    # per-calib template columns
+    cols = col
     Hd = make_hold(gen, pert_model=a.pert_model)
     Hv1 = make_hold(gen, n=a.hold_v1, seed=919) if a.hold_v1 else None
     ilon = not a.no_illum
@@ -237,7 +244,8 @@ def train(argv):
     t0 = time.time(); acc = {}; IS, GS = [], []
     for step in range(a.steps + 1):
         with torch.no_grad():
-            o = gen.batch2(a.batch, mix='paper', pair_curr=True, pert_model=a.pert_model)
+            o = gen.batch2(a.batch, mix='paper', pair_curr=True, pert_model=a.pert_model, **psub)
+            col = cols[o['calib_i']] if isinstance(cols, list) else cols
             fr = o['frames']; il = o['illum_p2'] if ilon else torch.zeros_like(o['illum_p2'])
             c, nbr, lgm = candidates(det, needs_il, fr, il)
             c5 = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))
@@ -284,8 +292,8 @@ def train(argv):
             acc = {}
             log.write(json.dumps(r) + '\n'); log.flush(); print(json.dumps(r), flush=True)
         if step % a.eval_every == 0 and step > 0:
-            ev = eval_hold(det, needs_il, head, col, Hd, ilon)
-            if Hv1: ev['v1'] = eval_hold(det, needs_il, head, col, Hv1, ilon)
+            ev = eval_hold(det, needs_il, head, cols, Hd, ilon)
+            if Hv1: ev['v1'] = eval_hold(det, needs_il, head, cols, Hv1, ilon)
             elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
             print('EVAL', step, json.dumps(ev), flush=True)
         if step % a.ckpt_every == 0 and step > 0:

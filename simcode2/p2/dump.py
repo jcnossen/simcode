@@ -25,7 +25,7 @@ from simcode2.p2 import head2 as H2
 from simcode2 import config as _cfg
 
 OUT = os.path.join(_cfg.root('out'), 'p2', 'fe')
-GATE = os.path.join(_cfg.root('out'), 'gate')
+GATE = os.environ.get('SIMCODE2_GATE_DIR') or os.path.join(_cfg.root('out'), 'gate')   # env: opt-in (2026-11-11)
 FRONTS = dict(p1=(_cfg.model(_cfg.DET), H2.SC5NB),                    # production pass 1 (det_n1 + sc5nb)
               p2L=(_cfg.model(_cfg.P2_DET), _cfg.model(_cfg.P2_HEAD)))  # production pass 2 (p2_det + p2_head_long)
 
@@ -94,7 +94,7 @@ def main():
     ap.add_argument('--out', default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    CD.a.calib = _cfg.model(_cfg.INSITU_05)
+    CD.a.calib = GA.gate_calib()
     sim, _, _ = CD.models(6)
     col = SCM.PSFCol(sim)
     if a.p2: FRONTS['p2'] = tuple(a.p2.split(','))

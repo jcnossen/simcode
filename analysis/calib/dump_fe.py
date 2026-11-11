@@ -45,7 +45,7 @@ def main():
     ap.add_argument('--ref_tag', default='_hd_sc5nbb15pm')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    CD.a.calib = _cfg.model(_cfg.INSITU_05)
+    CD.a.calib = GA.gate_calib()
     sim, _, _ = CD.models(6)
     det, _ = SCM.load_det_front(_cfg.model(_cfg.DET)); det.eval()   # as the gate runs (SC_DET) and the pipeline
     head = SCM.load(a.head); col = SCM.PSFCol(sim)

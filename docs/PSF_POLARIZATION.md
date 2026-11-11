@@ -184,6 +184,51 @@ differs by ≤ 0.08 % in x / y.
 So the per-axis PSF matters for simulation realism (network training, PSF-shape statistics), not for the information content
 or the position bias of a fit.
 
+**Intensity side (the pattern information of SIMFLUX / SIMCODE).** This compares the per-axis PSFs with their average. Script:
+`analysis/psf3d/intensity.py`; results in `out/psf3d/intensity/{m1809,m25}.json`. All numbers are on expected (noise-free) data with
+Poisson MLE. The grid is the sub-pixel grid above, z 0.02 / 0.06 / 0.12 µm, 8×8 and 11×11 ROIs, 1000 and 300 ph/frame, bg 10.
+
+1. **Per-frame intensity CRLB** (position known; I and bg free), per-axis truth vs average:
+
+| movie | angle 0 | angle 1 |
+|---|---|---|
+| 1809/2 | +0.1 to +0.2 % | −0.1 to −0.2 % |
+| 2.5 nM | +0.2 to +0.5 % | −0.2 to −0.5 % |
+
+The worst case is the 8×8 ROI at 300 ph.
+
+2. **Per-frame intensity bias of an averaged-PSF fit to per-axis data:**
+
+| movie | common per-angle factor, angle 0 / angle 1 (8 px / 11 px) | residual sd over position and z (8 px / 11 px) |
+|---|---|---|
+| 1809/2 | 0.9979 / 1.0021 (1000 ph); 0.9970 / 1.0030 (300 ph) | 0.14–0.18 % / 0.09–0.14 % |
+| 2.5 nM | 0.995 / 1.005 (1000 ph); 0.994 / 1.006 (300 ph) | 0.04–0.06 % / 0.02–0.03 % |
+
+- Fitting with the average under-reads angle 0 and over-reads angle 1. The 11 px ROI halves the common factor.
+- A per-angle relint absorbs the common factor; the pattern estimate fits relint per step from the data.
+- The residual is a modulation error in the 3-frame demodulation of an angle (relint known): a phase error equivalent to
+  ≤ 0.019 nm position (rms 0.006–0.009 nm), and a depth error ≤ 0.0014 (rms ≤ 0.0005).
+
+3. **SIMFLUX joint 6-frame fit** (known pattern: calib k and phases, depth 0.925 / 0.955, relint, 4 pattern offsets):
+- CRLB(x, y) with the per-axis vs the average PSF: within ±0.25 %. Median CRLB at 1000 ph is 1.39 / 1.40 nm (1809, 8×8) and
+  1.64 / 1.59 nm (2.5 nM); at 300 ph, 3.5 / 3.4 and 4.2 / 4.0 nm.
+- Position bias of the averaged-PSF fit to per-axis data:
+
+| amplitude model | max bias | rms |
+|---|---|---|
+| one amplitude (relint fixed) | ≤ 0.021 nm | ≤ 0.010 nm |
+| per-angle amplitude (relint absorbs the common factor; fitted A1/A0 = 1.002–1.008) | ≤ 0.020 nm | ≤ 0.010 nm |
+
+4. **Meaning for SIMCODE v2's explicit pattern solve** (network intensities).
+- At the model level, the per-axis PSF reaches the intensities as a common per-angle scale of ±0.2–0.6 %, which the per-step
+  relint of the pattern estimate absorbs.
+- What remains varies with position and z: 0.02–0.18 %, i.e. ≤ 0.02 nm of phase-equivalent position and ≤ 0.0014 in depth.
+  That is two orders of magnitude below the per-emitter angle brightness factor in the data and in the training sims (RealSim
+  ang_sd 0.14; measured per-event ln(A1/A0) correlation, section 3).
+- So per-axis training cannot change precision or bias through the intensity channel, as far as an MLE-like read-out is
+  concerned. If it matters, it is through how the networks generalise to the real PSF shape. That has to be measured on the
+  networks themselves: heads trained on the per-axis vs the averaged PSF, scored on per-axis sims and on real data.
+
 **Sim check (simulator LUT path, real camera maps; statistic = the old-model fit's residual moments).**
 
 0.5 nM:

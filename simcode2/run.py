@@ -56,6 +56,7 @@ def main(argv=None):
     ap.add_argument('--strict_sigma_ref', type=float, default=None,
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2), valid with the fixed-c calibration (--autoc 0) only')
     ap.add_argument('--format', default='npz', help='table formats: npz,csv,hdf5')
+    ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table)')
     ap.add_argument('--redo', type=int, default=0)
     a = ap.parse_args(argv)
     os.makedirs(a.out, exist_ok=True)
@@ -65,7 +66,8 @@ def main(argv=None):
               '--sc_det', a.det, '--sc_head', a.head]
     if a.chunk_list: common += ['--chunk_list', a.chunk_list]
     if a.nframes: common += ['--nframes', str(a.nframes)]
-    p1_fixed = config.CAL_P1_REAL
+    # (2026-11-11) with an explicit --cal (e.g. a retrained head's calibration) its prior_off also feeds the pattern stage; default unchanged
+    p1_fixed = config.resolve(a.cal) if a.cal else config.CAL_P1_REAL
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
@@ -104,8 +106,9 @@ def main(argv=None):
     if a.autoc and not a.cal and os.path.exists(os.path.join(a.out, 'autoc_est.json')):
         summ['autoc_theta'] = json.load(open(os.path.join(a.out, 'autoc_est.json')))['theta']
     tags = [('est', 'locs_p1')] + ([('est2', 'locs_p2')] if a.pass2 else [])
-    for tag, name in tags:
-        T, info = SP.build_table(a.out, tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref)
+    su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
+    for (tag, name), su_ in zip(tags, su):
+        T, info = SP.build_table(a.out, tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref, config.resolve(su_) if su_ else None)
         files = SP.write_table(T, info, os.path.join(a.out, name), a.format.split(','))
         summ[name] = {k: v for k, v in info.items() if k != 'columns'}; summ[name]['files'] = files
         summ['columns'] = info['columns']

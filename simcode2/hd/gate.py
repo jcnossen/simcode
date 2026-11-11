@@ -33,8 +33,17 @@ RSI = {}
 THR0 = 0.2
 
 
+def gate_calib():
+    """(2026-11-11 psf3d retrain, opt-in) PSF calib of the gate scenes: env SIMCODE2_GATE_CALIB (e.g. a movie's per-axis
+    *_psf3d.json; renders the scenes, the CRLB and the head's PSF template), default the 0.5 nM in-situ calib (unchanged)"""
+    c = os.environ.get('SIMCODE2_GATE_CALIB', '')
+    return config.resolve(c) if c else config.model(config.INSITU_05)
+
+
 def rsim(pre):
-    if pre not in RSI: RSI[pre] = RealSim(pre, S, S, 6)
+    if pre not in RSI:
+        c = os.environ.get('SIMCODE2_GATE_CALIB', '')
+        RSI[pre] = RealSim(pre, S, S, 6, **({'calib': config.resolve(c)} if c else {}))
     return RSI[pre]
 
 
@@ -176,7 +185,7 @@ def main():
         k_, v_ = kv.split('='); SOVER[k_] = v_ if k_ == 'bgmode' else bool(int(v_))
     if POVER or SOVER: print('ablation overrides', POVER, SOVER, flush=True)
     os.makedirs(a.out, exist_ok=True)
-    CD.a.calib = config.model(config.INSITU_05)
+    CD.a.calib = gate_calib()
     T = 6
     sim, rpsf, lut = CD.models(T)
     fronts = a.fronts.split(',')

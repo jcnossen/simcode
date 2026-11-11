@@ -177,7 +177,7 @@ class RealSim:
 
     # ----------------------------------------------------------------------------------------------- emitters
     def emitters(self, nb, dens=None, tau=None, struct_frac=None, bright=None, margin=6, pair_frac=0.0,
-                 pair_sep=(0.5, 3.0), pair_curr=False, fil_pts_in=None, use_sites=True):
+                 pair_sep=(0.5, 3.0), pair_curr=False, fil_pts_in=None, use_sites=True, pair_sub=None):
         # (2026-11-10 simreal2, opt-in; defaults unchanged) fil_pts_in: reuse these filament curves [nb, nfil, ns, 2] (e.g. a dim-binder
         # population on the same microtubules); preset keys fil_on (fraction of events on a filament, 0.85), fil_w (filament
         # width sd nm, 12), fil_resample (redraw the filament point up to 12 times when it falls outside the canvas instead of
@@ -244,6 +244,8 @@ class RealSim:
                     sep = torch.where(g(M) < 0.5, 1.5 + g(M), sep)
                     along = g(M) < 0.3
                     th = torch.where(along, torch.randint(0, 4, (M,), device=dev).float() * (math.pi / 2) + 0.021 + 0.05 * torch.randn(M, device=dev), th)
+                if pair_sub is not None and pair_sub[0] > 0:   # (2026-11-11 item 4, opt-in; None = unchanged draws) close-pair enrichment:
+                    sep = torch.where(g(M) < pair_sub[0], pair_sub[1] + (pair_sub[2] - pair_sub[1]) * g(M), sep)   # (frac, lo, hi) px
                 tp = tau[fov[pi]]
                 pt0 = -tp + (T - 0.5 + tp) * g(M); pt1 = pt0 + 0.5 - torch.log(g(M).clamp(min=1e-9)) * tp
                 fov = torch.cat([fov, fov[pi]]); t0 = torch.cat([t0, pt0]); t1 = torch.cat([t1, pt1])

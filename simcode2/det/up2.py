@@ -98,15 +98,15 @@ def load(ck, dev='cuda'):
 
 # ------------------------------------------------------------------------------------------------ data
 def batch(gen, nb, dens=(0.0005, 0.04), photons=(40.0, 6000.0), med_photons=(40.0, 2500.0), em_photons=None,
-          pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0)):
-    """copy of simcode2/hd/data.Gen.batch with a pair_sep argument (critic-29 mix)"""
+          pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0), pair_sub=None):
+    """copy of simcode2/hd/data.Gen.batch with a pair_sep argument (critic-29 mix); pair_sub / gen calib mixture: opt-in (2026-11-11)"""
     from simcode2.hd.realsim import lu
     pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
-    rs = gen.rs[pre]
+    rs = gen.pick(pre)
     g = lambda *s: torch.rand(*s, device=dev)
     d = lu(*dens, nb); tau = lu(2.0, 80.0, nb)
     med = lu(*med_photons, nb)
-    em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep)
+    em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep, pair_sub=pair_sub)
     N = len(em['fov'])
     per_em = (g(nb) < 0.5)[em['fov']]
     b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
@@ -188,6 +188,11 @@ def focal_w(logits, label, ign, wpos, gamma=2.0, alpha=0.75):
     return (w * (1 - pt) ** gamma * ce).sum() / label.sum().clamp(min=1)
 
 
+def _cfg_resolve(c):
+    from simcode2.config import resolve
+    return resolve(c)
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -207,6 +212,10 @@ def train(argv):
     ap.add_argument('--psum', type=float, default=0.0)  # stored in args: det/model.psum_logit radius at inference (0 = off)
     ap.add_argument('--ckpt_every', type=int, default=5000)
     ap.add_argument('--band', type=float, default=0.0)  # sub-pixel-invariant target band (px; band_extra), 0 = off
+    # (2026-11-11 psf3d retrain, opt-in; defaults = det_n1) PSF calib mixture (comma list of calib jsons, hd/data.Gen calib),
+    # close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
+    ap.add_argument('--calib', default='')
+    ap.add_argument('--pair_sub', default='')
     a = ap.parse_args(argv)
     from simcode2.hd import data as HD
     from simcode2.hd.sc4 import nn_weights
@@ -218,7 +227,8 @@ def train(argv):
         from simcode2.hd.realgen import RGen
         gen = RGen(a.size, a.size, 6, seed=a.seed)
     else:
-        gen = HD.Gen(a.size, a.size, 6, seed=a.seed)
+        gen = HD.Gen(a.size, a.size, 6, seed=a.seed, calib=[_cfg_resolve(c) for c in a.calib.split(',')] if a.calib else None)
+    psub = tuple(float(v) for v in a.pair_sub.split(',')) if a.pair_sub else None
     net = build(args).to(dev)
     if a.init:
         net.load_state_dict(torch.load(__import__('simcode2.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
@@ -233,7 +243,7 @@ def train(argv):
             if a.gen == 'r1':
                 o = gen.rbatch(a.batch, mix='paper' if step % 2 == 0 else 'det', tau_r=(2.0, 80.0), pair_frac=0.25, pair_sep=(0.3, 3.0))
             else:
-                o = batch(gen, a.batch, em_photons=emp)
+                o = batch(gen, a.batch, em_photons=emp, **({'pair_sub': psub} if psub else {}))
             label, ign, tid, off = targets(o, up, S, S)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)
