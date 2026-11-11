@@ -18,7 +18,7 @@ shape = Movie(mv).shape
 res = {}
 for r in range(reps):
     for w in ((1, -1) if r % 2 == 0 else (-1, 1)):
-        PE.KD_WORKERS = w; t = time.time()
+        PE.NB_BACKEND = 'kdtree'; PE.KD_WORKERS = w; t = time.time()
         P, info = PE.estimate_pattern(R, shape, verbose=lambda *a: None)
         print(f'workers {w}: {time.time() - t:.1f}s  ({len(R["x"])} rows)', flush=True); res[w] = P
 print('identical pattern:', all(torch.equal(torch.as_tensor(res[1][k]), torch.as_tensor(res[-1][k])) for k in res[1] if torch.is_tensor(res[1][k])))

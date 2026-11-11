@@ -247,8 +247,42 @@ def test_trunk_compile_bf16():
     print('  ok trunk compile')
 
 
+def test_spatial_hash():
+    """simcode2/util/spatial_hash vs scipy cKDTree (key * 1e4 embedding) on a deterministic point set with duplicates, points
+    on cell borders (0.5 px grid, radius 1.0 / 2.0 / 5.0 -> many distances exactly equal to the radius), empty keys and
+    keys absent from the points; CPU and (if available) CUDA. Distances / counts / found sets must be identical; nearest
+    indices may differ only between equidistant points."""
+    from scipy.spatial import cKDTree
+    from simcode2.util import spatial_hash as SH
+    rng = np.random.default_rng(7)
+    n = 6000
+    k = rng.integers(0, 40, n) * 3; k[k == 30] = 33                     # key 30 empty
+    x = rng.integers(0, 60, n) * 0.5; y = rng.integers(0, 60, n) * 0.5
+    x[:300] = x[300:600]; y[:300] = y[300:600]; k[:300] = k[300:600]    # exact duplicates
+    P = np.c_[x, y, k * 1e4]; t = cKDTree(P)
+    qx = np.r_[x, 3.0, 100.0]; qy = np.r_[y, 3.0, -50.0]; qk = np.r_[k, 30, 0]   # + a query in an empty key, one far outside
+    devs = ['cpu'] + (['cuda'] if torch.cuda.is_available() else [])
+    for dev in devs:
+        kw = dict(device=dev, block_points=1000, cand_cap=2000)        # small blocks / pieces: exercise the chunking
+        for r in (1.0, 2.0, 5.0):
+            for dt in (0, 6):
+                dk, jk = t.query(np.c_[qx, qy, (qk + dt) * 1e4], distance_upper_bound=r)
+                dh, jh = SH.nearest(x, y, k, qx, qy, qk + dt, r, **kw)
+                assert np.array_equal(dk, dh), f'{dev} r {r} dt {dt}: distances differ'
+                mis = np.isfinite(dk) & (jk != jh)
+                d2 = lambda j: (qx[mis] - x[j[mis]]) ** 2 + (qy[mis] - y[j[mis]]) ** 2
+                assert np.array_equal(d2(jk), d2(jh)), f'{dev} r {r} dt {dt}: index differs at unequal distance'
+                assert np.array_equal(jk[~np.isfinite(dk)], jh[~np.isfinite(dh)])
+            dd, _ = t.query(P, k=2)
+            nh, _ = SH.nearest(x, y, k, x, y, k, r, qself=np.arange(n), **kw)
+            assert np.array_equal(np.where(dd[:, 1] < r, dd[:, 1], np.inf), nh), f'{dev} r {r}: nearest-other differs'
+            ck = t.query_ball_point(np.c_[qx, qy, qk * 1e4], r, return_length=True)
+            assert np.array_equal(ck, SH.count(x, y, k, qx, qy, qk, r, **kw)), f'{dev} r {r}: counts differ'
+    print(f'  ok spatial hash vs cKDTree ({", ".join(devs)}; r 1 / 2 / 5, shifted keys, duplicates, empty keys)')
+
+
 if __name__ == '__main__':
     for f in (test_pass1_fp32, test_pass1_bf16, test_pass1_compiled_fp32, test_pattern_solve, test_pass2_p2_fp32, test_prefetch_reader,
-              test_trunk_compile_bf16):
+              test_trunk_compile_bf16, test_spatial_hash):
         print(f.__name__, flush=True); f()
     print('ALL OK')

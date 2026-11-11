@@ -36,8 +36,16 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
 import math
 import numpy as np, torch
 from scipy.spatial import cKDTree
+from simcode2.util import spatial_hash as SH
 
-KD_WORKERS = -1      # (2026-11-11, speed branch) parallel cKDTree queries: exact (per-point queries are independent)
+# (2026-11-11, speed branch) neighbour queries: 'hash' = simcode2/util/spatial_hash (torch, CUDA if available, else CPU;
+# exact distances, same selections as cKDTree up to the choice among equidistant points), 'kdtree' = the original serial
+# scipy cKDTree (reference). NB_DEVICE: None = cuda if available.
+NB_BACKEND = 'hash'
+NB_DEVICE = None
+KD_WORKERS = 1       # 'kdtree' backend only (1 = the original serial queries; -1 = all cores, identical results)
+NN_CAP = 5.0         # 'hash': nn beyond max(NN_CAP, nn_min) is returned as inf; every use of nn is a test nn >= t with t <= 5
+NB_STATS = {}
 
 T = 6
 
@@ -52,14 +60,19 @@ def select(R, nn_min=3.0, min_phot=300.0, link_r=1.0):
     """clean emitter-windows from pass-1 rows R (all detections, flag out). Returns dict of arrays."""
     ws = R['wstart'].astype(np.int64); x, y = R['x'].astype(np.float64), R['y'].astype(np.float64)
     out = R['out'].astype(bool)
-    # neighbour distance: all detections of the same window (window starts are >= 3 frames apart -> scale 1e4)
-    P_all = np.c_[x, y, ws * 1e4]
-    tr = cKDTree(P_all)
     io = np.nonzero(out)[0]
-    dd, _ = tr.query(P_all[io], k=2, workers=KD_WORKERS)
-    nn = dd[:, 1]
-    # linked detections in windows w - 6 and w + 6 (any detection, nearest < link_r)
-    q = lambda dt: tr.query(np.c_[x[io], y[io], (ws[io] + dt) * 1e4], distance_upper_bound=link_r, workers=KD_WORKERS)
+    if NB_BACKEND == 'hash':
+        # nearest OTHER detection of the same window, capped (see NN_CAP), and the nearest detection < link_r in w -/+ 6
+        nn, _ = SH.nearest(x, y, ws, x[io], y[io], ws[io], max(NN_CAP, nn_min), qself=io, device=NB_DEVICE, stats=NB_STATS)
+        q = lambda dt: SH.nearest(x, y, ws, x[io], y[io], ws[io] + dt, link_r, device=NB_DEVICE, stats=NB_STATS)
+    else:
+        # neighbour distance: all detections of the same window (window starts are >= 3 frames apart -> scale 1e4)
+        P_all = np.c_[x, y, ws * 1e4]
+        tr = cKDTree(P_all)
+        dd, _ = tr.query(P_all[io], k=2, workers=KD_WORKERS)
+        nn = dd[:, 1]
+        # linked detections in windows w - 6 and w + 6 (any detection, nearest < link_r)
+        q = lambda dt: tr.query(np.c_[x[io], y[io], (ws[io] + dt) * 1e4], distance_upper_bound=link_r, workers=KD_WORKERS)
     dm, jm = q(-6); dp, jp = q(6)
     on = np.isfinite(dm) & np.isfinite(dp)
     jm = np.where(on, jm, 0); jp = np.where(on, jp, 0)
@@ -215,12 +228,20 @@ def fit_eps(D, sel, K, psi, rel, m, kf=150, n_knots=None, smooth=3, verbose=prin
     return eps_k, dict(se=se_b, n=nb_, block_centres=cent)
 
 
+def depth_pair_query(D, idx):
+    """for each clean emitter-window idx: the nearest clean detection (< 1 px) of the same site in window w + 6 -> (d, j)
+    with j indexing idx (len(idx) if none)"""
+    if NB_BACKEND == 'hash':
+        x, y, w = D['x1'][idx], D['y1'][idx], D['w'][idx]
+        return SH.nearest(x, y, w, x, y, w + 6, 1.0, device=NB_DEVICE, stats=NB_STATS)
+    P = np.c_[D['x1'][idx], D['y1'][idx], D['w'][idx] * 1e4]
+    return cKDTree(P).query(np.c_[D['x1'][idx], D['y1'][idx], (D['w'][idx] + 6) * 1e4], distance_upper_bound=1.0, workers=KD_WORKERS)
+
+
 def fit_depth(D, sel, K, psi, rel, eps_knots, kf, verbose=print, pbins=(0, 1000, 2000, 4000, 1e9)):
     """cross-cycle depth per angle on photon-disjoint consecutive windows (w, w + 6) of the same clean emitter."""
     idx = np.nonzero(sel)[0]
-    P = np.c_[D['x1'][idx], D['y1'][idx], D['w'][idx] * 1e4]
-    tr = cKDTree(P)
-    d, j = tr.query(np.c_[D['x1'][idx], D['y1'][idx], (D['w'][idx] + 6) * 1e4], distance_upper_bound=1.0, workers=KD_WORKERS)
+    d, j = depth_pair_query(D, idx)
     ok = np.isfinite(d)
     i1, i2 = idx[ok], idx[j[ok]]
     res = {}
