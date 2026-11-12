@@ -75,7 +75,7 @@ def main(argv=None):
     ap.add_argument('--strict_q', type=float, default=None, help='fixed per-tile quantile (default: from the row density)')
     ap.add_argument('--strict_sigma_ref', type=float, default=None,
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2), valid with the fixed-c calibration (--autoc 0) only')
-    ap.add_argument('--u_max', type=float, default=None, help='threshold of the main selection (column main: strict_u <= u_max; default 0.45)')
+    ap.add_argument('--u_max', type=float, default=None, help='threshold of the main selection (strict_u <= u_max, stored in the table; default 0.45)')
     ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,strict' (strict.write_subset)")
     ap.add_argument('--format', default='npz', help='table formats: npz,csv,hdf5')
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table); '

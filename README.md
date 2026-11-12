@@ -73,7 +73,8 @@ Defaults (= the paper's settings, `simcode/netsets.json`):
   table exists only for the earlier default head
 - stored-candidate cut p ≥ 0.3 (`--cand_pmin`)
 - fast path, with a compiled solve step when available
-- selections in the table: `main` = the paper's "u ≤ 0.45" (`--u_max`), `sel`, `strict`
+- selections: the paper's "u ≤ 0.45" = `strict_u ≤ u_max` (`--u_max`, stored in the table; no column of its own), and the
+  columns `sel`, `strict`
 
 `--dataset <name>` takes movie, calibration and network set of a paper dataset from `netsets.json` and adds what the
 production runs did after the pipeline: pass 2, the set's selection-aware sigma rescale (`--sig_u set`) and the subset
@@ -115,8 +116,8 @@ Table columns:
 - `p` (detector), `q_dof`, `kin`, `dnll`, `x_prior, y_prior`
 - `good` (p ≥ 0.63), `sel` (phase-calibrated selection: the recommended full output for renders and drift), `disjoint`
   (frame % 6 == 0)
-- `strict_u` (per-tile σ rank quantile among the good rows in the crop), **`main`** (the paper's selection:
-  `strict_u ≤ u_max`, u_max 0.45, stored in the table) and `strict` (the density-rule strict product)
+- `strict_u` (per-tile σ rank quantile among the good rows in the crop), the stored `u_max` (0.45): the paper's selection is
+  `strict_u ≤ u_max`, row mask `simcode.strict.select(table)`, and `strict` (the density-rule strict product)
 
 `strict` is a per-10-px-tile σ quantile among the good rows: in every tile the fraction q with the smallest calibrated σ
 is kept. By default q comes from the GT-free row density ρ (good rows in the crop per window start per µm²), interpolated

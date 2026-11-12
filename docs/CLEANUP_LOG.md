@@ -497,3 +497,23 @@ chunk files bit-identical to `out/paper2/1809_2/v2_matched`; tables with the set
 rescaled `sx`, `sy` equal to the table of 60cc637 on the same chunks); `locs_p{1,2}_u045.npz` and `_strictonly.npz` written,
 their rows = the `main` / `strict` rows. `simcode.example.json`: `data` now points at the directory the dataset paths are
 relative to (`…/bn_dnapaint`).
+
+## Addendum: no `main` column (user decision, 2026-11-12)
+
+The boolean column `main` is not written any more: it duplicated `strict_u <= u_max`. The table keeps `strict_u` and the
+stored `u_max` (npz entry and info json, default 0.45; `n_main` stays in the info json as a count). Readers get the row
+mask from `simcode.strict.select(table, u_max=None)` (finite `strict_u` and `strict_u <= u_max`; default = the stored
+value). `--subset main` still writes the `_u045` file. Where this log says "column `main`" above, read `select(table)`.
+No kept script read the column. Checks: `tests/test_tables.py` `ALL OK`; `python -m simcode.strict` on
+`out/paper2/1809_2/v2_matched`: `locs_p2.npz` identical to the stored table in every column (only new entry: `u_max`),
+`locs_p2_u045.npz` (1 404 302 rows) and `locs_p2_strictonly.npz` identical row for row.
+
+The other boolean columns of the 2D table, and which kept code still reads them (grep for `['<name>']`; 4Pi tables have
+columns of the same names `good` / `sel` with their own meaning, those readers are not listed):
+
+| column | read by |
+|---|---|
+| `good` (p >= 0.63) | `simcode/util/drift.py` (drift rows: good & disjoint), `simcode/strict.py` itself (the rank is defined on the good rows), `analysis/psf3d_nets/sigcal.py`, `analysis/evalproto/strictq.py` |
+| `sel` (phase-calibrated) | `analysis/paper/frc_fair.py` (loader of v2 tables and subset files), `analysis/papersim/metrics.py`, `analysis/papersim/pvalid_real.py` |
+| `strict` (density-rule product) | `analysis/papersim/metrics.py`, `analysis/papersim/selection.py`, `analysis/psf3d_nets/sigcal.py`, `analysis/evalproto/strictq.py`; `--subset strict` (the `_strictonly` file) |
+| `disjoint` (frame % 6 == 0) | `simcode/util/drift.py` |

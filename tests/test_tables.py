@@ -1,7 +1,7 @@
 """
 CPU tests of the localization table and the evaluation helpers on synthetic rows (no GPU, no models, no raw data).
 Run: python tests/test_tables.py (or pytest tests).
-  strict   table columns; main = strict_u finite and <= u_max (inside good rows of the crop); the crop of the run is read
+  strict   table columns; no 'main' column: select(table) = strict_u finite and <= the stored u_max; the crop of the run is read
            from its pass-1 file and a non-default crop moves the tiles; subset files hold exactly the selected rows
   drift    row selection of the drift estimate (simcode/util/drift.drift_rows; DME itself is not run)
   FRC      identical sets never drop below 1/7; block halves; a blurred point pattern resolves near its blur
@@ -33,24 +33,26 @@ def test_strict_table():
         assert SP.run_crop(d) == (5.0, 5.0, 110.0)
         T, info = SP.build_table(d, 'est2')
         for k in ('frame', 't', 'x', 'y', 'sx', 'sy', 'photons', 'I', 'p', 'q_dof', 'kin', 'dnll', 'x_prior', 'y_prior', 'good', 'sel', 'disjoint',
-                  'strict_u', 'main', 'strict'):
+                  'strict_u', 'strict'):
             assert k in T and len(T[k]) == 1000, k
         u = T['strict_u']; inc = T['good'] & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115)
         assert np.array_equal(np.isfinite(u), inc)                                     # a rank exactly for the good rows inside the crop
         assert np.array_equal(T['good'], T['p'] >= SP.P_GOOD)
-        assert np.array_equal(T['main'], np.isfinite(u) & (u <= 0.45)) and info['u_max'] == 0.45 and info['n_main'] == int(T['main'].sum())
-        assert np.array_equal(SP.select(T, 'main'), T['main']) and np.array_equal(SP.select(T, 'strict'), T['strict'])
+        main = np.isfinite(u) & (u <= 0.45)
+        assert 'main' not in T and np.array_equal(SP.select(T), main) and info['u_max'] == 0.45 and info['n_main'] == int(main.sum())
+        assert np.array_equal(SP.select(T, rule='strict'), T['strict'])
         assert np.array_equal(T['strict'], np.isfinite(u) & (u <= info['q'])) and not (T['strict'] & ~T['good']).any()
-        assert 0 < np.nanmin(u) and np.nanmax(u) < 1 and SP.select(T, 'all').all()
+        assert 0 < np.nanmin(u) and np.nanmax(u) < 1 and SP.select(T, rule='all').all()
         T2, i2 = SP.build_table(d, 'est2', u_max=0.2)
-        assert np.array_equal(T2['main'], np.isfinite(u) & (u <= 0.2)) and np.array_equal(T2['strict_u'], u, equal_nan=True)
+        assert np.array_equal(SP.select(T2, 0.2), np.isfinite(u) & (u <= 0.2)) and i2['u_max'] == 0.2 and np.array_equal(T2['strict_u'], u, equal_nan=True)
         # table and subset files
         files = SP.write_table(T, info, f'{d}/locs_p2'); fn = SP.write_subset(T, f'{d}/locs_p2', 'main'); fs = SP.write_subset(T, f'{d}/locs_p2', 'strict')
         assert os.path.basename(fn) == 'locs_p2_u045.npz' and os.path.basename(fs) == 'locs_p2_strictonly.npz' and files == [f'{d}/locs_p2.npz']
         L = np.load(f'{d}/locs_p2.npz'); S = np.load(fn)
-        assert float(L['u_max']) == 0.45 and np.array_equal(L['main'], T['main'])
-        assert np.array_equal(SP.select(L, 'main'), T['main'])                          # the stored u_max is used when a table is read back
-        assert S['sel'].all() and np.array_equal(S['x'], T['x'][T['main']]) and np.array_equal(S['frame'], T['frame'][T['main']])
+        assert float(L['u_max']) == 0.45 and 'main' not in L.files
+        assert np.array_equal(SP.select(L), main)                                       # the stored u_max is used when a table is read back
+        SP.write_table(T2, i2, f'{d}/t2'); assert np.array_equal(SP.select(np.load(f'{d}/t2.npz')), np.isfinite(u) & (u <= 0.2))
+        assert S['sel'].all() and np.array_equal(S['x'], T['x'][main]) and np.array_equal(S['frame'], T['frame'][main])
         assert SP.subset_name('main', 0.3) == 'u030'
     print('  ok strict table: columns, main / strict / select, u_max, subset files')
 

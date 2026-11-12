@@ -6,7 +6,7 @@ real-movie calibrations the production runs used) or autoc (--autoc 1, the autom
 
 After the run, the localization tables are rebuilt with the selections of simcode/strict.py on the simulation's FOV
 (build_table crop = (0, 0, W): its 10-px tiles, 20-nm coverage bins and the density rule's area). Output:
-<out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py (main, sel, strict, ...), and <out>/locs_sim_info.json.
+<out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py (strict_u, sel, strict, ...), and <out>/locs_sim_info.json.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--netset m1809] [--cal_kind sim|real|autoc]
           [--nframes N] [--out <movie dir>/v2_<netset>] [--no_pass2] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess

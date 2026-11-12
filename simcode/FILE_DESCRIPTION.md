@@ -18,14 +18,14 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 2. **Pattern estimation**: the illumination pattern (pitch, angle, phases, depth, drift) is estimated from the pass-1 output.
 3. **Explicit solve**: the position follows from the network intensities and the pattern.
 4. **Pass 2** (pattern-aware): detector and head get the estimated pattern as extra input, then the same solve.
-5. **Table**: localizations with calibrated uncertainties and the selections (`main` = the paper's u ≤ 0.45).
+5. **Table**: localizations with calibrated uncertainties and the selections (the paper's: `strict_u` ≤ 0.45).
 
 ## Top level (`simcode/`)
 
 | file | what it does |
 |---|---|
 | `run.py` | User entry point: `python -m simcode.run --movie … --calib … --out … [--netset m1809] [--pass2]`, or `--dataset <name>` for a paper dataset with the production recipe. Runs all stages; finished stages are skipped. |
-| `strict.py` | Builds the localization table from a pipeline output directory, with the selections: `main` (strict_u ≤ u_max, the paper's rule), `sel`, `strict`. Writes subset files (`--subset`). Also a CLI. |
+| `strict.py` | Builds the localization table from a pipeline output directory, with the score `strict_u` and the stored `u_max` (the paper's selection is strict_u ≤ u_max: `select(table)`), and the columns `sel`, `strict`. Writes subset files (`--subset`). Also a CLI. |
 | `netsets.json` | The single definition of the network sets (m1809, m25, g13), the default set, and the paper's production recipe (flags, datasets). |
 | `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from environment variables, `simcode.json` or defaults; `netset(name)`. No path is hard-coded elsewhere. |
 | `core.py` | Pattern geometry helpers used by the explicit solve (illumination at a position, fringe shifts, kinetics start values). |

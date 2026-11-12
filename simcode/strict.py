@@ -18,8 +18,8 @@ Table (one row per stored localization = a 6-frame window of an emitter; windows
   disjoint    frame % 6 == 0 (non-overlapping windows)
   strict_u    per-tile sigma rank quantile in [0, 1] (rows with good = True inside the crop; nan otherwise), sigma = mean of
               sx, sy
-  main        the paper's main selection "u <= 0.45": strict_u is finite and <= u_max (U_MAX = 0.45; --u_max; the value is
-              stored in the table as u_max and in the info json)
+The paper's main selection "u <= 0.45" has no column of its own: it is strict_u finite and <= u_max, with u_max stored in the
+table file (entry u_max, default U_MAX = 0.45; --u_max) and in the info json. Readers use select(table) for the row mask.
   strict      the strict product: strict_u <= q (q from the row density, see below)
 Selections by name (select(T, rule); --subset <rule> writes the rows of a rule as a small file locs_<pass>_<name>.npz with
 x, y, frame, sx, sy, photons and sel = True, the format the figure and FRC scripts read): 'main' (file name u045 for
@@ -176,9 +176,10 @@ def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, y
 SIGMA_REF = {'est': 7.0, 'est2': 7.4}   # the earlier sigma_ref rule's values (fixed-c calibration); opt-in only
 
 
-def select(T, rule='main', u_max=None):
-    """rows of a named selection -> bool [n]. 'main': strict_u finite and <= u_max (default: the table's u_max, else U_MAX);
-    'strict', 'sel', 'good': that column; 'all': every row"""
+def select(T, u_max=None, rule='main'):
+    """row mask of a selection -> bool [n]. Default = the paper's main selection: strict_u finite and <= u_max (u_max None:
+    the value stored in the table, else U_MAX). T = a table (dict or loaded npz) with strict_u. Other rules: 'strict',
+    'sel', 'good' (that column), 'all' (every row)."""
     if rule == 'main':
         u = np.asarray(T['strict_u'])
         if u_max is None: u_max = float(T['u_max']) if 'u_max' in T else U_MAX
@@ -198,7 +199,7 @@ def write_subset(T, path_base, rule='main', u_max=None):
     """rows of a selection as a small table <path_base>_<name>.npz (sel = True, x, y, frame, sx, sy, photons) -> file name"""
     from simcode.fileio.work import atomic_savez
     um = (float(T['u_max']) if 'u_max' in T else U_MAX) if u_max is None else u_max
-    k = select(T, rule, um)
+    k = select(T, um, rule)
     fn = f'{path_base}_{subset_name(rule, um)}.npz'
     atomic_savez(fn, sel=np.ones(int(k.sum()), bool), x=T['x'][k], y=T['y'][k], frame=T['frame'][k], sx=T['sx'][k], sy=T['sy'][k],
                  photons=T['photons'][k])
@@ -209,7 +210,7 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_
     """pipeline output dir -> (table dict of numpy columns, info dict). sig_u (2026-11-11, opt-in; None = unchanged): json of a
     selection-aware sigma rescale sx, sy x g(strict_u) (analysis/psf3d_nets/sigcal.py; keys u_mid, g), applied to the good rows after
     the strict product is formed (the selection is unchanged). crop = (x0, y0, size) of the tiles / coverage (None: the
-    run's own output region, run_crop(out)). u_max: threshold of the main selection (column main)."""
+    run's own output region, run_crop(out)). u_max: threshold of the main selection (stored with the table; select(T))."""
     crop = run_crop(out) if crop is None else tuple(float(v) for v in crop)
     R = load_rows(out, tag)
     n = len(R['x_hy0'])
@@ -234,8 +235,7 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_
     u, strict, info = strict_product(T['x'], T['y'], sig, T['good'], px_nm, q=strict_q, sigma_ref_nm=sigma_ref_nm, xc=xc, yc=yc,
                                      frame=T['frame'], tag='est2' if tag.startswith('est2') else 'est', crop=crop)
     T['strict_u'] = u.astype(np.float32); T['strict'] = strict
-    T['main'] = select(T, 'main', u_max)
-    info.update(u_max=float(u_max), n_main=int(T['main'].sum()), crop=list(crop))
+    info.update(u_max=float(u_max), n_main=int(select(T, u_max).sum()), crop=list(crop))
     if sig_u:
         G_ = json.load(open(sig_u)); fu = np.isfinite(u)
         g_ = np.interp(u[fu], G_['u_mid'], G_['g']).astype(np.float32)
@@ -278,7 +278,7 @@ def main(argv=None):
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2, valid with the fixed-c calibration --autoc 0 only)')
     ap.add_argument('--format', default='npz')
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json (analysis/psf3d_nets/sigcal.py)')
-    ap.add_argument('--u_max', type=float, default=U_MAX, help='threshold of the main selection (column main: strict_u <= u_max)')
+    ap.add_argument('--u_max', type=float, default=U_MAX, help='threshold of the main selection (strict_u <= u_max; stored in the table as u_max)')
     ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,strict' -> <table>_u045.npz, <table>_strictonly.npz")
     ap.add_argument('--crop', default='', help='x0,y0,size (px) of the tiles / coverage; default: the output region of the run')
     ap.add_argument('--dest', default='', help='directory for the table files (default: the run directory)')
