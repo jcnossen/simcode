@@ -8,6 +8,7 @@ import argparse, json, math, os, sys, time
 import torch
 REPO = '/home/jc/simcode2'
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode2.fourpi.ckpt import save as safe_save   # atomic, disk-guarded
 from simcode2.fourpi.lut4pi import LUT4Pi
 from simcode2.fourpi.sim4pi import Sim4Pi
 from simcode2.fourpi.head4pi import Head4Pi, nll_2x2, nll_prior
@@ -22,6 +23,8 @@ def main():
     p.add_argument('--ch', type=int, default=96); p.add_argument('--nblk', type=int, default=4)
     p.add_argument('--psf', default='NPC_f_dxy15'); p.add_argument('--seed', type=int, default=1)
     p.add_argument('--wprior', type=float, default=1.0)
+    p.add_argument('--init', default='', help='checkpoint to continue from (same architecture)')
+    p.add_argument('--template', default='gauss', help="'lut': 4Pi PSF template read-out (v7)")
     p.add_argument('--eps_range', type=float, default=0.3, help='pattern phase range at the patch centre (rad); pi = arbitrary (v3)')
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-train')     # recognizable name in nvidia-smi / ps
@@ -31,6 +34,10 @@ def main():
     lut = LUT4Pi(st, P=15)
     sim = Sim4Pi(lut, seed=a.seed)
     net = Head4Pi(ch=a.ch, nblk=a.nblk).cuda()
+    if a.init:
+        net.load_state_dict(torch.load(a.init if a.init.startswith('/') else f'{REPO}/{a.init}', weights_only=False)['state'])
+    if a.template == 'lut':
+        net.tlut = LUT4Pi(st, P=15, sub=1)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps, pct_start=0.05)
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')
@@ -54,7 +61,7 @@ def main():
             s = f'it {it + 1} loss {m[0]:.4f} nllI {m[1]:.4f} nllp {m[2]:.4f} Tres/sqrtT {eT:.3f} |dz| med {ez:.1f} nm lr {sch.get_last_lr()[0]:.2e} t {time.time() - t0:.0f}s'
             print(s, flush=True); log.write(s + '\n'); log.flush()
         if (it + 1) % 5000 == 0 or it + 1 == a.steps:
-            torch.save(dict(state=net.state_dict(), args=vars(a), psf=st, it=it + 1), f'{OUT}/head4pi_{a.tag}.pt')
+            safe_save(dict(state=net.state_dict(), args=vars(a), psf=st, it=it + 1), f'{OUT}/head4pi_{a.tag}.pt')
 
 
 if __name__ == '__main__':

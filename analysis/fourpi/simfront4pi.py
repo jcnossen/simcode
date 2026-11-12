@@ -15,6 +15,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from front4pi import blur
 from simmovie4pi import reg_map, GAIN, OFF
 from simcode2.fourpi.head4pi import Head4Pi
+from simcode2.fourpi.lut4pi import LUT4Pi
 
 P = 15
 
@@ -43,15 +44,21 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--tag', default='d1'); p.add_argument('--model', default='v2'); p.add_argument('--batch', type=int, default=4096)
     p.add_argument('--chunk', type=int, default=600)
+    p.add_argument('--det', default='', help='det4pi checkpoint: learned detector on the per-frame registered sum instead of the DoG')
+    p.add_argument('--p_min', type=float, default=0.3)
     p.add_argument('--noise', default='low'); p.add_argument('--k', type=float, default=8.0); p.add_argument('--out', default=''); p.add_argument('--nms', type=int, default=7); p.add_argument('--s1', type=float, default=1.5)
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-sim')
     d = f'{REPO}/out/4pi/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')
+    det = None
+    if a.det:
+        from simcode2.det.up2 import load as dload, select as dselect
+        det, _ = dload(a.det)
     dev = 'cuda'
-    ck = torch.load(f'{REPO}/out/4pi/models/head4pi_{a.model}.pt', weights_only=False, map_location=dev)
-    net = Head4Pi(ch=ck['args']['ch'], nblk=ck['args']['nblk']).cuda().eval(); net.load_state_dict(ck['state'])
+    from simcode2.fourpi.loadhead import load_head     # all head architectures (v2..v8)
+    net, ck = load_head(a.model)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
     grid = [None]; maps = {}
     for c in (1, 2, 3):
@@ -65,7 +72,20 @@ def main():
         cr = np.stack([r[:, :, 0:W], r[:, :, W:2 * W], r[:, :, 2 * W:3 * W][:, :, ::-1], r[:, :, 3 * W:4 * W][:, :, ::-1]], 1)
         E = (torch.tensor(cr.copy(), device=dev) - OFF) * GAIN
         with torch.no_grad():
-            w, cy, cx, dog, ssum = detect(E, grid, h + 1, a.noise, a.k, a.nms, a.s1)
+            if det is None:
+                w, cy, cx, dog, ssum = detect(E, grid, h + 1, a.noise, a.k, a.nms, a.s1)
+            else:
+                nW = E.shape[0] // 6
+                Rs = E[:nW * 6, 0].clone()
+                for c in (1, 2, 3):
+                    Rs += F.grid_sample(E[:nW * 6, c:c + 1], grid[c].expand(nW * 6, -1, -1, -1), mode='bilinear', padding_mode='border', align_corners=True)[:, 0]
+                Rf = Rs.reshape(nW, 6, H, W); ssum = Rf.sum(1)
+                with torch.autocast('cuda', dtype=torch.bfloat16):
+                    dout = det(Rf)
+                dout = {k: v.float() for k, v in dout.items()}
+                cc = dselect(dout, 1, k=2048, p_min=a.p_min)
+                okc = torch.isfinite(cc['logit']) & (cc['ix'] >= h + 1) & (cc['ix'] < W - h - 1) & (cc['iy'] >= h + 1) & (cc['iy'] < H - h - 1)
+                w, cy, cx, dog = cc['b'][okc], cc['iy'][okc], cc['ix'][okc], torch.sigmoid(cc['logit'][okc])
             if len(w) == 0: continue
             dd = torch.full((len(w),), 99.0, device=dev)
             for wv in torch.unique(w):
@@ -91,6 +111,8 @@ def main():
             # registered-sum ROI for the classical baseline (same detections)
             ws, ys_, xs_ = w[sel], cy[sel], cx[sel]
             rs = ssum[ws[:, None, None], (ys_[:, None, None] + o[None, :, None] - h).clamp(0, H - 1), (xs_[:, None, None] + o[None, None, :] - h).clamp(0, W - 1)]
+        if oo.get('U') is not None:
+            acc.setdefault('U', []).append(oo['U'].half().cpu().numpy())
         for k, v in (('w', w[sel] + a0 // 6), ('cx', cx[sel]), ('cy', cy[sel]), ('doff', doff[sel]), ('T', oo['T']), ('C', oo['C']),
                      ('L', torch.stack([oo['L'][..., 0, 0], oo['L'][..., 1, 1], oo['L'][..., 1, 0]], -1)), ('bg', oo['bg']),
                      ('dxy', oo['dxy']), ('z', oo['z']), ('ls', oo['ls']), ('dog', dog[sel]), ('nn', dd[sel]),

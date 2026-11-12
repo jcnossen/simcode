@@ -128,6 +128,13 @@ def run(N=2700.0, bg=0.8, v=1.3, m=0.9, zs=np.arange(-0.4, 0.401, 0.05), nxy=8, 
             res[f'int+c{rc:g}+sum'] = crlb(Fc + Fs_marg, [0, 1, 2])
         Fc = readout_F([ap[:, None].expand(-1, 4, -1, -1), ((xx[None] - th[:, 0, None, None]) ** 2 + (yy[None] - th[:, 1, None, None]) ** 2 <= 2.25).float()[:, None].expand(-1, 4, -1, -1)])
         res['ap3+c1.5+sum'] = crlb(Fc + Fs_marg, [0, 1, 2])
+        # three GT-definable read-outs: matched filter + Gaussian centre (sd 1, the current C) + Gaussian annulus
+        r2c = (xx[None] - th[:, 0, None, None]) ** 2 + (yy[None] - th[:, 1, None, None]) ** 2
+        gc = torch.exp(-r2c / 2.0)[:, None].expand(-1, 4, -1, -1)
+        for r0 in (1.5, 2.0, 2.5):
+            ga = torch.exp(-(r2c.sqrt() - r0) ** 2 / (2 * 0.5 ** 2))[:, None].expand(-1, 4, -1, -1)
+            res[f'int+c+ann{r0:g}+sum'] = crlb(readout_F([w, gc, ga]) + Fs_marg, [0, 1, 2])
+        res['int+c+sum (gauss sd 1)'] = crlb(readout_F([w, gc]) + Fs_marg, [0, 1, 2])
         # the intensity representation with Phi0 unknown needs the field map; also report SMLM-only lateral (no pattern)
     px_nm = 128.0
     tab = {}

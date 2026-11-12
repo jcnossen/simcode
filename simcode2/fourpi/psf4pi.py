@@ -140,3 +140,74 @@ class PSF4Pi(torch.nn.Module):
             p.a_log.fill_(math.log(s['a'])); p.gamma_logit.fill_(math.log(s['gamma'] / max(1 - s['gamma'], 1e-6)))
             p.d_bot.copy_(torch.tensor(s['d_bot'])); p.logblur.fill_(math.log(s['blur_px2']))
         return p
+
+
+class PSF4PiA(PSF4Pi):
+    """Asymmetric-arm coherent 4Pi PSF (2026-11-11, plan item 2): each arm has its own objective (NA, immersion index) and
+    the sample medium index n_med (DNA-PAINT buffer ~1.33). Default: top = oil 1.5 NA / 1.518 (near-TIRF, supercritical
+    collection), bottom = silicone 1.35 NA / 1.406.
+    With index mismatch, moving the emitter and moving the focus differ, so the signed z of an arm (+z top, -z bottom,
+    as in PSF4Pi.forward) is interpreted by `zmode`:
+      'emitter': the emitter moves in the medium:  phase = kz_med * (depth_arm + z)          (movies)
+      'stage'  : the sample (bead at a fixed depth) moves through the focus: phase = kz_med * depth_arm - kz_imm * z
+                 (bead z-stacks; z = stage displacement)
+    depth_arm (um) = emitter distance from that arm's coverslip at z = 0 (fitted; sets the supercritical / evanescent part
+    and the depth-dependent spherical aberration). Noll 4 (defocus) is fitted too (focus offset of each arm)."""
+    def __init__(self, R, px=0.128, lam=0.60, npupil=48, os_=2, device='cpu', mirror='y', zidx=(4,) + ZIDX,
+                 pol=(0, 1, 0, 1), NA_t=1.5, n_imm_t=1.518, NA_b=1.35, n_imm_b=1.406, n_med=1.33, zmode='emitter',
+                 depth=(0.05, 2.0)):
+        super().__init__(R, px=px, NA=NA_b, n=n_imm_b, lam=lam, npupil=npupil, os_=os_, device=device, mirror=mirror,
+                         zidx=zidx, pol=pol)
+        mk = lambda NA, ni: VectorialPSF(R, pixelsize=px, NA=NA, n_imm=ni, n_med=n_med, wavelength=lam, zernike_indices=zidx,
+                                         npupil=npupil, oversample=os_, device=device)
+        self.top, self.bot = mk(NA_t, n_imm_t), mk(NA_b, n_imm_b)
+        self.zmode = zmode
+        self.depth = torch.nn.Parameter(torch.tensor([float(depth[0]), float(depth[1])], device=device))
+        self.meta.update(asym=True, NA_t=NA_t, n_imm_t=n_imm_t, NA_b=NA_b, n_imm_b=n_imm_b, n_med=n_med, zmode=zmode)
+
+    def _fields(self, vp, pos, sgn_mu):
+        P, kz_med, kz_imm, kx, ky = vp.pupil_fields()
+        B = pos.shape[0]
+        W = torch.einsum('j,jnm->nm', vp.zcoef, vp.Z) * (2 * math.pi)
+        x = pos[:, 0, None, None] * self.px
+        y = pos[:, 1, None, None] * self.px
+        z = pos[:, 2, None, None]
+        dep = self.depth[0] if vp is self.top else self.depth[1]
+        if self.zmode == 'emitter':
+            zph = torch.exp(1j * kz_med * (dep + z).clamp(min=0.0))
+        else:
+            zph = torch.exp(1j * kz_med * dep.clamp(min=0.0)) * torch.exp(-1j * kz_imm * z)
+        ph = torch.exp(1j * (W[None] - kx * x - ky * y)) * zph
+        Pb = P[None] * ph[:, None]
+        pad = VectorialPSF.BLUR_PAD
+        ns = (self.R + 2 * pad) * self.os
+        u = (torch.arange(ns, device=P.device) - (ns - 1) / 2) / self.os * self.px
+        Fx = torch.exp(1j * u[:, None] * kx[0][None, :])
+        Fy = torch.exp(1j * u[:, None] * ky[:, 0][None, :])
+        E = (Fy @ Pb.to(torch.complex64) @ Fx.T).reshape(B, 3, 2, ns, ns)
+        E = E * sgn_mu.to(E.real.dtype)[None, :, None, None, None]
+        dk = (kx[0, 1] - kx[0, 0]) * (ky[1, 0] - ky[0, 0])
+        energy = (P.real ** 2 + P.imag ** 2).sum() / 3 * dk / (2 * math.pi) ** 2
+        return E * (dk / (2 * math.pi) ** 2), energy
+
+    def state(self):
+        s = super().state(); s['depth'] = self.depth.tolist(); return s
+
+    @classmethod
+    def from_state(cls, s, device='cpu', **kw):
+        m = s['meta']
+        p = cls(kw.pop('R', m['R']), px=m['px'], lam=m['lam'], npupil=m['npupil'], os_=m['os'], device=device,
+                mirror=m['mirror'], zidx=tuple(m['zidx']), pol=tuple(m['pol']), NA_t=m['NA_t'], n_imm_t=m['n_imm_t'],
+                NA_b=m['NA_b'], n_imm_b=m['n_imm_b'], n_med=m['n_med'], zmode=kw.pop('zmode', m['zmode']))
+        with torch.no_grad():
+            p.top.zcoef.copy_(torch.tensor(s['zt'])); p.bot.zcoef.copy_(torch.tensor(s['zb']))
+            p.phi.copy_(torch.tensor(s['phi'])); p.tau_logit.copy_(torch.log(torch.tensor(s['tau'])))
+            p.a_log.fill_(math.log(s['a'])); p.gamma_logit.fill_(math.log(s['gamma'] / max(1 - s['gamma'], 1e-6)))
+            p.d_bot.copy_(torch.tensor(s['d_bot'])); p.logblur.fill_(math.log(s['blur_px2']))
+            p.depth.copy_(torch.tensor(s['depth']))
+        return p
+
+
+def psf_from_state(s, device='cpu', **kw):
+    """PSF4Pi or PSF4PiA from a stored state"""
+    return (PSF4PiA if s['meta'].get('asym') else PSF4Pi).from_state(s, device=device, **kw)

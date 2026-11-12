@@ -12,7 +12,7 @@ LUT4Pi(psf, zmin, zmax).evaluate(pos [N,3], Phi [N], grad=False) -> [N,4,P,P] (a
 import math
 import torch
 from simcode2.psf.lut import PSFLUT, geometry_matrix
-from simcode2.fourpi.psf4pi import PSF4Pi
+from simcode2.fourpi.psf4pi import PSF4Pi, psf_from_state
 
 
 def _lut_from_stack(G, P, S, z0, hz, c, dev):
@@ -42,7 +42,8 @@ class LUT4Pi:
         c = int(math.ceil((P - 1) / 2 + xmax)) + 2
         Pl = 2 * c + 1
         st = dict(psf_state); st['meta'] = dict(st['meta']); st['meta']['R'] = Pl
-        big = PSF4Pi.from_state(st, device=dev).eval()
+        kw = {'zmode': 'emitter'} if st['meta'].get('asym') else {}   # movies: the emitter moves in the medium
+        big = psf_from_state(st, device=dev, **kw).eval()     # symmetric (PSF4Pi) or asymmetric-arm (PSF4PiA) state
         self.tau = torch.tensor(st['tau'], device=dev)
         nz = int(round((zmax - zmin) / hz)) + 1 + 2 * zpad
         z0 = zmin - zpad * hz

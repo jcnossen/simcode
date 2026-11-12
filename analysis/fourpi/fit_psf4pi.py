@@ -13,7 +13,7 @@ import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = '/home/jc/simcode2'
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.psf4pi import PSF4Pi
+from simcode2.fourpi.psf4pi import PSF4Pi, PSF4PiA
 
 OUT = f'{REPO}/out/4pi/psf4pi'
 
@@ -27,11 +27,21 @@ def run(a):
     zc = json.load(open(f'{REPO}/out/4pi/smlm/zcal/zcal_{a.cell}.json'))
     base = json.load(open(f'{REPO}/out/4pi/smlm/psf/{a.cell}_base.json'))['bead']
     zst = torch.tensor(zc['zstage'], device=dev, dtype=torch.float32)
-    m = PSF4Pi(R, px=a.px, NA=a.NA, n=a.n, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror)
-    zt = torch.tensor(base['psf']['zcoef1'], device=dev)
-    with torch.no_grad():
-        m.top.zcoef.copy_(zt); m.bot.zcoef.copy_(-zt if a.bot_init == 'neg' else zt)
-        m.logblur.fill_(math.log(0.1))
+    if a.asym:   # asymmetric arms (oil 1.5 top / silicone 1.35 bottom), stage mode for the bead stack, init from a symmetric fit
+        m = PSF4PiA(R, px=a.px, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror, zmode='stage',
+                    NA_t=a.NA_t, n_imm_t=a.n_imm_t, NA_b=a.NA_b, n_imm_b=a.n_imm_b, n_med=a.n_med, depth=(a.depth_t, a.depth_b))
+        s0 = json.load(open(f'{OUT}/{a.cell}_{a.init_sym}.json'))['psf']
+        with torch.no_grad():
+            m.top.zcoef[1:].copy_(torch.tensor(s0['zt'], device=dev)); m.bot.zcoef[1:].copy_(torch.tensor(s0['zb'], device=dev))
+            m.phi.copy_(torch.tensor(s0['phi'], device=dev)); m.tau_logit.copy_(torch.log(torch.tensor(s0['tau'], device=dev)))
+            m.a_log.fill_(math.log(s0['a'])); m.gamma_logit.fill_(math.log(s0['gamma'] / (1 - s0['gamma'])))
+            m.d_bot.copy_(torch.tensor(s0['d_bot'], device=dev)); m.logblur.fill_(math.log(s0['blur_px2']))
+    else:
+        m = PSF4Pi(R, px=a.px, NA=a.NA, n=a.n, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror)
+        zt = torch.tensor(base['psf']['zcoef1'], device=dev)
+        with torch.no_grad():
+            m.top.zcoef.copy_(zt); m.bot.zcoef.copy_(-zt if a.bot_init == 'neg' else zt)
+            m.logblur.fill_(math.log(0.1))
     h = R // 2
     x = torch.tensor(zc['x'], device=dev); y = torch.tensor(zc['y'], device=dev)   # GaussAstig x, y are relative to the ROI centre
     x = torch.nn.Parameter(x.float()); y = torch.nn.Parameter(y.float())
@@ -44,8 +54,9 @@ def run(a):
     v = a.var
     with torch.no_grad():
         lzs.fill_(math.log(a.zscale0))
-        ph = torch.tensor([0.0, 270.0, 180.0, 90.0] if a.s > 0 else [0.0, 90.0, 180.0, 270.0], device=dev)
-        m.phi.copy_(torch.deg2rad(ph))
+        if not a.asym:
+            ph = torch.tensor([0.0, 270.0, 180.0, 90.0] if a.s > 0 else [0.0, 90.0, 180.0, 270.0], device=dev)
+            m.phi.copy_(torch.deg2rad(ph))
     tk = (torch.arange(K, device=dev) - (K - 1) / 2) / ((K - 1) / 2)
     tb = time.time()
 
@@ -73,7 +84,7 @@ def run(a):
     stages = [('A', a.iters // 3, [dict(params=other, lr=a.lr), dict(params=[x, y, lbg, lN], lr=a.lr)]),
               ('B', a.iters - a.iters // 3,
                [dict(params=other, lr=a.lr / 3), dict(params=[x, y, lbg, lN], lr=a.lr / 3),
-                dict(params=zern, lr=a.lr_z), dict(params=[m.d_bot, z0, dr] + ([lzs] if a.zscale else []), lr=a.lr / 10)])]
+                dict(params=zern, lr=a.lr_z), dict(params=[m.d_bot, z0, dr] + ([lzs] if a.zscale else []) + ([m.depth] if a.asym else []), lr=a.lr / 10)])]
     it = 0
     for nm, n_it, groups in stages:
         opt = torch.optim.Adam(groups)
@@ -84,6 +95,7 @@ def run(a):
                 m.a_log.clamp_(math.log(1 / a.a_max), math.log(a.a_max))
                 m.d_bot[:2].clamp_(-a.dxy_max, a.dxy_max); m.d_bot[2].clamp_(-a.dz_max, a.dz_max)
                 lzs.clamp_(-0.3, 0.3)
+                if a.asym: m.depth.clamp_(0.0, 5.0)
             if it % 200 == 0:
                 print(f'{nm} it {it} L {L.item():.1f} a {math.exp(m.a_log.item()):.3f} g {torch.sigmoid(m.gamma_logit).item():.3f} '
                       f'phi {np.degrees(m.phi.detach().cpu().numpy()).round(1)} blur {math.exp(m.logblur.item()):.3f} '
@@ -118,5 +130,10 @@ if __name__ == '__main__':
     p.add_argument('--device', default='cpu')
     p.add_argument('--a_max', type=float, default=2.0); p.add_argument('--dxy_max', type=float, default=0.5)
     p.add_argument('--dz_max', type=float, default=0.15); p.add_argument('--zscale', type=int, default=1)
-    p.add_argument('--zscale0', type=float, default=1.034); p.add_argument('--lr_z', type=float, default=0.002)
+    p.add_argument('--zscale0', type=float, default=1.034)
+    p.add_argument('--asym', type=int, default=0); p.add_argument('--init_sym', default='f_dxy15')
+    p.add_argument('--NA_t', type=float, default=1.5); p.add_argument('--n_imm_t', type=float, default=1.518)
+    p.add_argument('--NA_b', type=float, default=1.35); p.add_argument('--n_imm_b', type=float, default=1.406)
+    p.add_argument('--n_med', type=float, default=1.33); p.add_argument('--depth_t', type=float, default=0.05)
+    p.add_argument('--depth_b', type=float, default=2.0); p.add_argument('--lr_z', type=float, default=0.002)
     run(p.parse_args())

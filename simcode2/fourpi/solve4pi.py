@@ -172,13 +172,24 @@ class Solve4Pi:
         sp = torch.exp(o['ls'])
         mu_p = torch.stack([o['dxy'][:, 0], o['dxy'][:, 1], o['z']], 1)
 
+        Lfull = o.get('Lfull')   # (2026-11-12) optional explicit Cholesky factor [n,48,48] of the full read-out covariance
+        if Lfull is None and o.get('U') is not None:    # pass-1 head (head4pi_p1): full 48 x 48 covariance = 2 x 2 blocks + U U^T
+            from simcode2.fourpi.head4pi_p1 import full_cov
+            oc = dict(o, L=torch.stack([torch.stack([a, torch.zeros_like(a)], -1), torch.stack([b, d], -1)], -2))
+            S = full_cov(oc)
+            Lfull = torch.linalg.cholesky(S + 1e-3 * torch.eye(48, device=dev))
+
         def resid(th):
             pred, J = self.model(th, mode, Phi0, doff, m, psi, fit_phi)
             r = Y - pred
-            u1 = r[..., 0] / a; u2 = (r[..., 1] - b * u1) / d
-            J1 = J[..., 0, :] / a[..., None]; J2 = (J[..., 1, :] - b[..., None] * J1) / d[..., None]
-            ru = torch.stack([u1, u2], -1).reshape(n, -1)
-            Ju = torch.stack([J1, J2], -2).reshape(n, -1, th.shape[1])
+            if Lfull is not None:
+                ru = torch.linalg.solve_triangular(Lfull, r.reshape(n, 48, 1), upper=False)[..., 0]
+                Ju = torch.linalg.solve_triangular(Lfull, J.reshape(n, 48, th.shape[1]), upper=False)
+            else:
+                u1 = r[..., 0] / a; u2 = (r[..., 1] - b * u1) / d
+                J1 = J[..., 0, :] / a[..., None]; J2 = (J[..., 1, :] - b[..., None] * J1) / d[..., None]
+                ru = torch.stack([u1, u2], -1).reshape(n, -1)
+                Ju = torch.stack([J1, J2], -2).reshape(n, -1, th.shape[1])
             rp = (mu_p - th[:, :3]) / sp * prior_w
             Jp = torch.zeros(n, 3, th.shape[1], device=dev)
             for i in range(3): Jp[:, i, i] = prior_w / sp[:, i]

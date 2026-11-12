@@ -60,10 +60,21 @@ class Head4Pi(nn.Module):
         m = self.wmap[2](m1.float())                                             # [n,8,P,P]
         q = self.out(hm.float())
         r2 = dx ** 2 + dy ** 2                                                    # [n,4,P,P]
-        g = torch.exp(-0.5 * r2 / 1.3 ** 2); g = g / g.sum((-1, -2), keepdim=True)
+        tl = getattr(self, 'tlut', None)
+        if tl is None:
+            g = torch.exp(-0.5 * r2 / 1.3 ** 2); g = g / g.sum((-1, -2), keepdim=True)
+            r2c = r2
+        else:   # (2026-11-12, opt-in, v7) 4Pi channel PSF template (phase-averaged LUT component) at the head's own prior
+            ip = q[:, 144:150].detach()
+            px_, py_ = 1.5 * torch.tanh(ip[:, 0]), 1.5 * torch.tanh(ip[:, 1]); pz_ = 0.6 * torch.tanh(ip[:, 2])
+            g = torch.stack([tl.luts[0][c].evaluate(torch.stack([px_ + doff[:, c, 0], py_ + doff[:, c, 1], pz_], 1))
+                             for c in range(4)], 1).clamp(min=0)
+            g = g / g.sum((-1, -2), keepdim=True).clamp(min=1e-6)
+            r2c = (o[None, None, None, :] - (px_[:, None, None, None] + doff[:, :, 0, None, None])) ** 2 \
+                + (o[None, None, :, None] - (py_[:, None, None, None] + doff[:, :, 1, None, None])) ** 2
         w1 = g / (g * g).sum((-1, -2), keepdim=True) * torch.exp(m[:, :4].clamp(-5, 5))
         w1 = w1 / (w1 * g).sum((-1, -2), keepdim=True)                           # w1 . g = 1
-        w2 = torch.exp(-0.5 * r2 / self.wsd ** 2) * torch.exp(m[:, 4:].clamp(-5, 5))
+        w2 = torch.exp(-0.5 * r2c / self.wsd ** 2) * torch.exp(m[:, 4:].clamp(-5, 5))
         i = 0
         dT = q[:, i:i + 24].reshape(n, 6, 4); i += 24
         dC = q[:, i:i + 24].reshape(n, 6, 4); i += 24

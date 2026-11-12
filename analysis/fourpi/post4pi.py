@@ -13,12 +13,58 @@ OUT = f'{REPO}/out/4pi/net'
 PX = 128.0
 
 
+def dafl_recal(R, good, edges=(300, 1000, 2000, 4000, 8000, 1e9), r=0.35):
+    """sigma recalibration from adjacent-window pairs (DAFL): per kinetics mode (pattern-solved / free) and photon bin,
+    factor = (robust sd of the pair difference / sqrt 2) / (rms of the reported sigma of the pair), for x, y, z.
+    Limitation: DAFL does not see errors common to adjacent windows (pattern, phase field, prior errors tied to the
+    position), so it calibrates the noise part only."""
+    from scipy.spatial import cKDTree
+    key = R['fidx'].astype(np.int64) * 100000 + R['w']
+    order = np.argsort(key, kind='stable'); ks = key[order]
+    I, J = [], []
+    uk, st = np.unique(ks, return_index=True); st = np.r_[st, len(ks)]
+    pos = {k: i for i, k in enumerate(uk)}
+    for i, k in enumerate(uk):
+        j = pos.get(k + 1)
+        if j is None: continue
+        a = order[st[i]:st[i + 1]]; b = order[st[j]:st[j + 1]]
+        a = a[good[a]]; b = b[good[b]]
+        if len(a) == 0 or len(b) == 0: continue
+        dd, kk = cKDTree(np.c_[R['x'][b], R['y'][b]]).query(np.c_[R['x'][a], R['y'][a]], k=2, distance_upper_bound=2 * r)
+        ok = (dd[:, 0] < r) & ~(dd[:, 1] < 2 * r)
+        I.append(a[ok]); J.append(b[kk[ok, 0]])
+    I, J = np.concatenate(I), np.concatenate(J)
+    cal = dict(edges=list(edges), modes={})
+    for col in ('sx', 'sy', 'sz'):
+        R[col + '_cal'] = R[col].copy()
+    for mode, m in (('pattern', R['on']), ('free', ~R['on'])):
+        cal['modes'][mode] = []
+        Np = 0.5 * (R['N'][I] + R['N'][J]); sel = m[I] & m[J]
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            s = sel & (Np >= lo) & (Np < hi)
+            f = {}
+            for col, v in (('sx', 'x'), ('sy', 'y'), ('sz', 'z')):
+                if s.sum() < 200: f[col] = None; continue
+                dv = R[v][I[s]] - R[v][J[s]]
+                emp = 1.4826 * np.median(np.abs(dv - np.median(dv))) / np.sqrt(2)
+                rep = np.sqrt(np.median(0.5 * (R[col][I[s]] ** 2 + R[col][J[s]] ** 2)))
+                f[col] = float(emp / rep)
+            rows = m & (R['N'] >= lo) & (R['N'] < hi)
+            for col in ('sx', 'sy', 'sz'):
+                if f[col] is not None: R[col + '_cal'][rows] = R[col][rows] * f[col]
+            cal['modes'][mode].append(dict(lo=lo, hi=hi, n_pairs=int(s.sum()), **f))
+    return R, cal
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--cell', default='NPC'); p.add_argument('--model', default='v2')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--files', type=int, nargs='*')
+    p.add_argument('--sig_dafl', type=int, default=0, help='1: add DAFL-recalibrated sigma columns (sx_cal, sy_cal, sz_cal)')
     a = p.parse_args()
+    if REPO not in sys.path: sys.path.insert(0, REPO)
+    from simcode2.util.proctitle import auto; auto('4pi-post')     # recognizable name in nvidia-smi / ps
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.model}.npz'))
     if a.files: fs = [f for f in fs if int(f.split('_')[-2]) in a.files]
     first = min(int(f.split('_')[-2]) for f in fs)
@@ -32,7 +78,7 @@ def main():
     n_all = len(R['x'])
     good = (R['sz'] < a.sz_max) & (R['sx'] < a.sxy_max) & (R['sy'] < a.sxy_max) & np.isfinite(R['z']) & (R['N'] > 300)
     F = int(R['frame'].max()) + 6
-    tag = f'net_{a.cell}_{a.model}'
+    tag = f'net_{a.cell}_{a.model}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '')   # a subset never overwrites the full result
     fn = f'{OUT}/{tag}_dmein.npz'
     sel = good & R['on']
     np.savez(fn, frame=R['frame'][sel], x=R['x'][sel], y=R['y'][sel], sx=R['sx'][sel], sy=R['sy'][sel])
@@ -43,6 +89,10 @@ def main():
     fi_ = np.clip(R['frame'] + 3, 0, F - 1)
     R['xd'] = R['x'] - d[fi_, 0]; R['yd'] = R['y'] - d[fi_, 1]
     R['good'] = good
+    cal = None
+    if a.sig_dafl:
+        R, cal = dafl_recal(R, good)
+        json.dump(cal, open(f'{OUT}/{tag}_sigcal.json', 'w'), indent=1)
     np.savez(f'{OUT}/{tag}_all.npz', **R, drift=d)
     # renders
     import matplotlib; matplotlib.use('Agg')

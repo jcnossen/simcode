@@ -23,11 +23,11 @@ OUT = f'{REPO}/out/4pi/sim'
 V = 1.14 ** 2 + 0.2 ** 2
 
 
-def main(n=6000, seed=11, dev='cuda'):
+def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
     sim = Sim4Pi(lut, dev=dev, seed=seed)
-    S = sim.sample(n, p_nb=0.0, p_on=1.0)
+    S = sim.sample(n, p_nb=0.0, p_on=1.0, eps_range=eps_range)
     img = S['img']                                                     # [n,6,4,P,P]
     P = 15; ang = torch.tensor([0, 0, 0, 1, 1, 1], device=dev)
     doff = S['doff']; m = S['m']; eps = S['eps']; Phi0 = S['Phi0']
@@ -173,12 +173,15 @@ def main(n=6000, seed=11, dev='cuda'):
                  f"({b['pix_x_crlb']:.2f} / {b['pix_y_crlb']:.2f} / {b['pix_z_crlb']:.2f}) | {fr:.3f} | {rz:.2f} |")
     res['table'] = L
     os.makedirs(OUT, exist_ok=True)
-    json.dump(res, open(f'{OUT}/bench_classical.json', 'w'), indent=1)
+    json.dump(res, open(f'{OUT}/bench_classical{suffix}.json', 'w'), indent=1)
     torch.save(dict(S={k: v for k, v in S.items() if torch.is_tensor(v) and k not in ('mu', 'bg', 'img')}, th_s=th_s, z_ap=z_ap, th_p=th_p,
-                    cr_p=cr_p, cr_s=cr_s, seed=seed, n=n), f'{OUT}/bench_classical.pt')
+                    cr_p=cr_p, cr_s=cr_s, seed=seed, n=n), f'{OUT}/bench_classical{suffix}.pt')
     print('\n'.join(L))
     print(f'total {time.time() - t0:.0f}s')
 
 
 if __name__ == '__main__':
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('--eps_range', type=float, default=0.3); ap.add_argument('--suffix', default='')
+    ap.add_argument('--seed', type=int, default=11); a_ = ap.parse_args()
+    main(seed=a_.seed, eps_range=a_.eps_range, suffix=a_.suffix)

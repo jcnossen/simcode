@@ -30,6 +30,8 @@ def load_front(cell, fi, model, dev):
     L = torch.zeros(*Lr.shape[:-1], 2, 2, device=dev)
     L[..., 0, 0] = Lr[..., 0]; L[..., 1, 1] = Lr[..., 1]; L[..., 1, 0] = Lr[..., 2]
     o['L'] = L
+    if 'U' in d.files:   # full-pipeline pass-1 head: low-rank covariance factor (the solve then whitens with the full 48 x 48)
+        o['U'] = torch.tensor(d['U'].astype(np.float32), device=dev)
     meta = {k: d[k] for k in ('w', 'cx', 'cy', 'dog', 'nn')}
     meta['doff'] = torch.tensor(d['doff'], device=dev)
     return o, meta
@@ -113,6 +115,7 @@ def main():
     p.add_argument('--dchi', type=float, default=7.81)   # kin vs free: 3 extra dof
     p.add_argument('--repattern', type=int, default=1)
     a = p.parse_args()
+    from simcode2.util.proctitle import auto; auto('4pi-solve')     # recognizable name in nvidia-smi / ps
     dev = 'cuda'
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)

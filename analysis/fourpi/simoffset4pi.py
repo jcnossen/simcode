@@ -26,12 +26,18 @@ def main():
     Li = dict(np.load(f'{d}/locs_SIM_000_{a.model}_iter.npz'))
     est['network prior (pattern-free)'] = (F['cx'] + F['dxy'][:, 0], F['cy'] + F['dxy'][:, 1], F['z'], F['w'], None)
     est['pattern-solved, in-situ pattern'] = (Li['x'], Li['y'], Li['z'], Li['w'], Li['on'])
+    fg = f'{d}/locs_SIM_000_{a.model}_iter_gauge.npz'
+    if os.path.exists(fg):
+        Lg = dict(np.load(fg)); est['pattern-solved, in-situ + classical gauge'] = (Lg['x'], Lg['y'], Lg['z'], Lg['w'], Lg['on'])
     fo = f'{d}/locs_SIM_000_{a.model}_oracle.npz'
     if os.path.exists(fo):
         Lo = dict(np.load(fo)); est['pattern-solved, true pattern'] = (Lo['x'], Lo['y'], Lo['z'], Lo['w'], Lo['on'])
-    C = dict(np.load(f'{d}/classical_{a.model}_q.npz'))
-    qok = (C['chi2px'] <= 4) & ~C['at_bound'] & C['conv']
-    est['classical summed fit (filtered)'] = (np.where(qok, C['x'], np.nan), np.where(qok, C['y'], np.nan), C['z'], C['w'], None)
+    fc = f'{d}/classical_{a.model}_q.npz'
+    fc = fc if os.path.exists(fc) else f'{d}/classical_v2_q.npz'                   # same detector -> same classical rows
+    if os.path.exists(fc):
+        C = dict(np.load(fc))
+        qok = (C['chi2px'] <= 4) & ~C['at_bound'] & C['conv']
+        est['classical summed fit (filtered)'] = (np.where(qok, C['x'], np.nan), np.where(qok, C['y'], np.nan), C['z'], C['w'], None)
     zq = np.quantile(G['z'], [1 / 3, 2 / 3]); xq = np.quantile(G['x'], [1 / 3, 2 / 3]); yq = np.quantile(G['y'], [1 / 3, 2 / 3])
     for nm, (x, y, z, w, on) in est.items():
         ok = np.isfinite(x)

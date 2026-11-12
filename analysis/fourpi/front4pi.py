@@ -11,7 +11,7 @@ Output npz per file: w, cx, cy, doff [n,4,2], T, C [n,6,4], L [n,6,4,3] (l11, l2
 z [n], ls [n,3], dog, nn (px to the nearest other detection in the window).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/front4pi.py --cell NPC --files 10 --model v2 [--nframes 6000]
 """
-import argparse, os, sys, time, threading, queue
+import argparse, json, os, sys, time, threading, queue
 import numpy as np, torch
 import torch.nn.functional as F
 REPO = '/home/jc/simcode2'
@@ -91,6 +91,7 @@ class Front:
         Y = (iy[:, :, None] + o[None, None])                                               # [n,4,P]
         X = (ix[:, :, None] + o[None, None])
         img = E[t[:, :, None, None, None], chn[None, None, :, None, None], Y[:, None, :, :, None], X[:, None, :, None, :]]
+        self.last_corner = torch.stack([ix, iy], -1)                                       # [n,4,2] patch top-left (x, y)
         return img, doff, ok
 
 
@@ -107,10 +108,13 @@ def main():
     p.add_argument('--model', default='v2'); p.add_argument('--nframes', type=int, default=0)
     p.add_argument('--f0', type=int, default=0); p.add_argument('--chunk', type=int, default=600)
     p.add_argument('--out', default=OUT); p.add_argument('--batch', type=int, default=4096)
+    p.add_argument('--save_patches', default='', help='directory: save the raw ADU candidate patches (default off; see README there)')
+    p.add_argument('--patch_regions', default='', help='json with boxes (x0, x1, y0, y1, save) on the candidate pixel; only those candidates are saved')
     a = p.parse_args()
+    from simcode2.util.proctitle import auto; auto('4pi-front')     # recognizable name in nvidia-smi / ps
     os.makedirs(a.out, exist_ok=True)
-    ck = torch.load(f'{REPO}/out/4pi/models/head4pi_{a.model}.pt', weights_only=False, map_location='cuda')
-    net = Head4Pi(ch=ck['args']['ch'], nblk=ck['args']['nblk']).cuda().eval(); net.load_state_dict(ck['state'])
+    from simcode2.fourpi.loadhead import load_head     # all head architectures (v2..v8)
+    net, ck = load_head(a.model)
     fr = Front(a.cell)
     for fi in a.files:
         fn = [f for f in movie_files(a.cell) if file_index(f) == fi][0]
@@ -118,13 +122,20 @@ def main():
         q = queue.Queue(maxsize=2)
         th = threading.Thread(target=reader, args=(fn, a.f0, nfr, a.chunk, q), daemon=True); th.start()
         acc = {k: [] for k in ('w', 'cx', 'cy', 'doff', 'T', 'C', 'L', 'bg', 'dxy', 'z', 'ls', 'dog', 'nn', 'Tlin', 'Clin')}
+        pacc = {k: [] for k in ('patch_adu', 'row', 'w', 'frame0', 'cx', 'cy', 'corner', 'doff', 'box')}
+        boxes = [b for b in json.load(open(a.patch_regions))['boxes'] if b.get('save', True)] if a.patch_regions else None
+        nrow = 0
         t0 = time.time(); nc = 0
         while True:
             it = q.get()
             if it is None: break
             a0, raw = it
             with torch.no_grad():
-                E = fr.to_e(raw)
+                if a.save_patches:
+                    Rc = torch.tensor(crops(raw), device='cuda')                              # ADU, ch2/3 mirrored
+                    E = (Rc - fr.off) * GAIN                                                  # = fr.to_e(raw)
+                else:
+                    E = fr.to_e(raw)
                 w, cy, cx, dog = fr.detect(E)
                 if len(w) == 0: continue
                 # nearest other detection in the same window
@@ -137,6 +148,24 @@ def main():
                         D.fill_diagonal_(99.0); dd[s] = D.min(1).values
                 img, doff, ok = fr.patches(E, w, cy, cx)
                 sel = torch.nonzero(ok)[:, 0]
+                if a.save_patches:
+                    rawp, _, _ = fr.patches(Rc, w, cy, cx)                                   # same corners, raw ADU
+                    keep = torch.ones(len(sel), dtype=torch.bool, device='cuda'); bid = torch.full((len(sel),), -1, device='cuda')
+                    if boxes is not None:
+                        keep[:] = False
+                        for ib, bx in enumerate(boxes):
+                            inb = (cx[sel] >= bx['x0']) & (cx[sel] < bx['x1']) & (cy[sel] >= bx['y0']) & (cy[sel] < bx['y1'])
+                            keep |= inb; bid = torch.where(inb, ib, bid)
+                    ks = sel[keep]
+                    corner = fr.last_corner
+                    pacc['patch_adu'].append(rawp[ks].round().clamp(0, 65535).to(torch.int32).cpu().numpy().astype(np.uint16))
+                    pacc['row'].append((nrow + torch.nonzero(keep)[:, 0]).cpu().numpy())
+                    wloc = w[ks] + a0 // 6
+                    pacc['w'].append(wloc.cpu().numpy()); pacc['frame0'].append((6 * wloc).cpu().numpy())
+                    pacc['cx'].append(cx[ks].cpu().numpy()); pacc['cy'].append(cy[ks].cpu().numpy())
+                    pacc['corner'].append(corner[ks].cpu().numpy().astype(np.int16)); pacc['doff'].append(doff[ks].float().cpu().numpy())
+                    pacc['box'].append(bid[keep].cpu().numpy().astype(np.int8))
+                nrow += len(sel)
                 outs = []
                 for i in range(0, len(sel), a.batch):
                     j = sel[i:i + a.batch]
@@ -152,6 +181,12 @@ def main():
             if nc % 10 == 0:
                 print(f'{a.cell} {fi}: frame {a0 + a.chunk}/{a.f0 + nfr}, {sum(len(x) for x in acc["w"])} cand, {time.time() - t0:.0f}s', flush=True)
         R = {k: np.concatenate(v) for k, v in acc.items()}
+        if a.save_patches:
+            os.makedirs(f'{a.save_patches}/{a.cell}', exist_ok=True)
+            Pz = {k: (np.concatenate(v) if v else np.zeros(0)) for k, v in pacc.items()}
+            np.save(f'{a.save_patches}/{a.cell}/patches_{fi:03d}.npy', Pz.pop('patch_adu'))
+            np.savez(f'{a.save_patches}/{a.cell}/meta_{fi:03d}.npz', **Pz, file_index=fi, model=a.model)
+            print(f'{a.cell} {fi}: saved {len(Pz["row"])} raw patches', flush=True)
         fn_out = f'{a.out}/front_{a.cell}_{fi:03d}_{a.model}.npz'
         np.savez(fn_out, **R, cell=a.cell, file_index=fi, f0=a.f0, nframes=nfr, model=a.model)
         print(f'{a.cell} {fi}: {len(R["w"])} candidates in {time.time() - t0:.0f}s -> {fn_out}', flush=True)
