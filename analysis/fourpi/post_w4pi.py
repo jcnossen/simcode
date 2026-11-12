@@ -4,7 +4,7 @@ classical worker, analysis/fourpi_classical/fig_cl.zdrift_struct, imported read-
 multipliers from adjacent-window pairs (DAFL; precision only), render, summary json.
 Global frame = (file - first file) * 18000 + 6 w (as post4pi.py and the classical tables).
 Columns of net_<cell>_<head>_all.npz: x, y (px, raw), xd, yd (drift corrected), z (um, raw), zd (um, z drift removed),
-sx, sy, sz (reported), sx_cal, sy_cal, sz_cal, N, good, kin, chi2, dof, frame, w, fidx, on (all True), drift [F,2], zdrift.
+sx, sy, sz (reported), sx_cal, sy_cal, sz_cal, N, good, sel (>= 1000 e and |z| <= 0.3 um), kin, chi2, dof, frame, w, fidx, on (all True), drift [F,2], zdrift.
 Usage: python analysis/fourpi/post_w4pi.py --cell NPC --head v10
 """
 import argparse, glob, json, os, subprocess, sys
@@ -71,6 +71,9 @@ def main():
             row[col] = float(emp / rep); row[col + '_dafl_nm'] = float(emp)
             rows = (R['N'] >= lo) & (R['N'] < hi); R[col + '_cal'][rows] = R[col][rows] * row[col]
         cal.append(row)
+    # 'sel': the rows inside the validated range (>= 1000 e, |z| <= 0.3 um after the z-drift correction): below 1000 e the z has 24 %
+    # adjacent-window fringe hops, and beyond 0.3 um the rows are defocused emitters outside the range where PSF and head are validated
+    R['sel'] = good & (R['N'] >= 1000) & (np.abs(R['zd'] - np.median(R['zd'][good & (R['N'] >= 2000)])) <= 0.3)
     if __import__('shutil').disk_usage(OUT).free < 10e9:
         print('WARNING: < 10 GB free; table not written'); return
     np.savez(f'{OUT}/{tag}_all.npz', **R, drift=d, zdrift=zd)
@@ -92,7 +95,7 @@ def main():
     plt.figure(figsize=(12, 12 * H / W)); plt.imshow(hsv_to_rgb(hsv)); plt.axis('off')
     plt.title(f'{a.cell} 4Pi-SIMFLUX network pipeline (head {a.head}), {good.sum()} localizations, z {zl:.0f} to {zh:.0f} nm (hue), {sr:.0f} nm pixels', fontsize=9)
     plt.savefig(f'{OUT}/{tag}_render.png', dpi=150, bbox_inches='tight'); plt.close()
-    summ = dict(cell=a.cell, head=a.head, files=len(fs), n_all=int(n_all), n_good=int(good.sum()), n_good_1000=int((good & (R['N'] >= 1000)).sum()),
+    summ = dict(cell=a.cell, head=a.head, files=len(fs), n_all=int(n_all), n_good=int(good.sum()), n_good_1000=int((good & (R['N'] >= 1000)).sum()), n_sel=int(R['sel'].sum()),
                 kin_frac=float(R['kin'].mean()), med_sx_nm=float(np.median(R['sx'][good]) * PX), med_sy_nm=float(np.median(R['sy'][good]) * PX),
                 med_sz_nm=float(np.median(R['sz'][good]) * 1000), med_N=float(np.median(R['N'][good])), z_p2_p98_nm=[float(zl), float(zh)],
                 drift_ptp_nm=(np.ptp(d, 0) * PX).tolist(), zdrift_ptp_nm=float(np.ptp(zd)), sigma_cal=cal)
