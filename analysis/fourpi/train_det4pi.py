@@ -16,13 +16,13 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode2.fourpi.ckpt import save as safe_save   # atomic, disk-guarded
 
 
-def worker(q, seed, psf, B, size, dens):
+def worker(q, seed, psf, B, size, dens, ksums=(1,)):
     import torch
     from simcode2.fourpi.realsim4pi import RealSim4Pi
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/{psf}.json'))['psf']
     rs = RealSim4Pi(st, H=size, W=size, seed=seed, n_psf=6)
     while True:
-        S = rs.sample(B=B, dens=dens)
+        S = rs.sample(B=B, dens=dens, ksum=ksums[int(torch.randint(len(ksums), (1,)))])
         g = S['gt']
         o = dict(frames=S['det_in'].cpu(), gt=dict(x=g['x'].cpu(), y=g['y'].cpu(), fov=g['b'].cpu(), phot=g['Nt'].cpu(),
                                                     onf=g['q'].cpu()), nb=B)
@@ -42,6 +42,7 @@ def main():
     ap.add_argument('--psf', default='NPC_f_dxy15'); ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--dens', default='0.01,2.0'); ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--ckpt_every', type=int, default=5000)
+    ap.add_argument('--ksum', default='1', help='comma list of K (summed windows: K x background, sqrt(K) read noise), one drawn per batch')
     a = ap.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-det')
     from simcode2.det.up2 import build, targets, focal_w, gt_nn
@@ -55,11 +56,11 @@ def main():
     torch.manual_seed(a.seed)
     net = build(args).to(dev)
     if a.init:
-        net.load_state_dict(torch.load(resolve(a.init), map_location=dev, weights_only=False)['model'])
+        net.load_state_dict(torch.load(a.init if os.path.isabs(a.init) else resolve(a.init), map_location=dev, weights_only=False)['model'])
     print('params', n_params(net), flush=True)
     ctx = mp.get_context('spawn'); q = ctx.Queue(maxsize=6)
     dens = tuple(float(v) for v in a.dens.split(','))
-    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens), daemon=True) for i in range(a.workers)]
+    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens, tuple(int(v) for v in a.ksum.split(','))), daemon=True) for i in range(a.workers)]
     for p in ps: p.start()
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)

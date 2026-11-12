@@ -13,7 +13,7 @@ def load_head(tag_or_path):
     a = ck['args']
     if a.get('arch') == 'w':
         from simcode2.fourpi.head4pi_w import Head4PiW
-        net = Head4PiW(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins']), bound=a.get('bound', 1.0)).cuda().eval()
+        net = Head4PiW(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins']), bound=a.get('bound', 1.0), nbr_in=a.get('nbr_in', False)).cuda().eval()
         net.load_state_dict(ck['state']); net.lut = LUT4Pi(ck['psf'], P=15)
         return net, ck
     if a.get('arch') == 'k':

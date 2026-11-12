@@ -26,12 +26,13 @@ VREAD = 1.14 ** 2 + 0.2 ** 2
 
 
 class Head4PiW(nn.Module):
-    def __init__(self, P=15, ch=64, nblk=4, wins=WINS_K, bound=1.0, prior_ch=96, prior_nblk=4):
+    def __init__(self, P=15, ch=64, nblk=4, wins=WINS_K, bound=1.0, prior_ch=96, prior_nblk=4, nbr_in=False, train_prior=False):
         super().__init__()
         self.P, self.wins, self.K, self.bound = P, tuple(wins), len(wins), bound
+        self.nbr_in, self.train_prior = nbr_in, train_prior   # v11: neighbour-candidate map input (4 planes); prior trained jointly
         self.prior = Head4Pi(ch=prior_ch, nblk=prior_nblk)
-        for p_ in self.prior.parameters(): p_.requires_grad_(False)
-        cin = 4 + 4 + 4 + 8
+        for p_ in self.prior.parameters(): p_.requires_grad_(train_prior)
+        cin = 4 + 4 + 4 + 8 + (4 if nbr_in else 0)
         self.cin = nn.Conv2d(cin, ch, 3, padding=1)
         self.blk = nn.Sequential(*[ResBlock(ch, 1 + (i % 2)) for i in range(nblk)])
         self.dmap = nn.Sequential(nn.Conv2d(ch, 64, 3, padding=1), nn.GELU(), nn.Conv2d(64, 4 * self.K, 1))
@@ -40,15 +41,21 @@ class Head4PiW(nn.Module):
         self.mlp = nn.Sequential(nn.Linear(ch * 16 + 4, 128), nn.GELU(), nn.Linear(128, 5))
         nn.init.zeros_(self.mlp[-1].weight); nn.init.zeros_(self.mlp[-1].bias)
         self.lut = None
+        self.vread = VREAD      # read variance per pixel (e^2); K x for K summed frames (set by the caller)
 
     def train(self, mode=True):
-        super().train(mode); self.prior.eval(); return self
+        super().train(mode)
+        if not self.train_prior: self.prior.eval()
+        return self
 
-    def forward(self, img, doff, learned=True):
+    def forward(self, img, doff, learned=True, nbr=None):
+        """nbr [n,4,P,P]: map of the OTHER candidates of the window in each channel patch (Gaussian sd 0.7 px stamps), frame-symmetric"""
         n, T, C, P, _ = img.shape; dev = img.device; K = self.K; lut = self.lut
-        with torch.no_grad():
+        with torch.set_grad_enabled(self.train_prior and self.training):
             op = self.prior(img, doff)
-            dxy, z, ls = op['dxy'], op['z'], op['ls']
+        dxy_o, z_o, ls_o = op['dxy'], op['z'], op['ls']
+        with torch.no_grad():
+            dxy, z, ls = dxy_o.detach(), z_o.detach(), ls_o.detach()
             p0 = torch.cat([dxy, z[:, None]], 1)
             border = torch.cat([img[..., 0, :], img[..., -1, :], img[..., 1:-1, 0], img[..., 1:-1, -1]], -1)
             bm = border.mean(1).median(-1).values                                # [n,4]
@@ -67,6 +74,8 @@ class Head4PiW(nn.Module):
             Q = torch.linalg.qr(torch.stack(Bs, 1))[0]                            # [n,4,P*P,3] orthonormal basis of the emitter's image
             cx = (ox[None, None] - doff[:, :, 0, None, None]) / (P // 2); cy = (oy[None, None] - doff[:, :, 1, None, None]) / (P // 2)
             x = torch.cat([norm_photons(fm), (fm - bm[..., None, None]) / 50.0, g / g.amax((-1, -2), keepdim=True), cx, cy], 1)
+            if self.nbr_in:
+                x = torch.cat([x, nbr if nbr is not None else torch.zeros(n, 4, P, P, device=dev)], 1)
         h = self.blk(F.gelu(self.cin(x)))
         q = self.mlp(torch.cat([self.down(h).flatten(1), norm_photons(bm)], 1))
         dbg, cq = q[:, :4], q[:, 4]
@@ -84,9 +93,30 @@ class Head4PiW(nn.Module):
         with torch.no_grad():
             Y0 = torch.einsum('ncuv,ntcuv->ntc', W[:, :, 0], y).clamp(min=0)      # photons per (t, c) through the canonical window
             mod = Y0[..., None, None] * g[:, None] + bgc[:, None, :, None, None].clamp(min=0.05)
-            vp = mod + VREAD + (fm[:, None] - mod.mean(1, keepdim=True)).clamp(min=0)   # + frame-mean excess (neighbours)
+            vp = mod + self.vread + (fm[:, None] - mod.mean(1, keepdim=True)).clamp(min=0)   # + frame-mean excess (neighbours)
         S = torch.einsum('nckuv,ncluv,ntcuv->ntckl', Wp, Wp, vp)
         S = S + 1e-6 * torch.diagonal(S, dim1=-2, dim2=-1).mean(-1)[..., None, None] * torch.eye(K, device=dev)
         Lb0 = torch.linalg.cholesky(S)
         return dict(Y=Y, Lb0=Lb0, cs=cs, Lb=Lb0 * cs[:, None, None, None, None], Wsum=Wp.sum((-1, -2)), W=Wp, p0=p0,
-                    bgc=bgc, bg=bgc[:, None].expand(n, 6, 4), dxy=dxy, z=z, ls=ls)
+                    bgc=bgc, bg=bgc[:, None].expand(n, 6, 4), dxy=dxy_o, z=z_o, ls=ls_o)
+
+
+def nbr_map(dx, dy, valid, doff, P=15, sd=0.7):
+    """neighbour-candidate map: dx, dy [n,m] offsets (px, ch0 frame) of up to m other candidates relative to the candidate
+    pixel, valid [n,m] bool, doff [n,4,2] -> [n,4,P,P] sum of Gaussian stamps at (dx, dy) + doff_c in each channel patch"""
+    o = torch.arange(P, device=dx.device, dtype=torch.float32) - (P - 1) / 2
+    px = dx[:, None, :] + doff[:, :, 0, None]; py = dy[:, None, :] + doff[:, :, 1, None]            # [n,4,m]
+    gx = torch.exp(-0.5 * ((o[None, None, None, :] - px[..., None]) / sd) ** 2)                      # [n,4,m,P]
+    gy = torch.exp(-0.5 * ((o[None, None, None, :] - py[..., None]) / sd) ** 2)
+    return torch.einsum('ncmv,ncmu,nm->ncvu', gy, gx, valid.float())
+
+
+def load_v10(net, state):
+    """initialise a neighbour-input head (v11) from a v10 state dict: the extra input planes start at zero weight"""
+    own = net.state_dict()
+    for k, v in state.items():
+        if k not in own: continue
+        if own[k].shape == v.shape: own[k] = v.clone()
+        elif k == 'cin.weight':
+            own[k].zero_(); own[k][:, :v.shape[1]] = v
+    net.load_state_dict(own)

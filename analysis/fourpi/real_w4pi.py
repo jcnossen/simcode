@@ -17,7 +17,7 @@ REPO = '/home/jc/simcode2'
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from dc import Dcimg, movie_files, file_index
-from front4pi import Front, reader, XLIM, P
+from front4pi import Front, reader, XLIM, P, GAIN
 import solve_real4pi as SR
 from simsolve4pi import repattern_xy
 from simcode2.fourpi.solve4pi import kin_starts, best_of
@@ -38,6 +38,8 @@ def main():
     p.add_argument('--coh', type=float, default=1.0, help='interference-contrast scale of the PSF model in the solve')
     p.add_argument('--iters', type=int, default=15); p.add_argument('--batch', type=int, default=1500)
     p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
+    p.add_argument('--ksum', type=int, default=1, help='K > 1: real dense data by summing K source windows (stride --kstride windows) frame by frame; virtual reader, exact camera model')
+    p.add_argument('--kstride', type=int, default=25)
     p.add_argument('--regions', default='', help='json with boxes (x0, x1, y0, y1 on the candidate pixel): the final solve only for candidates inside (pattern and phase field still from the whole field)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
@@ -54,7 +56,20 @@ def main():
         fn = [f for f in movie_files(a.cell) if file_index(f) == fi][0]
         nfr = a.nframes or Dcimg(fn).nframes
         q = queue.Queue(maxsize=2)
-        threading.Thread(target=reader, args=(fn, 0, nfr, a.chunk, q), daemon=True).start()
+        K, S = a.ksum, a.kstride
+        if K > 1:   # summed window j of block b = sum_k raw window (b K S + j + k S); block = K S windows = 6 K S frames -> 6 S summed frames
+            nblk = nfr // (6 * K * S); nfr = nblk * 6 * S
+
+            def sum_reader():
+                d = Dcimg(fn)
+                for b in range(nblk):
+                    r = d.raw(b * 6 * K * S, 6 * K * S).astype(np.float32)
+                    q.put((b * 6 * S, r.reshape(K, 6 * S, *r.shape[1:]).sum(0)))
+                q.put(None)
+            threading.Thread(target=sum_reader, daemon=True).start()
+            net.vread = K * 1.14 ** 2 + (0.2 * K) ** 2
+        else:
+            threading.Thread(target=reader, args=(fn, 0, nfr, a.chunk, q), daemon=True).start()
         acc = {k: [] for k in ('w', 'cx', 'cy', 'doff', 'img', 'dxy', 'z', 'ls', 'I', 'pdet', 'nn')}
         t0 = time.time()
         # ---- A: read, detect, patches, head (prior + photon read-outs)
@@ -64,6 +79,7 @@ def main():
             a0, raw = it
             with torch.no_grad():
                 E = fr.to_e(raw); nW = E.shape[0] // 6
+                if K > 1: E = E - (K - 1) * fr.off * GAIN          # K offsets were summed; to_e removed one
                 if nW == 0: continue
                 Rs = E[:nW * 6, 0].clone()
                 for c in (1, 2, 3):
@@ -110,7 +126,7 @@ def main():
             with torch.no_grad():
                 o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j])
             return dict(Y=o['Y'], Lb=o['Lb'], dxy=o['dxy'], z=o['z'], ls=o['ls'], W=o['W'], Wsum=o['Wsum'],
-                        sb=torch.full((len(j), 4), 0.2, device=dev)), o
+                        sb=torch.full((len(j), 4), 0.2 * math.sqrt(a.ksum), device=dev)), o
 
         # ---- C: phase field from bright isolated candidates
         cand = np.nonzero((Tsum > 800) & (R['nn'] > 4))[0]
@@ -158,7 +174,7 @@ def main():
         out = dict(x=cx + C['th'][:, 0], y=cy + C['th'][:, 1], z=C['th'][:, 2], sx=C['sig'][:, 0], sy=C['sig'][:, 1], sz=C['sig'][:, 2], N=C['N'],
                    on=np.ones(n, bool), kin=C['kin'], ton=C['ton'], toff=C['toff'], chi2=C['chi2'], dof=dof, good=good, chi2_on=C['chi2_on'], chi2_free=C['chi2_kin'],
                    Phi0=Phi0.cpu().numpy(), zprior=R['z'], szprior=np.exp(R['ls'][:, 2]), xprior=Xp[:, 0], yprior=Xp[:, 1], cx=R['cx'], cy=R['cy'],
-                   w=R['w'], frame=R['w'] * 6, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
+                   ksum=a.ksum, kstride=a.kstride, w=R['w'], frame=R['w'] * 6, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
         fo = f'{OUT}/locs_{a.cell}_{fi:03d}_{a.head}{a.tag}.npz'
         if __import__('shutil').disk_usage(OUT).free < 10e9:
             print('WARNING: < 10 GB free, output not written', flush=True); continue

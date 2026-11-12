@@ -33,16 +33,22 @@ def main():
     p.add_argument('--w_bg', type=float, default=0.1); p.add_argument('--w_ro', type=float, default=0.02)
     p.add_argument('--bound', type=float, default=1.0)
     p.add_argument('--init', default=''); p.add_argument('--init_v3', default='')
-    p.add_argument('--p_nb', type=float, default=0.5)
+    p.add_argument('--p_nb', type=float, default=0.5); p.add_argument('--nb_max', type=int, default=3)
+    p.add_argument('--ksum', default='1', help='comma list of K (summed windows): per step one K: background 0.2 K - 2 K e/px, read sd 1.14 sqrt(K), offset error 0.2 K')
+    p.add_argument('--nbr_in', type=int, default=0, help='1: neighbour-candidate map input (v11)'); p.add_argument('--train_prior', type=int, default=0)
+    p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINS_K]
     from simcode2.util.proctitle import auto; auto('4pi-train-w')
     torch.manual_seed(a.seed)
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     sim = Sim4Pi(lut, seed=a.seed)
-    net = Head4PiW(ch=a.ch, nblk=a.nblk, bound=a.bound).cuda(); net.lut = lut
+    net = Head4PiW(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
+    from simcode2.fourpi.head4pi_w import nbr_map, load_v10
+    ksums = [int(v) for v in a.ksum.split(',')]
     ld = lambda f: torch.load(f if f.startswith('/') else f'{REPO}/{f}', weights_only=False)['state']
     if a.init: net.load_state_dict(ld(a.init))
+    elif a.init_v10: load_v10(net, ld(a.init_v10))
     elif a.init_v3: net.prior.load_state_dict(ld(a.init_v3))
     net.train()
     sv = SolveK(lut, WINS_K); sv.tab_lim = None
@@ -51,12 +57,22 @@ def main():
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')
     t0 = time.time(); acc = []
     for it in range(a.steps):
+        K = ksums[it % len(ksums)]
         with torch.no_grad():
-            S = sim.sample(a.batch, eps_range=math.pi, p_nb=a.p_nb)
-        o = net(S['img'], S['doff'])
+            S = sim.sample(a.batch, eps_range=math.pi, p_nb=a.p_nb, nb_max=a.nb_max, bg=(0.2 * K, 2.0 * K), rn=1.14 * math.sqrt(K), offerr=0.2 * K)
+            nbr = None
+            if a.nbr_in:   # other candidates as the detector would give them: position jitter 0.3 px, 20 % missed
+                dxn = torch.zeros(a.batch, a.nb_max, device='cuda'); dyn = torch.zeros_like(dxn); val = torch.zeros_like(dxn, dtype=torch.bool)
+                for j, nb in enumerate(S['nb']):
+                    kk = int(nb['sel'].sum())
+                    dxn[nb['sel'], j] = nb['x'] + 0.3 * torch.randn(kk, device='cuda'); dyn[nb['sel'], j] = nb['y'] + 0.3 * torch.randn(kk, device='cuda')
+                    val[nb['sel'], j] = (torch.rand(kk, device='cuda') > 0.2) & (nb['N'].sum(1) > 150)
+                nbr = nbr_map(dxn, dyn, val, S['doff'])
+        net.vread = K * 1.14 ** 2 + (0.2 * K) ** 2
+        o = net(S['img'], S['doff'], nbr=nbr)
         Ystar = torch.einsum('nckuv,ntcuv->ntck', o['W'], S['mu0'])
-        ls_, info = solve_loss(sv, o, S, Ystar, grad_model=True)
-        lp = torch.zeros_like(ls_)      # prior frozen
+        ls_, info = solve_loss(sv, o, S, Ystar, grad_model=True, sb=0.2 * math.sqrt(K))
+        lp = nll_prior(S['x'], S['y'], S['z'], o) / 3 if a.train_prior else torch.zeros_like(ls_)
         bt = S['bg'][:, 0].mean((-1, -2))
         lb = F.huber_loss((o['bgc'] - bt) / 0.1, torch.zeros_like(bt), delta=3.0, reduction='none').mean(1)
         lr_ = 0.5 * info['r2'].clamp(max=50.0) + torch.log(o['cs'])
