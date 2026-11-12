@@ -216,7 +216,10 @@ def train(argv):
     # close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
     ap.add_argument('--calib', default='')
     ap.add_argument('--pair_sub', default='')
+    # (2026-11-12 g13 retrain, opt-in; '' = unchanged) ON-emitter density range 'lo,hi' (/px^2) of the batches
+    ap.add_argument('--dens', default='')
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
     from simcode2.hd import data as HD
     from simcode2.hd.sc4 import nn_weights
     os.makedirs(a.out, exist_ok=True)
@@ -243,7 +246,8 @@ def train(argv):
             if a.gen == 'r1':
                 o = gen.rbatch(a.batch, mix='paper' if step % 2 == 0 else 'det', tau_r=(2.0, 80.0), pair_frac=0.25, pair_sep=(0.3, 3.0))
             else:
-                o = batch(gen, a.batch, em_photons=emp, **({'pair_sub': psub} if psub else {}))
+                o = batch(gen, a.batch, em_photons=emp, **({'pair_sub': psub} if psub else {}),
+                          **({'dens': tuple(float(v) for v in a.dens.split(','))} if a.dens else {}))
             label, ign, tid, off = targets(o, up, S, S)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)
@@ -291,6 +295,7 @@ def stats(argv):
     """training-mix statistics: target photon fraction in 500-5k, nn-bin fractions"""
     ap = argparse.ArgumentParser(); ap.add_argument('--n', type=int, default=40); ap.add_argument('--em_photons', default='40,6000')
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
     from simcode2.hd import data as HD
     torch.manual_seed(7)
     gen = HD.Gen(64, 64, 6, seed=0)

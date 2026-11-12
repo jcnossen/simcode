@@ -73,6 +73,7 @@ def main(argv=None):
                                                         # (pipeline/common.PrefetchMovie; identical data); 0 = synchronous reads
     ap.add_argument('--p1_solve', type=int, default=1)  # sc2p: 0 skips the pass-1 pattern solve (pass2_est files; not needed by pass 2)
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'p2_pf_head', 'ref_pattern'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')

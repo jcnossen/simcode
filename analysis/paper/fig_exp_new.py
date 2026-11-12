@@ -57,22 +57,30 @@ def pick_aois(sets, sizes=(10.0, 15.0)):
 
 
 def main():
+    LABELS, KINDS, COLORS = list(globals()['LABELS']), list(globals()['KINDS']), list(globals()['COLORS'])
     ap = argparse.ArgumentParser()
     ap.add_argument('dataset', choices=list(SETS))
     ap.add_argument('--nframes', type=int, default=None)
     ap.add_argument('--tag', default='')
     for k in KINDS: ap.add_argument('--' + k, default=None)
+    ap.add_argument('--v1', default=None, help="opt-in 5th method: the preprint's SIMCODE localizations (merged table, e.g. "
+                    "out/paper/<ds>/published/sfhd-ndi+smlm.hdf5), through the same fair protocol; v2 is then labelled 'SIMCODE v2'")
+    ap.add_argument('--note', default='', help='extra footnote line (e.g. a provisional marker)')
     ap.add_argument('--aoi', default=None, help="'auto' = zoompick crossings (default for 20nM_2)")
     a = ap.parse_args()
     S = SETS[a.dataset]; F = a.nframes or S['nframes']
     dflt = dict(smlm=f'{P2}/{a.dataset}/smlm/smlm.npy', sf=f'{P2}/{a.dataset}/sf/sf.hdf5',
                 decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2/locs_p2.npz')
-    paths = {k: getattr(a, k) or dflt[k] for k in KINDS}
+    paths = {k: getattr(a, k) or dflt[k] for k in KINDS}       # the 4 reprocessed methods
     name = a.dataset + (f'_{a.tag}' if a.tag else '')
     out = f'{P2}/fig/{name}'; os.makedirs(f'{P2}/fig', exist_ok=True)
+    if a.v1:
+        LABELS[3:] = ['SIMCODE (preprint)', 'SIMCODE v2']; KINDS[3:] = ['v1', 'v2']; COLORS[3:] = ['red', 'purple']
+        paths['v1'] = a.v1
+    NM = len(LABELS)
     res, dsets = [], []
     for lab, k in zip(LABELS, KINDS):
-        T = FF.load(k, paths[k])
+        T = FF.load('sf' if k == 'v1' else k, paths[k])
         keep = T['f'] + 6 <= F
         T = {kk: v[keep] for kk, v in T.items()}
         R = FF.evaluate(T, F, drift_cache=f'{out}_{k}_drift.npy')
@@ -87,48 +95,63 @@ def main():
     full = dict(shared); zoom = 10; full.update(zoom=zoom, scalebar_nm=2000)
     pc, rmsd, _ = compute_pc(S['tif'], dsets)
 
-    fig = plt.figure(figsize=(14, 20))
-    root = fig.add_gridspec(3, 1, hspace=0.1, wspace=0.1, height_ratios=[1, 1, 0.4])
-    top = root[0].subgridspec(2, 4, hspace=0.2, wspace=0.1); mid = root[1].subgridspec(2, 4, hspace=0.2, wspace=0.1)
-    bot = root[2].subgridspec(1, 3, hspace=0.1, wspace=0.2, width_ratios=[1, 0.3, 0.3])
+    # layout: A overview | zoom 1 (one panel per method) ; zoom 2 (one row) ; FRC, counts, Pearson. Panel letters run in the
+    # preprint's order (overview, zoom 1 methods, zoom 2 methods, FRC, counts, Pearson).
+    letters = iter('ABCDEFGHIJKLMNOPQ')
+    def letter(ax, dx=-0.02, dy=1.03):
+        ax.text(dx, dy, next(letters), transform=ax.transAxes, fontsize=20, fontweight='bold', ha='right', va='bottom')
+    zshared = dict(shared, scalebar_fontsize=12)
+    nc = 2 if NM <= 4 else 3
+    fig = plt.figure(figsize=(14, 16.5 if NM <= 4 else 15.5))
+    root = fig.add_gridspec(3, 1, hspace=0.16, height_ratios=[1, 0.5 if NM <= 4 else 0.42, 0.42])
+    top = root[0].subgridspec(2, 2 + nc, hspace=0.18, wspace=0.1)
+    mid = root[1].subgridspec(1, NM, wspace=0.1)
+    bot = root[2].subgridspec(1, 3, wspace=0.42, width_ratios=[1, 0.42, 0.42])
     styles = ['-', '--', '-.']
     ax = fig.add_subplot(top[:2, :2])
-    dsets[3].renderFigure(axes=ax, title='Overview', **full)
+    dsets[-1].renderFigure(axes=ax, title='Overview' + (' (SIMCODE v2)' if a.v1 else ''), **full)
+    letter(ax)
     for i, (c, w, _) in enumerate(renders):
         draw_rect((c, (c[0] + w, c[1] + w)), zoom, ax).set_linestyle(styles[i])
 
     def draw_zoom(gs, zi, mi):
         ax = fig.add_subplot(gs)
         c, w, ra = renders[zi]
-        r = dict(shared); r.update(ra)
+        r = dict(zshared); r.update(ra)
         dsets[mi].crop(c, (c[0] + w, c[1] + w), silent=True).renderFigure(axes=ax, title=LABELS[mi], **r)
-        ax.add_patch(plt.Rectangle((0, 0), 1, 1, fill=False, edgecolor=COLORS[mi], ls=styles[zi], lw=6, clip_on=False,
+        ax.set_title(''); ax.set_title('      ' + LABELS[mi], loc='left', fontsize=14)
+        ax.add_patch(plt.Rectangle((0, 0), 1, 1, fill=False, edgecolor=COLORS[mi], ls=styles[zi], lw=5, clip_on=False,
                                    transform=ax.transAxes))
-    for zi, gs in enumerate([top, mid]):
-        for mi, (r_, c_) in enumerate([(0, 2), (0, 3), (1, 2), (1, 3)]):
-            draw_zoom(gs[r_, c_], zi, mi)
+        ax.text(0.0, 1.03, next(letters), transform=ax.transAxes, fontsize=20, fontweight='bold', ha='left', va='bottom')
+    for mi in range(NM): draw_zoom(top[mi // nc, 2 + mi % nc], 0, mi)
+    for mi in range(NM): draw_zoom(mid[0, mi], 1, mi)
 
+    short = [l.replace(' (preprint)', '\n(preprint)').replace('SIMCODE v2', 'SIMCODE\nv2') for l in LABELS]
     ax = fig.add_subplot(bot[0])
     ax.axhline(1 / 7, color='grey', linestyle='--')
     for mi, R in enumerate(res):
         sel = (R['freq'] > 0.002) & (R['freq'] < 0.1)
-        ax.plot(R['freq'][sel], R['curve'][sel], color=COLORS[mi], label=f'{LABELS[mi]} (FRC={R["frc_nm"]:.1f} nm)')
-    ax.legend(fontsize=13); ax.set_yticklabels([]); ax.set_xlabel('Spatial freq. [nm$^{-1}$]'); ax.set_title('FRC')
-    ax.get_yaxis().set_visible(False)
+        ax.plot(R['freq'][sel], R['curve'][sel], color=COLORS[mi], label=f'{LABELS[mi]}: {R["frc_nm"]:.1f} nm')
+    ax.legend(fontsize=11, loc='upper right', title='FRC resolution', title_fontsize=11, framealpha=0.9)
+    ax.set_xlabel('Spatial freq. [nm$^{-1}$]'); ax.set_title('FRC'); ax.get_yaxis().set_visible(False); letter(ax)
     ax = fig.add_subplot(bot[1])
     cnt = np.array([R['n_frc'] for R in res]) * 1e-6
-    ax.bar(LABELS, cnt, color=COLORS); ax.set_xticks(range(4)); ax.set_xticklabels(LABELS, rotation=45)
-    ax.set_ylabel('Spot count (${10}^6$)'); ax.set_title('# Localizations')
+    ax.bar(range(NM), cnt, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
+    ax.set_title('Localizations ($10^6$)', fontsize=15); letter(ax, dx=-0.12)
     ax = fig.add_subplot(bot[2])
-    ax.bar(LABELS, pc, color=COLORS); ax.set_xticks(range(4)); ax.set_xticklabels(LABELS, rotation=45); ax.set_title('Pearson corr.')
-    fig.text(0.5, 0.005, 'All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating '
-             '300-frame halves.' + (f' Frames 0-{F}.' if a.nframes else ''), ha='center', fontsize=12)
-    plt.savefig(out + '.svg', dpi=300); plt.savefig(out + '.png', dpi=150); plt.close('all')
+    ax.bar(range(NM), pc, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
+    ax.set_title('Pearson corr.', fontsize=15); letter(ax, dx=-0.12)
+    foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
+            + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
+    fig.text(0.5, 0.0, foot, ha='center', va='top', fontsize=11)
+    for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
+        plt.savefig(f'{out}.{ext}', bbox_inches='tight', pad_inches=0.15, **kw)
+    plt.close('all')
     vals = dict(dataset=a.dataset, nframes=F, labels=LABELS, paths=paths, frc_nm=[R['frc_nm'] for R in res],
                 n_frc=[R['n_frc'] for R in res], n_disjoint=[R['n_disjoint'] for R in res], n_all=[R['n_all'] for R in res],
                 frc_nm_nofilter=[R['frc_nm_nofilter'] for R in res], frc_nm_30frame_halves=[R['frc_nm_30frame_halves'] for R in res],
                 pearson=np.asarray(pc).tolist(), rmsd=np.asarray(rmsd).tolist(), drift_ptp_nm=[R['drift_ptp_nm'] for R in res],
-                drift_info=[R['drift_info'] for R in res], aois=[[list(c), w] for c, w, _ in renders],
+                drift_info=[R['drift_info'] for R in res], note=a.note, aois=[[list(c), w] for c, w, _ in renders],
                 protocol=dict(sigma_max_px=FF.SIGMA_MAX, grid=FF.GRID, halves_frames=FF.BLK, crop=FF.CROP))
     json.dump(vals, open(out + '_values.json', 'w'), indent=1)
     print(json.dumps({k: vals[k] for k in ('frc_nm', 'n_frc', 'pearson', 'aois')}), flush=True)

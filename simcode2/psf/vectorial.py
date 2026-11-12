@@ -119,6 +119,8 @@ def set_psf_extras(psf, c, angle=None):
     if c.get('psf_blur_angle_px2') is not None:
         Bc = t(c['psf_blur_angle_px2'])
         psf.blur = Bc.mean(0) if angle is None else Bc[angle]
+    if c.get('psf_gauss_sigma_um') is not None:   # (2026-11-12, opt-in) pixel-integrated Gaussian PSF instead of the vectorial model
+        psf.gauss_sigma_um = float(c['psf_gauss_sigma_um'])
     return psf
 
 
@@ -139,7 +141,7 @@ def copy_psf_extras(dst, src):
     """copy the opt-in attributes (blur, diat, dipw; saf is a parameter, copied by the callers / here) of VectorialPSF src
     to dst (the LUT / CRLB copies of a calibrated PSF)"""
     with torch.no_grad(): dst.saf.copy_(src.saf)
-    for k in ('blur', 'diat', 'dipw', 'dipM'):
+    for k in ('blur', 'diat', 'dipw', 'dipM', 'gauss_sigma_um'):
         v = getattr(src, k, None)
         if v is not None:
             setattr(dst, k, v.detach().clone() if torch.is_tensor(v) else v)
@@ -245,6 +247,17 @@ class VectorialPSF(torch.nn.Module):
         blur: optional image-plane blur covariance [3] or [B,3] (sxx, syy, sxy; px^2), overrides self.blur
         Returns [B, roisize, roisize] expected image (normalized PSF * intensity + bg if given).
         """
+        gs = getattr(self, 'gauss_sigma_um', None)
+        if gs is not None:   # (2026-11-12, opt-in calib key 'psf_gauss_sigma_um'; absent = unchanged) the preprint's PSF:
+            # pixel-integrated isotropic Gaussian, sigma = gs / pixelsize px (= analysis/baselines/zpsf.GaussPSF), independent of z,
+            # focus and the Zernike / blur / dipole terms. A width-scaled copy (det/psfpert: pixelsize / w) gets sigma x w.
+            s = (gs / self.pixelsize) * math.sqrt(2)
+            o = torch.arange(self.roisize, device=pos.device, dtype=torch.float32) - (self.roisize - 1) / 2
+            ax = lambda c_: 0.5 * (torch.erf((o[None] + 0.5 - c_[:, None]) / s) - torch.erf((o[None] - 0.5 - c_[:, None]) / s))
+            psf = ax(pos[:, 1].float())[:, :, None] * ax(pos[:, 0].float())[:, None, :]
+            if intensity is not None: psf = psf * intensity[:, None, None]
+            if bg is not None: psf = psf + bg[:, None, None]
+            return psf
         B = pos.shape[0]
         P, kz_med, kz_imm, kx, ky = self.pupil_fields()
         Mt = dipole_tensor(dipM if dipM is not None else (None if dipw is not None else getattr(self, 'dipM', None)),

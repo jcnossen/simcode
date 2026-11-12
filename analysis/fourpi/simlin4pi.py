@@ -46,6 +46,7 @@ def main():
     p.add_argument('--dnll', type=float, default=9.21)
     p.add_argument('--phi', default='field'); p.add_argument('--pattern', default='iter')
     p.add_argument('--chi2_max', type=float, default=1.6, help="'good': chi2 / dof below this")
+    p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-simlin')
     d = f'{REPO}/out/4pi/simmovie/{a.tag}'
@@ -62,10 +63,19 @@ def main():
     w = F['w']; nn = F['nn']; cx, cy = F['cx'].astype(np.float64), F['cy'].astype(np.float64)
     bm = border_bg(img)
     Ys, Ls, Wss, Wl = [], [], [], []
-    for i in range(0, n, 2000):
-        j = slice(i, i + 2000)
-        Y, Lb, Ws, W = linear_readout(img[j], D['doff'][j], lut, WINS, D['dxy'][j], D['z'][j], bm[j], return_w=True)
-        Ys.append(Y); Ls.append(Lb); Wss.append(Ws); Wl.append(W)
+    if a.head:
+        from simcode2.fourpi.loadhead import load_head
+        net, _ = load_head(a.head); bl = []
+        with torch.no_grad():
+            for i in range(0, n, 1000):
+                j = slice(i, i + 1000); oh = net(img[j], D['doff'][j])
+                Ys.append(oh['Y']); Ls.append(oh['Lb']); Wss.append(oh['Wsum']); Wl.append(oh['W']); bl.append(oh['bgc'])
+        bm = torch.cat(bl)
+    else:
+        for i in range(0, n, 2000):
+            j = slice(i, i + 2000)
+            Y, Lb, Ws, W = linear_readout(img[j], D['doff'][j], lut, WINS, D['dxy'][j], D['z'][j], bm[j], return_w=True)
+            Ys.append(Y); Ls.append(Lb); Wss.append(Ws); Wl.append(W)
     D.update(Y=torch.cat(Ys), Lb=torch.cat(Ls), Ws=torch.cat(Wss), W=torch.cat(Wl))
     I = D['Y'][..., 0].sum(2).cpu().numpy(); mI = I.mean(1)                    # per-frame photons (matched-filter read-out)
     Xp = np.stack([cx + F['dxy'][:, 0], cy + F['dxy'][:, 1]], 1)
@@ -126,7 +136,7 @@ def main():
                phi=phi, sphi=sphi, Phi0=Phi0.cpu().numpy(), zprior=F['z'], szprior=np.exp(F['ls'][:, 2]),
                xprior=Xp[:, 0], yprior=Xp[:, 1], w=w, nn=nn, Tsum=Tsum,
                bg=(bm + pick(rk['th'][:, -4:], ron['th'][:, -4:])).cpu().numpy())
-    tag = f'{a.pattern}lin' + ('' if a.phi == 'field' else '_phiO')
+    tag = f"{a.pattern}{a.head or 'lin'}" + ('' if a.phi == 'field' else '_phiO')
     np.savez(f'{d}/locs_SIM_000_{a.front}_{tag}.npz', **out, M=diag['M'], d=diag['d'])
     summ = dict(n=n, kin_frac=float(usek.float().mean()), good_frac=float(good.float().mean()), field_R=diag['R'],
                 field_err_deg=field_err, pattern=patf, t_s=time.time() - t0)

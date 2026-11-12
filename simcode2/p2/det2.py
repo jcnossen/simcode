@@ -157,8 +157,12 @@ def train(argv):
     # enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
     ap.add_argument('--calib', default='')
     ap.add_argument('--pair_sub', default='')
+    # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
+    ap.add_argument('--dens', default='')
+    ap.add_argument('--tau', default='')
     ap.add_argument('--init_n1', default='')               # (opt-in) det_n1-type checkpoint for the zero-init (default det_n1.pt)
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('train-p2det')     # recognizable name in nvidia-smi / ps
     from simcode2.p2.data import Gen2
     from simcode2.hd.sc4 import nn_weights
     from simcode2.det.up2 import load as load_n1
@@ -171,6 +175,8 @@ def train(argv):
     else:
         gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None)
     psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
+    if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
+    if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
     if a.init:
         net = build().to(dev); net.load_state_dict(torch.load(__import__('simcode2.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
     else:

@@ -62,6 +62,7 @@ def main(argv=None):
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table)')
     ap.add_argument('--redo', type=int, default=0)
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('run')     # recognizable name in nvidia-smi / ps
     os.makedirs(a.out, exist_ok=True)
     t00 = time.time(); ST = {}
     common = ['--movie', a.movie, '--calib', a.calib, '--out', a.out, '--crop', a.crop, '--chunk', str(a.chunk),

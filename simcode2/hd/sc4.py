@@ -419,6 +419,7 @@ def train(argv):
     ap.add_argument('--calib', default='')
     ap.add_argument('--pair_sub', default='')
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('train-head')     # recognizable name in nvidia-smi / ps
     from simcode2.sim import crlb as crlb_dense  # noqa
     os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)

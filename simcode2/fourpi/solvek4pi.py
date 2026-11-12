@@ -60,6 +60,9 @@ class SolveK(Solve4Pi):
                 ev = [comp[c].evaluate(pc, True) for comp in self.lut.luts]          # 3 x (v, gx, gy, gz) [n,P,P]
                 Kt = torch.stack([torch.stack([torch.einsum('nkuv,nuv->nk', W[:, c], e_) for e_ in ev_]) for ev_ in ev])  # [comp, 4, n, K]
                 Kt = Kt.permute(2, 1, 0, 3)                                           # [n, 4 (val, dx, dy, dz), comp, K]
+                kc = getattr(self, 'coh_scale', 1.0)       # interference-contrast scale of the PSF model (real data: in-situ value)
+                if kc != 1.0:
+                    Kt = torch.cat([Kt[:, :, :1], Kt[:, :, 1:] * kc], 2)
                 for a in range(2):
                     ph = Phi + self.delta[a]
                     cP, sP = torch.cos(ph)[:, None, None], torch.sin(ph)[:, None, None]
@@ -153,7 +156,7 @@ class SolveK(Solve4Pi):
                 J[:, :, c, :, p - 4 + c] = Wsum[:, None, c, :]
         return pred, J
 
-    def solve(self, o, Phi0, doff, m, psi, mode='on', iters=20, Lam=0.246, zstarts=(-0.5, 0.0, 0.5), prior_w=1.0,
+    def solve(self, o, Phi0, doff, m, psi, mode='on', iters=20, Lam=0.257, zstarts=(-0.5, 0.0, 0.5), prior_w=1.0,
               fit_phi=False, phistarts=None, crel=0.0, kin0=None):
         """o: Y [n,6,4,K], Lb [n,6,4,K,K] (Cholesky blocks), dxy, z, ls; optional p0 [n,3], Wsum [n,4,K] + sb [n,4].
         Returns dict(th, obj, chi2, sig)"""

@@ -207,7 +207,11 @@ def train(argv):
     # column follows the batch's calib), close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
     ap.add_argument('--calib', default='')
     ap.add_argument('--pair_sub', default='')
+    # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
+    ap.add_argument('--dens', default='')
+    ap.add_argument('--tau', default='')
     a = ap.parse_args(argv)
+    from simcode2.util.proctitle import auto; auto('train-p2head')     # recognizable name in nvidia-smi / ps
     from simcode2.p2.data import Gen2
     from simcode2.hd.sc4 import match_gt, targets
     from simcode2.hd import sc as SCM
@@ -219,6 +223,8 @@ def train(argv):
     else:
         gen = Gen2(64, 64, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None)
     psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
+    if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
+    if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
     det, needs_il = load_det(a.det)
     head = load_init(a.init)
     col = PSFCol(gen.rs['0.5nM'].sim)
