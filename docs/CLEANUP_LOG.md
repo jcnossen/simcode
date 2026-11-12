@@ -488,3 +488,12 @@ in place, and all checks once more on the final tree:
   `locs_*_v10.npz.claim`); delete them after the running job has ended.
 - After the merge: `python tests/check_imports.py`, `python tests/test_fileio.py`, `python tests/test_tables.py`,
   `CUDA_VISIBLE_DEVICES=<g> python tests/test_fast_paths.py`.
+
+## Addendum: the production recipe through `--dataset`
+
+`python -m simcode.run --dataset 1809_2 --out <dir> --nframes 12000 --chunk_list 0,6000` (movie, calibration and network
+set from `netsets.json`, the movie read from the data root, the reference run's pattern placed in the directory): 8 of 8
+chunk files bit-identical to `out/paper2/1809_2/v2_matched`; tables with the set's sigma rescale (every column except the
+rescaled `sx`, `sy` equal to the table of 60cc637 on the same chunks); `locs_p{1,2}_u045.npz` and `_strictonly.npz` written,
+their rows = the `main` / `strict` rows. `simcode.example.json`: `data` now points at the directory the dataset paths are
+relative to (`…/bn_dnapaint`).
