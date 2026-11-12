@@ -126,7 +126,7 @@ def fig_sections(tag, E):
 def fig_profiles(Es):
     tags = [t for t in TAGS if t in Es]
     tags = tags + [t for t in Es if t not in tags]
-    fig, axs = plt.subplots(2, len(tags), figsize=(2.3 * len(tags), 4.4), sharex=True, squeeze=False)
+    fig, axs = plt.subplots(2, len(tags), figsize=(2.3 * len(tags), 4.8), sharex=True, squeeze=False)
     b = np.arange(-80, 80.1, 3.0); c = 0.5 * (b[1:] + b[:-1])
     for j, t in enumerate(tags):
         for nm, lab in METH:
@@ -138,8 +138,9 @@ def fig_profiles(Es):
         axs[0, j].set_title(f"{Es[t]['dens']:.2f} /µm²/frame" + (', 25 nm tube' if t.endswith('r125') else ''))
         axs[1, j].set_xlabel('position across the tube (nm)')
     axs[0, 0].set_ylabel('in-plane profile\n(normalised count)'); axs[1, 0].set_ylabel('axial profile\n(normalised count)')
-    axs[0, -1].legend(fontsize=6, frameon=False, loc='upper right')
-    plt.tight_layout(); fig.savefig(f'{OUT}/profiles.png', dpi=150); plt.close(fig)
+    h, l = axs[0, 0].get_legend_handles_labels()
+    fig.legend(h, l, loc='lower center', ncol=5, fontsize=7, frameon=False)
+    plt.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(f'{OUT}/profiles.png', dpi=150); plt.close(fig)
 
 
 def fig_summary(Es):
