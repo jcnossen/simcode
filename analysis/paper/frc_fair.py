@@ -65,29 +65,17 @@ def masks(T, sigma_max=SIGMA_MAX, grid=GRID, crop=CROP):
 
 
 def dme_v2(x, y, t, sx, sy, F):
-    """DME v2 (simcode/util/drift.py, as analysis/baselines/dme_drift.py) -> drift [F, 2] px, info"""
+    """DME v2 on these rows (simcode/util/drift.py: drift_rows selection, t = time of each row) -> drift [F, 2] px, info"""
     from simcode.util import drift as DR
-    pos = np.c_[x, y].astype(np.float32); crlb = np.c_[sx, sy].astype(np.float32)
-    ok = (t >= 0) & (t < F) & (crlb.max(1) < 1.0) & (crlb.min(1) > 0)
-    d, info = DR.dme_v2(pos[ok], t[ok].astype(np.int64), crlb[ok], F, return_info=True)
-    return np.asarray(d)[:F, :2], dict(chosen=str(info['chosen']), n=int(ok.sum()), dme=info['version'])
+    pos, fr, crlb = DR.drift_rows(x, y, t, sx, sy, F, t_offset=0)
+    d, info = DR.dme_v2(pos, fr, crlb, F, return_info=True)
+    return np.asarray(d)[:F, :2], dict(chosen=str(info['chosen']), n=int(len(pos)), dme=info['version'])
 
 
 def frc_curve(xa, ya, xb, yb, px=5.0):
-    """simcode.evalproto.lib.frc (same bounds, render, smoothing, 1/7 crossing) returning (resolution nm, freq 1/nm, curve)"""
-    s = PX / px
-    lo = np.floor(min(xa.min(), ya.min(), xb.min(), yb.min())); hi = np.ceil(max(xa.max(), ya.max(), xb.max(), yb.max()))
-    n = int((hi - lo) * s); n += n % 2
-    h = lambda x, y: np.histogram2d(y, x, bins=n, range=[[lo, lo + n / s], [lo, lo + n / s]])[0]
-    A, B = np.fft.fftshift(np.fft.fft2(h(xa, ya))), np.fft.fftshift(np.fft.fft2(h(xb, yb)))
-    yy, xx = np.indices(A.shape) - n // 2; rr = np.hypot(xx, yy).astype(int)
-    num = np.bincount(rr.ravel(), (A * B.conj()).real.ravel()); da = np.bincount(rr.ravel(), (np.abs(A) ** 2).ravel())
-    db = np.bincount(rr.ravel(), (np.abs(B) ** 2).ravel())
-    c = np.convolve(num / np.sqrt(da * db + 1e-12), np.ones(5) / 5, 'same')
-    below = np.nonzero((c[3:n // 2] < 1 / 7))[0]
-    res = float('nan') if len(below) == 0 else float(n * px / (below[0] + 3))
-    freq = np.arange(n // 2) / (n * px)
-    return res, freq, c[:n // 2]
+    """simcode.evalproto.frc.frc with the curve: (resolution nm, freq 1/nm, curve)"""
+    from simcode.evalproto.frc import frc
+    return frc(xa, ya, xb, yb, px=px, return_curve=True)
 
 
 def frc_halves(x, y, f, blk=BLK):

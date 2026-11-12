@@ -10,19 +10,7 @@ CROP = (5, 5, 110)
 
 
 # ------------------------------------------------------------------ FRC (1/7 threshold, 5-nm render)
-def frc(xa, ya, xb, yb, px=5.0):
-    """FRC of two localization sets (px coordinates) rendered on a px-nm grid; returns the 1/7 resolution (nm)"""
-    s = PX / px
-    lo = np.floor(min(xa.min(), ya.min(), xb.min(), yb.min())); hi = np.ceil(max(xa.max(), ya.max(), xb.max(), yb.max()))
-    n = int((hi - lo) * s); n += n % 2
-    h = lambda x, y: np.histogram2d(y, x, bins=n, range=[[lo, lo + n / s], [lo, lo + n / s]])[0]
-    A, B = np.fft.fftshift(np.fft.fft2(h(xa, ya))), np.fft.fftshift(np.fft.fft2(h(xb, yb)))
-    yy, xx = np.indices(A.shape) - n // 2; rr = np.hypot(xx, yy).astype(int)
-    num = np.bincount(rr.ravel(), (A * B.conj()).real.ravel()); da = np.bincount(rr.ravel(), (np.abs(A) ** 2).ravel())
-    db = np.bincount(rr.ravel(), (np.abs(B) ** 2).ravel())
-    c = np.convolve(num / np.sqrt(da * db + 1e-12), np.ones(5) / 5, 'same')
-    below = np.nonzero((c[3:n // 2] < 1 / 7))[0]
-    return float('nan') if len(below) == 0 else float(n * px / (below[0] + 3))
+from simcode.evalproto.frc import frc  # noqa (the one FRC implementation: simcode/evalproto/frc.py)
 
 
 def frc_split(x, y, fr, blk=300):

@@ -13,22 +13,9 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter, maximum_filter, convolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-def zdrift_struct(x, y, z, w, bin_nm=60.0, blk_w=500, n_it=8, clip=150.0):
-    """sample axial drift from the structure itself (as fig_cl.zdrift_struct; local copy with writable arrays)"""
-    import pandas as pd
-    from scipy.ndimage import gaussian_filter1d
-    ix = np.floor((x - x.min()) / bin_nm).astype(np.int64); iy = np.floor((y - y.min()) / bin_nm).astype(np.int64)
-    pix = np.unique(ix * (iy.max() + 1) + iy, return_inverse=True)[1]
-    blk = (w // blk_w).astype(np.int64); nb = int(blk.max()) + 1; drift = np.zeros(nb)
-    for _ in range(n_it):
-        zc = z - drift[blk]
-        ref = pd.Series(zc).groupby(pix).median().to_numpy()
-        r = zc - ref[pix]; m = np.abs(r) < clip
-        g = pd.Series(r[m]).groupby(blk[m]); md = np.array(g.median().reindex(range(nb)).fillna(0).to_numpy(), dtype=float)
-        md[np.array(g.size().reindex(range(nb)).fillna(0).to_numpy()) < 200] = 0
-        drift = drift + gaussian_filter1d(md, 1.0); drift -= drift.mean()
-    return drift
-PX = 128.0; OUT = f'{P4}/classical'
+from simcode.fourpi.zdrift import zdrift_struct
+from simcode.fourpi.setup import PX_NM as PX
+OUT = f'{P4}/classical'
 nshow = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 C = np.load(f'{OUT}/real/cl_NPC_wv_all.npz')
 k = C['keep_pix'] & np.isfinite(C['xpd']) & np.isfinite(C['zp'])

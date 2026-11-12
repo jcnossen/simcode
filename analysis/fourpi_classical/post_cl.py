@@ -1,5 +1,5 @@
 """Merge the per-file classical tables of a movie, lateral drift by DME v2 (analysis/baselines/dme_drift.py, the same
-call as the network's post4pi.py) on the kept published-style rows, applied to all classical positions.
+call as the network's post_w4pi.py) on the kept published-style rows, applied to all classical positions.
 Global frame = (file - first file) * 18000 + 6 w, first file MT 000, NPC 002 (as the network tables).
 Axial: as the network: sample z drift moves z_ast and the 4Pi phase together; the per-block term of the phase field
 takes the interferometer drift; no separate z correction.
@@ -38,12 +38,11 @@ def main():
     F = int(R['frame'].max()) + 6
     tag = f'cl_{a.cell}{a.tag}'
     k = R['keep'] & np.isfinite(R['x'])
-    fn = f'{OUT}/{tag}_dmein.npz'
-    np.savez(fn, frame=R['frame'][k], x=R['x'][k], y=R['y'][k], sx=R['sx'][k], sy=R['sy'][k])
-    r = subprocess.run([sys.executable, f'{REPO}/analysis/baselines/dme_drift.py', fn, f'{OUT}/{tag}_drift.npy', str(F)],
-                       capture_output=True, text=True, env=dict(os.environ))
-    print(r.stdout[-800:], r.stderr[-1500:])
-    d = np.load(f'{OUT}/{tag}_drift.npy')
+    from simcode.util.drift import drift_of_table
+    from simcode.fileio.work import atomic_save
+    d, dinfo = drift_of_table(dict(frame=R['frame'][k], x=R['x'][k], y=R['y'][k], sx=R['sx'][k], sy=R['sy'][k]), F, return_info=True)
+    print(f'DME v2 {dinfo["version"]} on {dinfo["n"]} rows, chosen {dinfo["chosen"]}; drift ptp {np.ptp(d, 0) * 128.0} nm')
+    atomic_save(f'{OUT}/{tag}_drift.npy', d)
     fi_ = np.clip(R['frame'] + 3, 0, F - 1)
     for a_, b_ in (('x', 'xd'), ('y', 'yd'), ('xp', 'xpd'), ('yp', 'ypd'), ('x0', 'x0d'), ('y0', 'y0d')):
         R[b_] = R[a_] - d[fi_, 0 if a_[0] == 'x' else 1]

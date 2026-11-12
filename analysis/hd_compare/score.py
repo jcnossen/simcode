@@ -119,19 +119,8 @@ def load(kind, path, NF):
 
 
 def frc_res(x, y, half, pix_nm=5.0):
-    zoom = PX / pix_nm; W = int((X1 - X0) * zoom)
-    yy, xx = np.meshgrid(np.fft.fftfreq(W), np.fft.fftfreq(W), indexing='ij')
-    nbins = 300; rbin = np.minimum((np.sqrt(xx ** 2 + yy ** 2) / 0.5 * nbins).astype(int), nbins)
-    ims = []
-    for m in (half, ~half):
-        h, _, _ = np.histogram2d((y[m] - X0) * zoom, (x[m] - X0) * zoom, bins=(W, W), range=[[0, W], [0, W]])
-        ims.append(np.fft.fft2(h))
-    num = np.bincount(rbin.ravel(), np.real(ims[0] * np.conj(ims[1])).ravel(), nbins + 1)
-    den = np.sqrt(np.bincount(rbin.ravel(), (np.abs(ims[0]) ** 2).ravel(), nbins + 1) * np.bincount(rbin.ravel(), (np.abs(ims[1]) ** 2).ravel(), nbins + 1))
-    c = np.convolve((num / np.maximum(den, 1e-12))[:nbins], np.ones(5) / 5, mode='same')
-    fq = (np.arange(nbins) + 0.5) / nbins * 0.5 / pix_nm
-    below = np.nonzero((c < 1 / 7) & (fq > 1 / 500))[0]
-    return float(1 / fq[below[0]]) if len(below) else np.nan
+    from simcode.evalproto.frc import frc_fov
+    return frc_fov(x, y, half, X0, X1, PX, pix_nm)
 
 
 def main():

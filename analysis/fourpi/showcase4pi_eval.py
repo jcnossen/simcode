@@ -77,26 +77,7 @@ def astig_fit(F, lut, dev, chunk=20000):
     return R
 
 
-def frc(xa, ya, xb, yb, ext_a, ext_b, pix=4.0):
-    """FRC of two localization sets (nm coordinates), image extent ext_a, ext_b (nm) -> (freq 1/nm, frc, resolution nm)"""
-    na, nb = int(ext_a / pix), int(ext_b / pix)
-    def img(x, y):
-        ok = (x >= 0) & (x < ext_a) & (y >= 0) & (y < ext_b)
-        I = np.zeros((nb, na)); np.add.at(I, ((y[ok] / pix).astype(int), (x[ok] / pix).astype(int)), 1); return I
-    win = np.outer(np.hanning(nb), np.hanning(na)) ** 0.5
-    A = np.fft.fft2(img(xa, ya) * win); B = np.fft.fft2(img(xb, yb) * win)
-    fy = np.fft.fftfreq(nb, pix); fx = np.fft.fftfreq(na, pix)
-    fr = np.hypot(fy[:, None], fx[None])
-    df = 1.0 / (max(na, nb) * pix)
-    k = (fr / df).astype(int).ravel(); nmax = int(0.5 / pix / df)
-    num = np.bincount(k, (A * B.conj()).real.ravel(), nmax + 1)[:nmax]
-    da = np.bincount(k, (np.abs(A) ** 2).ravel(), nmax + 1)[:nmax]; db = np.bincount(k, (np.abs(B) ** 2).ravel(), nmax + 1)[:nmax]
-    c = num / np.sqrt(np.maximum(da * db, 1e-30))
-    f = (np.arange(nmax) + 0.5) * df
-    cs = np.convolve(c, np.ones(5) / 5, 'same')
-    lo = np.nonzero((cs < 1 / 7) & (f > 1 / 300))[0]
-    res = float(1 / f[lo[0]]) if len(lo) else float('nan')
-    return f, c, res
+from simcode.evalproto.frc import frc_hann as frc  # noqa: FRC of a rectangular field with a Hann window -> (freq 1/nm, frc, resolution nm)
 
 
 def main():

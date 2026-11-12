@@ -12,14 +12,8 @@ from simcode.util import drift as DR
 
 T = np.load(sys.argv[1]); out = sys.argv[2]
 F = int(sys.argv[3]) if len(sys.argv) > 3 else int(T['frame'].max()) + 6
-m = (T['good'] & T['disjoint']) if 'good' in T.files else np.ones(len(T['frame']), bool)
-pos = np.c_[T['x'][m], T['y'][m]].astype(np.float32); fr = (T['frame'][m] + 3).astype(np.int64)
-crlb = np.c_[T['sx'][m], T['sy'][m]].astype(np.float32)
-ok = np.isfinite(pos).all(1) & np.isfinite(crlb).all(1) & (crlb.max(1) < 1.0) & (crlb.min(1) > 0) & (fr >= 0) & (fr < F)
-pos, fr, crlb = pos[ok], fr[ok], crlb[ok]
 t0 = time.time()
-d, info = DR.dme_v2(pos, fr, crlb, F, return_info=True)
-d = np.asarray(d)[:F, :2]
+d, info = DR.drift_of_table(T, F, return_info=True)        # the row selection is simcode/util/drift.drift_rows
 np.save(out, d)
-print(f'DME v2 {info["version"]} on {len(pos)} rows, chosen {info["chosen"]}, {time.time() - t0:.0f} s; '
+print(f'DME v2 {info["version"]} on {info["n"]} rows, chosen {info["chosen"]}, {time.time() - t0:.0f} s; '
       f'drift ptp {np.ptp(d, 0) * 108.33} nm -> {out}')
