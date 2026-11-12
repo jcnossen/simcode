@@ -21,9 +21,13 @@ METH = [('gt', 'ground truth'), ('net', 'network (in-situ pattern + field)'), ('
         ('cl_pix', 'classical, pixel MLE'), ('astig', 'astigmatism-only z')]
 COL = {'net': '#2a78d6', 'net_bound': '#2a78d6', 'cl_pub': '#eb6834', 'cl_pix': '#1baf7a', 'astig': '#eda100', 'gt': '#52514e'}
 ZR = (-0.3, 0.3)
+SHORT = {'gt': 'ground truth', 'net': 'network', 'cl_pub': 'classical publ.', 'cl_pix': 'classical pix. MLE', 'astig': 'astig. only'}
 ZCMAP = LinearSegmentedColormap.from_list('zdiv', ['#3987e5', '#c3c2b7', '#eb6834'])
 ZOOMS = [((18.0, 15.0), 1.2), ((22.0, 38.5), 1.6)]          # centre (px), side (um): crossing A x B; C / E / F / B overlap
-SECT = [('x-z', 'y', 27.2, 28.8), ('y-z', 'x', 29.2, 30.8)]  # section strips (px)
+# section strips: (label, strip axis, strip from, to (px), crop along the section from, to (um from the region corner))
+SECT = [('x-z, through the crossing of zoom 1', 'y', 14.2, 15.8, 0.7, 1.9),
+        ('y-z, two tubes 100 nm apart in z', 'x', 29.2, 30.8, 2.4, 3.6),
+        ('x-z, through the crossings of zoom 2', 'y', 37.7, 39.3, 0.9, 2.1)]
 plt.rcParams.update({'font.size': 8, 'axes.labelsize': 8, 'axes.titlesize': 8, 'xtick.labelsize': 7, 'ytick.labelsize': 7,
                      'axes.spines.top': False, 'axes.spines.right': False})
 
@@ -35,7 +39,7 @@ def zrgb(x, y, z, x0, y0, ext, sr, blur=0.8):
     c = np.zeros((n, n)); zs = np.zeros((n, n))
     np.add.at(c, (iy[ok], ix[ok]), 1); np.add.at(zs, (iy[ok], ix[ok]), z[ok])
     cs = gaussian_filter(c, blur); zz = gaussian_filter(zs, blur) / np.maximum(cs, 1e-9)
-    v = np.clip(cs / max(np.percentile(cs[cs > 0], 99.5), 1e-9), 0, 1) if (cs > 0).any() else cs
+    v = np.clip(cs / max(np.percentile(cs[cs > 0], 97), 1e-9), 0, 1) ** 0.7 if (cs > 0).any() else cs
     rgb = ZCMAP(np.clip((zz - ZR[0]) / (ZR[1] - ZR[0]), 0, 1))[..., :3] * v[..., None]
     return rgb
 
@@ -72,10 +76,13 @@ def fig_render(tag, E):
             ax.add_patch(plt.Rectangle(((cx - LO) * PXN / 8 - h, (cy - LO) * PXN / 8 - h), 2 * h, 2 * h, fill=False, ec='w', lw=0.6))
         if i == 0:
             scalebar(ax, 1000 / ext, '1 µm')
-            for nm_, ax_, a0, a1 in SECT:
+            for k_, (nm_, ax_, a0, a1, c0, c1) in enumerate(SECT):
                 for v in (a0, a1):
-                    if ax_ == 'y': ax.axhline((v - LO) * PXN / 8, color='w', lw=0.4, ls=':')
-                    else: ax.axvline((v - LO) * PXN / 8, color='w', lw=0.4, ls=':')
+                    q = (v - LO) * PXN / 8; r = (c0 * 1000 / 8, c1 * 1000 / 8)
+                    if ax_ == 'y': ax.plot(r, (q, q), color='w', lw=0.5, ls=':')
+                    else: ax.plot((q, q), r, color='w', lw=0.5, ls=':')
+                q = (a1 - LO) * PXN / 8
+                ax.text(*(((c1 * 1000 / 8 + 4, q)) if ax_ == 'y' else (q + 4, c0 * 1000 / 8)), f'S{k_ + 1}', color='w', fontsize=6, va='top')
         for j, ((cx, cy), s) in enumerate(ZOOMS):
             e = s * 1000; ax = axs[i, 1 + j]
             ax.imshow(zrgb(x, y, z, cx * PXN - e / 2, cy * PXN - e / 2, e, 4.0, 1.0)); ax.set_xticks([]); ax.set_yticks([])
@@ -97,20 +104,21 @@ def fig_render(tag, E):
 
 
 def fig_sections(tag, E):
-    fig, axs = plt.subplots(len(METH), 2, figsize=(10.2, 1.25 * len(METH) + 0.4))
+    fig, axs = plt.subplots(len(METH), len(SECT), figsize=(10.2, 1.45 * len(METH) + 0.5), squeeze=False)
     for i, (nm, lab) in enumerate(METH):
         x, y, z = load(tag, nm)
-        for j, (snm, ax_, a0, a1) in enumerate(SECT):
-            sel = ((y if ax_ == 'y' else x) >= a0 * PXN) & ((y if ax_ == 'y' else x) < a1 * PXN)
-            along = (x if ax_ == 'y' else y)[sel]
-            im = dens_img(along, z[sel] * 1000, LO * PXN, HI * PXN, -350, 350, 6.0, 1.0)
+        for j, (snm, ax_, a0, a1, c0, c1) in enumerate(SECT):
+            s_ = y if ax_ == 'y' else x
+            sel = (s_ >= a0 * PXN) & (s_ < a1 * PXN)
+            along = (x if ax_ == 'y' else y)[sel] - LO * PXN
+            im = dens_img(along, z[sel] * 1000, c0 * 1000, c1 * 1000, -300, 300, 4.0, 1.0)
             ax = axs[i, j]
-            ax.imshow(im[::-1], cmap='Greys_r', extent=(0, (HI - LO) * PXN / 1000, -350, 350), aspect=1 / 1000, vmin=0, vmax=1)
-            ax.set_yticks([-300, 0, 300])
-            if j == 0: ax.set_ylabel(f'{lab}\nz (nm)', fontsize=7)
+            ax.imshow(im[::-1], cmap='Greys_r', extent=(c0, c1, -300, 300), aspect=1 / 1000, vmin=0, vmax=1)
+            ax.set_yticks([-200, 0, 200])
+            if j == 0: ax.set_ylabel(f'{SHORT[nm]}\nz (nm)', fontsize=7)
             if i == len(METH) - 1: ax.set_xlabel(f"{'x' if ax_ == 'y' else 'y'} (µm)")
             else: ax.set_xticklabels([])
-            if i == 0: ax.set_title(f'{snm} section, {ax_} = {a0 * PXN / 1000:.2f}-{a1 * PXN / 1000:.2f} µm (strip {(a1 - a0) * PXN:.0f} nm)')
+            if i == 0: ax.set_title(f'S{j + 1}: {snm}\n({ax_} strip {(a1 - a0) * PXN:.0f} nm wide)')
     fig.text(0.99, 0.005, f"{E['dens']:.2f} ON emitters / µm² / frame", ha='right', fontsize=7, color='#52514e')
     plt.tight_layout(rect=(0, 0.02, 1, 1)); fig.savefig(f'{OUT}/sections_{tag}.png', dpi=150); plt.close(fig)
 

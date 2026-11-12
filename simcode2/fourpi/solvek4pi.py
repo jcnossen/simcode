@@ -186,13 +186,13 @@ class SolveK(Solve4Pi):
         starts = [(js, 0.0) for js in zstarts] if not fit_phi else \
             [(0.0, ph) for ph in (phistarts if phistarts is not None else (0.0, 2.1, 4.2))]
         for js, ph in starts:
-            z0 = (o['z'] + js * Lam).clamp(-0.58, 0.58)
+            z0 = (o.get('z0', o['z']) + js * Lam).clamp(-0.58, 0.58)       # 'z0': optional start value (the prior stays o['z'])
             if mode == 'kin':
-                th = torch.cat([o['dxy'], z0[:, None], kin0], 1)
+                th = torch.cat([o.get('xy0', o['dxy']), z0[:, None], kin0], 1)
             elif mode == 'on':
                 th = torch.stack([o['dxy'][:, 0], o['dxy'][:, 1], z0, (Fi.mean(1) / 0.85).clamp(min=5)], 1)
             else:
-                th = torch.cat([o['dxy'], z0[:, None], Fi / 0.85], 1)
+                th = torch.cat([o.get('xy0', o['dxy']), z0[:, None], Fi / 0.85], 1)
             if fit_phi:
                 th = torch.cat([th, (Phi0 + ph)[:, None]], 1)
             if nb:

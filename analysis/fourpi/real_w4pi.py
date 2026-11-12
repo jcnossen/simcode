@@ -36,7 +36,7 @@ def main():
     p.add_argument('--p_min', type=float, default=0.5); p.add_argument('--tile', type=float, default=12.0); p.add_argument('--tblk', type=int, default=50)
     p.add_argument('--dnll', type=float, default=9.21); p.add_argument('--chi2_max', type=float, default=2.5)
     p.add_argument('--coh', type=float, default=1.0, help='interference-contrast scale of the PSF model in the solve')
-    p.add_argument('--iters', type=int, default=20); p.add_argument('--batch', type=int, default=3000)
+    p.add_argument('--iters', type=int, default=15); p.add_argument('--batch', type=int, default=3000)
     p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
@@ -131,9 +131,10 @@ def main():
             j = np.arange(i, min(i + a.batch, n)); oo, o = chunk_out(j); jt = torch.tensor(j, device=dev)
             arg = (Phi0[jt], tdoff[jt], m[jt], psi[jt])
             ron = sv.solve(oo, *arg, mode='on', iters=a.iters)
-            rfr = sv.solve(oo, *arg, mode='free', iters=a.iters, zstarts=(0.0,))
-            k1, k2 = kin_starts({'th': torch.cat([ron['th'][:, :3], rfr['th'][:, 3:]], 1)}, m[jt], psi[jt], sv)
-            rk = best_of(sv.solve(oo, *arg, mode='kin', kin0=k1, iters=a.iters), sv.solve(oo, *arg, mode='kin', kin0=k2, iters=a.iters))
+            o2 = dict(oo, z0=ron['th'][:, 2], xy0=ron['th'][:, :2])     # free / kinetics start at the on-through solution (one z start)
+            # kinetics starts from the per-frame photon read-outs (matched-filter read-out summed over channels); no free solve
+            k1, k2 = kin_starts({'th': torch.cat([ron['th'][:, :3], oo['Y'][..., 0].sum(2).clamp(min=0) / 0.85], 1)}, m[jt], psi[jt], sv)
+            rk = best_of(sv.solve(o2, *arg, mode='kin', kin0=k1, iters=a.iters, zstarts=(0.0,)), sv.solve(o2, *arg, mode='kin', kin0=k2, iters=a.iters, zstarts=(0.0,)))
             usek = (ron['chi2'] - rk['chi2']) > a.dnll
             pick = lambda A, B: torch.where(usek.reshape(-1, *([1] * (A.dim() - 1))), A, B)
             tw = (torch.minimum(rk['th'][:, 5], torch.tensor(6.0, device=dev)) - torch.maximum(rk['th'][:, 4], torch.tensor(0.0, device=dev))).clamp(min=0)

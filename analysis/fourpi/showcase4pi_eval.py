@@ -29,10 +29,51 @@ REPO = '/home/jc/simcode2'
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simmovie4pi import PX
-from simeval4pi import gt_units, match, classical, crlb_units, EDGES
+from simeval4pi import gt_units, match, crlb_units, EDGES
 from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode2.fourpi.lm import lm_poisson_j, fisher_j, crlb
 
 NM = PX * 1000
+
+
+def astig_fit(F, lut, dev, chunk=20000):
+    """the summed-SMLM part of simeval4pi.classical (identical model, starts, iterations and quality flags), without
+    its aperture-photometry 4Pi z (not used here; that loop costs ~45 ms per candidate)"""
+    v = 24 * 1.3
+    def fj(th):
+        x, y, z, N, b = th.unbind(1)
+        out = [L.evaluate(torch.stack([x, y, z], 1), True) for L in [lut.luts[0][c] for c in range(4)]]
+        g = sum(o[0] for o in out); gx = sum(o[1] for o in out); gy = sum(o[2] for o in out); gz = sum(o[3] for o in out)
+        mu = N[:, None, None] * g + b[:, None, None]
+        J = torch.stack([N[:, None, None] * gx, N[:, None, None] * gy, N[:, None, None] * gz, g, torch.ones_like(g)], -1)
+        return mu.reshape(len(th), -1), J.reshape(len(th), -1, 5)
+    lo = torch.tensor([-3, -3, -0.6, 1, 0], device=dev, dtype=torch.float32); hi = torch.tensor([3, 3, 0.6, 1e6, 1e3], device=dev, dtype=torch.float32)
+    R = {k: [] for k in ('chi2px', 'conv', 'at_bound', 'x', 'y', 'z', 'sx', 'sy', 'sz', 'N')}
+    roi_all = F['roi_sum']
+    for i in range(0, len(roi_all), chunk):
+        roi = torch.tensor(roi_all[i:i + chunk], device=dev); n = len(roi)
+        dd = roi.reshape(n, -1)
+        bg0 = roi[:, [0, -1]].median(-1).values.median(-1).values
+        N0 = (dd - bg0[:, None]).sum(1).clamp(min=50)
+        best = None
+        for zs in (-0.3, 0.0, 0.3):
+            th0 = torch.stack([torch.zeros(n, device=dev), torch.zeros(n, device=dev), torch.full((n,), zs, device=dev), N0, bg0], 1)
+            th, ll, _ = lm_poisson_j(fj, dd, th0, v, lo=lo, hi=hi, iters=30)
+            if best is None: best = (th, ll)
+            else:
+                b = ll > best[1]; best = (torch.where(b[:, None], th, best[0]), torch.where(b, ll, best[1]))
+        th_s = best[0]
+        cr = crlb(fisher_j(fj, th_s, v))
+        mu_f, _ = fj(th_s)
+        R['chi2px'].append((((dd - mu_f) ** 2) / (mu_f.clamp(min=1e-6) + v)).mean(1))
+        th_c, _, _ = lm_poisson_j(fj, dd, th_s, v, lo=lo, hi=hi, iters=10)
+        R['conv'].append(((th_c[:, :2] - th_s[:, :2]).abs().max(1).values < 0.01) & ((th_c[:, 2] - th_s[:, 2]).abs() < 0.002))
+        R['at_bound'].append((th_s[:, :2].abs() >= 2.95).any(1) | (th_s[:, 2].abs() >= 0.595) | (th_s[:, 3] <= 1.5) | (th_s[:, 4] <= 1e-3) | (th_s[:, 4] >= 999))
+        for k, t_ in (('x', th_s[:, 0]), ('y', th_s[:, 1]), ('z', th_s[:, 2]), ('sx', cr[:, 0]), ('sy', cr[:, 1]), ('sz', cr[:, 2]), ('N', th_s[:, 3])):
+            R[k].append(t_)
+    R = {k: torch.cat(v_).cpu().numpy() for k, v_ in R.items()}
+    R['x'] = F['cx'] + R['x']; R['y'] = F['cy'] + R['y']; R['w'] = F['w']
+    return R
 
 
 def frc(xa, ya, xb, yb, ext_a, ext_b, pix=4.0):
@@ -104,9 +145,11 @@ def main():
     # ---- methods
     F = np.load(f'{d}/front_SIM_000_{a.model}.npz')
     fc = f'{d}/classical_{a.model}_q.npz'
-    if os.path.exists(fc): C = dict(np.load(fc))
+    fa = f'{out}/astig.npz'
+    if os.path.exists(fc): C = dict(np.load(fc))          # simeval4pi.classical cache (same fields)
+    elif os.path.exists(fa): C = dict(np.load(fa))
     else:
-        C = classical(d, meta, F, lut, dev); np.savez(fc, **C)
+        C = astig_fit(F, lut, dev); np.savez(fa, **C)
     print(f'astig baseline done {time.time() - t0:.0f}s', flush=True)
     S = {}
     for nm, pt in (('net', 'iterv10'), ('net_bound', 'oraclev10_phiO')):
