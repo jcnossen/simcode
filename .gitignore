@@ -14,3 +14,4 @@ external/
 models/**/*.pt
 models/*.pt
 *.joblib
+models/**/*.png

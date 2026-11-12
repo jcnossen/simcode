@@ -212,3 +212,24 @@ G4 identical (181 numbers; this also covers the step-1 edits of `solve4pi.py`, `
 (1 of 1 files, all arrays); C4: `val_iso.npz` and `val_iso.txt` identical, per-file table identical, full-driver table,
 patch meta and patch file identical; PS 8 of 8 files identical (chunk files and tables), metrics json identical.
 The 4Pi pipelines and the gate are deterministic on this machine, so bit-identity is the criterion for them as well.
+
+## Step 3: source-only repository (user decision 3)
+
+- `git rm --cached` (the files stay on disk; history is **not** rewritten): the 24 tracked network / fit-state files under
+  `models/` (`*.pt`: the sets m1809, m25, psf3dmix, psf3dmix_pair, the old default set det_n1 / hd_sc5nb / p2_det /
+  p2_head_long, hd_sc7bg, the two ablation heads, the two DECODE models, the bead-fit state) and
+  `models/insitu/beads/psf_fit_sign-1_na149_ball_drift_xz.png`. `.gitignore` already excluded `models/**/*.pt`; `*.png`
+  under `models/` added.
+- Kept tracked, flagged for a decision: the four camera-map files `models/insitu/camera_maps_*.npz` (85-130 kB each; every
+  in-situ calibration json refers to one), `analysis/simreal/fields/field_own10_real{05,25}.pt` (25 kB each; pattern-field
+  inputs of the simulated-movie recipes), `tests/data/pattern_est_1809_2.pt` (9 kB test fixture), and the text result
+  snapshots under `analysis/results/` (140 files, 1.1 MB; outputs, but not binaries).
+- Added: `models/README.md` (what is in git, the three production sets with file names, sizes and sha256 prefixes, which
+  other weights the kept code can use, the recipe of a set, the note that weights are distributed separately and that the
+  location is not decided). No fetch script: there is nowhere to fetch from yet.
+- Added to git: the six calibration json files of the set g13 (`models/calib/calib_{sc_hd,p2L}_g13{,_real}.json`,
+  `models/calib/sigu/sigu_p{1,2}_g13.json`), copied unchanged from the main tree's `models/`, where they are untracked.
+  Without them the set g13 of `netsets.json` is incomplete in a clone.
+
+Check: `git archive` of the commit into an empty directory (= a fresh checkout without weights), config pointing `models`
+at the directory that holds the weights: S, `tests/test_fileio.py` and T pass (result below).
