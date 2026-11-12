@@ -227,7 +227,7 @@ def run_dir(d, nmax=120000, n_chunks=5, cal0=None, n_iter=3, log=print, fast=Tru
     the movie (<= nmax rows), started at the sim-sigma calibration cal0 (default models/calib/calib_sc_hd_sc5nbb15_pm_bright.json),
     n_iter fixed-point iterations. Returns dict(theta, hist, q50, n_rows)."""
     from simcode2 import config
-    cal0 = cal0 or config.model(config.CAL_P1_SIM)
+    cal0 = cal0 or config.model(config.CAL_P1_AUTOC_START)
     cal0 = json.load(open(cal0)) if isinstance(cal0, str) else dict(cal0)
     nch = len(glob.glob(d + '/pass1_*.npz'))
     rows = pipeline_rows(d, chunks=sorted(set(np.linspace(0, nch - 1, min(n_chunks, nch)).round().astype(int).tolist())), nmax=nmax)

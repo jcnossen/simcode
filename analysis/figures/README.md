@@ -12,7 +12,7 @@ one. Every checked output was pixel-identical or byte-identical, except as noted
 
 | script | makes | inputs |
 |---|---|---|
-| `crlb_all_v2.py [sc5nb,sc6n,sc7bg] [11z]` | `crlb_all_v2.png`, `<out>/sc7/crlb_all_v2.txt` | `<out>/gate/*.npz` (networks, `_scode_ni6_3`), `<out>/sc7/gate_lm/*_lm11*.npz`, `*_sf11.npz`, `<out>/sc7/icrlb_*.npz` |
+| `crlb_all_v2.py [sc5nb,sc6n] [11z]` | `crlb_all_v2.png`, `<out>/sc7/crlb_all_v2.txt` | `<out>/gate/*.npz` (networks, `_scode_ni6_3`), `<out>/sc7/gate_lm/*_lm11*.npz`, `*_sf11.npz`, `<out>/sc7/icrlb_*.npz` |
 | `icrlb_report.py` | `crlb_sc6_all.png`, `<out>/sc7/icrlb_report.txt` | `<out>/sc7/icrlb_*.npz` |
 | `lm_robust.py` | `<out>/sc7/lm_robust.txt` | as `crlb_all_v2.py` |
 | `plot_crlb_sc3.py` | `crlb_sc3.png` (generic gate CRLB plot; `curves()` is used by the scripts above) | `<out>/gate` |

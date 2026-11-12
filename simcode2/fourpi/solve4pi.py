@@ -173,11 +173,6 @@ class Solve4Pi:
         mu_p = torch.stack([o['dxy'][:, 0], o['dxy'][:, 1], o['z']], 1)
 
         Lfull = o.get('Lfull')   # (2026-11-12) optional explicit Cholesky factor [n,48,48] of the full read-out covariance
-        if Lfull is None and o.get('U') is not None:    # pass-1 head (head4pi_p1): full 48 x 48 covariance = 2 x 2 blocks + U U^T
-            from simcode2.fourpi.head4pi_p1 import full_cov
-            oc = dict(o, L=torch.stack([torch.stack([a, torch.zeros_like(a)], -1), torch.stack([b, d], -1)], -2))
-            S = full_cov(oc)
-            Lfull = torch.linalg.cholesky(S + 1e-3 * torch.eye(48, device=dev))
 
         def resid(th):
             pred, J = self.model(th, mode, Phi0, doff, m, psi, fit_phi)

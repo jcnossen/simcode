@@ -15,6 +15,7 @@ emitter position is unbiased by construction, without knowing the 4Pi phase.
 import torch
 
 DEFAULT = (('mf', 0.003), ('gauss', 1.0))
+WINS_K = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))   # the K = 4 read-outs of the learned-window head (head4pi_w)
 
 
 def needs_coh(wins):

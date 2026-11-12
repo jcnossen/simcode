@@ -31,12 +31,10 @@ python -m simcode2.insitu.camera_maps --movie dnapaint/0.5nM/cover1/1/simflux_5.
 #    >= 6 frames, no other loc within 7 px; cut into 11 x 11 x 12-frame ADU samples (0.5 nM: 52863 samples).
 python -m simcode2.insitu.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
 
-# 3. stage A, camera: Zernikes + focus + offset + read noise (+ optionally gain) by Adam on 8000 samples, per-frame I
-#    and bg. Gain is not identifiable from sparse data: fix it (0.56, robust var-vs-level fit). The development runs
-#    (only their json outputs are recorded, not the full command lines): --gain 0.56 -> offset 99.34 ADU, rn 1.90 e;
-#    + --fit-apod 1 -> 99.21 ADU, rn 1.89 e. The shipped values are offset 99.3 ADU and rn 1.9 e (the read noise absorbs
-#    model error; the solve uses 0.9 e and the per-pixel map).
-python -m simcode2.insitu.fit_insitu --gain 0.56 --out <out>/insitu/insitu_0.5nM_g056
+# 3. stage A, camera: the shipped camera values (gain 0.56 e/ADU from the robust var-vs-level fit, camera_gain.py;
+#    offset 99.3 ADU, read noise 1.9 e) come from an earlier Adam fit of Zernikes + focus + offset + read noise on 8000
+#    samples (fit_insitu.py, removed from the tree in the 2026-11 cleanup; it also produced the bead-fit initialisation
+#    used below). They are fixed inputs of step 4.
 
 # 4. stage A, PSF (variable projection; this is what calib_0.5nM.json holds): per-frame I and per-(sample, angle) bg
 #    solved exactly (varpro.py) each iteration, x, y, z per sample + Zernike 5..21 + focus by Adam (600 iterations,

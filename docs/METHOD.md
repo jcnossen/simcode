@@ -49,7 +49,6 @@ All networks are trained only on the experiment-matched simulator (`hd/realsim.p
 | det_n1 | `python -m simcode2.det.up2 train --up 1` | focal loss on the nearest-pixel targets, offset NLL |
 | sc5nb | `python -m simcode2.hd.sc4 prep5`, then `train --arch sc4n --init <sc5n> --bright_tail ...` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
 | p2_det / p2_head_long | `python -m simcode2.p2.det2 train`, `python -m simcode2.p2.head2 train --pert real` | illumination channels zero-initialised from det_n1 / sc5nb |
-| hd_sc7bg (optional) | `python -m simcode2.hd.sc7bg train` | sc5nb + a dense BgNet background (bg 3.5× → 1.1× CRLB, positions unchanged); not production |
 
 ### Exact training commands of the shipped networks
 
@@ -81,14 +80,11 @@ python -m simcode2.p2.head2 train --out runs/p2_head --det runs/p2_det/ckpt_2500
 python -m simcode2.p2.head2 train --out runs/p2_head_long --det runs/p2_det/final.pt --init runs/p2_head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
     --pert_model real --hold_v1 15
-# hd_sc7bg (optional): sc7bg trainer, --init runs/hd_sc5nb/final.pt, args in models/hd_sc7bg.pt
 ```
 
 All four entry points were run for 3 steps with these arguments (2026-11-11, `--init` from the shipped files). On this
 server, put the env's `bin/` on PATH (`conda activate`): otherwise triton cannot find `ptxas` in the head trainers'
-backward pass. `simcode2/hd/sc.py` (`python -m simcode2.hd.sc`) is the base SCHead trainer of the earlier sc heads, and
-`python -m simcode2.det.train` is the earlier pattern-free detector trainer of the det_stem lineage (DetNet input variants,
-`--pert` PSF-perturbation augmentation). Neither produced a shipped network.
+backward pass.
 
 `hd/realgen.py` (`--gen r1`) is an optional realistic training generator. The networks retrained with it (p1r / p2r) were
 **not** adopted: the pre-registered rules failed.

@@ -31,7 +31,7 @@ Metrics:
            null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm).
   Moving (S3): per 1000-frame block Jaccard at 10 / 20 / 40 nm, GT = the trajectory points of the block (as
            smlmtorch fig_moving_tubules.py compute_jaccards; frames strictly inside (i bs, (i + 1) bs) as there).
-usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--netset default] [--kind density|moving]
+usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--netset m1809] [--kind density|moving]
 outputs: <run dir>/metrics.json, metrics.png"""
 import os, sys, json, argparse, glob
 import numpy as np
@@ -107,7 +107,7 @@ def u_all(x, y, sig, base, tile=10.0):
     return u
 
 
-def method_paths(run, netset='default'):
+def method_paths(run, netset='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
              decode=f'{run}/decode/locs.npz', v2=f'{run}/v2_{netset}/locs_p2_sim.npz')
     P['v2q45'] = P['v2']                                   # 'SIMCODE v2, u <= 0.45' (main v2 row; 'v2 all' removed 2026-11-12)
@@ -323,7 +323,7 @@ def main():
     ap.add_argument('run')
     ap.add_argument('--movie', default=None)
     ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--kind', default=None)
     ap.add_argument('--timebins', type=int, default=120)
     a = ap.parse_args()

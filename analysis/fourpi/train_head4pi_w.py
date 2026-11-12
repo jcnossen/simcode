@@ -16,7 +16,7 @@ from simcode2.fourpi.ckpt import save as safe_save
 from simcode2.fourpi.lut4pi import LUT4Pi
 from simcode2.fourpi.sim4pi import Sim4Pi
 from simcode2.fourpi.head4pi import nll_prior
-from simcode2.fourpi.head4pi_k import WINS_K
+from simcode2.fourpi.windows4pi import WINS_K
 from simcode2.fourpi.head4pi_w import Head4PiW
 from simcode2.fourpi.solvek4pi import SolveK
 from simcode2.fourpi.solveloss4pi import solve_loss

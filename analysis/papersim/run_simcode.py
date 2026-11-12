@@ -1,6 +1,6 @@
 """SIMCODE v2 on a papersim movie: `python -m simcode2.run` unchanged (production stages: pass 1, pattern estimate, solve,
 pass 2), with the movie's calib_sim.json (averaged 1809/2 PSF + simulated camera), the whole 40 x 40 (or 50 x 50) FOV as the
-output region, and a network set from netsets.json (--netset; the choice of set is open, the default = current production).
+output region, and a network set of simcode2/netsets.json (--netset; default m1809 = the set of the realistic-PSF simulations).
 Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the set, fixed c: --autoc 0) or real (the
 real-movie calibrations the production runs used) or autoc (--autoc 1, the automatic (c, c_a) per dataset).
 
@@ -9,7 +9,7 @@ strict.py hard-codes the real sensor crop (5, 5, 110) for its 10-px tiles, 20-nm
 here CROP (and the tile_of / bin20 defaults) are set to (0, 0, W) in this process only (no file is changed; a --crop option in
 strict.build_table would make this unnecessary). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py
 (sel, strict, ...), and <out>/locs_sim_info.json.
-usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--netset default] [--cal_kind sim|real|autoc]
+usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--netset m1809] [--cal_kind sim|real|autoc]
           [--nframes N] [--out <movie dir>/v2_<netset>] [--no_pass2] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess
 import numpy as np
@@ -19,9 +19,8 @@ sys.path.insert(0, HERE); sys.path.insert(0, REPO)
 
 
 def netset(name):
-    S = json.load(open(os.path.join(HERE, 'netsets.json')))
-    if name not in S: raise KeyError(f'netset {name!r} not in netsets.json ({[k for k in S if not k.startswith("_")]})')
-    return S[name]
+    from simcode2 import config
+    return config.netset(name)
 
 
 def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
@@ -43,7 +42,7 @@ def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('movie_dir')
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--cal_kind', default='sim', choices=['sim', 'real', 'autoc'])
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--out', default=None)

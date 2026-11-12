@@ -108,7 +108,7 @@ def check():
 
 # imports that are optional or come from external checkouts (old code base, DME, DECODE, spline PSF, published 4Pi code)
 OPTIONAL = {'smlmtorch', 'dme', 'decode', 'torch_convspline', 'h5py', 'setproctitle', 'fastpsf', 'photonpy', 'picasso', 'cupy',
-            'joblib', 'sklearn', 'pywt', 'napari', 'zarr', 'tqdm', 'yaml'}
+            'joblib', 'sklearn', 'pywt', 'napari', 'zarr', 'tqdm', 'yaml', 'pearson_corr'}
 # historical documents: they describe removed code on purpose
 SKIP_MENTIONS = {'docs/CLEANUP_PLAN.md', 'docs/CLEANUP_LOG.md', 'docs/RESULTS.md', 'analysis/results/README.md'}
 

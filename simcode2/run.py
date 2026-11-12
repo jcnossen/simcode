@@ -87,7 +87,7 @@ def main(argv=None):
                 from simcode2 import autoc
                 print('autoc: estimating (s, c, c_a) on the pass-1 rows', flush=True)
                 E = autoc.run_dir(a.out, fast=bool(a.autoc_fast))
-                json.dump(dict(E, cal0=config.CAL_P1_SIM), open(os.path.join(a.out, 'autoc_est.json'), 'w'), indent=1, default=float)
+                json.dump(dict(E, cal0=config.CAL_P1_AUTOC_START), open(os.path.join(a.out, 'autoc_est.json'), 'w'), indent=1, default=float)
                 json.dump(autoc.make_calib(E['theta'], src=os.path.join(a.out, 'autoc_est.json')), open(cal, 'w'), indent=1)
                 ST['autoc_s'] = time.time() - t0
                 print('autoc theta s %.3f c %.3f c_a %.3f (s is a nuisance, not applied)' % tuple(E['theta']), flush=True)

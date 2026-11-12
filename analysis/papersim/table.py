@@ -1,6 +1,6 @@
 """Print the metrics table of a papersim run: python analysis/papersim/table.py <run dir> [netset]"""
 import json, sys, os
-run = sys.argv[1]; ns = sys.argv[2] if len(sys.argv) > 2 else 'default'
+run = sys.argv[1]; ns = sys.argv[2] if len(sys.argv) > 2 else 'm1809'
 R = json.load(open(os.path.join(run, f'metrics_{ns}.json')))
 print(f"{R['run']}  ({R['nframes']} frames)")
 print(f"{'method':8s} {'n_all':>7s} {'n_disj':>7s} {'n_frc':>6s} {'FRC nm':>7s} {'J_end':>6s} {'J_frcset':>8s} {'recall':>6s} {'rms x,y nm':>14s} {'med sig nm':>14s} {'med|e|/s':>12s} {'offset nm':>13s}")

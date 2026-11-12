@@ -18,7 +18,7 @@ Evaluation per held-out movie: reliability (10 bins), Brier (model / constant / 
 (t 0.9 / 0.95 / 0.99) and u <= 0.45 (strict_u, the current paper rule): fraction of rows kept, observed fraction valid, FRC
 (frc_fair halves, disjoint windows) and Jaccard (10 nm, papersim movies).
 Also: sigma check (item 5): robust z-scale of e / sigma and the fraction |z| > 3 per axis, on valid rows, single and all.
-usage: python analysis/papersim/pvalid.py [--netset default] [--test m05r3,D2,...] -> out/papersim/selection/pvalid_<netset>.{json,png,joblib}"""
+usage: python analysis/papersim/pvalid.py [--netset m1809] [--test m05r3,D2,...] -> out/papersim/selection/pvalid_<netset>.{json,png,joblib}"""
 import os, sys, json, glob, argparse, time
 import numpy as np
 from scipy.spatial import cKDTree
@@ -146,7 +146,7 @@ def sigma_check(z, L):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--test', default='m05r3,D2,D0.5,hollow_1809_2_R12.5_x1,hollow_1809_2_R25_x8,hollow_2.5nM_2_R25_x1,Dexp2')
     ap.add_argument('--max_train_rows', type=int, default=150000)
     a = ap.parse_args()

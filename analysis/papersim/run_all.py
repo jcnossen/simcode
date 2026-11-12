@@ -1,7 +1,7 @@
 """One command per papersim movie: all methods + metrics, resumable (a finished step is skipped; --redo <step> forces it).
 
   CUDA_VISIBLE_DEVICES=1 python analysis/papersim/run_all.py <movie dir> [--nframes N] [--run <run dir>]
-        [--steps base,decode,v2,metrics] [--netset default] [--cal_kind sim] [--decode_name dec_1809_2] [--redo v2]
+        [--steps base,decode,v2,metrics] [--netset m1809] [--cal_kind sim] [--decode_name dec_1809_2] [--redo v2]
 Run dir default: <movie dir>/full (all frames) or <movie dir>/cut<N> (first N frames). Steps:
   base     run_baselines.py: SMLM, SIMFLUX (estimated pattern), SIMFLUX (GT pattern)   -> <run>/base/{smlm,sf,sf_gtp}
   decode   run_decode.py                                                               -> <run>/decode/locs.npz
@@ -22,7 +22,7 @@ def main():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--run', default=None)
     ap.add_argument('--steps', default='base,decode,v2,metrics')
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--cal_kind', default='sim')
     ap.add_argument('--decode_name', default='dec_1809_2')
     ap.add_argument('--redo', default='')

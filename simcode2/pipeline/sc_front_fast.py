@@ -132,8 +132,6 @@ class QueuedFront:
         kw = {} if tf is None else dict(trunk_fn=tf)
         if kind == 'p2':
             return hc(pt, None, off, psf, nbp, ilp, **kw)
-        if getattr(h, 'bgmap', False):
-            raise NotImplementedError('sc7bg head: use the original sc_front path')
         if getattr(h, 'nbr', False):
             return hc(pt, None, off, psf, nbp, **kw)
         return hc(pt, None, off, psf)

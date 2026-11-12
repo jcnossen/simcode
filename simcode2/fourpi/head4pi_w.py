@@ -19,8 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from simcode2.nn.blocks import ResBlock
 from simcode2.fourpi.head4pi import Head4Pi, norm_photons
-from simcode2.fourpi.windows4pi import window
-from simcode2.fourpi.head4pi_k import WINS_K
+from simcode2.fourpi.windows4pi import window, WINS_K
 
 VREAD = 1.14 ** 2 + 0.2 ** 2
 

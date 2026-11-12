@@ -74,16 +74,49 @@ def model(name):
     return resolve(name, 'models')
 
 
-# production files (models directory, relative names)
-DET = 'det_n1.pt'                                              # pass-1 detector
-HEAD = 'hd_sc5nb.pt'                                           # pass-1 head (SCHead4, neighbour-aware)
-P2_DET = 'p2_det.pt'                                           # pass-2 (pattern-aware) detector
-P2_HEAD = 'p2_head_long.pt'                                    # pass-2 head (p2L)
-BGNET_HEAD = 'hd_sc7bg.pt'                                     # optional: sc5nb + dense BgNet background
-CAL_P1_REAL = 'calib/calib_sc_hd_sc5nbb15_pm_bright_real.json'  # pass-1 solve calibration, real-data sigma (fixed c 0.10 + 0.10)
-CAL_P1_SIM = 'calib/calib_sc_hd_sc5nbb15_pm_bright.json'       # same, sim sigma table (gate scenes; start of the automatic c)
-CAL_P1_AUTOC = 'calib/calib_sc_hd_sc5nbb15_pm_autoc1.json'     # sigma table for the automatic-(c, c_a) solve
-CAL_P2_REAL = 'calib/calib_p2L_b10_real.json'                  # pass-2 solve calibration, real-data sigma
-CAL_P2_SIM = 'calib/calib_p2L_movie_b10.json'                  # pass-2, sim sigma (movie benchmark)
-CAL_P2_GATE = 'calib/calib_p2L.json'                           # pass-2, gate calibration
-INSITU_05 = 'insitu/calib_0.5nM.json'                          # in-situ PSF + camera calibration, 0.5 nM movie (default PSF for sims)
+# ---- network sets: the single definition is simcode2/netsets.json (next to this file)
+NETSETS_FILE = Path(__file__).with_name('netsets.json')
+_nets = None
+
+
+def netsets():
+    """the whole netsets.json (network sets, '_default', '_production')"""
+    global _nets
+    if _nets is None: _nets = json.load(open(NETSETS_FILE))
+    return _nets
+
+
+def netset(name=None):
+    """network set by name (default: env SIMCODE2_NETSET, else '_default' of netsets.json) -> dict with the file names relative
+    to the models directory: det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u ('<pass 1 json>,<pass 2 json>'),
+    psf, name"""
+    S = netsets()
+    name = name or os.environ.get('SIMCODE2_NETSET') or S['_default']
+    if name.startswith('_') or name not in S:
+        raise KeyError(f'network set {name!r} is not defined in {NETSETS_FILE} (sets: {[k for k in S if not k.startswith("_")]})')
+    d = {k: v for k, v in S[name].items() if not k.startswith('_')}
+    d['name'] = name
+    return d
+
+
+def production():
+    """the paper's production recipe ('_production' of netsets.json): flags, selection, datasets (movie, calib, netset)"""
+    return netsets()['_production']
+
+
+# files of the default network set (models directory, relative names)
+_S = netset()
+DET = _S['det']                                                # pass-1 detector
+HEAD = _S['head']                                              # pass-1 head (SCHead4, neighbour-aware)
+P2_DET = _S['p2_det']                                          # pass-2 (pattern-aware) detector
+P2_HEAD = _S['p2_head']                                        # pass-2 head (p2L)
+CAL_P1_REAL = _S['cal_real']                                   # pass-1 solve calibration, real-data sigma (fixed c)
+CAL_P1_SIM = _S['cal_sim']                                     # same, sim sigma table (gate scenes)
+CAL_P2_REAL = _S['p2_cal_real']                                # pass-2 solve calibration, real-data sigma
+CAL_P2_SIM = _S['p2_cal_sim']                                  # pass-2, sim sigma (gate scenes)
+CAL_P2_GATE = CAL_P2_SIM
+# calibrations that exist only for the earlier default head (hd_sc5nb): the sigma table of the opt-in automatic-(c, c_a)
+# solve (run --autoc 1), and the templates from which the calibration of a new set is fitted (analysis/psfmatch/fit_cal_set.py)
+CAL_P1_AUTOC = 'calib/calib_sc_hd_sc5nbb15_pm_autoc1.json'
+CAL_P1_AUTOC_START = 'calib/calib_sc_hd_sc5nbb15_pm_bright.json'
+INSITU_05 = 'insitu/calib_0.5nM.json'                          # in-situ PSF + camera calibration, 0.5 nM movie (default PSF of the gate scenes)

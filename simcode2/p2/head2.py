@@ -233,10 +233,11 @@ def train(argv):
     Hd = make_hold(gen, pert_model=a.pert_model)
     Hv1 = make_hold(gen, n=a.hold_v1, seed=919) if a.hold_v1 else None
     ilon = not a.no_illum
-    # references: sc5nb on det_n1 candidates, and the initial head on this detector
+    # references: the default set's pass-1 head on its pass-1 detector's candidates (config.HEAD / config.DET; evaluation
+    # only), and the initial head on this detector
     from simcode2.hd.sc import load_det_front
     n1, _ = load_det_front(_cfg.model(_cfg.DET)); n1.eval()
-    ref = dict(sc5nb_detn1=eval_hold(n1, False, SCM.load(SC5NB), col, Hd), init=eval_hold(det, needs_il, head, col, Hd, ilon))
+    ref = dict(p1_ref=eval_hold(n1, False, SCM.load(SC5NB), col, Hd), init=eval_hold(det, needs_il, head, col, Hd, ilon))
     if Hv1: ref['init_v1'] = eval_hold(det, needs_il, head, col, Hv1, ilon)
     del n1
     json.dump(ref, open(a.out + '/eval_ref.json', 'w'), indent=1)

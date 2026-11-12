@@ -1,7 +1,9 @@
 """
 Regression test of the fast inference paths (the production default) against the reference code paths on a fixed,
 deterministic sim chunk. Run:  CUDA_VISIBLE_DEVICES=<gpu> python tests/test_fast_paths.py   (or: pytest tests)
-Needs a CUDA GPU (~1 min) and the models directory (simcode2/config.py). Checks:
+Needs a CUDA GPU (~1 min) and the models directory (simcode2/config.py). Networks and calibrations: the default network set
+(m1809, simcode2/netsets.json); PSF / camera: the in-situ calibration of the 1809/2 movie; pattern: the pattern estimate of
+the 1809/2 production run with that set (tests/data/pattern_est_1809_2.pt). Checks:
   pass 1 (Pass1SC vs Pass1SCFast; queued, 1- and 2-stream, partial head batches, optional compiled head):
     fp32 (bf16 autocast and TF32 off in both): identical candidate list, |dx|, |dy| < 1e-4 px, |dI| < 1e-2 ph
     bf16 (as in production): identical candidate list; I / x differences <= 2 x the bf16 noise reference (the original
@@ -15,14 +17,14 @@ import numpy as np, torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode2 import config
-CALIB = config.model(config.INSITU_05)
+CALIB = config.model('insitu/calib_1809_2_psf3d.json')
 HEAD = config.model(config.HEAD)
 DET = config.model(config.DET)
 P2H = config.model(config.P2_HEAD)
 P2D = config.model(config.P2_DET)
 SCAL = config.model(config.CAL_P1_REAL)
 P2CAL = config.model(config.CAL_P2_SIM)
-PATT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pattern_est_0.5nM.pt')   # real 0.5 nM pattern estimate
+PATT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pattern_est_1809_2.pt')   # pattern estimate of the 1809/2 movie (m1809 set)
 _C = {}
 # bf16 tolerances (production precision): the bf16 head output depends on the batch composition through the cuDNN algorithm
 # choice. On the real 0.5 nM chunk (frames 12000-18000) the original vs itself with another window batch differs by up to
@@ -47,7 +49,7 @@ def sim_movie():
     cal = load_calib(CALIB)
     with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
         torch.manual_seed(1234)
-        rs = RealSim('2.5nM', H=120, W=120, T=6, seed=1234)
+        rs = RealSim('2.5nM', H=120, W=120, T=6, seed=1234, calib=CALIB)
         o = rs.scene(40)
     fr = o['frames'].reshape(-1, 120, 120).cpu().numpy()
     adu = fr / cal['gain'] + cal['offset'][:120, :120][None]

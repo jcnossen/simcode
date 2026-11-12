@@ -14,7 +14,7 @@ Measures:
               R' = 0 on the boundary), dAIC = 2 dNLL - 2.
   'resolved'  (a dip a viewer sees) the dip ratio's upper 95 % bound < 1 AND p < 0.001.
   'detected'  (wall structure in the profile shape, no visible dip needed) p < 0.001 and the R' CI excludes 0.5 R.
-usage: python analysis/papersim/hollow_analysis.py <run dir> [--movie <movie dir>] [--nframes N] [--netset default]
+usage: python analysis/papersim/hollow_analysis.py <run dir> [--movie <movie dir>] [--nframes N] [--netset m1809]
 outputs: <run>/hollow_<netset>.json, hollow_<netset>.png (profiles with fits)"""
 import os, sys, json, argparse
 import numpy as np
@@ -121,7 +121,7 @@ def analyse(u, blk, Rt, nboot=400, nboot_fit=40, rng=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run'); ap.add_argument('--movie', default=None); ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     a = ap.parse_args()
     from simcode2.util.proctitle import auto; auto('psim-hollow')
     run = os.path.abspath(a.run); md = os.path.abspath(a.movie or a.run)

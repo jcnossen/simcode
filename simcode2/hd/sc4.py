@@ -27,7 +27,7 @@ import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode2.nn.blocks import ResBlock
-from simcode2.hd.sc import SCHead, PSFCol, patches, mod_slope, PP, norm_photons
+from simcode2.hd.sc import PSFCol, patches, mod_slope, PP, norm_photons
 from simcode2 import config
 
 dev = 'cuda'
@@ -435,7 +435,8 @@ def train(argv):
                     calib=[config.resolve(c) for c in a.calib.split(',')] if a.calib else None)
     psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
     nbr_on = a.arch == 'sc4n'
-    head = (SCHead4(6, a.ch, P=PP, bf16=bool(a.bf16)) if nbr_on else SCHead(6, a.ch, P=PP)).to(dev)
+    if not nbr_on: raise ValueError("only --arch sc4n is supported")
+    head = SCHead4(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
     if a.init:
         head.load_state_dict(torch.load(__import__('simcode2.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
     btail = tuple(float(v) for v in a.bright_tail.split(',')) if a.bright_tail else None
