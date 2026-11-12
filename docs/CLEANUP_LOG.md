@@ -426,7 +426,7 @@ Checks:
 | 114e914 | selection `main` / subsets / crop in `strict.py`; `run.py --netset / --dataset / --claim` |
 | 16792ba | steps B4 + B5: 4Pi network and classical pipelines on the shared reader and driver; three first-generation scripts removed |
 | 111e7cb | one FRC implementation, drift and z drift as library functions, `tests/test_tables.py`, 4Pi solve oracle test |
-| (next) | documentation: this log, `FILE_DESCRIPTION.md`, `README.md`, `docs/METHOD.md` |
+| (the commit after 111e7cb) | documentation: this log, `FILE_DESCRIPTION.md`, `README.md`, `docs/METHOD.md` |
 
 The checks of steps 1-3 ran on the tree of that step. The later steps were developed together and checked on two tree
 states: the 2D checks (T, P, tables, claim / kill tests) with the 2D changes in place, the 4Pi checks with the 4Pi changes
