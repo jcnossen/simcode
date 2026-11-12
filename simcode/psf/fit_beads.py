@@ -1,5 +1,5 @@
 """Fit the vectorial PSF model to the bead z-stacks in PSF_calib/raw (data root).
-The shipped fit models/insitu/beads/psf_fit_sign-1_na149_ball_drift.* (the Zernike init of insitu/fit_insitu.py) was made with
+The shipped fit models/insitu/beads/psf_fit_sign-1_na149_ball_drift.* (the Zernike init of the in-situ fit) was made with
   python -m simcode.psf.fit_beads --sign -1 --nball 32 --tag _na149_ball_drift
 (per-stack xy drift is always fitted; stack 7 held out)."""
 import argparse, json, os

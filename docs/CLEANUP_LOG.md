@@ -233,3 +233,258 @@ The 4Pi pipelines and the gate are deterministic on this machine, so bit-identit
 
 Check: `git archive` of the commit into an empty directory (= a fresh checkout without weights), config pointing `models`
 at the directory that holds the weights: S, `tests/test_fileio.py` and T pass (result below).
+Result of the fresh-checkout check (commit d918493 exported with `git archive`, the four m1809 weight files linked into its
+`models/`): S `tree ok`, T `ALL OK`.
+
+## Step B1 + B2: shared file handling (`simcode/fileio/`; user decision 4)
+
+The sub-package is called `fileio`, not `io` as in the plan: a directory `simcode/io` shadows the standard library's `io`
+for any script started from inside `simcode/`.
+
+- `fileio/movie.py`: one reader interface (`n`, `shape`, `parts`, `read(f0, f1, y0, x0, S)`), back ends `TiffMovie` (the
+  former `pipeline/common.Movie`, logic unchanged), `DcimgMovie` (the former `analysis/fourpi/dc.Dcimg`; with a channel
+  layout `read()` returns the mirrored channel crops), `ArrayMovie` (array or `.npy`), `open_movie` by extension, and
+  `Prefetch` (the former `PrefetchMovie`, now back-end independent; it replaces the three 4Pi reader threads).
+  `pipeline/common.py` keeps `Movie` and `PrefetchMovie` as aliases; `analysis/fourpi/dc.py` is a thin module over the
+  package reader and `fourpi/setup.py` (same names as before, so the calibration scripts are unchanged).
+- `fileio/work.py`: `Units` (output path pattern, done, claim marker with host / pid / process start time and takeover of a
+  dead process's claim, failed marker, per-unit record json, the worker loop `todo` which with claiming on ends only when
+  every unit is done), `atomic_savez / atomic_save / atomic_torch_save / atomic_json / atomic_text`, `disk_guard`.
+- `fileio/launch.py`: `python -m simcode.fileio.launch --gpus 1,2 [--log prefix] -- <command>` starts the command once per
+  GPU.
+- `util/ckpt.py` (moved from `fourpi/ckpt.py`): the atomic, disk-guarded checkpoint save is now used by all trainers
+  (`det/up2.py`, `hd/sc4.py`, `p2/det2.py`, `p2/head2.py` and the 4Pi trainers).
+
+Checks:
+- `tests/test_fileio.py` (CPU, new): TIFF across three parts with crops; a synthetic dcimg (header, raw, footer, crops
+  with mirroring); array / `.npy`; Prefetch hits and a miss; atomic write leftovers are neither done nor matched by
+  `*.npz`; resume; redo; failed marker; records; disk guard; 3 processes x 24 units: every unit exactly once, no claim
+  left; a claim of a dead pid is taken over, a live one is respected and the loop waits; `kill -9` during a 1.9 GB write
+  leaves no output; old / new environment and config-file names; network sets resolve. Result: `ALL OK`.
+- Old readers (code of 60cc637) against the new ones on real data (`np.array_equal`): the read plan and the reads of
+  chunks 0 and 6000 of the 1809/2 copy, the same through Prefetch (2 hits), and the channel crops, raw frames and footer
+  of frames 0-600 of NPC file 10 and MT file 3: all identical.
+
+## Step B3: the 2D pipeline on the shared driver (`pipeline/run_uncalibrated.py`, `run.py`)
+
+- The chunk loops of pass 1, the pass-1 solve and pass 2 are `Units` loops; every chunk output is written atomically
+  (audit defect 1); the pass-2 head-prior file `pass2_<tag>b_<f0>.npz` is written before the file that marks the chunk as
+  done, so a run killed in between repeats both. `pattern_est.pt`, `pattern_est.json`, `calib_autoc.json`, the tables,
+  `summary.json` and `runtime.json` are atomic as well.
+- Each chunk leaves a record (`pass1_<f0>.json`, `pass2_est_<f0>.json`, `pass2_est2_<f0>.json`: timings, counts);
+  `runtime.json` is merged from the records (audit defect 2: no file is rewritten from one process's partial view).
+- The duplicated block that loads the pass-1 rows is one function, `pipeline/common.load_pass1_rows` (pattern stage and
+  pattern-field stage; `autoc.py` and `strict.py` keep their own loaders: they read other columns / other files).
+- New flags: `--claim 1` (several copies of the command share the chunks; pass 1 and pass 2 are claimable, the pattern
+  stage, the automatic c and the tables run in one copy after all chunks of the previous stage exist; prefetch is off
+  with claiming), `--min_free_gb` (default 2: a chunk is not started below it).
+- Chunk boundaries, the read plan and the padding rule are unchanged.
+
+Checks:
+- T `ALL OK`; P 8 of 8 chunk files bit-identical to the production run; the two tables of those chunks identical to the
+  ones the code of 60cc637 wrote (all previous columns).
+- Claim test (`out/cleanup/claim_test.sh`: 12000 frames in 4 chunks of 3000, pattern estimated in the run, pass 2, tables):
+  one process against (a) two processes on two GPUs with `--claim 1` through the launcher: 18 of 18 files identical
+  (pass 1, solve, pass 2, tables), chunks split 2 + 2 (pass 1) and 1 + 3 (pass 2), the pattern stage ran in one process, no
+  claim left; (b) `kill -9` in the middle of pass-1 chunk 3, restart: 2 complete chunk files after the kill, no truncated
+  file, the restart processed chunks 6000 and 9000, 18 of 18 files identical; (c) the same with `--claim 1`: the claim of
+  the dead process was taken over ("pass1 3000: took over the claim of the dead process …"), 18 of 18 identical.
+- `runtime.json` has all four chunks per stage in the one-process and in the two-process run (12 record files each).
+
+## Step B4 + B5: the 4Pi pipelines on the shared reader and driver
+
+- `simcode/fourpi/run.py` (new): the learned-window network pipeline. `process_file(reader, ctx, args, file, nframes)` is
+  the former body of `analysis/fourpi/real_w4pi.py` (operation for operation); the file loop is a `Units` loop (finished
+  files skipped, atomic table, claim per file, disk guard **before** a file starts instead of dropping a finished result:
+  audit defects 3 and 4); the per-file summary is a record json, the merged `locs_<cell>_<head><tag>_summary.json` is
+  rebuilt from the records (defect 2). `analysis/fourpi/real_w4pi.py` is a 10-line wrapper (old command line unchanged);
+  `analysis/fourpi/run_full_w4pi.sh` calls the launcher (`GPUS=1,2`), the shell claim logic is gone.
+  Output names are unchanged (`<4Pi dir>/net/locs_<cell>_<file>_<head><tag>.npz`), so every reader of the tables works
+  as before; the plan's new directory layout is not introduced (open question 5 of the plan).
+- Functions that the pipeline imported from first-generation scripts now live in the package: `fourpi/front.py` (`Front`,
+  `PolyMap`, `blur`, registered sum, nearest-candidate distance), `fourpi/insitu.py` (`repattern_xy`, `pattern_psi`,
+  `phase_field`, `slotZ`, `refine_k`, `emitter_phase`). Removed: `analysis/fourpi/front4pi.py` (196 lines),
+  `solve_real4pi.py` (174), `simsolve4pi.py` (128): their `main()`s were the first-generation drivers (v2 / v3 tables).
+  `analysis/fourpi/register.py` and `pattern.py` import the moved functions, so the calibration chain is unchanged.
+- Classical pipeline: `real_cl.py` (per-file loop = `Units`, `--claim`, atomic table and summary; dcimg source through
+  `DcimgMovie`), `full_cl.py` (reader stage through `DcimgMovie` + `Prefetch`, temporary patch set written atomically with
+  its meta file as the ready marker; fitter stage claims the table through `Units` instead of renaming `.ready` to
+  `.claimed`; a failed file gets a `.failed` marker and no longer blocks the fitter's exit).
+- 4Pi constants are defined once (`fourpi/setup.py` from `datasets.json`): 17 repeated definitions of `GAIN`, `P`, `XLIM`,
+  `PX`, `DELTA` in `analysis/fourpi*` replaced by imports (values identical; `simmovie4pi.py` keeps its own simulation
+  constants).
+- Not done: the simulated-movie drivers (`simfront4pi.py`, `simlin4pi.py`, `sim_cl.py`; audit 2.9) still read `movie.npy`
+  themselves and keep their own loops. They share the solve and the in-situ functions with the real pipeline, not the
+  driver. Merging them changes the code path of the showcase figures and needs a showcase re-run to verify.
+
+Checks (code of 60cc637 as reference, 2400 frames of NPC file 10): N4 network table identical (all arrays), merged
+summary identical except the timings; G4 identical; C4: validation on isolated emitters identical (npz and text), per-file
+classical table identical, full driver (read stage, fit stage): table, saved patch meta and patch file identical.
+4Pi claim test (`out/cleanup/claim_test4pi.sh`, two files x 1200 frames): one process against two claiming workers
+started by the launcher, where the worker that held file 11 was killed with `-9` after 20 s: the surviving worker took
+the file over ("locs 11: took over the claim of the dead process …"), both tables identical to the one-process run, no
+claim left, both files in the merged summary.
+
+## Audit items (user decision 5)
+
+**Selection inside the package (2.6) and the crop (defect 5).** `simcode/strict.py`:
+- new column `main` = `isfinite(strict_u) & (strict_u <= u_max)`, `u_max` default 0.45 (`U_MAX`; `--u_max`), written into
+  the table (`main`, `u_max`) and the info json (`u_max`, `n_main`); `select(T, rule)` for `main / strict / sel / good /
+  all`; `write_subset` / `--subset main,strict` write `locs_p2_u045.npz` / `locs_p2_strictonly.npz` in the format of the
+  former ad-hoc heredocs of `runs/psfmatch/{prod,u045}.sh`.
+- the crop of the tiles and of the coverage is a parameter (`build_table(crop=)`, `--crop`), by default the output region
+  of the run (read from the `crop` entry of its pass-1 files); `analysis/papersim/run_simcode.py` passes it instead of
+  patching `strict.CROP` and two function defaults at run time.
+- `--sig_u` is resolved through the models directory; `--dest` writes the table files elsewhere; table writes are atomic.
+- Column name `main`: the plan's proposal; the words are the user's to decide (plan section 4).
+
+**Network sets in one place (2.5).** `simcode/netsets.json` (step 1) + `run.py`: `--netset <name>` (default m1809),
+`--cal_kind real|sim`, `--dataset <name>` = movie, calibration and set of a paper dataset plus the production recipe
+(flags `--autoc 0 --cand_pmin 0.3`, pass 2, `--sig_u set`, `--subset main,strict`). `--autoc` now defaults to 0 (was 1):
+the automatic-c sigma table exists only for the removed default head, so 1 with the default set would be an unvalidated
+combination. `run.py` passes its crop and `--u_max` to the table step.
+
+**One FRC implementation (2.1).** `simcode/evalproto/frc.py`: `frc(xa, ya, xb, yb, px, units='px'|'nm',
+return_curve=False)`, `frc_halves`, and the two variants that give other numbers and are kept so that no figure changes:
+`frc_hann` (4Pi showcase evaluation) and `frc_fov` (`hd_compare/score.py`). Call sites now import it:
+`evalproto/lib.py` (`frc`, `frc_split`), `analysis/paper/frc_fair.py` (`frc_curve`), `analysis/figures/smoke_metrics.py`,
+`analysis/fourpi_classical/fig_cl.py`, `analysis/fourpi/showcase4pi_eval.py`, `analysis/hd_compare/score.py`.
+(`papersim/metrics.py` and `figures/lib20.py` already went through `frc_fair` / `smoke_metrics`.)
+
+**Drift as library functions (2.3, 2.4).** `simcode/util/drift.py`: `drift_rows` (the row selection that was only in
+`analysis/baselines/dme_drift.py`) and `drift_of_table(T, nframes)`; `dme_drift.py` is its command line;
+`analysis/fourpi/post_w4pi.py` and `analysis/fourpi_classical/post_cl.py` call the function instead of a subprocess;
+`analysis/paper/frc_fair.py` uses `drift_rows`. `analysis/fourpi/render.py` (calibration chain; it picks a GPU for the
+drift) still starts the command line. `simcode/fourpi/zdrift.py`: `zdrift_struct`, replacing the definition in
+`fig_cl.py` and its declared copy in `npc_site.py`; `post_w4pi.py` imports it from the package.
+
+**Process titles.** `Units.todo` sets `simcode:<stage> <unit>` for every unit of both pipelines (`simcode:pass1 6000`,
+`simcode:4pi-w NPC 10`, `simcode:4pi-cl NPC 10`); title length limit raised from 20 to 32 characters. The `auto('...')`
+calls of the entry scripts stay.
+
+**Tests added** (plan section 4, "missing tests"): 1, 2, 7 in `tests/test_fileio.py`; 3, 4 in `tests/test_tables.py`
+(table columns and selections on synthetic rows, non-default crop, subset files, drift row selection, FRC sanity);
+8 = `tests/check_checkpoints.py` (static) + the GPU test, which loads the default set. Not added: 5 and 6 (they belong to
+the LM / CRLB merge, which was not done).
+
+**Documentation.** `simcode/FILE_DESCRIPTION.md` rewritten for the final tree (every package file once); `README.md` (run,
+network sets, production recipe, selections, several GPUs, paths, models, 4Pi, layout), `docs/METHOD.md` (network sets
+and production recipe; the training commands are labelled as those of the ancestor networks), `models/README.md`,
+`simcode/insitu/README.md`.
+
+Checks:
+- Tables: `python -m simcode.strict` on the production run `out/paper2/1809_2/v2_matched` (read only, written elsewhere
+  with `--dest`) with the m1809 sigma rescale: `locs_p1.npz` and `locs_p2.npz` identical to the stored production tables
+  in every previous column (9 214 144 and 6 328 751 rows); new columns `main`, `u_max`; `--subset main,strict` gives files
+  identical row for row to the stored `locs_p2_u045.npz` (1 404 302 rows) and `locs_p2_strictonly.npz` (780 180 rows); info json: old values equal, new
+  keys `crop`, `n_main`, `u_max`.
+- `run.py` without network flags resolves to the production files (check P runs that way).
+- PS (a run with crop `0,0,40`): the tables the paper simulations use (`locs_p1_sim.npz`, `locs_p2_sim.npz`) are identical in
+  every previous column and the metrics json is identical. **One intended change**: the tables that `run.py` itself writes
+  in a run with a non-default `--crop` (`locs_p1.npz`, `locs_p2.npz` of such a run) now use that crop for the tiles, so
+  `strict_u`, `strict` and the rescaled `sx`, `sy` differ from before, where they were computed on the default crop
+  (audit defect 5). They now equal the `_sim` tables. Runs with the default crop (all real movies) are unaffected (P, and
+  the production tables above).
+- FRC: every old implementation against the new module on the two-chunk 1809/2 table and on a 4Pi table
+  (`out/cleanup/check_a4.py`): `evalproto.lib.frc` / `frc_split`, `smoke_metrics.frc`, `frc_fair.frc_curve` (resolution,
+  frequencies, curve), `hd_compare.score.frc_res`, `fig_cl.frc`, `showcase4pi_eval.frc`: identical floats.
+- z drift: `fig_cl.zdrift_struct` and the `npc_site.py` copy against `fourpi/zdrift.py` on a 4Pi table (two block sizes)
+  and a synthetic set: identical.
+- Lateral drift: the row selection of `drift_rows` equals the old script's lines exactly (158 536 rows). The drift itself:
+  old script against `drift_of_table` 0.002 nm (2D table, drift range 24 / 33 nm) and 0.03 nm (a 6939-row 4Pi table);
+  DME on the GPU is not bit-reproducible, the old script against itself gives 0.0015 nm and 0.19 nm on the same two
+  tables, so the differences are within the estimator's own run-to-run variation.
+- CPU tests `tests/test_tables.py`: `ALL OK`. `tests/test_solve4pi_oracle.py` (moved from `analysis/fourpi/`, now with
+  assertions): the 4Pi solve returns the simulator truth (p99 0.0026 px, 5 nm in z).
+- Trainers with the atomic checkpoint save: step-0 lines of det / head / pass-2 det equal within 2e-7; pass-2 head: all
+  fields equal except `w_il` (6e-5; the run-to-run range of that field, see the step-1 addendum); the four `final.pt` were
+  written through the atomic save.
+
+## Not done, and why
+
+| item | status |
+|---|---|
+| B6, throughput of 1 vs 2 workers on one TIFF movie | not measured: the data HDD is being read by the running 4Pi job, a timing now would be meaningless and would slow that job. The claim mechanism itself is verified (step B3). README says the speed-up is not measured. |
+| 2.9, simulated 4Pi drivers on the shared driver | see step B4 + B5 |
+| new 4Pi output layout `out/4pi/<cell>/<head>/…` with an old-name resolver (plan 1.2) | not introduced: every reader of the tables uses the flat names, a whole-movie run is writing them now, and the plan lists it as an open question. `Units` takes the name as a pattern, so the change is one line plus the resolver. |
+| Phase C of the plan (trainer loop merge 2.2, 4Pi pattern / solve tidy 2.10 / 2.15, LM / CRLB merge 2.7 / 2.8, table loaders 2.12, renders 2.13, naming 2.16-2.19) | outside the user's list for this pass; each needs a re-run of trainers or figures to verify |
+| 2D constants (`PX = 108.33` in 23 analysis files, `P_GOOD`) | not deduplicated (audit priority B; no behaviour involved) |
+| 4Pi calibration chain into `analysis/fourpi/calib/` | not moved: the scripts import each other through `sys.path`; a move changes nothing functionally |
+| `analysis/gate/run_gate.sh`, `analysis/figures/` | still tied to the earlier default head by name (see open points) |
+| history rewrite | not done, as instructed |
+
+## Commits of the branch `cleanup` (base 60cc637)
+
+| commit | step |
+|---|---|
+| a1085bb | verification helpers (`tests/compare_npz.py`, `compare_ckpt.py`, `check_imports.py`, `check_checkpoints.py`), the audit plan |
+| 557c399 | step 1: removals; network sets in `netsets.json`; test data regenerated with m1809 |
+| ab9a8f3 | step 2: package rename, no hard-coded repository path, 4Pi set-up module |
+| d918493 | step 3: source-only (weights untracked), `models/README.md`, g13 calibration json |
+| 05bc2c9 | steps B1 + B2: `simcode/fileio` (readers, work driver, launcher), atomic checkpoints for all trainers, `tests/test_fileio.py` |
+| 10f8f1c | step B3: the 2D pipeline on the work driver |
+| 114e914 | selection `main` / subsets / crop in `strict.py`; `run.py --netset / --dataset / --claim` |
+| 16792ba | steps B4 + B5: 4Pi network and classical pipelines on the shared reader and driver; three first-generation scripts removed |
+| 111e7cb | one FRC implementation, drift and z drift as library functions, `tests/test_tables.py`, 4Pi solve oracle test |
+| (next) | documentation: this log, `FILE_DESCRIPTION.md`, `README.md`, `docs/METHOD.md` |
+
+The checks of steps 1-3 ran on the tree of that step. The later steps were developed together and checked on two tree
+states: the 2D checks (T, P, tables, claim / kill tests) with the 2D changes in place, the 4Pi checks with the 4Pi changes
+in place, and all checks once more on the final tree:
+
+| check | result on the final tree |
+|---|---|
+| S, `tests/test_fileio.py`, `tests/test_tables.py` | `tree ok`, `ALL OK`, `ALL OK` |
+| T | `ALL OK` |
+| P | 8 of 8 chunk files bit-identical to `out/paper2/1809_2/v2_matched`; the two tables identical to those of 60cc637 |
+| Tr | det / head / pass-2 det within 2e-7; pass-2 head equal except `w_il` (6e-5, run-to-run range) |
+| G4 | identical |
+| N4 | identical |
+| C4 | validation, per-file table, full-driver table, patch meta and patch file identical |
+| PS | chunk files and `_sim` tables identical, metrics json identical (the run's own tables differ by the crop fix, see "Audit items") |
+
+
+## Open points for the user
+
+1. **Earlier default set.** det_n1 / hd_sc5nb / p2_det / p2_head_long are no longer a selectable set, but `hd_sc5nb.pt` is
+   the initialisation of every PSF-matched head, `det_n1.pt` initialised the 4Pi detector, and the hd_sc5nb calibration
+   json are the templates of the calibration fit of a new set. Kept: those json files; `models/README.md` lists the two
+   weight files as needed for retraining. Decide whether that lineage stays, or the sets get a from-scratch recipe.
+2. **`run --autoc` default 0** (was 1), see "Audit items". Say so if 1 should stay the default.
+3. **Names of the selection columns**: `main` (new) next to `good`, `sel`, `strict`, `strict_u`; subset files
+   `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (names of the existing files kept).
+4. **`analysis/figures/`, `analysis/gate/run_gate.sh`, `docs/RESULTS.md`, `analysis/results/`** describe the development
+   phase with the earlier default head (result tags `_hd_sc5nb…`, `hd_sc5nb.pt` by name, expected gate value 1.17). Not on
+   the removal list, kept unchanged. Remove, or re-point at a network set?
+5. **4Pi head v3L** (`head4pi.py`, `train_head4pi.py`) is kept because v10 contains it and the simulated showcase uses the
+   v3L checkpoint as candidate front.
+6. **Tracked non-source files** kept for now: `models/insitu/camera_maps_*.npz` (4), `analysis/simreal/fields/*.pt` (2),
+   `tests/data/pattern_est_1809_2.pt`, `analysis/results/` (text snapshots).
+7. **20 nM / 2 movie**: no PSF-matched set exists (`netsets.json` has `netset: null` for it; `--dataset 20nM_2` asks for
+   `--netset`).
+8. **4Pi output layout** and the **simulated 4Pi drivers**: see "Not done".
+9. **Weights location** (not decided): `models/README.md` has the file list with checksums; a fetch script can be added
+   once there is a location.
+
+## Notes for the merge into main
+
+- The branch deletes 25 tracked files under `models/` from the index (`git rm --cached`). A merge removes files that the
+  branch deleted from the working tree of main as well. **Before merging, copy `/home/jc/simcode2/models` aside (or run
+  the same `git rm --cached` on main first)**, then put the weights back.
+- The branch also deletes the calibration json of psf3dmix / pair / sc7bg and `sigu_p*_new.json`; they stay in the
+  history (tag the pre-merge commit, e.g. `pre-cleanup` on 60cc637).
+- Uncommitted work in the main tree at the time of branching touches files the branch renamed or removed:
+  `analysis/papersim/netsets.json` (g13 entry: carried over into `simcode/netsets.json`; the file is removed here),
+  `analysis/papersim/fig_overview.py` (modified), `analysis/papersim/{make_movie.py, si_crlb_figure.py, run_g13b.sh}`
+  (new; they still import `simcode2`), `docs/CLEANUP_PLAN.md` (a copy is committed here), six untracked g13 calibration
+  json under `models/calib` (committed here unchanged), `models/insitu/calib_gauss1.3.json` (modified in main; not
+  touched here). Commit them on main before the merge. `python tests/check_imports.py` lists every `simcode2` reference
+  left after the merge.
+- `runs/` (gitignored, 74 files) still says `simcode2` and `python -m simcode2.…`; the production recipe it holds is now
+  `python -m simcode.run --dataset <name>`.
+- The main tree's `simcode2.json` keeps working (fallback). For the 4Pi scripts nothing has to be added: the 4Pi work
+  directory defaults to `<out>/4pi`, the data root to `/mnt/data/4pi-sf` (`simcode/fourpi/datasets.json`).
+- Claim markers of the old shell driver (`out/4pi/net/locs_*_v10.claim`) are not read by the new driver (its markers are
+  `locs_*_v10.npz.claim`); delete them after the running job has ended.
+- After the merge: `python tests/check_imports.py`, `python tests/test_fileio.py`, `python tests/test_tables.py`,
+  `CUDA_VISIBLE_DEVICES=<g> python tests/test_fast_paths.py`.

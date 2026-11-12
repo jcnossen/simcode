@@ -79,11 +79,8 @@ per-tile residual phase of clean pass-1 emitters with `--pass1`).
 
 - `fit_psf_sums.py`: PSF refit on high-SNR 12-frame sums of bright isolated emitters. Free: Zernike 5..21, focus, and
   with `--field 1` a linear field dependence of Noll 5..11 (the field-dependent PSF estimate). 50 % held out.
-- `coma_anchor_scan.py`: pattern-anchored profile scan of the odd aberrations (Noll 7 / 8, or the SAF terms with
-  `--scan saf`), using the full-model LM of `lm_refine.py`. This is a calibration/diagnostic helper only, not part of the
-  localization method.
 
-Both read a locs npz in the format of the development tree's legacy localize_real output (`x_ref, y_ref, I_ref [N,12],
+It reads a locs npz in the format of the development tree's legacy localize_real output (`x_ref, y_ref, I_ref [N,12],
 I_pre, I_post, phot, z, wstart, crop, f0, f1`). The two files used (`real_v6_p4_f0.npz`, `real_v6_p5m_f0.npz`) are
 copied to `<out>/insitu/legacy/`; that front-end is not part of simcode.
 

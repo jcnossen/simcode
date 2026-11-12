@@ -20,6 +20,22 @@ intensity fit is done anywhere in the method.
 | 5. pass 2 (`--pass2`) | Pattern-aware detector **p2_det** and head **p2_head_long** (p2L). They are det_n1 / sc5nb with extra input channels for the estimated illumination, zero-initialised and then fine-tuned with a realistic pattern-error model. Their output goes through the same pattern solve (`models/calib/calib_p2L_b10_real.json`). | `p2/front.py`, `p2/head2.py`, `p2/det2.py` |
 | 6. table | Localization table. The phase-calibrated selection `sel` keeps, per photon band, the pass fraction of p ≥ 0.63, taken as the top-p rows in each 6 × 6 sub-pixel cell. `strict` is the recommended strict product: a per-10-px-tile σ quantile; q from the GT-free row density (anchors where it matches SIMCODE's coverage on the real movies, in-sample, under the automatic and the fixed c alike). | `strict.py` |
 
+### Network sets (2026-11)
+
+The paper's runs use **PSF-matched network sets** (`simcode/netsets.json`: `m1809`, `m25`, `g13`; `--netset`, default
+`m1809`). A set has the same four architectures and training recipes as described below; the simulator's PSF is the
+averaged in-situ PSF of the target movie (`--calib` of the trainers), and the pass-1 head is fine-tuned from `hd_sc5nb`
+(`models/README.md` has the recipe and the file list). In the table above, read det_n1 / sc5nb / p2_det / p2_head_long as
+the detector / head / pass-2 detector / pass-2 head of the set (`det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`,
+`p2headL_<set>.pt`) and the solve calibrations as the set's (`calib/calib_sc_hd_<set>_real.json`,
+`calib/calib_p2L_<set>_real.json`). The earlier default networks named in this document (det_n1, hd_sc5nb, p2_det,
+p2_head_long) are the ancestors of the sets; they are no longer a selectable set.
+
+Production recipe (`python -m simcode.run --dataset <name>`; `_production` in `netsets.json`): `--autoc 0 --cand_pmin 0.3`,
+pass 2, the set's selection-aware sigma rescale, and the main selection **`main` = `strict_u ≤ 0.45`** (rows with a rank,
+i.e. p ≥ 0.63 inside the crop, whose per-tile sigma rank quantile is at most 0.45). Stage 3 (automatic c) is therefore
+opt-in (`--autoc 1`); its sigma table exists only for hd_sc5nb.
+
 ### Fast path
 
 The fast path is the default. Its outputs match the reference path to rounding (`tests/test_fast_paths.py`).
@@ -50,7 +66,10 @@ All networks are trained only on the experiment-matched simulator (`hd/realsim.p
 | sc5nb | `python -m simcode.hd.sc4 prep5`, then `train --arch sc4n --init <sc5n> --bright_tail ...` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
 | p2_det / p2_head_long | `python -m simcode.p2.det2 train`, `python -m simcode.p2.head2 train --pert real` | illumination channels zero-initialised from det_n1 / sc5nb |
 
-### Exact training commands of the shipped networks
+### Exact training commands of the earlier default networks (the ancestors of the network sets)
+
+The recipe of a PSF-matched set (the same commands with `--calib <averaged PSF>` and the fine-tune from `hd_sc5nb.pt`) is in
+`models/README.md`.
 
 From the `args` stored in each checkpoint (`torch.load(f, weights_only=False)['args']`); `runs/` is any work directory.
 Paths of the dev runs are given relative; the shipped files are the `final.pt` of each run.
@@ -93,6 +112,7 @@ backward pass.
 
 | file | use |
 |---|---|
+| `calib/calib_sc_hd_<set>_real.json`, `calib_sc_hd_<set>.json`, `calib_p2L_<set>_real.json`, `calib_p2L_<set>.json`, `sigu/sigu_p{1,2}_<set>.json` | the calibrations of a network set (pass-1 / pass-2 solve with real-data or sim σ; selection-aware σ rescale): fitted with `analysis/psfmatch/fit_cal_set.py` on the gate scenes rendered with the set's PSF, templates = the hd_sc5nb files below; `analysis/psf3d_nets/sigcal.py` for the rescale |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright_real.json` | pass-1 solve with fixed c (0.10 + 0.10). The σ table is fitted on the gate tuning seed and rescaled for real data with the real 0.5 nM M4 zcal × the sim (true / M4) ratio. |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright.json` | same, sim σ (gate scenes, sim movies; start point of the autoc fit) |
 | `calib/calib_sc_hd_sc5nbb15_pm_autoc1.json` | σ table for the automatic-c solve; `run` writes `<out>/calib_autoc.json` = this table + the estimated (c, c_a) |

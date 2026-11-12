@@ -4,7 +4,7 @@ package module (simcode.*) must point at an existing module and name, and every 
 resolve to a file. Shell scripts and markdown files are scanned for mentions of .py / .sh files that do not exist.
 
   python tests/check_imports.py            exit code 0 = clean
-Used after removals / renames; also a pytest test (test_tree).
+Used after removals / renames (run it directly; pytest does not collect this file).
 """
 import ast, importlib.util, os, re, subprocess, sys
 
