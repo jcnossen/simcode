@@ -10,8 +10,8 @@ the median offset to the classical rows on matched emitters (same window, < 64 n
 Pores: found ONCE on the classical published-style table (fig_cl.npc_figures recipe: 10 nm render, sigma 4 smoothing,
 local maxima in 13 x 13 above the 90th percentile, circle fit within 100 nm, 30 < r < 80 nm, centre shift < 40 nm), the
 same pore list and centres for every method and selection level. Per selection: ring radius (peak of the area-normalised
-radial density, and median 25-85 nm), radial width (robust sd of r, 25 < r < 85 nm), z about each pore's median ring z:
-two-Gaussian separation and common sd (fig_cl.em2: per-ring z spread), histogram peak separation and dip (valley / lower
+radial density, and median 25-85 nm), radial width (robust sd of r, 25 < r < 85 nm), z about each pore's mean z (r < 95 nm):
+two-Gaussian separation and common sd (EM with free means: per-ring z spread), histogram peak separation and dip (valley / lower
 peak, as fig_cl), localizations per pore; DAFL x / y / z (adjacent windows of the same file, all pairs and 2-4k e),
 fringe-hop rate (|dz| > 80 nm), FRC (central 10 x 10 um, halves = alternating 500-window blocks).
 Usage: python analysis/fourpi/select_curve_npc.py --net out/4pi/net/net_NPC_v10_all.npz --tag v10
@@ -92,6 +92,34 @@ def find_pores(T):
     return np.array(out)
 
 
+def em2(z, n_it=200):
+    """two-Gaussian mixture with free means and weights, common sd (EM): -> separation, sd"""
+    z = z[np.abs(z - np.median(z)) < 100]
+    mu = np.array([np.median(z) - 20.0, np.median(z) + 20.0]); s = 15.0; w = np.array([0.5, 0.5])
+    for _ in range(n_it):
+        L = w[None] * np.exp(-0.5 * ((z[:, None] - mu[None]) / s) ** 2)
+        R = L / np.maximum(L.sum(1, keepdims=True), 1e-300)
+        nk = R.sum(0); mu = (R * z[:, None]).sum(0) / np.maximum(nk, 1e-9); w = nk / nk.sum()
+        s = np.sqrt((R * (z[:, None] - mu[None]) ** 2).sum() / len(z))
+    return float(abs(mu[1] - mu[0])), float(s)
+
+
+def pore_zdrift(T, P, n_it=6):
+    """residual sample z drift from the pores (fig_cl.npc_figures recipe, on the fixed pore list): per 500-window block,
+    median of z minus the pore mean, smoothed over blocks (sd 1 block), iterated. Returns drift (nm) per block."""
+    tr = cKDTree(P[:, :2]); d, pid = tr.query(np.c_[T['x'], T['y']], distance_upper_bound=85.0)
+    m = np.isfinite(d); zz = T['z'][m]; pid = pid[m]; blk = (T['frame'][m] // 6 // 500).astype(int); nb = int(T['frame'].max() // 6 // 500) + 1
+    import pandas as pd
+    drift = np.zeros(nb)
+    for _ in range(n_it):
+        zc = np.bincount(pid, zz - drift[blk], minlength=len(P)) / np.maximum(np.bincount(pid, minlength=len(P)), 1)
+        r = zz - drift[blk] - zc[pid]
+        g = pd.Series(r).groupby(blk); md = g.median().reindex(range(nb)).fillna(0).to_numpy().copy()
+        md[g.size().reindex(range(nb)).fillna(0).to_numpy() < 50] = 0
+        drift = drift + gaussian_filter(md, 1.0); drift -= drift.mean()
+    return drift
+
+
 def pore_metrics(T, P):
     tr = cKDTree(np.c_[T['x'], T['y']]); L = tr.query_ball_point(P[:, :2], 95.0)
     dx, dy, dz, rr, npore = [], [], [], [], []
@@ -101,7 +129,7 @@ def pore_metrics(T, P):
         px_, py_ = T['x'][idx] - cx, T['y'][idx] - cy; r = np.hypot(px_, py_); ring = (r > 25) & (r < 85)
         npore.append(int(ring.sum()))
         if ring.sum() < 4: continue
-        zz = T['z'][idx] - np.median(T['z'][idx][ring])
+        zz = T['z'][idx] - np.mean(T['z'][idx])          # pore mean over r < 95 nm (as fig_cl; a median sits in one ring and smears the two)
         dx.append(px_); dy.append(py_); dz.append(zz); rr.append(r)
     out = dict(locs_per_pore=float(np.mean(npore)), pores_with_ge4=int(len(rr)))
     if not rr: return out, None
@@ -112,7 +140,7 @@ def pore_metrics(T, P):
                radial_width_nm=rsd(rr[ring]))
     zr = dz[ring & (np.abs(dz) < 120)]
     if len(zr) > 100:
-        d, s = FC.em2(zr); out.update(two_ring_sep_em2_nm=float(d), ring_z_sd_nm=float(s))
+        d, s = em2(zr); out.update(two_ring_sep_em2_nm=float(d), ring_z_sd_nm=float(s))
         hz, ez = np.histogram(dz[ring], bins=np.arange(-120, 121, 2)); zc = 0.5 * (ez[1:] + ez[:-1]); hzs = gaussian_filter(hz.astype(float), 1.5)
         lm = np.nonzero((hzs[1:-1] > hzs[:-2]) & (hzs[1:-1] >= hzs[2:]))[0] + 1; lm = lm[np.argsort(-hzs[lm])][:2]
         if len(lm) == 2:
@@ -155,6 +183,11 @@ def main():
     M = {k: sub(T, np.nonzero(SR.inrect(T['x'], T['y'], fb))[0]) for k, T in M.items()}
     cx, cy = 0.5 * (fb[0] + fb[1]), 0.5 * (fb[2] + fb[3]); frc_box = (cx - 5000, cx + 5000, cy - 5000, cy + 5000)
     P = find_pores(M['cl']); lg(f'{len(P)} pores on the classical published-style table')
+    info['pore_zdrift_ptp_nm'] = {}
+    for k, T in M.items():                                 # residual z drift from the pores, each table on its own (as fig_cl)
+        d = pore_zdrift(T, P); T['z'] = T['z'] - d[np.clip(T['frame'] // 6 // 500, 0, len(d) - 1)]
+        info['pore_zdrift_ptp_nm'][k] = float(np.ptp(d))
+    lg(f"residual pore z drift removed (ptp nm): {info['pore_zdrift_ptp_nm']}")
     n = {k: len(T['x']) for k, T in M.items()}
     SC = {('net', 'combined sigma'): comb_sigma(M['net'], 'net'),
           ('net', 'lateral sigma'): np.hypot(M['net']['sx'], M['net']['sy']) * PX,
@@ -211,7 +244,7 @@ def main():
                classical_random_subsets=samp, photon_median=dict(net_all=float(np.median(M['net']['N'])), net_matched=float(np.median(sel_m['N'])),
                                                                  cl=float(np.median(M['cl']['N'])), clp=float(np.median(M['clp']['N']))),
                notes=['pores found once on the classical published-style table, fixed centres for all methods and levels',
-                      'z: network zd (its own structure-based z drift); classical rows: the classical structure-based curve (pixel MLE: the published-style curve); plus the constant network-classical dz from matched emitters',
+                      'z: network zd (its own structure-based z drift); classical rows: the classical structure-based curve (pixel MLE: the published-style curve); plus the constant network-classical dz from matched emitters; then a residual per-block z drift from the fixed pores, each table on its own (fig_cl.npc_figures recipe)',
                       'FRC on the central 10 x 10 um, halves = alternating 500-window blocks'])
     fn = f'{OUTD}/NPC_selection_curves_{a.tag}'
     json.dump(out, open(fn + '.json', 'w'), indent=1, default=float)
@@ -249,7 +282,7 @@ def plot(out, fn):
                         ('classical published, photon-matched to the matched network', 's'), ('classical pixel MLE, photon-matched to the matched network', '^')):
             r = out['operating_points'][nm_]
             ax.plot(r['n_keep'], val(r, key), mk, color='#0b0b0b', ms=8 if mk == '*' else 5, mfc='#0b0b0b' if mk == '*' else 'none', label=nm_)
-        ax.set_xscale('log'); ax.set_title(lab, fontsize=8); ax.grid(alpha=0.25, lw=0.5); ax.set_xlabel('localizations in the field')
+        ax.set_xscale('log'); ax.xaxis.set_minor_formatter(plt.NullFormatter()); ax.set_title(lab, fontsize=8); ax.grid(alpha=0.25, lw=0.5); ax.set_xlabel('localizations in the field')
     h, l = axs[0, 0].get_legend_handles_labels()
     fig.legend(h, l, loc='lower center', ncol=3, fontsize=7, frameon=False)
     fig.suptitle(f"Real NPC (Nup96), quality vs number kept, each method ranked by its own reported sigma; {out['info']['n_files']} files, "
@@ -276,7 +309,7 @@ def avgpore(D, P, fn, out):
         ax.text(0.02, 0.98, f"sep {pm.get('two_ring_sep_em2_nm', np.nan):.0f} nm, sd {pm.get('ring_z_sd_nm', np.nan):.1f}\ndip {pm.get('z_dip', np.nan):.2f}; "
                 f"radial w {pm.get('radial_width_nm', np.nan):.1f} nm", transform=ax.transAxes, va='top', fontsize=7)
         if i == len(D) - 1:
-            axs[i, 0].set_xlabel('x (nm)'); axs[i, 1].set_xlabel('x (nm), |y| < 30 nm'); axs[i, 2].set_xlabel('radius (nm)'); axs[i, 3].set_xlabel('z about pore median (nm), 25 < r < 85')
+            axs[i, 0].set_xlabel('x (nm)'); axs[i, 1].set_xlabel('x (nm), |y| < 30 nm'); axs[i, 2].set_xlabel('radius (nm)'); axs[i, 3].set_xlabel('z about pore mean (nm), 25 < r < 85')
     for ax, t in zip(axs[0], ('averaged pore, x-y', 'x-z side view', 'radius-z', 'z histogram of the ring')): ax.set_title(t)
     fig.suptitle(f"Averaged NPC pore ({out['n_pores']} pores found on the classical table, same centres for all rows); 2.5 nm bins, same rendering per row "
                  f"(normalised to the 99.7th percentile)", fontsize=8)
