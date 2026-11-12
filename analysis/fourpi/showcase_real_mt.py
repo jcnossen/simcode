@@ -52,9 +52,13 @@ def lg(s): print(f'[{time.time() - t0:5.0f}s] {s}', flush=True)
 
 
 # ----------------------------------------------------------------------------------------------------------- loading
-def load_classical(fn):
+CL_EXTRA = ('sx', 'sy', 'sz', 'sxp', 'syp', 'szp', 'N', 'nn', 'chi2px', 'C', 'R')       # quality columns (selection analysis)
+NET_EXTRA = ('chi2', 'dof', 'nn', 'pdet', 'cs', 'kin', 'Tsum')
+
+
+def load_classical(fn, extra=()):
     Z = np.load(fn)
-    C = {k: Z[k] for k in ('x', 'y', 'xd', 'yd', 'z', 'z_ast', 'keep', 'xpd', 'ypd', 'zp', 'keep_pix', 'frame', 'file_index')}
+    C = {k: Z[k] for k in ('x', 'y', 'xd', 'yd', 'z', 'z_ast', 'keep', 'xpd', 'ypd', 'zp', 'keep_pix', 'frame', 'file_index') + tuple(extra)}
     C['drift'] = Z['drift']
     m = C['keep'] | C['keep_pix']
     C = {k: (v[m] if k != 'drift' else v) for k, v in C.items()}
@@ -71,13 +75,13 @@ def apply_z(z_nm, frame, d):
     return z_nm - d[np.clip(frame // 6 // 500, 0, len(d) - 1)]
 
 
-def load_net(a, drift):
+def load_net(a, drift, extra=()):
     """network rows -> dict(x, y [nm, lateral drift corrected], z [nm], ux, uy [nm raw], frame (global), f (file))"""
     if a.net_all:
         N = np.load(a.net_all)
         fidx = N['fidx']; w = N['w']
         T = dict(x=N['x'], y=N['y'], z=N['z'], sx=N['sx'], sy=N['sy'], sz=N['sz'], N=N['N'], good=N['good'], fidx=fidx, w=w,
-                 xd=N['xd'], yd=N['yd'])
+                 xd=N['xd'], yd=N['yd'], **{k: N[k] for k in extra if k in N.files})
         files = sorted(np.unique(fidx).tolist()); src = [a.net_all]
     else:
         fs = sorted(set(sum([glob.glob(g) for g in a.net_locs], [])))
@@ -92,8 +96,8 @@ def load_net(a, drift):
             L = np.load(f)
             n = len(L['x']); fi = int(L['file_index']) if L['file_index'].ndim == 0 else L['file_index']
             parts.append(dict(x=L['x'], y=L['y'], z=L['z'], sx=L['sx'], sy=L['sy'], sz=L['sz'], N=L['N'], good=L['good'],
-                              fidx=np.full(n, fi, np.int64) if np.ndim(fi) == 0 else fi, w=L['w']))
-        T = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
+                              fidx=np.full(n, fi, np.int64) if np.ndim(fi) == 0 else fi, w=L['w'], **{k: L[k] for k in extra if k in L.files}))
+        T = {k: np.concatenate([p[k] for p in parts]) for k in parts[0] if all(k in p for p in parts)}
         files = sorted(byf); src = [byf[k] for k in files]
     T['frame'] = T['fidx'] * FPF + 6 * T['w']
     if 'xd' not in T:
@@ -318,7 +322,23 @@ def main():
     a = ap.parse_args()
     assert a.net_locs or a.net_all
     os.makedirs(OUTD, exist_ok=True)
-    C = load_classical(a.cl); drift = C['drift']; lg(f'classical rows (keep | keep_pix) {len(C["x"])}')
+    R, G, segs, info, files, src, ncl = prepare(a)
+    variants = [(a.tag, None)]
+    if a.samefiles: variants.append((a.tag + '_samefiles', files))
+    for tag, fsel in variants:
+        Rv = {k: (v if (k == 'net' or fsel is None) else {q: w[np.isin(v['f'], fsel)] for q, w in v.items()}) for k, v in R.items()}
+        nfiles = {k: (len(files) if (k == 'net' or fsel is not None) else ncl) for k in Rv}
+        J = figure(Rv, G, segs, tag, a, info, nfiles, files)
+        J.update(info=info, geometry=G, network_files=files, network_sources=src, n_files=nfiles)
+        json.dump(J, open(f'{OUTD}/MT_showcase_real_{tag}.json', 'w'), indent=1, default=float)
+        lg(f'-> {OUTD}/MT_showcase_real_{tag}.png')
+
+
+def prepare(a, cl_extra=(), net_extra=()):
+    """tables of all rows (nm, drift corrected, registered; z drift removed), regions, segments.
+    cl_extra / net_extra: extra per-row columns carried along (classical: CL_EXTRA names; the pixel-MLE row gets the same
+    columns, its own sigmas are sxp, syp, szp)"""
+    C = load_classical(a.cl, cl_extra); drift = C['drift']; lg(f'classical rows (keep | keep_pix) {len(C["x"])}')
     chk = np.clip(C['frame'][:100000] + 3, 0, len(drift) - 1)
     reg_chk = float(np.nanmax(np.abs(C['x'][:100000] - drift[chk, 0] - C['xd'][:100000])))
     zd = zdrift_curve(C); lg(f'z drift curve: {len(zd)} blocks, ptp {np.ptp(zd):.0f} nm; classical xd == x - drift[frame+3] max dev {reg_chk:.2e} px')
@@ -332,7 +352,7 @@ def main():
     C = {k: (v[near] if k != 'drift' else v) for k, v in C.items()}
     fr = C['frame']
     def mk(m, x, y, z): return dict(x=x[m] * PX, y=y[m] * PX, z=apply_z(z[m] * 1000, fr[m], zd), frame=fr[m], f=C['file_index'][m],
-                                    ux=C['x'][m] * PX, uy=C['y'][m] * PX)
+                                    ux=C['x'][m] * PX, uy=C['y'][m] * PX, **{k: C[k][m] for k in cl_extra})
     mcl = C['keep'] & np.isfinite(C['z']) & np.isfinite(C['xd'])
     R = dict(cl=mk(mcl, C['xd'], C['yd'], C['z']),
              clp=mk(C['keep_pix'] & np.isfinite(C['zp']) & np.isfinite(C['xpd']), C['xpd'], C['ypd'], C['zp']),
@@ -347,9 +367,9 @@ def main():
     info['z_offset_removed_nm'] = dict(clp=off_p, ast=off_a)
 
     # network
-    T, files, src = load_net(a, drift); lg(f'network rows (selected) {len(T["x"])}, files {files}')
+    T, files, src = load_net(a, drift, net_extra); lg(f'network rows (selected) {len(T["x"])}, files {files}')
     net = dict(x=T['xd'] * PX, y=T['yd'] * PX, z=apply_z(T['z'] * 1000, T['frame'], zd), frame=T['frame'], f=T['fidx'],
-               ux=T['x'] * PX, uy=T['y'] * PX)
+               ux=T['x'] * PX, uy=T['y'] * PX, sx=T['sx'], sy=T['sy'], sz=T['sz'], N=T['N'], **{k: T[k] for k in net_extra if k in T})
     mz = np.abs(net['z'] - np.median(net['z'])) <= 300
     net = {k: v[mz] for k, v in net.items()}
     net = {k: v[inrect(net['x'], net['y'], big)] for k, v in net.items()}
@@ -385,27 +405,19 @@ def main():
     G = dict(box=bi, core=core, zoom1=dict(c=z1['c'], size=1200.0, dz_nm=z1['dz'], arms_clean_frac=z1['clean'], arms_angle_deg=z1['ang_deg']), zoom2=dict(c=c2, size=1500.0, n_bimodal_bins=sc2),
              section=sec, n_segments=len(segs), zr_nm=zr, crossings_scored=X)
     lg(f'regions: box {bi}, zoom1 {z1}, zoom2 {c2} ({sc2} bimodal bins), section {sec}, {len(segs)} segments')
-
-    variants = [(a.tag, None)]
-    if a.samefiles: variants.append((a.tag + '_samefiles', files))
-    for tag, fsel in variants:
-        Rv = {k: (v if (k == 'net' or fsel is None) else {q: w[np.isin(v['f'], fsel)] for q, w in v.items()}) for k, v in R.items()}
-        nfiles = {k: (len(files) if (k == 'net' or fsel is not None) else int(len(np.unique(C['file_index'])))) for k in Rv}
-        J = figure(Rv, G, segs, tag, a, info, nfiles, files)
-        J.update(info=info, geometry=G, network_files=files, network_sources=src, n_files=nfiles)
-        json.dump(J, open(f'{OUTD}/MT_showcase_real_{tag}.json', 'w'), indent=1, default=float)
-        lg(f'-> {OUTD}/MT_showcase_real_{tag}.png')
+    return R, G, segs, info, files, src, int(len(np.unique(C['file_index'])))
 
 
-def figure(R, G, segs, tag, a, info, nfiles, files):
+def figure(R, G, segs, tag, a, info, nfiles, files, meth=None, extra_note=''):
+    METH_ = METH if meth is None else meth
     core = G['core']; ext, exty = core[1] - core[0], core[3] - core[2]; ox, oy = core[0], core[2]; zr = G['zr_nm']
     zooms = [(G['zoom1']['c'], G['zoom1']['size']), (G['zoom2']['c'], G['zoom2']['size'])]
     sec = G['section']; zc = 0.5 * (zr[0] + zr[1]); zh = 0.5 * (zr[1] - zr[0])
-    fig = plt.figure(figsize=(14.2, 2.6 * len(METH) + 0.9))
-    gs = fig.add_gridspec(len(METH), 6, width_ratios=[1, 1, 1, 1.0, 0.8, 0.95], wspace=0.42, hspace=0.12,
+    fig = plt.figure(figsize=(14.2, 2.6 * len(METH_) + 0.9))
+    gs = fig.add_gridspec(len(METH_), 6, width_ratios=[1, 1, 1, 1.0, 0.8, 0.95], wspace=0.42, hspace=0.12,
                           left=0.07, right=0.985, top=0.955, bottom=0.135)
     out = dict(rows={})
-    for i, (k, lab) in enumerate(METH):
+    for i, (k, lab) in enumerate(METH_):
         T = R[k]
         n_ov = int(inrect(T['x'], T['y'], core).sum())
         ax = fig.add_subplot(gs[i, 0]); ax.imshow(zrgb(T['x'], T['y'], T['z'], ox, oy, ext, 10.0, zr, 0.8, exty)); ax.set_xticks([]); ax.set_yticks([]); [q.set_visible(False) for q in ax.spines.values()]
@@ -437,7 +449,7 @@ def figure(R, G, segs, tag, a, info, nfiles, files):
         im = dens_img(al, T['z'][m] - zc, 0, s, -zh, zh, 6.0, 1.0)
         ax.imshow(im[::-1], cmap='Greys_r', extent=(0, s / 1000, -zh, zh), aspect=VEX / 1000, vmin=0, vmax=1)
         ax.set_yticks([-200, 0, 200] if zh >= 250 else [-100, 0, 100]); ax.set_ylabel('z (nm)', fontsize=7, labelpad=1)
-        if i == len(METH) - 1: ax.set_xlabel(f"{sec['along']} in zoom 2 (µm)")
+        if i == len(METH_) - 1: ax.set_xlabel(f"{sec['along']} in zoom 2 (µm)")
         else: ax.set_xticklabels([])
         # cross-section
         u, v, nseg = cross_section(T, segs)
@@ -445,7 +457,7 @@ def figure(R, G, segs, tag, a, info, nfiles, files):
         im = dens_img(u, v, -70, 70, -70, 70, 2.0, 1.0)
         ax.imshow(im[::-1], cmap='Greys_r', extent=(-70, 70, -70, 70), vmin=0, vmax=1)
         ax.set_xticks([-50, 0, 50]); ax.set_yticks([-50, 0, 50]); ax.set_ylabel('axial (nm)', fontsize=7)
-        if i == len(METH) - 1: ax.set_xlabel('in plane, across tube (nm)')
+        if i == len(METH_) - 1: ax.set_xlabel('in plane, across tube (nm)')
         else: ax.set_xticklabels([])
         ax.text(0.03, 0.97, f'{nseg} seg.\n{len(u):,} locs', transform=ax.transAxes, color='w', fontsize=6.5, va='top')
         # 1D profiles
@@ -464,7 +476,7 @@ def figure(R, G, segs, tag, a, info, nfiles, files):
         ax.set_ylim(0, 1.5); ax.set_xlim(-80, 80); ax.set_yticks([0, 0.5, 1]); ax.grid(alpha=0.25, lw=0.5)
         ax.set_ylabel('norm. count', fontsize=7)
         if i == 2: ax.legend(loc='lower left', fontsize=6.5, frameon=False, handlelength=1.2)
-        if i == len(METH) - 1: ax.set_xlabel('offset from tube axis (nm)')
+        if i == len(METH_) - 1: ax.set_xlabel('offset from tube axis (nm)')
         else: ax.set_xticklabels([])
         out['rows'][k] = r
     titles = ['(a) x-y, colour = z', f"(b) zoom 1: crossing, Δz {G['zoom1']['dz_nm']:.0f} nm", '(c) zoom 2: overlap in x-y',
@@ -485,7 +497,7 @@ def figure(R, G, segs, tag, a, info, nfiles, files):
             f"(robust sd {rg['dx_robust_sd_nm']:.1f} / {rg['dy_robust_sd_nm']:.1f}) removed.\n"
             f"Sample z drift ({info['zdrift_ptp_nm']:.0f} nm ptp) estimated from the structure on the classical published-style table (whole movie) and subtracted from all rows, network included; "
             f"constant z offsets to published-style z removed (network {rg['dz_median_nm']:.0f}, pixel MLE {info['z_offset_removed_nm']['clp']:.0f}, z_ast {info['z_offset_removed_nm']['ast']:.0f} nm). "
-            f"Counts: overview (row label), zoom (top right), cross-section.")
+            f"Counts: overview (row label), zoom (top right), cross-section." + extra_note)
     fig.text(0.07, 0.008, note, fontsize=6.3, color='#52514e', va='bottom', wrap=True)
     fn = f'{OUTD}/MT_showcase_real_{tag}.png'; fig.savefig(fn, dpi=150); plt.close(fig)
     out['fig'] = fn
