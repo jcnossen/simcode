@@ -239,7 +239,8 @@ def main():
                gt_units_per_window=float(gsel.sum() / (meta['T'] // 6)), area_um2=area_um2,
                candidates_per_window=float(inr(L['x'], L['y']).sum() / (meta['T'] // 6)))
     tabs = {}
-    sets = {'network (head4pi v2 + explicit solve)': dict(x=L['x'], y=L['y'], z=L['z'], ok=(L['sz'] < a.sz_max) & (L['sx'] < a.sxy_max) & (L['sy'] < a.sxy_max) & (L['N'] > 300), w=L['w']),
+    sets = {'network (head4pi v2 + explicit solve)': dict(x=L['x'], y=L['y'], z=L['z'], ok=(L['sz'] < a.sz_max) & (L['sx'] < a.sxy_max) & (L['sy'] < a.sxy_max) & (L['N'] > 300)
+                                                          & (L['good'] if 'good' in L else True), w=L['w']),   # 'good': the linear pipeline's chi2 selection (simlin4pi.py)
             'network, all candidates': dict(x=L['x'], y=L['y'], z=L['z'], ok=np.ones(len(L['x']), bool), w=L['w']),
             'classical summed SMLM (astig z), unfiltered': dict(x=C['x'], y=C['y'], z=C['z'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w']),
             'classical + published-style aperture z (oracle phase field), unfiltered': dict(x=C['x'], y=C['y'], z=C['z_ap'], ok=(C['sx'] < a.sxy_max) & (C['sy'] < a.sxy_max) & (C['N'] > 300), w=C['w'])}

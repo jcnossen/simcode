@@ -84,6 +84,22 @@ class SolveK(Solve4Pi):
         return (torch.stack([torch.stack(out[a], 1) for a in range(2)], 1),
                 torch.stack([torch.stack(outg[a], 1) for a in range(2)], 1))
 
+    def pattern(self, x, y, m, psi):
+        """as Solve4Pi.pattern, with an optional full 2D wave vector per angle (self.k2 = ((kx, ky), (kx, ky))): the
+        estimated pattern is rotated by a few mrad, which the 1D form puts into psi at the candidate pixel only"""
+        k2 = getattr(self, 'k2', None)
+        if k2 is None:
+            return super().pattern(x, y, m, psi)
+        m = m if m.dim() == 2 else m[:, None].expand(-1, 6)
+        P = []; dPx = []; dPy = []
+        for t in range(6):
+            a = ANG[t]
+            arg = k2[a][0] * x + k2[a][1] * y - psi[:, t]
+            P.append(1 + m[:, t] * torch.cos(arg))
+            d = -m[:, t] * torch.sin(arg)
+            dPx.append(d * k2[a][0]); dPy.append(d * k2[a][1])
+        return torch.stack(P, 1), torch.stack(dPx, 1), torch.stack(dPy, 1)
+
     def model(self, th, mode, Phi0, doff, m, psi, fit_phi=False):
         """-> pred [n,6,4,K] and J [n,6,4,K,p]; parameter order: x, y, z, kinetics..., [Phi], [b_0..b_3]"""
         ctx = getattr(self, '_ctx', None) or {}

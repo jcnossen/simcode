@@ -91,6 +91,7 @@ class Sim4Pi:
             mu[:, :, c] = Nt[:, :, None, None] * gt
             Tt[:, :, c] = Nt * gt.sum((-1, -2))
             Ct[:, :, c] = Nt * (gt * w[:, None]).sum((-1, -2))
+        mu0 = mu.clone()                                         # main emitter only (targets of the window read-outs)
         # neighbours
         nnb = (self.u(n) < p_nb).long() * torch.randint(1, nb_max + 1, (n,), device=d, generator=self.g)
         nbinfo = []
@@ -116,5 +117,5 @@ class Sim4Pi:
         lam = mu + bgim
         img = torch.poisson(lam, generator=self.g) + rn * torch.randn(lam.shape, device=d, generator=self.g) \
             + offerr * torch.randn(n, 1, 4, P, P, device=d, generator=self.g)
-        return dict(img=img, mu=mu, bg=bgim, x=x, y=y, z=z, Phi0=Phi0, Nt=Nt, q=q, F=Fm, m=mm, eps=eps, doff=doff,
+        return dict(img=img, mu=mu, mu0=mu0, bg=bgim, x=x, y=y, z=z, Phi0=Phi0, Nt=Nt, q=q, F=Fm, m=mm, eps=eps, doff=doff,
                     T=Tt, C=Ct, nnb=nnb, nb=nbinfo)

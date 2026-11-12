@@ -11,6 +11,11 @@ def load_head(tag_or_path):
     f = tag_or_path if os.path.sep in tag_or_path else f'{REPO}/out/4pi/models/head4pi_{tag_or_path}.pt'
     ck = torch.load(f, weights_only=False)
     a = ck['args']
+    if a.get('arch') == 'k':
+        from simcode2.fourpi.head4pi_k import Head4PiK
+        net = Head4PiK(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins'])).cuda().eval()
+        net.load_state_dict(ck['state']); net.lut = LUT4Pi(ck['psf'], P=15)
+        return net, ck
     if a.get('arch') == 's':
         from simcode2.fourpi.head4pi_s import Head4PiS
         net = Head4PiS(ch=a['ch'], nblk=a['nblk']).cuda().eval()

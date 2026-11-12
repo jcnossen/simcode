@@ -46,6 +46,7 @@ def main():
     p.add_argument('--chunk', type=int, default=600)
     p.add_argument('--det', default='', help='det4pi checkpoint: learned detector on the per-frame registered sum instead of the DoG')
     p.add_argument('--p_min', type=float, default=0.3)
+    p.add_argument('--save_img', type=int, default=0, help='1: keep the candidate patches [n,6,4,15,15] (e, float16) in the front file (small simulated movies only; for the linear read-out, simlin4pi.py)')
     p.add_argument('--noise', default='low'); p.add_argument('--k', type=float, default=8.0); p.add_argument('--out', default=''); p.add_argument('--nms', type=int, default=7); p.add_argument('--s1', type=float, default=1.5)
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-sim')
@@ -111,6 +112,8 @@ def main():
             # registered-sum ROI for the classical baseline (same detections)
             ws, ys_, xs_ = w[sel], cy[sel], cx[sel]
             rs = ssum[ws[:, None, None], (ys_[:, None, None] + o[None, :, None] - h).clamp(0, H - 1), (xs_[:, None, None] + o[None, None, :] - h).clamp(0, W - 1)]
+        if a.save_img:
+            acc.setdefault('img', []).append(img[sel].half().cpu().numpy())
         if oo.get('U') is not None:
             acc.setdefault('U', []).append(oo['U'].half().cpu().numpy())
         for k, v in (('w', w[sel] + a0 // 6), ('cx', cx[sel]), ('cy', cy[sel]), ('doff', doff[sel]), ('T', oo['T']), ('C', oo['C']),
