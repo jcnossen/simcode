@@ -33,10 +33,11 @@ def main():
     p.add_argument('--cell', default='NPC'); p.add_argument('--files', type=int, nargs='+', required=True)
     p.add_argument('--head', default='v10'); p.add_argument('--det', default=f'{REPO}/out/4pi/models/det4pi/final.pt')
     p.add_argument('--nframes', type=int, default=0); p.add_argument('--chunk', type=int, default=600)
-    p.add_argument('--p_min', type=float, default=0.3); p.add_argument('--tile', type=float, default=12.0); p.add_argument('--tblk', type=int, default=50)
-    p.add_argument('--dnll', type=float, default=9.21); p.add_argument('--chi2_max', type=float, default=1.6)
+    p.add_argument('--p_min', type=float, default=0.5); p.add_argument('--tile', type=float, default=12.0); p.add_argument('--tblk', type=int, default=50)
+    p.add_argument('--dnll', type=float, default=9.21); p.add_argument('--chi2_max', type=float, default=2.5)
     p.add_argument('--coh', type=float, default=1.0, help='interference-contrast scale of the PSF model in the solve')
     p.add_argument('--iters', type=int, default=20); p.add_argument('--batch', type=int, default=3000)
+    p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-real-w')
@@ -86,6 +87,8 @@ def main():
                 img = img[sel]; doff = doff[sel]
                 outs = [net(img[i:i + a.batch], doff[i:i + a.batch]) for i in range(0, len(sel), a.batch)]
                 o = {k: torch.cat([u[k] for u in outs]) for k in ('Y', 'dxy', 'z', 'ls')}
+                kp = o['Y'][..., 0].sum((1, 2)) >= a.min_photons
+                o = {k: v[kp] for k, v in o.items()}; img = img[kp]; doff = doff[kp]; sel = sel[kp]
             for k, v in (('w', w[sel] + a0 // 6), ('cx', cx[sel]), ('cy', cy[sel]), ('doff', doff), ('img', img.half()), ('dxy', o['dxy']), ('z', o['z']),
                          ('ls', o['ls']), ('I', o['Y'][..., 0].sum(2)), ('pdet', pd[sel]), ('nn', dd[sel])):
                 acc[k].append(v.cpu().numpy())
