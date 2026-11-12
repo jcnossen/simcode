@@ -146,26 +146,35 @@ def fig_summary(Es):
     tags = [t for t in TAGS if t in Es]
     D = np.array([Es[t]['dens'] for t in tags])
     ms = [('net', 'network, in-situ pattern + field', '-', 'o'), ('net_bound', 'network, true pattern + field', '--', 'o'),
+          ('net_nochi2', 'network, in situ, no chi2 selection', ':', 'v'),
           ('cl_pub', 'classical, published-style', '-', 's'), ('cl_pix', 'classical, pixel MLE', '-', 'D'), ('astig', 'astigmatism-only z', '-', '^')]
-    fig, axs = plt.subplots(1, 4, figsize=(12, 3.2))
+    fig, axs = plt.subplots(1, 5, figsize=(14.5, 3.8))
     def r24(t, nm): return [r for r in Es[t]['methods'][nm]['rows'] if r['lo'] == 2000][0]
+    def err(t, nm, k):        # only with >= 100 matched GT units in the 2-4k e bin
+        r = r24(t, nm)
+        return np.nan if r.get('n_matched', 0) < 100 or k not in r else r[k]
     for nm, lab, ls, mk in ms:
         rec = [Es[t]['methods'][nm]['recall'] for t in tags]
         pre = [Es[t]['methods'][nm]['precision'] for t in tags]
-        lat = [0.5 * (r24(t, nm).get('x_rob', np.nan) + r24(t, nm).get('y_rob', np.nan)) for t in tags]
-        ax_ = [r24(t, nm).get('z_rob', np.nan) for t in tags]
-        kw = dict(color=COL[nm], ls=ls, marker=mk, ms=5, lw=1.6, mfc='white' if ls == '--' else COL[nm], label=lab)
-        for a, v in zip(axs, (rec, pre, lat, ax_)): a.plot(D, v, **kw)
+        lat = [0.5 * (err(t, nm, 'x_rob') + err(t, nm, 'y_rob')) for t in tags]
+        ax_ = [err(t, nm, 'z_rob') for t in tags]
+        fr = [err(t, nm, 'fringe') * 100 for t in tags]
+        kw = dict(color=COL['net' if nm.startswith('net') else nm], ls=ls, marker=mk, ms=5, lw=1.6, mfc='white' if ls != '-' else COL['net' if nm.startswith('net') else nm], label=lab)
+        for a, v in zip(axs, (rec, pre, lat, ax_, fr)): a.plot(D, v, **kw)
     cr = [r24(t, 'net').get('crlb', [np.nan] * 3) for t in tags]
     axs[2].plot(D, [0.5 * (c[0] + c[1]) for c in cr], color='#0b0b0b', ls=':', lw=1.2, label='CRLB (isolated emitter)')
     axs[3].plot(D, [c[2] for c in cr], color='#0b0b0b', ls=':', lw=1.2, label='CRLB (isolated emitter)')
-    labs = ['recall (GT ≥ 300 e per window)', 'precision', 'lateral error, 2–4k e (nm, robust)', 'axial error, 2–4k e (nm, robust)']
+    axs[4].set_ylim(0, None)
+    for a in axs[2:4]:
+        a.set_yscale('log'); a.set_yticks([1, 2, 5, 10, 20, 50, 100]); a.set_yticklabels(['1', '2', '5', '10', '20', '50', '100']); a.set_ylim(1, 150)
+    labs = ['recall (GT ≥ 300 e per window)', 'precision', 'lateral error, 2–4k e (nm, robust sd)', 'axial error, 2–4k e (nm, robust sd)', 'fringe errors |Δz| > 100 nm, 2–4k e (%)']
     for a, l in zip(axs, labs):
         a.set_xscale('log'); a.set_xlabel('ON emitters / µm² / frame'); a.set_ylabel(l); a.grid(alpha=0.25, lw=0.5)
         a.set_xticks(D); a.set_xticklabels([f'{v:.2g}' for v in D])
-    axs[0].set_ylim(0, 1); axs[1].set_ylim(0, 1.02); axs[2].set_ylim(0, None); axs[3].set_ylim(0, None)
-    axs[3].legend(fontsize=6.5, frameon=False, loc='upper left')
-    plt.tight_layout(); fig.savefig(f'{OUT}/summary.png', dpi=150); plt.close(fig)
+    axs[0].set_ylim(0, 1); axs[1].set_ylim(0, 1.02)
+    h, l = axs[3].get_legend_handles_labels()
+    fig.legend(h, l, loc='lower center', ncol=4, fontsize=7, frameon=False)
+    plt.tight_layout(rect=(0, 0.12, 1, 1)); fig.savefig(f'{OUT}/summary.png', dpi=150); plt.close(fig)
 
 
 def main():
