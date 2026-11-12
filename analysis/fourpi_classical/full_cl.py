@@ -17,24 +17,24 @@ out/4pi/patches/regions_MT.json, for time).
 Raw patches (uint16 ADU, README format of out/4pi/patches) are saved for NPC (all) and for the MT boxes 0 and 1.
 Usage: CUDA_VISIBLE_DEVICES=<g> python analysis/fourpi_classical/full_cl.py --cells NPC MT
 """
-import argparse, json, math, os, sys, threading, queue, time
+import argparse, json, math, os, sys, time
 import numpy as np, torch
 import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.fourpi.setup import P4
-from dc import Dcimg, movie_files, file_index, crops
-from front4pi import Front, XLIM
+from simcode.fourpi.setup import P4, GAIN, XLIM, P, LAYOUT, movie_file, movie_files, file_index
+from simcode.fourpi.front import Front
 from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fileio.movie import DcimgMovie, Prefetch
+from simcode.fileio.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 import real_cl as RC
 
 OUT = f'{P4}/classical/real'
 PSAVE = f'{P4}/classical/patches'
-P = 15; H_ = P // 2
-GAIN = 0.23
+H_ = P // 2
 DET_THRESH = 4.0
 
 
@@ -109,14 +109,13 @@ class MemSource:
             yield j, (a - off[:, None]) * GAIN, torch.tensor(self.doff[j], device=self.dev)
 
 
-def reader(fn, nfr, chunk, q):
-    d = Dcimg(fn)
-    for a0 in range(0, nfr, chunk):
-        q.put((a0, d.raw(a0, min(chunk, nfr - a0))))
-    q.put(None)
-
-
 TMP = f'{P4}/classical/tmp'
+
+
+def read_units(cell):
+    """reader-stage units: the temporary patch set of a file is complete when <tmp>/<cell>_<file>_meta.npz exists (the
+    patch array is written before it; both atomically)"""
+    return Units(TMP, 'read', pattern='{cell}_{key:03d}_meta.npz', cell=cell, title=False)
 
 
 def tmp_size_gb():
@@ -126,18 +125,15 @@ def tmp_size_gb():
 
 def read_file(cell, fi, fr, a, dev):
     """reader stage: read, detect, cut -> temporary uint16 patches + meta on the SSD (marker .ready when complete)"""
-    fn = [f for f in movie_files(cell) if file_index(f) == fi][0]
-    d = Dcimg(fn); nfr = (a.nframes or d.nframes) // 6 * 6
-    q = queue.Queue(maxsize=3)
-    th = threading.Thread(target=reader, args=(fn, nfr, a.chunk_frames, q), daemon=True); th.start()
+    d = DcimgMovie(movie_file(cell, fi), layout=LAYOUT); nfr = (a.nframes or d.n) // 6 * 6
+    plan = [(a0, min(a0 + a.chunk_frames, nfr)) for a0 in range(0, nfr, a.chunk_frames)]
+    pf = Prefetch(d, plan)
     acc = {k: [] for k in ('w', 'cx', 'cy', 'doff', 'corner', 'adu', 'score', 'thr')}
     t0 = time.time()
-    while True:
-        it = q.get()
-        if it is None: break
-        a0, raw = it
+    for a0, a1 in plan:
+        raw = pf.read(a0, a1)                                   # channel crops [n, 4, 200, 360], ADU
         with torch.no_grad():
-            raw_t = torch.tensor(crops(raw).astype(np.int32), device=dev)
+            raw_t = torch.tensor(raw.astype(np.int32), device=dev)
             E = (raw_t.float() - fr.off) * GAIN
             w, cy, cx, sc, thr = detect_wavelet(fr, E)
             if len(w) == 0: continue
@@ -147,11 +143,11 @@ def read_file(cell, fi, fr, a, dev):
                 acc[k].append(v.cpu().numpy())
             acc['adu'].append(adu[s].cpu().numpy().astype(np.uint16))
             del E, raw_t, img, adu
+    pf.close()
     R = {k: np.concatenate(v) for k, v in acc.items()}
     base = f'{TMP}/{cell}_{fi:03d}'
-    np.save(base + '.npy', R.pop('adu'))
-    np.savez(base + '_meta.npz', **R, nframes=nfr)
-    open(base + '.ready', 'w').write('')
+    atomic_save(base + '.npy', R.pop('adu'))
+    atomic_savez(base + '_meta.npz', **R, nframes=nfr)         # the unit's output: written last = the patch set is ready
     print(f'{cell} {fi}: read + detect {time.time() - t0:.0f}s, {len(R["w"])} candidates ({len(R["w"]) / max(nfr // 6, 1):.1f} per window)', flush=True)
 
 
@@ -178,12 +174,12 @@ def fit_file(cell, fi, c4, fr, boxes, a, dev):
     save = (A['Nsum'] >= 1000) & (A['chi2px'] <= 8) & ((inbox >= 0) if cell == 'MT' else True)
     os.makedirs(f'{PSAVE}/{cell}', exist_ok=True)
     rows = np.nonzero(save)[0]
-    np.save(f'{PSAVE}/{cell}/patches_{fi:03d}.npy', np.asarray(adu[rows]))
-    np.savez(f'{PSAVE}/{cell}/meta_{fi:03d}.npz', row=rows, w=R['w'][rows], frame0=6 * R['w'][rows], cx=R['cx'][rows], cy=R['cy'][rows],
+    atomic_save(f'{PSAVE}/{cell}/patches_{fi:03d}.npy', np.asarray(adu[rows]))
+    atomic_savez(f'{PSAVE}/{cell}/meta_{fi:03d}.npz', row=rows, w=R['w'][rows], frame0=6 * R['w'][rows], cx=R['cx'][rows], cy=R['cy'][rows],
              corner=R['corner'][rows].astype(np.int16), doff=R['doff'][rows].astype(np.float32), box=inbox[rows], file_index=fi,
              score=R['score'][rows], detector='wavelet a-trous V1-V2, 4 x MAD/0.67, 9x9 max (published W4PiSMS_sumim_seg)')
     del adu, src
-    for ext in ('.npy', '_meta.npz', '.claimed'):
+    for ext in ('_meta.npz', '.npy'):
         try: os.remove(base + ext)
         except FileNotFoundError: pass
 
@@ -198,6 +194,8 @@ def main():
     ap.add_argument('--tile', type=float, default=12.0); ap.add_argument('--tblk', type=int, default=50)
     ap.add_argument('--pix', type=int, default=1); ap.add_argument('--tag', default='_wv')
     ap.add_argument('--tmp_max_gb', type=float, default=60.0)
+    ap.add_argument('--min_free_gb', type=float, default=10.0, help='the reader does not start a file with less free space on the temporary directory')
+    ap.add_argument('--poll_s', type=float, default=30.0)
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True); os.makedirs(TMP, exist_ok=True)
@@ -205,13 +203,15 @@ def main():
     for cell in a.cells:
         files = sorted(file_index(f) for f in movie_files(cell))
         order += [(cell, f) for f in files if not a.files or f in a.files]
-    done = lambda c, f: os.path.exists(f'{OUT}/cl_{c}_{f:03d}{a.tag}.npz')
+    UF = {c: RC.units(c, a.tag, claim=True) for c in a.cells}       # fit-stage units = the per-file tables (claimed by a fitter)
+    UR = {c: read_units(c) for c in a.cells}                        # reader-stage units = the temporary patch sets
+    done = lambda c, f: UF[c].done(f)
     if a.stage == 'read':
         frs = {}
         for cell, fi in order:
-            base = f'{TMP}/{cell}_{fi:03d}'
-            if done(cell, fi) or os.path.exists(base + '.ready') or os.path.exists(base + '.claimed'):
+            if done(cell, fi) or UR[cell].done(fi) or UF[cell].claimed(fi) is not None:
                 continue
+            disk_guard(TMP, a.min_free_gb)
             while tmp_size_gb() > a.tmp_max_gb:
                 time.sleep(60)
             if cell not in frs: frs[cell] = Front(cell, dev)
@@ -220,9 +220,9 @@ def main():
             except Exception as e:
                 import traceback; traceback.print_exc(); print(f'{cell} {fi}: READ FAILED {e!r}', flush=True)
             torch.cuda.empty_cache()
-        open(f'{TMP}/READER_DONE', 'w').write(time.strftime('%H:%M'))
+        atomic_text(f'{TMP}/READER_DONE', time.strftime('%H:%M'))
         print('reader done', flush=True); return
-    # fitter: claim ready files in movie order (atomic rename of the marker)
+    # fitter: claim ready files in movie order (claim marker of the table; a claim of a dead fitter is taken over)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)
     reg = json.load(open(f'{P4}/patches/regions_MT.json'))
@@ -230,16 +230,14 @@ def main():
     while True:
         claimed = None
         for cell, fi in order:
-            base = f'{TMP}/{cell}_{fi:03d}'
-            if os.path.exists(base + '.ready'):
-                try:
-                    os.rename(base + '.ready', base + '.claimed'); claimed = (cell, fi); break
-                except FileNotFoundError:
-                    continue
+            if UR[cell].done(fi) and not done(cell, fi) and not UF[cell].failed(fi) and UF[cell].claim(fi):
+                if done(cell, fi) or not UR[cell].done(fi):      # finished by another fitter in the meantime
+                    UF[cell].release(fi); continue
+                claimed = (cell, fi); break
         if claimed is None:
-            if os.path.exists(f'{TMP}/READER_DONE') and all(done(c, f) or os.path.exists(f'{TMP}/{c}_{f:03d}.claimed') for c, f in order):
+            if os.path.exists(f'{TMP}/READER_DONE') and all(done(c, f) or UF[c].failed(f) or UF[c].claimed(f) is not None for c, f in order):
                 print('fitter: nothing left', flush=True); return
-            time.sleep(30); continue
+            time.sleep(a.poll_s); continue
         cell, fi = claimed
         if cell not in c4s:
             c4s[cell] = Classic4Pi(lut, delta=(0.0, RC.DELTA[cell]), dev=dev); frs[cell] = Front(cell, dev)
@@ -248,7 +246,9 @@ def main():
             fit_file(cell, fi, c4s[cell], frs[cell], boxes, a, dev)
         except Exception as e:
             import traceback; traceback.print_exc(); print(f'{cell} {fi}: FIT FAILED {e!r}', flush=True)
-            os.rename(f'{TMP}/{cell}_{fi:03d}.claimed', f'{TMP}/{cell}_{fi:03d}.failed')
+            UF[cell].fail(fi, e)
+        finally:
+            UF[cell].release(fi)
         torch.cuda.empty_cache()
 
 

@@ -21,10 +21,10 @@ from register import PolyMap
 from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 RN2 = 1.3
 PS, PC = 15, 11
-XLIM = (55, 305)
+from simcode.fourpi.setup import XLIM
 CHUNK = 600
 
 

@@ -7,8 +7,8 @@ the prior position (linread4pi) -> SIM pattern (true, or estimated from the per-
 positions, refined once at the solved positions) -> 4Pi phase field (true, or in situ: per-candidate phase with z held by
 the prior, tile map + time blocks) -> explicit solve with the exact window model and a residual background per channel:
 on-through vs kinetics, kinetics kept if it lowers chi2 by > 9.21 (the main pipeline's rule; no free fallback).
-Output: locs_SIM_000_<front>_<pattern>lin[_phiO].npz in the simsolve4pi format (+ chi2, dof, good), so simeval4pi.py and
-simoffset4pi.py run on it (--model <front> --pattern <pattern>lin[_phiO]).
+Output: locs_SIM_000_<front>_<pattern>lin[_phiO].npz in the table format of the real pipeline (+ chi2, dof, good), so simeval4pi.py and
+showcase4pi_eval.py run on it (--model <front> --pattern <pattern>lin[_phiO]).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/simlin4pi.py --tag iso --front v3L_det --pattern oracle --phi oracle
 """
 import argparse, json, math, os, sys, time
@@ -17,8 +17,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.fourpi.setup import P4
-import solve_real4pi as SR
-from simsolve4pi import repattern_xy
+from simcode.fourpi import insitu as SR
+from simcode.fourpi.insitu import repattern_xy
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.fourpi.solve4pi import kin_starts, best_of
 from simcode.fourpi.solvek4pi import SolveK

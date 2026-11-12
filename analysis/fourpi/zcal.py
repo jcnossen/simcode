@@ -22,7 +22,7 @@ from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
 OUT = f'{P4}/smlm/zcal'
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 
 
 def astig_curve(p, z):

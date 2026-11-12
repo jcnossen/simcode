@@ -13,7 +13,7 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.fourpi.setup import P4
-PX = 128.0
+from simcode.fourpi.setup import PX_NM as PX
 EDGES = (1000, 2000, 4000, 8000, 20000)
 
 

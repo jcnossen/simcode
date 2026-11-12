@@ -15,7 +15,7 @@ from dc import Dcimg, movie_files, crops, file_index
 from quickloc import Warp, window_photometry, rows_to_arrays
 from register import PolyMap
 
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 OUT = f'{P4}/smlm'
 
 

@@ -36,7 +36,7 @@ OUT = f'{P4}/field'
 NET = f'{P4}/net'
 XT = np.linspace(60, 300, 6); YT = np.linspace(0, 200, 5)
 NTX, NTY = 5, 4
-DELTA = {'MT': math.radians(-10.4), 'NPC': math.radians(-13.9)}
+from simcode.fourpi.setup import DELTA    # per-angle 4Pi phase offset per cell (SMLM_REPORT 5.2)
 SUBSET = {'MT': (5, 6, 7), 'NPC': (10, 11, 12)}
 
 

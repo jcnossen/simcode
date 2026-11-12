@@ -6,7 +6,7 @@ Pattern (per file, from the data, classical positions): bright isolated on-throu
 k refined around a reference, step phases by the slot DFT, depth = median per-emitter modulation (analysis/fourpi/
 pattern.py, as the earlier classical analysis). Then per candidate: alpha, MD, SIMFLUX two-step x*, y*.
 4Pi phase field (the paper's ridge / phase-drift step): residual r = phi - phi_cal(s z_ast + z_off) of good fits;
-Phi0(x, y, t) = tile map M(x, y) + block drift d(t) by alternating circular means (analysis/fourpi/solve_real4pi.
+Phi0(x, y, t) = tile map M(x, y) + block drift d(t) by alternating circular means (simcode/fourpi/insitu.
 phase_field); the scale s of z_ast against the 4Pi phase and the offset are chosen by maximum residual coherence
 (the ridge of the phase-vs-z_ast histogram). z_4pi = unwrap against z_ast.
 Stage B: z-dependent channel calibration at z_4pi, then the 24-image pixel MLE (optional).
@@ -18,10 +18,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from cl4pi import Classic4Pi, wrap
-from pattern import refine_k, slotZ
-from solve_real4pi import phase_field
+from simcode.fourpi.insitu import refine_k, slotZ, phase_field
 
-PX_NM = 128.0
+from simcode.fourpi.setup import PX_NM
 FILTERS = dict(R_max=0.2, MD=(0.6, 1.2), N_min=1000.0, sxy_max_nm=10.0, llr_max=500.0 * 225 / 169, C=(0.4, 1.6), chi2px_max=4.0)
 
 

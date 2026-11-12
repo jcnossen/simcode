@@ -19,7 +19,7 @@ from register import PolyMap, feats, fit_poly
 from quickloc import Warp
 
 OUT = f'{P4}/smlm/reg'
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 
 
 def mean_img(cell, fi, off, f0=0, n=3600):

@@ -39,7 +39,7 @@ import fig_cl as FC                     # read-only: zdrift_struct, em2, fwhm (n
 from zoompick import pick_crossings
 from skel import skeletonize
 FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
-PX = 128.0
+from simcode.fourpi.setup import PX_NM as PX
 FPF = 18000                              # frames per file
 OUTD = f'{P4}/fig'
 METH = [('net', '4Pi-SIMCODE (network)'), ('cl', 'classical 4Pi-SIMFLUX,\npublished-style'),

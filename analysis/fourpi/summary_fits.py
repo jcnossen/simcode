@@ -12,7 +12,7 @@ from render import load_locs
 from zcal import astig_curve
 
 OUT = f'{P4}/smlm'
-PX = 128.0
+from simcode.fourpi.setup import PX_NM as PX
 
 
 def z_from_sigma(sx, sy, cx, cy):

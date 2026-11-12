@@ -16,7 +16,7 @@ from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-P = 15
+from simcode.fourpi.setup import P
 
 
 def patches(d, meta, F, dev):

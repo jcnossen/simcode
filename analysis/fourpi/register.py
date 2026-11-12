@@ -19,34 +19,10 @@ from dc import Dcimg, crops, bead_align_file
 from quickloc import affine_maps
 from mle import GaussAstig, lm_fit
 
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 
 
-def feats(x, y, order):
-    u, v = (np.asarray(x) - 180.0) / 180.0, (np.asarray(y) - 100.0) / 100.0
-    return np.stack([u ** i * v ** j for i in range(order + 1) for j in range(order + 1 - i)], -1)
-
-
-class PolyMap:
-    def __init__(self, coef_fwd, coef_inv, order):
-        self.cf, self.ci, self.order = coef_fwd, coef_inv, order    # {c: [nf, 2]}
-
-    def fwd(self, c, x, y):
-        if c == 0: return np.asarray(x, float), np.asarray(y, float)
-        F = feats(x, y, self.order) @ self.cf[c]; return F[..., 0], F[..., 1]
-
-    def inv(self, c, x, y):
-        if c == 0: return np.asarray(x, float), np.asarray(y, float)
-        F = feats(x, y, self.order) @ self.ci[c]; return F[..., 0], F[..., 1]
-
-    def save(self, fn, **meta):
-        json.dump(dict(order=self.order, fwd={c: v.tolist() for c, v in self.cf.items()},
-                       inv={c: v.tolist() for c, v in self.ci.items()}, **meta), open(fn, 'w'), indent=1)
-
-    @staticmethod
-    def load(fn):
-        d = json.load(open(fn))
-        return PolyMap({int(c): np.array(v) for c, v in d['fwd'].items()}, {int(c): np.array(v) for c, v in d['inv'].items()}, d['order'])
+from simcode.fourpi.front import PolyMap, feats  # noqa (the registration map class lives in the package)
 
 
 def fit_poly(src, dst, order, w=None):

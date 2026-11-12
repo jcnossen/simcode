@@ -224,7 +224,7 @@ class RealSim4Pi:
         return scene['phi_off'][b] + math.radians(60) * (c4[:, 0] * x / W + c4[:, 1] * y / H + c4[:, 2] * (x / W) * (y / H))
 
     def register_sum(self, obs, origin, ox, oy, cell):
-        """registered 4-channel sum per frame on the ch0 grid (bilinear warp, as front4pi.Front.detect)"""
+        """registered 4-channel sum per frame on the ch0 grid (bilinear warp, as fourpi/front.Front.detect)"""
         B, T_, C_, H, W = obs.shape
         yy, xx = torch.meshgrid(torch.arange(H, device=self.dev, dtype=torch.float32), torch.arange(W, device=self.dev, dtype=torch.float32), indexing='ij')
         out = obs[:, :, 0].clone()
