@@ -1,7 +1,8 @@
-"""Recognizable process names for long jobs (shown by nvidia-smi, ps, top), e.g. 'simcode:4pi-front'.
+"""Recognizable process names for long jobs (shown by nvidia-smi, ps, top), e.g. 'simcode:pass1 6000' (stage and unit; set
+per unit by simcode/fileio/work.Units) or 'simcode:run' (set once by an entry script).
 Short on purpose: at most MAXLEN characters, no command-line arguments.
 Needs the optional package `setproctitle`; without it this is a no-op, so no job depends on it."""
-MAXLEN = 20
+MAXLEN = 32
 
 
 def set_title(name, detail=''):

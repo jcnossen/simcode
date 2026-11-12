@@ -26,6 +26,7 @@ import argparse, json, math, os, sys, time
 import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
+from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode.nn.blocks import ResBlock
 from simcode.hd.sc import PSFCol, patches, mod_slope, PP, norm_photons
 from simcode import config
@@ -527,8 +528,8 @@ def train(argv):
             elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
             print('EVAL', step, json.dumps({s: ev[s].get('all', ev[s].get('nn1.5-2.5')) for s in ev}), flush=True)
         if step % a.ckpt_every == 0 and step > 0:
-            torch.save(dict(model=head.state_dict(), args=vars(a), step=step), a.out + f'/ckpt_{step}.pt')
-    torch.save(dict(model=head.state_dict(), args=vars(a), step=a.steps), a.out + '/final.pt')
+            ckpt_save(dict(model=head.state_dict(), args=vars(a), step=step), a.out + f'/ckpt_{step}.pt')
+    ckpt_save(dict(model=head.state_dict(), args=vars(a), step=a.steps), a.out + '/final.pt')
 
 
 if __name__ == '__main__':

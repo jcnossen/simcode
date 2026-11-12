@@ -32,19 +32,11 @@ _C = {}
 BF16_X, BF16_I, BF16_DET = 5e-3, 3.0, 1e-3
 
 
-class ArrayMovie:
-    """Movie-like in-memory ADU stack"""
-    def __init__(self, a):
-        self.a = a; self.n = len(a); self.shape = a.shape[1:]; self.parts = ['<array>']
-
-    def read(self, f0, f1, y0, x0, S):
-        return self.a[f0:f1, y0:y0 + S, x0:x0 + S].astype(np.float32)
-
-
 def sim_movie():
     """deterministic 2.5 nM-like 120 x 120 chunk (RealSim windows laid end to end, 240 frames) in ADU"""
     if 'mov' in _C: return _C['mov']
     from simcode.pipeline.common import load_calib
+    from simcode.fileio.movie import ArrayMovie       # in-memory ADU stack with the reader interface
     from simcode.hd.realsim import RealSim
     cal = load_calib(CALIB)
     with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
@@ -204,11 +196,12 @@ def test_pass2_p2_fp32():
 
 
 def test_prefetch_reader():
-    """PrefetchMovie (background read of the next chunk) returns the same frames as Movie.read, in plan order and on a miss"""
-    from simcode.pipeline.common import PrefetchMovie, chunk_read_plan
+    """Prefetch (background read of the next chunk) returns the same frames as the reader, in plan order and on a miss"""
+    from simcode.pipeline.common import chunk_read_plan
+    from simcode.fileio.movie import Prefetch
     mov, _ = sim_movie()
     plan = chunk_read_plan(mov, [0, 60, 120, 180], 60, mov.n, (5, 5, 110), 5)
-    pm = PrefetchMovie(mov, plan)
+    pm = Prefetch(mov, plan)
     for k in plan + [plan[0]]:                      # 4 hits, then 1 miss
         assert np.array_equal(pm.read(*k), mov.read(*k))
     assert pm.stats['hits'] == 4 and pm.stats['misses'] == 1, pm.stats

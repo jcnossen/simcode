@@ -1,72 +1,20 @@
 """
-Shared I/O for the uncalibrated per-window pipeline (simcode/pipeline): movie reading (multi-part Andor SOLIS TIFFs,
-absolute frame index), camera conversion and the PSF model. Only the camera and PSF entries of the calibration json
-are read here; its 'pattern' entry is never used.
+Shared pieces of the per-window pipeline (simcode/pipeline): the read plan of the chunks, the rows of the pass-1 chunk
+files, camera conversion and the PSF model. Movie reading itself is simcode/fileio/movie.py (Movie = TiffMovie,
+PrefetchMovie = Prefetch). Only the camera and PSF entries of the calibration json are read here; its 'pattern' entry is
+never used.
 """
 import json, os
-import numpy as np, tifffile, torch
+import numpy as np, torch
 from simcode.psf.vectorial import VectorialPSF
+from simcode.fileio.movie import TiffMovie, Prefetch
 
 PX_NM = 108.33
 
 
-class Movie:
-    """Absolute-frame access to movie.tif + movie_X1.tif + ... (pattern step = absolute frame % 6)."""
-    def __init__(self, path):
-        self.parts = [path] + [path.replace('.tif', f'_X{i}.tif') for i in range(1, 10)
-                               if os.path.exists(path.replace('.tif', f'_X{i}.tif'))]
-        self.tifs = [tifffile.TiffFile(p) for p in self.parts]
-        self.bounds = np.cumsum([0] + [len(t.pages) for t in self.tifs])
-        self.n = int(self.bounds[-1])
-        self.shape = self.tifs[0].pages[0].shape
-
-    def read(self, f0, f1, y0, x0, S):
-        out = np.empty((f1 - f0, S, S), np.float32)
-        for i, fi in enumerate(range(f0, f1)):
-            j = int(np.searchsorted(self.bounds, fi, side='right') - 1)
-            out[i] = self.tifs[j].pages[int(fi - self.bounds[j])].asarray()[y0:y0 + S, x0:x0 + S]
-        return out
-
-
-class PrefetchMovie:
-    """(2026-11-11, speed branch) Movie wrapper that reads the NEXT chunk's frames in a background thread while the current
-    chunk is processed. `plan` = the expected read() calls in order [(f0, f1, y0, x0, S), ...]; a read() that matches the
-    prefetched request returns it (identical data, same Movie.read), any other request is read synchronously. Attributes
-    other than read() are those of the wrapped Movie."""
-    def __init__(self, movie, plan):
-        import threading
-        self._m, self._plan, self._i = movie, list(plan), 0
-        self._lock = threading.Lock(); self._fut = None
-        self.stats = dict(hits=0, misses=0, wait_s=0.0)
-        self._start(0)
-
-    def __getattr__(self, k):
-        return getattr(self._m, k)
-
-    def _start(self, i):
-        import threading
-        if i >= len(self._plan): self._fut = None; return
-        key = tuple(self._plan[i]); box = {}
-        def work():
-            try: box['a'] = self._m.read(*key)
-            except Exception as e: box['e'] = e
-        th = threading.Thread(target=work, daemon=True); th.start()
-        self._fut = (key, th, box)
-
-    def read(self, f0, f1, y0, x0, S):
-        import time
-        key = (f0, f1, y0, x0, S)
-        if self._fut is not None and self._fut[0] == key:
-            _, th, box = self._fut
-            t = time.time(); th.join(); self.stats['wait_s'] += time.time() - t
-            self._i += 1; self._start(self._i)
-            if 'e' in box: raise box['e']
-            self.stats['hits'] += 1
-            return box['a']
-        self.stats['misses'] += 1
-        if self._fut is not None:          # never two readers on the TIFF handles at once
-            self._fut[1].join(); self._fut = None
-        return self._m.read(f0, f1, y0, x0, S)
+# the readers live in simcode/fileio/movie.py (shared with the 4Pi pipelines); the old names stay valid
+Movie = TiffMovie
+PrefetchMovie = Prefetch
 
 
 def chunk_read_plan(movie, chunks, chunk, nf, crop, margin, pad=12):
@@ -78,6 +26,23 @@ def chunk_read_plan(movie, chunks, chunk, nf, crop, margin, pad=12):
         l0 = max(f0 - pad, 0) // 6 * 6; l1 = min(own1 + pad, movie.n)
         plan.append((l0, l1, Y0, X0, S))
     return plan
+
+
+def load_pass1_rows(out, chunks, crop=None, prior_off=None, cols=('wstart', 'x', 'y', 'sx', 'sy', 'I', 'phot', 'tc')):
+    """the pass-1 rows of the chunk files pass1_<f0>.npz of a run, each window once: windows loaded by two chunks (padding)
+    are taken from one chunk only (start in [own0 - 3, own1 - 3); the last chunk keeps its tail). prior_off (px): the
+    constant prior-position bias of the head, subtracted from x, y. crop (x0, y0, size): adds 'out' = central half (time
+    centroid) & inside the crop, recomputed globally."""
+    Ls = [np.load(f'{out}/pass1_{f0}.npz') for f0 in chunks]
+    keep = np.concatenate([(L['wstart'] >= int(L['own'][0]) - 3) & ((L['wstart'] < int(L['own'][1]) - 3) | (f0 == chunks[-1]))
+                           for L, f0 in zip(Ls, chunks)])
+    R = {c: np.concatenate([L[c] for L in Ls])[keep] for c in cols}
+    if prior_off is not None:
+        R['x'] = R['x'] - prior_off[0]; R['y'] = R['y'] - prior_off[1]
+    if crop is not None:
+        x0c, y0c, szc = crop
+        R['out'] = (R['tc'] >= 1.0) & (R['tc'] < 4.0) & (R['x'] >= x0c) & (R['x'] < x0c + szc) & (R['y'] >= y0c) & (R['y'] < y0c + szc)
+    return R
 
 
 def camera_maps_path(path, c=None):

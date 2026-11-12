@@ -15,6 +15,7 @@ import argparse, json, os, sys, time
 import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
+from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode.det.up2 import DetUp, targets, focal_w, gt_nn, select, band_extra, band_off_loss
 from simcode.det.model import n_params
 
@@ -238,8 +239,8 @@ def train(argv):
             elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
             print('EVAL', step, json.dumps(ev), flush=True)
         if step % a.ckpt_every == 0 and step > 0:
-            torch.save(dict(model=net.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
-    torch.save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
+            ckpt_save(dict(model=net.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
+    ckpt_save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
 
 
 def check():

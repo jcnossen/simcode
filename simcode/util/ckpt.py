@@ -1,6 +1,7 @@
-"""Atomic checkpoint save with a disk guard (2026-11-12: the root disk filled to 0 and a checkpoint was destroyed while
-being overwritten). save(obj, path): writes to path + '.tmp' and renames over path only after a complete write; skips the
-save with a warning when the target file system has less than `min_free_gb` free, so the previous checkpoint survives."""
+"""Atomic checkpoint save with a disk guard, used by every trainer (2026-11-12: the root disk filled to 0 and a checkpoint
+was destroyed while being overwritten). save(obj, path): writes to path + '.tmp' and renames over path only after a
+complete write; skips the save with a warning when the target file system has less than `min_free_gb` free, so the
+previous checkpoint survives. Training itself is not interrupted (a trainer keeps running and saves at its next step)."""
 import os, shutil, sys
 import torch
 

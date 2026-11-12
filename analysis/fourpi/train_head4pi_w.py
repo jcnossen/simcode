@@ -13,7 +13,7 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.fourpi.setup import P4
-from simcode.fourpi.ckpt import save as safe_save
+from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.fourpi.sim4pi import Sim4Pi
 from simcode.fourpi.head4pi import nll_prior

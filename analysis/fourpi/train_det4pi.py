@@ -14,7 +14,7 @@ import torch.multiprocessing as mp
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.fourpi.setup import P4
-from simcode.fourpi.ckpt import save as safe_save   # atomic, disk-guarded
+from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 
 def worker(q, seed, psf, B, size, dens):

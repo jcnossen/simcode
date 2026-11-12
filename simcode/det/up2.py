@@ -25,6 +25,7 @@ import argparse, json, math, os, sys, time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode.det.model import DetNet, select_subpixel, n_params
 
 dev = 'cuda'
@@ -287,8 +288,8 @@ def train(argv):
                      mem_gb=round(torch.cuda.max_memory_allocated() / 1e9, 2))
             log.write(json.dumps(r) + '\n'); log.flush(); print(json.dumps(r), flush=True)
         if step % a.ckpt_every == 0 and step > 0:
-            torch.save(dict(model=net.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
-    torch.save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
+            ckpt_save(dict(model=net.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
+    ckpt_save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
 
 
 def stats(argv):
