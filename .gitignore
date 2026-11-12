@@ -7,3 +7,8 @@ runs/
 *.tif
 out/
 external/
+
+# network weights and other binaries are not kept in git (user, 2026-11-12): distributed separately
+models/**/*.pt
+models/*.pt
+*.joblib
