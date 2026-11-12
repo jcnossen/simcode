@@ -65,7 +65,7 @@ def site_figure(D, sites, fn, head, nshow=6):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cell', default='NPC'); ap.add_argument('--head', default='v10'); ap.add_argument('--files', type=int, nargs='*')
-    ap.add_argument('--cltag', default='_wv')
+    ap.add_argument('--cltag', default='_wv'); ap.add_argument('--sel', type=int, default=0, help="1: network rows = the 'sel' column (>= 1000 e, |z| <= 0.3 um) instead of 'good'")
     a = ap.parse_args()
     CL = f'{REPO}/out/4pi/classical'
     out = f'{REPO}/out/4pi/net/cmp_{a.head}'; os.makedirs(f'{out}/fig', exist_ok=True); os.makedirs(f'{out}/real', exist_ok=True)
@@ -77,6 +77,8 @@ def main():
         for k in ('cl', 'clp'):
             m = np.isin(D[k]['f'], a.files); D[k]['ok'] = D[k]['ok'] & m
     tag = f'_{a.head}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '')
+    if a.sel:
+        D['net']['ok'] = D['net']['ok'] & np.load(net_fn)['sel']; tag += '_sel'
     r0 = FC.numbers(D, f'{a.cell} whole field'); r0['drift_ref_offset_nm'] = D.get('drift_ref_offset_nm')
     L = FC.fmt_numbers(r0); res = [r0]
     zd = D['zdrift']; n_ = min(len(zd['net']), len(zd['cl']))

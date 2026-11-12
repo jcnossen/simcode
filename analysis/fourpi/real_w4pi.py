@@ -38,6 +38,7 @@ def main():
     p.add_argument('--coh', type=float, default=1.0, help='interference-contrast scale of the PSF model in the solve')
     p.add_argument('--iters', type=int, default=15); p.add_argument('--batch', type=int, default=1500)
     p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
+    p.add_argument('--regions', default='', help='json with boxes (x0, x1, y0, y1 on the candidate pixel): the final solve only for candidates inside (pattern and phase field still from the whole field)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-real-w')
@@ -125,6 +126,14 @@ def main():
         tC = time.time() - t0 - tA
         print(f'{a.cell} {fi}: pattern psi {[np.round(patf[f"angle{i}"]["psi_deg"], 1).tolist() for i in range(2)]} m {patf["angle0"]["m_median"]:.2f}/{patf["angle1"]["m_median"]:.2f}'
               f' R {patf["angle0"]["R"]:.2f}/{patf["angle1"]["R"]:.2f} ({int(selp.sum())} emitters); phase field R {diag["R"]:.3f} ({int(gphi.sum())} used), {tC:.0f}s', flush=True)
+        if a.regions:   # keep only the candidates inside the boxes for the final solve
+            bx = [b for b in json.load(open(a.regions))['boxes'] if b.get('save', True)]
+            inb = np.zeros(n, bool)
+            for b in bx: inb |= (R['cx'] >= b['x0']) & (R['cx'] < b['x1']) & (R['cy'] >= b['y0']) & (R['cy'] < b['y1'])
+            ii = np.nonzero(inb)[0]
+            R = {k: v[ii] for k, v in R.items()}; n = len(ii); cx, cy = cx[ii], cy[ii]; Xp = Xp[ii]; Tsum = Tsum[ii]; I = I[ii]
+            jt_ = torch.tensor(ii, device=dev); psi, m, Phi0, tdoff = psi[jt_], m[jt_], Phi0[jt_], tdoff[jt_]
+            print(f'{a.cell} {fi}: {n} candidates inside the {len(bx)} boxes', flush=True)
         # ---- D: final solve
         cols = {k: [] for k in ('th', 'sig', 'chi2', 'kin', 'chi2_on', 'chi2_kin', 'N', 'ton', 'toff', 'bg', 'cs')}
         for i in range(0, n, a.batch):
