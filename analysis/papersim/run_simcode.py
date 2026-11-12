@@ -4,11 +4,9 @@ output region, and a network set of simcode/netsets.json (--netset; default m180
 Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the set, fixed c: --autoc 0) or real (the
 real-movie calibrations the production runs used) or autoc (--autoc 1, the automatic (c, c_a) per dataset).
 
-After the run, the localization tables are rebuilt with the strict product of simcode/strict.py on the simulation's FOV:
-strict.py hard-codes the real sensor crop (5, 5, 110) for its 10-px tiles, 20-nm coverage bins and the density rule's area;
-here CROP (and the tile_of / bin20 defaults) are set to (0, 0, W) in this process only (no file is changed; a --crop option in
-strict.build_table would make this unnecessary). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py
-(sel, strict, ...), and <out>/locs_sim_info.json.
+After the run, the localization tables are rebuilt with the selections of simcode/strict.py on the simulation's FOV
+(build_table crop = (0, 0, W): its 10-px tiles, 20-nm coverage bins and the density rule's area). Output:
+<out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py (main, sel, strict, ...), and <out>/locs_sim_info.json.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--netset m1809] [--cal_kind sim|real|autoc]
           [--nframes N] [--out <movie dir>/v2_<netset>] [--no_pass2] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess
@@ -26,12 +24,11 @@ def netset(name):
 def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
     import simcode.strict as SP
     crop = (0.0, 0.0, float(W))
-    SP.CROP = crop; SP.tile_of.__defaults__ = (crop, 10.0); SP.bin20.__defaults__ = (crop,)
     su = (sig_u.split(',') + [''])[:2] if sig_u else ['', '']
     from simcode import config
     info_all = {}
     for (tag, name), s in zip([('est', 'locs_p1_sim'), ('est2', 'locs_p2_sim')][:2 if pass2 else 1], su):
-        T, info = SP.build_table(out, tag, px_nm, None, None, None, config.resolve(s) if s else None)
+        T, info = SP.build_table(out, tag, px_nm, None, None, None, config.resolve(s) if s else None, crop=crop)
         SP.write_table(T, info, os.path.join(out, name), ('npz',))
         info_all[name] = {k: v for k, v in info.items() if k != 'columns'}
         print(name, json.dumps(info_all[name], default=str), flush=True)
