@@ -13,11 +13,11 @@ import torch
 from simcode2.fourpi.solve4pi import ANG
 
 
-def solve_loss(sv, o, S, Ystar, sb=0.2, clamp=50.0):
+def solve_loss(sv, o, S, Ystar, sb=0.2, clamp=50.0, grad_model=False):
     """sv: SolveK (pattern k of the simulator); o: head output; S: Sim4Pi sample; Ystar [n,6,4,K] targets.
     -> nll [n], dict(u [n,3] = dtheta / reported sigma, r2 [n] = mean whitened read-out residual^2)"""
     n = Ystar.shape[0]; dev = Ystar.device; K = Ystar.shape[-1]
-    with torch.no_grad():
+    with torch.set_grad_enabled(grad_model):   # grad_model: learned windows (head4pi_w) -> the Jacobian and covariance carry gradients
         sv._ctx = dict(W=o['W'], p0=None, Wsum=None)
         A, _ = sv.readout_k(S['x'], S['y'], S['z'], S['Phi0'], S['doff'])
         A = A[:, torch.tensor(ANG, device=dev)]                                   # [n,6,4,K,5]
