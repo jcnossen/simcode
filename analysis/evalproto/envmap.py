@@ -8,12 +8,12 @@ The bg map is fitted the same way (reported; applied only if it follows the phot
 set "ours p1" (kind ours) and grid; drift not needed) plus
   "movie": "<raw movie .tif>", "camera_maps": "<camera_maps_*.npz with offset_adu>", "envmap_key": "<output key, e.g. 0.5>"
 (dev: 0.5 nM camera_maps_0.5nM.npz; 2.5 AND 20 nM camera_maps_2p5nM_m2.npz -- reproduce the dev 20 nM numbers with that map;
-simcode2 ships models/insitu/camera_maps_{0.5nM,2p5nM_m2,20nM_m2}.npz).
+simcode ships models/insitu/camera_maps_{0.5nM,2p5nM_m2,20nM_m2}.npz).
 usage: python analysis/evalproto/envmap.py <dataset.json> [...] [--out dir]  -> envmap_<keys>.json / .txt (spatial.py reads it)"""
 import os, sys, json, numpy as np, tifffile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode2 import config
+from simcode import config
 G = 0.56
 ARGS = sys.argv[1:]
 if '--out' in ARGS:

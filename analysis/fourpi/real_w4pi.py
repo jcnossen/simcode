@@ -13,25 +13,26 @@ Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/real_w4pi.py --cell NPC --f
 import argparse, json, math, os, sys, time, threading, queue
 import numpy as np, torch
 import torch.nn.functional as F
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from dc import Dcimg, movie_files, file_index
 from front4pi import Front, reader, XLIM, P
 import solve_real4pi as SR
 from simsolve4pi import repattern_xy
-from simcode2.fourpi.solve4pi import kin_starts, best_of
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.loadhead import load_head
+from simcode.fourpi.solve4pi import kin_starts, best_of
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.loadhead import load_head
 
-OUT = f'{REPO}/out/4pi/net'
+OUT = f'{P4}/net'
 dev = 'cuda'
 
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--cell', default='NPC'); p.add_argument('--files', type=int, nargs='+', required=True)
-    p.add_argument('--head', default='v10'); p.add_argument('--det', default=f'{REPO}/out/4pi/models/det4pi/final.pt')
+    p.add_argument('--head', default='v10'); p.add_argument('--det', default=f'{P4}/models/det4pi/final.pt')
     p.add_argument('--nframes', type=int, default=0); p.add_argument('--chunk', type=int, default=600)
     p.add_argument('--p_min', type=float, default=0.5); p.add_argument('--tile', type=float, default=12.0); p.add_argument('--tblk', type=int, default=50)
     p.add_argument('--dnll', type=float, default=9.21); p.add_argument('--chi2_max', type=float, default=2.5)
@@ -41,13 +42,13 @@ def main():
     p.add_argument('--regions', default='', help='json with boxes (x0, x1, y0, y1 on the candidate pixel): the final solve only for candidates inside (pattern and phase field still from the whole field)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-real-w')
+    from simcode.util.proctitle import auto; auto('4pi-real-w')
     os.makedirs(OUT, exist_ok=True)
     net, ck = load_head(a.head); lut = net.lut
-    from simcode2.det.up2 import load as dload, select as dselect
+    from simcode.det.up2 import load as dload, select as dselect
     det, _ = dload(a.det)
     fr = Front(a.cell)
-    pat0 = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_{a.cell}.json'))
+    pat0 = json.load(open(f'{P4}/smlm/diag/pattern_{a.cell}.json'))
     sv = SolveK(lut, net.wins, delta=(0.0, SR.DELTA[a.cell])); sv.tab_lim = None; sv.coh_scale = a.coh
     h = P // 2
     for fi in a.files:

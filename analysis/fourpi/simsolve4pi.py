@@ -5,12 +5,13 @@ Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simsolve4pi.py --tag d1 --m
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import solve_real4pi as SR
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.solve4pi import Solve4Pi, kin_starts, best_of
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.solve4pi import Solve4Pi, kin_starts, best_of
 
 
 def repattern_xy(I, X, ref, sel):
@@ -34,11 +35,11 @@ def main():
     p.add_argument('--phi', default='field', help="'field' (in-situ estimate) or 'oracle' (simulator truth at the prior position)")
     p.add_argument('--pattern', default='iter', help="'iter' (network intensities, re-estimated from solved positions), 'net' (solve_real4pi.repattern only), 'oracle' (simulator truth)")
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-sim')
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'; dev = 'cuda'
+    from simcode.util.proctitle import auto; auto('4pi-sim')
+    d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     meta = json.load(open(f'{d}/meta.json'))
     SR.OUT = d
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     t0 = time.time()
     o, mt = SR.load_front('SIM', 0, a.model, dev)

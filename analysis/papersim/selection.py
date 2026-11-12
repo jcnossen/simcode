@@ -171,7 +171,7 @@ def frc_jaccard(ds, T, keep, nframes):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); ap.add_argument('--datasets', default='all')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-select')
+    from simcode.util.proctitle import auto; auto('psim-select')
     os.makedirs(OUTD, exist_ok=True)
     DS = datasets(a.netset)
     if a.datasets != 'all': DS = [d for d in DS if d['name'] in a.datasets.split(',')]

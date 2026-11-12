@@ -1,4 +1,4 @@
-"""Fit the coherent two-arm 4Pi PSF (simcode2/fourpi/psf4pi.py) to a bead z-stack, per channel (61 slices x 4 channels).
+"""Fit the coherent two-arm 4Pi PSF (simcode/fourpi/psf4pi.py) to a bead z-stack, per channel (61 slices x 4 channels).
 
 Data: out/4pi/smlm/zcal/zstack_rois_<cell>.npy ([61,4,21,21] e, registered channel ROIs around the bead).
 Per slice: x, y (px), N (common to the 4 channels), bg per channel; z_k = z0 + s * zstage_k (s = +-1 tried).
@@ -11,21 +11,22 @@ Output: out/4pi/psf4pi/<cell>_<tag>.json (+ _state.pt) and a figure.
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.psf4pi import PSF4Pi, PSF4PiA
+from simcode.fourpi.setup import P4
+from simcode.fourpi.psf4pi import PSF4Pi, PSF4PiA
 
-OUT = f'{REPO}/out/4pi/psf4pi'
+OUT = f'{P4}/psf4pi'
 
 
 def run(a):
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(0)
     dev = a.device
-    D = torch.tensor(np.load(f'{REPO}/out/4pi/smlm/zcal/zstack_rois_{a.cell}.npy'), device=dev)   # [K,4,R,R]
+    D = torch.tensor(np.load(f'{P4}/smlm/zcal/zstack_rois_{a.cell}.npy'), device=dev)   # [K,4,R,R]
     K, _, R, _ = D.shape
-    zc = json.load(open(f'{REPO}/out/4pi/smlm/zcal/zcal_{a.cell}.json'))
-    base = json.load(open(f'{REPO}/out/4pi/smlm/psf/{a.cell}_base.json'))['bead']
+    zc = json.load(open(f'{P4}/smlm/zcal/zcal_{a.cell}.json'))
+    base = json.load(open(f'{P4}/smlm/psf/{a.cell}_base.json'))['bead']
     zst = torch.tensor(zc['zstage'], device=dev, dtype=torch.float32)
     if a.asym:   # asymmetric arms (oil 1.5 top / silicone 1.35 bottom), stage mode for the bead stack, init from a symmetric fit
         m = PSF4PiA(R, px=a.px, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror, zmode='stage',

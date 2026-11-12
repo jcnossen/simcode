@@ -20,8 +20,10 @@ import argparse, json, os, sys, time
 import numpy as np
 from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
+from simcode.fourpi.setup import P4
 from select_curve_mt import pairs, rsd, photon_match
 import showcase_real_mt as SR
 from showcase_real_mt import FC, PX, FPF, OUTD, lg
@@ -173,7 +175,7 @@ def _job(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{REPO}/out/4pi/classical/real/cl_NPC_wv_all.npz')
+    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_NPC_wv_all.npz')
     ap.add_argument('--net', required=True); ap.add_argument('--tag', default='v10')
     a = ap.parse_args()
     rng = np.random.default_rng(0)

@@ -1,8 +1,8 @@
-"""Offline evaluation of the pass-2 benchmark dumps (simcode2/p2/dump.py -> <out>/p2/fe):
+"""Offline evaluation of the pass-2 benchmark dumps (simcode/p2/dump.py -> <out>/p2/fe):
   load(scene, front)            seeds pooled, FOV ids made unique
   targets(R)                    gate_report_xdet matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
-  solve(R, oi, cal, prior)      explicit pattern solve (simcode2/hd/sc.sc_solve -> msolve; fringe posterior / cmult per cal) on
+  solve(R, oi, cal, prior)      explicit pattern solve (simcode/hd/sc.sc_solve -> msolve; fringe posterior / cmult per cal) on
                                 the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free sc5nb prior on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
                                 sigma = s_prior * kap_p(bin) * f(bin)
@@ -12,9 +12,9 @@
   detect(...)                   recall / FP / JI on the final positions (0.5 px, gate_report.detection rule), matched-FP sweep
 """
 import glob, json, os
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 import numpy as np, torch
-from simcode2.hd.gate_report import match
+from simcode.hd.gate_report import match
 
 PX = 108.33
 S = 64
@@ -56,7 +56,7 @@ def _binval(tab, key, ph):
 
 @torch.no_grad()
 def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
-    from simcode2.hd import sc as SCM
+    from simcode.hd import sc as SCM
     ph = R['sc_I'][oi].sum(1)
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     if prior == 'direct':

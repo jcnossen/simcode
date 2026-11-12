@@ -5,7 +5,7 @@ if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import frc_common as CM
-from simcode2 import config
+from simcode import config
 OUTPNG = sys.argv[1] if len(sys.argv) > 1 else os.path.join(config.out_dir('plots'), 'frc_vs_N.png')
 JSON = os.path.join(config.out_dir('critic34'), 'frc_commonN.json')
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt

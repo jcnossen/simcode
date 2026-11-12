@@ -24,15 +24,16 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/field4pi.py --cell NPC
 import argparse, glob, json, math, os, sys
 import numpy as np, torch
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from register import PolyMap
 from pattern import emitter_phase
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.lut4pi import LUT4Pi
 
-OUT = f'{REPO}/out/4pi/field'
-NET = f'{REPO}/out/4pi/net'
+OUT = f'{P4}/field'
+NET = f'{P4}/net'
 XT = np.linspace(60, 300, 6); YT = np.linspace(0, 200, 5)
 NTX, NTY = 5, 4
 DELTA = {'MT': math.radians(-10.4), 'NPC': math.radians(-13.9)}
@@ -46,13 +47,13 @@ def tile_of(x, y):
 
 
 def part_a(cell, dev, model='v2'):
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     lut = LUT4Pi(st, P=11, dev=dev)
-    pm = PolyMap.load(f'{REPO}/out/4pi/smlm/reg/reg_insitu_{cell}.json')
+    pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
     rows = []
     for fi in SUBSET[cell]:
         fl = f'{NET}/locs_{cell}_{fi:03d}_{model}.npz'; ff = f'{NET}/front_{cell}_{fi:03d}_{model}.npz'
-        fp = f'{REPO}/out/4pi/smlm/p1/p1_{cell}_{fi:03d}.npz'
+        fp = f'{P4}/smlm/p1/p1_{cell}_{fi:03d}.npz'
         if not (os.path.exists(fl) and os.path.exists(fp)): continue
         L = np.load(fl); Fr = np.load(ff); P1 = np.load(fp, mmap_mode='r', allow_pickle=True)
         sel = L['on'] & (L['ton'] <= 0) & (L['toff'] >= 6) & (L['N'] > 2000) & (L['nn'] > 6) & (L['sz'] < 0.02)
@@ -320,7 +321,7 @@ def figures(cell, A, B, C):
 def main():
     p = argparse.ArgumentParser(); p.add_argument('--cell', default='NPC'); p.add_argument('--parts', default='abc')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-field')
+    from simcode.util.proctitle import auto; auto('4pi-field')
     os.makedirs(OUT, exist_ok=True)
     fn = f'{OUT}/field_{a.cell}.json'
     res = json.load(open(fn)) if os.path.exists(fn) else {}

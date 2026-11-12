@@ -7,7 +7,7 @@ filters; rs columns, on the targets matched by both SIMCODE and sc5nb, with sc5n
 Reference: basic single-emitter LM (analysis/figures/lmref.py; lm_gate.py / lm_icrlb.py, run_lm.sh; 11 x 11 ROI, z fixed 50 nm, x, y, 6 I_t, 6 bg_t; sCMOS Poisson):
 pattern-free LM x/y and LM I_t + the same explicit pattern solve (PM) -> position; LM I_t / bg_t. The LM runs on the SAME
 detector candidates as the networks (position row: the same matched set), or at the GT positions (forced).
-Inputs (<out> = simcode2.config out root): gate/<scene>__s30?_<tag>.npz (simcode2.hd.gate, simcode2.eff.simcode_gate),
+Inputs (<out> = simcode.config out root): gate/<scene>__s30?_<tag>.npz (simcode.hd.gate, simcode.eff.simcode_gate),
 sc7/gate_lm/*_lm11*.npz / *_sf11.npz (lm_gate.py, sf_gate.py), sc7/icrlb_<net>_<scene>.npz (icrlb.py, lm_icrlb.py).
 usage: python crlb_all_v2.py [nets sc5nb,sc6n] [LM variant 11z] [--out png] [--txt txt]"""
 import sys, os, argparse
@@ -23,8 +23,8 @@ A = _ap.parse_args()
 sys.argv = sys.argv[:1] + [A.nets]                   # icrlb_report reads sys.argv at import (as in the development run)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from icrlb_report import imet, bmet
-from simcode2 import config
-from simcode2.hd import gate_report as GR
+from simcode import config
+from simcode.hd import gate_report as GR
 from plot_crlb_sc3 import curves
 import plot_crlb_sc3 as P3
 

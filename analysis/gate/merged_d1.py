@@ -15,8 +15,8 @@ from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import p2eval as E        # analysis/gate/p2eval.py (cals, miss_anatomy)
 P = E.P                   # analysis/calib/plib.py
-from simcode2 import config
-from simcode2.psf.vectorial import VectorialPSF
+from simcode import config
+from simcode.psf.vectorial import VectorialPSF
 
 SCEN = (sys.argv[1] if len(sys.argv) > 1 else 'pair1,rs25qm,rs05qm').split(',')
 D = sys.argv[2] if len(sys.argv) > 2 else config.out_dir('p2', 'long')
@@ -38,7 +38,7 @@ class BD:
             c = json.load(open(config.model('insitu/calib_0.5nM.json'))); RR = 21
             psf = VectorialPSF(RR, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'], oversample=3, device=dev)
             psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
-            from simcode2.psf.vectorial import set_psf_extras; set_psf_extras(psf, c)   # opt-in calib PSF terms
+            from simcode.psf.vectorial import set_psf_extras; set_psf_extras(psf, c)   # opt-in calib PSF terms
             BD._psf, BD._focus = psf, c['focus_um']
         return torch.cat([BD._psf(p, torch.full((len(p),), BD._focus, device=dev)) for p in xyz.split(2048)])
 

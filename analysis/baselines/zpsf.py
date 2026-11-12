@@ -15,7 +15,7 @@ z-stack npz format (written by `python analysis/baselines/zpsf.py export <calib.
   z0_um, dz_um                  z_k = z0_um + k dz_um
   emitter_z_um (optional)       plane used by the 2D fits (default: the calib's emitter_z_median_um, else 0.055)
   focus_um, source (optional)   metadata
-The knots are interpolated with the Catmull-Rom 3D spline of simcode2.psf.lut.PSFLUT (value and d/dx, d/dy, d/dz).
+The knots are interpolated with the Catmull-Rom 3D spline of simcode.psf.lut.PSFLUT (value and d/dx, d/dy, d/dz).
 
 API: psf = load(spec); g, gx, gy = psf.eval(xc, yc, P[, z]) with xc, yc [N] = emitter position relative to the ROI centre (px;
 pixel j of a P-px ROI has its centre at j - (P-1)/2), returns [N,P,P] tensors (g sums to ~1 over the full plane; gx = dg/dxc).
@@ -26,7 +26,7 @@ import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.psf.lut import PSFLUT, geometry_matrix
+from simcode.psf.lut import PSFLUT, geometry_matrix
 
 
 class GaussPSF:
@@ -99,10 +99,10 @@ class SplinePSF:
 
 
 def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01, angles='avg'):
-    """knot stack of a calib json's VectorialPSF (as simcode2.pipeline.common.load_calib, larger ROI). angles: 'avg' = mean of
+    """knot stack of a calib json's VectorialPSF (as simcode.pipeline.common.load_calib, larger ROI). angles: 'avg' = mean of
     the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = set_psf_extras(angle=None)."""
-    from simcode2.config import resolve
-    from simcode2.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
+    from simcode.config import resolve
+    from simcode.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
     path = resolve(calib); c = json.load(open(path))
     psf = VectorialPSF(P, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'],
                        wavelength=c['wavelength_um'], oversample=3, device=device)

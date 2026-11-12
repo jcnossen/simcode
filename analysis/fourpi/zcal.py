@@ -6,6 +6,10 @@
   3. saves the per-channel ROIs (registered, 21 x 21) for the PSF steps.
 usage: python zcal.py  (both stacks)
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 import torch
@@ -17,7 +21,7 @@ from register import PolyMap
 from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
-OUT = '/home/jc/simcode2/out/4pi/smlm/zcal'
+OUT = f'{P4}/smlm/zcal'
 GAIN = 0.23
 
 
@@ -38,8 +42,8 @@ def fit_curve(z, s, c0):
 
 def run(cell, R=21):
     os.makedirs(OUT, exist_ok=True)
-    cam = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')
-    pm = PolyMap.load(f'/home/jc/simcode2/out/4pi/smlm/reg/reg_insitu_{cell}.json')
+    cam = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')
+    pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
     warp = Warp(lambda c, xx, yy: pm.inv(c, xx, yy))
     Z = zstack(cell)                                            # [61,4,H,W] ADU
     sat = int((Z >= 65535).sum())

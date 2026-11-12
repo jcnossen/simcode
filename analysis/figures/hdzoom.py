@@ -6,10 +6,10 @@ import os, sys, json, numpy as np
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lib20 as L
-from simcode2 import config
+from simcode import config
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter, uniform_filter
-from simcode2.pipeline.common import Movie
+from simcode.pipeline.common import Movie
 PX = L.PX
 cols = [('smlm', None), ('sf', None), ('decode_summed', None), ('sc_b', None), ('p1P', 6), ('p2P', 6)]
 Dc = {}

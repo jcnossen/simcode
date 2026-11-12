@@ -5,7 +5,7 @@ usage: python fig_gap.py [out.png]"""
 import os, sys
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import numpy as np
-from simcode2 import config
+from simcode import config
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 BLUE, ORANGE, INK, MUTED, GRID = '#2a78d6', '#eb6834', '#0b0b0b', '#52514e', '#e4e3df'
 plt.rcParams.update({'font.size': 9, 'axes.edgecolor': MUTED, 'axes.labelcolor': INK, 'xtick.color': MUTED, 'ytick.color': MUTED,

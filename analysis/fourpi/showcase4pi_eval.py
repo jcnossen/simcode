@@ -25,13 +25,14 @@ Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_eval.py --tag s
 import argparse, json, os, sys, time
 import numpy as np, torch
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.lm import lm_poisson_j, fisher_j, crlb
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.lm import lm_poisson_j, fisher_j, crlb
 
 NM = PX * 1000
 
@@ -104,12 +105,12 @@ def main():
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--chi2_max', type=float, default=4.0)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-sceval')
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'; dev = 'cuda'
-    out = f'{REPO}/out/4pi/showcase/{a.tag}'; os.makedirs(out, exist_ok=True)
+    from simcode.util.proctitle import auto; auto('4pi-sceval')
+    d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
+    out = f'{P4}/showcase/{a.tag}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     LO, HI = 8.0, W - 8.0
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{meta["psf"]}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{meta["psf"]}.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
     t0 = time.time()
     U = gt_units(d, T)
@@ -159,7 +160,7 @@ def main():
         if nm == 'net':
             S['net_nochi2'] = (L['x'], L['y'], L['z'], L['w'], base)
             S['net_all'] = (L['x'], L['y'], L['z'], L['w'], np.ones(len(L['x']), bool))
-    fk = f'{REPO}/out/4pi/showcase/cl/{a.tag}/cl_{a.tag}.npz'
+    fk = f'{P4}/showcase/cl/{a.tag}/cl_{a.tag}.npz'
     if os.path.exists(fk):
         K = dict(np.load(fk)); res['classical_failed'] = False
     else:   # sim_cl.py stopped (no emitter passes its selection for the pattern / phase-field fit): no classical output

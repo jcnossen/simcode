@@ -1,18 +1,18 @@
 """Paired gate comparison: targets matched (1 px on x_det, score >= 0.5) by BOTH SIMCODE (tag A) and ours (tag B); RMS / CRLB_SF_multi,
 trimmed RMS (|e| / CRLB <= 5), zmed, zcal, gross |e|/s > 4 per photon bin.
---offset (critic 32 #2): each method's own global (x, y) offset (simcode2.eff.simcode_gate.fit_offset: median est - GT over its
+--offset (critic 32 #2): each method's own global (x, y) offset (simcode.eff.simcode_gate.fit_offset: median est - GT over its
 matched targets 400-2000 ph) is fitted per scene / seed and removed before the statistics (the offsets are printed). 
-same code on simcode2.hd.gate_report.match / simcode2.eff.simcode_gate.fit_offset; the gate npz directory is
-$SIMCODE2_GATE_DIR (default <simcode2 out>/gate). SIMCODE gate npz: simcode2/eff/simcode_gate.py --model ni6_3 | L64_5
-(tags _scode_<model> / _scodenf_<model>); ours: simcode2/hd/gate.py (analysis/gate/run_gate.sh; dev tag _hd_sc5nbb15pmb10).
+same code on simcode.hd.gate_report.match / simcode.eff.simcode_gate.fit_offset; the gate npz directory is
+$SIMCODE_GATE_DIR (default <simcode out>/gate). SIMCODE gate npz: simcode/eff/simcode_gate.py --model ni6_3 | L64_5
+(tags _scode_<model> / _scodenf_<model>); ours: simcode/hd/gate.py (analysis/gate/run_gate.sh; dev tag _hd_sc5nbb15pmb10).
 usage: python analysis/gate/gate_paired.py tagA tagB scen1,scen2 [--offset]   (RESULTS: _scode_ni6_3 _hd_sc5nbb15pmb10
        iso,pair2,rs05qm --offset > gate_paired_scode_ni6_3_vs_b10.txt)"""
 import sys, glob, os, re, numpy as np
-from simcode2.hd.gate_report import match
-from simcode2.eff.simcode_gate import fit_offset
-D = os.environ.get('SIMCODE2_GATE_DIR')
+from simcode.hd.gate_report import match
+from simcode.eff.simcode_gate import fit_offset
+D = os.environ.get('SIMCODE_GATE_DIR') or os.environ.get('SIMCODE2_GATE_DIR')
 if not D:
-    from simcode2 import config
+    from simcode import config
     D = config.out_dir('gate', make=False)
 tA, tB = sys.argv[1], sys.argv[2]
 OFF = '--offset' in sys.argv

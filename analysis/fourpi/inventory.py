@@ -11,13 +11,17 @@ indexing, no use of the multipart reader that drops 2 frames per part.
 
 Usage: python analysis/fourpi/inventory.py  -> out/4pi/inventory/inventory.json + inventory.md
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import glob, json, os, re, struct, sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(__file__))
 from dc import Dcimg, ROOT, FRAME_DT_S  # noqa
 
-OUT = os.path.expanduser('~/simcode2/out/4pi/inventory')
+OUT = (f'{P4}/inventory')
 
 
 def dcimg_info(fn):

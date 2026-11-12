@@ -1,5 +1,5 @@
 """In-situ vectorial PSF of the registered 4-channel sum (the interference term cancels in the sum, so the summed PSF
-is an incoherent PSF). Built on simcode2.psf.vectorial.VectorialPSF (imported, not modified).
+is an incoherent PSF). Built on simcode.psf.vectorial.VectorialPSF (imported, not modified).
 
 Model (index-matched by default, n_med = n_imm: the emitter z is a pure defocus relative to the focal plane):
   one pupil:  mu = N * PSF(x, y, z; Zernike 5..21, blur) + bg
@@ -12,9 +12,9 @@ Bead z-stack mode: z_k = z0 + s * zstage_k (z0 free, s = +-1 chosen by the bette
 import math, os, sys, json
 import numpy as np
 import torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.psf.vectorial import VectorialPSF
+from simcode.psf.vectorial import VectorialPSF
 
 ZIDX = tuple(range(5, 22))
 
@@ -129,7 +129,7 @@ def summary(model):
 
 
 def render_knots(model, zmin, zmax, hz=0.01, S=4, P=15, xmax=2.0, chunk=512):
-    """oversampled knot stack g(u, v, z) for zpsf.ZStackLUT (same layout as simcode2.psf.lut.PSFLUT): returns
+    """oversampled knot stack g(u, v, z) for zpsf.ZStackLUT (same layout as simcode.psf.lut.PSFLUT): returns
     zstack [nz, Pl*S, Pl*S], u0, z0. Pl = big ROI covering P + 2 xmax."""
     c = int(math.ceil((P - 1) / 2 + xmax)) + 2; Pl = 2 * c + 1
     big = SumPSF(Pl, **{k: model.meta[k] for k in ('px', 'NA', 'n_imm', 'n_med', 'lam', 'two_arm', 'depth')},

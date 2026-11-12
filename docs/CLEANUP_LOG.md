@@ -174,3 +174,41 @@ after the path changes of step 2 (the 4Pi scripts of this tree import the packag
 
 Total: 5524 lines in the files above.
 
+
+Addendum to the step-1 trainer check: the pass-2 head's `w_il` field varies between runs of the same code by 2e-6 to 5e-5
+relative (three later runs of the new code against the same baseline: 5e-5, 5e-5, 7e-6), so the 5e-5 above is run-to-run
+noise of that field, not an effect of the changed reference evaluation.
+
+## Step 2: package rename `simcode2` -> `simcode`, hard-coded paths (user decision 2)
+
+- `git mv simcode2 simcode`, `simcode2.example.json` -> `simcode.example.json`; `simcode2` / `SIMCODE2` replaced in every
+  tracked text file (868 replacements in 209 files: imports, `python -m simcode.…`, docs, pyproject name, console scripts
+  `simcode-run` / `simcode-strict`, package data `netsets.json`, `fourpi/datasets.json`).
+  Not replaced on purpose: the repository directory `/home/jc/simcode2`, `/mnt/data/dmdsf/simcode2_out`, the code-host name
+  `jcnossen/simcode2`, `docs/CLEANUP_PLAN.md`, the output records under `analysis/results/`, and the calibration json
+  files under `models/` (their `source` / `note` strings still say `simcode2/...`; they are data records).
+- Old names still accepted (`simcode/config.py`; tested in `tests/test_fileio.py::test_config_names`): environment
+  variables `SIMCODE2_*` (the new `SIMCODE_*` wins when both are set; `config.env(name)`), the config files
+  `<repo>/simcode2.json` and `~/.config/simcode2.json` (after `simcode.json`), a `simcode2_out` directory as the default
+  output root when no `simcode_out` exists. The main tree's `simcode2.json` therefore keeps working unchanged.
+- Checkpoints: `tests/check_checkpoints.py` on `models/` and `out/4pi/models/` (49 files): none refers to a class of the
+  package, so no alias module was added; T, P, G4, N4 below load the production checkpoints under the new name.
+- Hard-coded `/home/jc/simcode2` removed from all code (was in 61 `.py` and 8 `.sh` files): scripts derive `REPO` from
+  their own location; the 4Pi work directory is `simcode.fourpi.setup.P4` = config root `fourpi` (default `<out>/4pi`,
+  env `SIMCODE_4PI`); other outputs use `config.root('out')`; 4Pi shell scripts `cd` to the repository of the script and
+  ask the package for the 4Pi directory. The 4Pi data set (data root `/mnt/data/4pi-sf` unless config `data4pi` / env
+  `SIMCODE_4PI_DATA`, channel crop layout, gain, pixel size, patch size, per-cell phase offset, file globs) is defined
+  once in `simcode/fourpi/datasets.json`, read by `simcode/fourpi/setup.py`. (`analysis/fourpi/dc.py` still has its own
+  copy until step B1.)
+- Removed with this step (they hard-coded the speed worktree / one optics scan): `analysis/speed/clean_bench.sh` (27
+  lines; one-off benchmark of the speed branch, calls scripts removed in step 1), `analysis/fourpi/run_psf_variants.sh`
+  (17 lines; one-off optics-sensitivity scan).
+- `tests/check_imports.py` now treats any remaining `simcode2` import, `python -m simcode2…` or `simcode2/<file>` mention
+  as an error.
+
+Checks (all with the renamed package, config through the worktree's `simcode.json`): S `tree ok`; T `ALL OK`; P 8 of 8
+files identical; Tr det / head / pass-2 det / pass-2 head same (max relative difference 2e-7 / 3e-7 / 0 / 7e-6);
+G4 identical (181 numbers; this also covers the step-1 edits of `solve4pi.py`, `loadhead.py`, `windows4pi.py`); N4 table identical
+(1 of 1 files, all arrays); C4: `val_iso.npz` and `val_iso.txt` identical, per-file table identical, full-driver table,
+patch meta and patch file identical; PS 8 of 8 files identical (chunk files and tables), metrics json identical.
+The 4Pi pipelines and the gate are deterministic on this machine, so bit-identity is the criterion for them as well.

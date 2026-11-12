@@ -6,8 +6,8 @@ information (near-zero = near-degenerate combination), and the eigenvector of th
 usage: python analysis/psf3d/fisher.py <fit_psf.pt> <tracks.npz> <heldout.npz> [n=1500] > out.txt"""
 import sys, json, math
 import numpy as np, torch
-from simcode2.psf.vectorial import VectorialPSF
-from simcode2.insitu.varpro import solve_linear
+from simcode.psf.vectorial import VectorialPSF
+from simcode.insitu.varpro import solve_linear
 
 dev = 'cuda'
 fit, tracks, ho = sys.argv[1:4]; n = int(sys.argv[4]) if len(sys.argv) > 4 else 1500

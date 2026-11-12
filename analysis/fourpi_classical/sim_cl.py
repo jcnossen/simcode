@@ -6,10 +6,11 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/sim_cl.py --dir o
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
 from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
 from cl4pi import Classic4Pi
@@ -44,17 +45,17 @@ def patches(d, meta, F, dev):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default=f'{REPO}/out/4pi/simmovie/d03'); ap.add_argument('--model', default='v2')
+    ap.add_argument('--dir', default=f'{P4}/simmovie/d03'); ap.add_argument('--model', default='v2')
     ap.add_argument('--tile', type=float, default=6.0); ap.add_argument('--tblk', type=int, default=25)
     ap.add_argument('--chunk', type=int, default=1024); ap.add_argument('--out', default='')
     ap.add_argument('--front', default=''); ap.add_argument('--field', default='poly'); ap.add_argument('--order', type=int, default=3); ap.add_argument('--scale', type=float, default=1.0)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; d = a.dir; tag = os.path.basename(d.rstrip('/'))
-    out = a.out or f'{REPO}/out/4pi/classical/sim/{tag}_{a.field}'; os.makedirs(out, exist_ok=True)
+    out = a.out or f'{P4}/classical/sim/{tag}_{a.field}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     F = dict(np.load(a.front or f'{d}/front_SIM_000_{a.model}.npz'))
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{meta["psf"]}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{meta["psf"]}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)
     c4 = Classic4Pi(lut, delta=(0.0, math.radians(meta['delta_deg'])), dev=dev)
     t0 = time.time()

@@ -30,7 +30,7 @@ def main():
     ap.add_argument('--gt_diag', type=int, default=1, help='v2: also the GT-pattern pass-2 diagnostic (0 = skip, ~40 %% of the v2 time)')
     a = ap.parse_args()
     sys.path.insert(0, REPO)
-    from simcode2.util.proctitle import auto; auto('psim-all')
+    from simcode.util.proctitle import auto; auto('psim-all')
     md = os.path.abspath(a.movie_dir)
     if not os.path.exists(os.path.join(md, 'movie.tif')):
         sys.exit(f'{md}/movie.tif missing: generate it first (gen_density.py --density D / gen_moving.py)')

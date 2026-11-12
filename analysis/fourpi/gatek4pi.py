@@ -6,14 +6,15 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/gatek4pi.py --head v9   -> 
 """
 import argparse, json, math, os, sys
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi
-from simcode2.fourpi.solve4pi import psi_from_eps
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.loadhead import load_head
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.fourpi.solve4pi import psi_from_eps
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.loadhead import load_head
 
 EDGES = (1000, 2000, 4000, 8000, 16000)
 dev = 'cuda'
@@ -40,7 +41,7 @@ def main():
     out = dict(head=a.head, it=ck.get('it'))
     # ---- set A
     S = Sim4Pi(lut, seed=11).sample(6000, p_nb=0.0, p_on=1.0, eps_range=math.pi)
-    bc = torch.load(f'{REPO}/out/4pi/sim/bench_classical_epspi.pt', weights_only=False)
+    bc = torch.load(f'{P4}/sim/bench_classical_epspi.pt', weights_only=False)
     assert torch.allclose(bc['S']['x'], S['x'])
     cr = (bc['cr_p'][:, :3] * sc).cpu().numpy(); Nw = S['Nt'].sum(1).cpu().numpy()
     tr = torch.stack([S['x'], S['y'], S['z']], 1)
@@ -78,7 +79,7 @@ def main():
         print(f'| {nm} | ' + ' | '.join(cells) + ' |')
         print('   error / reported sigma (robust): ' + ' | '.join(' / '.join(f'{1.4826 * np.median(np.abs(u[(Nw >= lo) & (Nw < hi), k])):.2f}' for k in range(3)) for lo, hi in zip(EDGES[:-1], EDGES[1:])))
     hn = os.path.basename(a.head).replace('head4pi_', '').replace('.pt', '')
-    json.dump(out, open(f'{REPO}/out/4pi/sim/gatek_{hn}.json', 'w'), indent=1)
+    json.dump(out, open(f'{P4}/sim/gatek_{hn}.json', 'w'), indent=1)
 
 
 if __name__ == '__main__':

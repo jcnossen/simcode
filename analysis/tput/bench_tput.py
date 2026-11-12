@@ -4,19 +4,19 @@
   pass 2 (p2)   read, detector, head, pattern solve     (p2.front.Pass2P2 vs sc_front_fast.Pass2P2Fast [eager, compiled])
   head variants (fast pass 1): head_batch 8192, channels_last, cudnn.benchmark (+ their I / x difference vs the original)
 Original-path stage times include its per-stage syncs (as logged by the pipeline); fast-path stage times are GPU busy times
-from CUDA events (the stages overlap with 2 streams) and 'wall' is the chunk wall time.  same stages / timing code on the simcode2 modules. The
+from CUDA events (the stages overlap with 2 streams) and 'wall' is the chunk wall time.  same stages / timing code on the simcode modules. The
 datasets are a json file (default analysis/tput/datasets.json; $TPUT_DATA overrides): name -> movie, calib (in-situ), f0, f1,
-pattern (a pattern_est.pt of a full run of that movie, e.g. <out>/pattern_est.pt of simcode2.run), sc_cal, p2_cal; relative
-movie paths resolve against the simcode2 data root, calibrations against the models dir (simcode2/config.py). Networks =
-simcode2 defaults (det_n1, hd_sc5nb, p2_det, p2_head_long). Output: <simcode2 out>/tput/bench_<name>.json ($TPUT_OUT overrides).
+pattern (a pattern_est.pt of a full run of that movie, e.g. <out>/pattern_est.pt of simcode.run), sc_cal, p2_cal; relative
+movie paths resolve against the simcode data root, calibrations against the models dir (simcode/config.py). Networks =
+simcode defaults (det_n1, hd_sc5nb, p2_det, p2_head_long). Output: <simcode out>/tput/bench_<name>.json ($TPUT_OUT overrides).
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/tput/bench_tput.py <name> [variants: orig,fast,fastc,heads] [--pattern <pattern_est.pt>]
        (BENCH_NF=<frames>: short smoke chunk -> bench_<name>_smoke.json; MEM_FRAC: per-process GPU memory cap, default 0.45)"""
 import sys, os, json, time
 import numpy as np, torch
-from simcode2 import config
-from simcode2.pipeline.common import Movie, load_calib
-from simcode2.pipeline import sc_front as SF, sc_front_fast as SFF
-from simcode2.p2 import front as FR
+from simcode import config
+from simcode.pipeline.common import Movie, load_calib
+from simcode.pipeline import sc_front as SF, sc_front_fast as SFF
+from simcode.p2 import front as FR
 
 ARGS = sys.argv[1:]
 PAT = None

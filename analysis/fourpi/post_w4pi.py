@@ -9,8 +9,10 @@ Usage: python analysis/fourpi/post_w4pi.py --cell NPC --head v10
 """
 import argparse, glob, json, os, subprocess, sys
 import numpy as np
-REPO = '/home/jc/simcode2'
-OUT = f'{REPO}/out/4pi/net'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+OUT = f'{P4}/net'
 PX = 128.0
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -22,7 +24,7 @@ def main():
     p.add_argument('--files', type=int, nargs='*')
     a = p.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode2.util.proctitle import auto; auto('4pi-post-w')
+    from simcode.util.proctitle import auto; auto('4pi-post-w')
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
     if a.files: fs = [f for f in fs if int(f.split('_')[-2]) in a.files]
     first = min(int(f.split('_')[-2]) for f in fs) if not a.files else None

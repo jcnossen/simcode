@@ -4,7 +4,7 @@ the movie renderer, the simulated-camera calibration and the per-movie file layo
 Settings (preprint, smlmtorch 5a4fda9 scripts/fig_densities2.py and fig_moving_tubules.py; see STATUS.md in the output dir for
 every deviation):
   PSF       in-situ vectorial PSF of the 1809/2 movie averaged over the two pattern axes (models/insitu/calib_1809_2_psf3d_avg.json),
-            rendered with the simcode2 simulator's LUT (simcode2/sim/simulator.py: VectorialPSF, 21 x 21 px ROI, 33 x 33
+            rendered with the simcode simulator's LUT (simcode/sim/simulator.py: VectorialPSF, 21 x 21 px ROI, 33 x 33
             sub-pixel knots, bilinear) at the fixed emitter height Z_UM = the calib's emitter_z_median_um (0.055 um; a z knot,
             so no z interpolation). Every emitter of every simulation sits at that height (the preprint sims were 2D).
   pattern   2 angles x 3 steps, frame f has step f % 6, angle = step // 3 (the experimental order [[0,1,2],[3,4,5]]; the
@@ -15,13 +15,13 @@ every deviation):
             on-fraction (= smlmtorch simulate(): intensity x relint 1/6 x (1 + depth sin(.)) x on-time).
   camera    pure Poisson photons (no read noise, as the preprint), written as uint16 ADU = photons / GAIN + OFFSET with
             GAIN 1 e/ADU and a flat OFFSET 100 ADU (so the counts are exact); calib_sim.json (+ camera_sim.npz: per-pixel
-            offset map 100, read-noise map 0) gives the real pipelines the same camera model (simcode2.run, paper_pipeline,
+            offset map 100, read-noise map 0) gives the real pipelines the same camera model (simcode.run, paper_pipeline,
             DECODE all read gain + offset map).
   blinking  smlmtorch.simflux.simulate.blinking_spots: a two-state Markov chain on every GT point with 10 sub-steps per
             frame, k_off = 1 / (avg_on_time x 10), k_on = k_off (1 - p_off) / p_off, p_off = 1 - on_fraction, initial state
             Bernoulli(on_fraction); per-frame on-fraction = on sub-steps / 10. Sampled here exactly as alternating geometric
             run lengths (same distribution, vectorised); the random stream differs from the preprint's.
-Coordinates everywhere: px, pixel centre = integer, x = column (simcode2 / smlmtorch / fastpsf / DECODE convention)."""
+Coordinates everywhere: px, pixel centre = integer, x = column (simcode / smlmtorch / fastpsf / DECODE convention)."""
 import ast, json, math, os, subprocess, sys
 import numpy as np
 
@@ -117,7 +117,7 @@ def illum(P, x, y, frames):
 
 
 def save_pattern_files(P, nframes, d):
-    """gt_pattern.pt (simcode2 common pattern format, for --ref_pattern / compare_pattern) and mp_gt.pickle (smlmtorch
+    """gt_pattern.pt (simcode common pattern format, for --ref_pattern / compare_pattern) and mp_gt.pickle (smlmtorch
     ModulationPattern, sin convention: phase_smlmtorch = phi - pi / 2, relint 1/6, pattern_frames [[0,1,2],[3,4,5]])"""
     import torch
     G = dict(k=torch.tensor(P['k'], dtype=torch.float32), phi=torch.tensor(P['phi'], dtype=torch.float32),
@@ -136,7 +136,7 @@ def save_pattern_files(P, nframes, d):
 
 
 # ------------------------------------------------------------------------------------------------ camera / calibration
-GAUSS_CALIB = os.path.join(REPO, 'models', 'insitu', 'calib_gauss1.3.json')   # opt-in key psf_gauss_sigma_um (simcode2/psf/vectorial.py)
+GAUSS_CALIB = os.path.join(REPO, 'models', 'insitu', 'calib_gauss1.3.json')   # opt-in key psf_gauss_sigma_um (simcode/psf/vectorial.py)
 
 
 def write_sim_calib(d, H, W, P, psf='vectorial'):
@@ -164,7 +164,7 @@ class Renderer:
     """rows (frame, x, y, photons) -> expected images with the simulator's PSF LUT at the fixed z, + bg, Poisson, ADU"""
     def __init__(self, H, W, dev='cuda', psf='vectorial'):
         import torch
-        from simcode2.sim.simulator import Simulator
+        from simcode.sim.simulator import Simulator
         self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
         self.z = z_um()
         # z knots 0, z, 2z: the emitter plane is a knot (no z interpolation)

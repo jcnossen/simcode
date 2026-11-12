@@ -6,6 +6,10 @@ Stage 2 (in situ): see insitu_register() - bright isolated emitters in 6-frame p
 Gaussian fits, residuals of the bead map vs field position, polynomial refit.
 PolyMap: fwd(c, x, y) -> ch0 coords; inv(c, x0, y0) -> ch c coords (separately fitted inverse polynomial).
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 import torch
@@ -125,9 +129,9 @@ def bead_register(cell, off, out_dir, order_use=2):
 
 
 if __name__ == '__main__':
-    out = '/home/jc/simcode2/out/4pi/smlm/reg'; os.makedirs(out, exist_ok=True)
+    out = f'{P4}/smlm/reg'; os.makedirs(out, exist_ok=True)
     for cell in ('NPC', 'MT'):
-        off = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')['off']
+        off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
         pm, rep, pos = bead_register(cell, off, out)
         print(cell, 'beads per channel', [len(p) for p in pos], 'saturated beads', [int((p[:, 5] > 0).sum()) for p in pos])
         for c in rep:

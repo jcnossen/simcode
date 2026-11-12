@@ -9,7 +9,7 @@ Used after removals / renames; also a pytest test (test_tree).
 import ast, importlib.util, os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKGS = [d for d in ('simcode', 'simcode2') if os.path.isdir(os.path.join(ROOT, d))]
+PKGS = [d for d in ('simcode',) if os.path.isdir(os.path.join(ROOT, d))]     # 'simcode2' = the pre-rename name: always an error
 
 
 def tracked():
@@ -98,7 +98,7 @@ def check():
     for f in files:
         if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS: continue
         for i, line in enumerate(open(os.path.join(ROOT, f), encoding='utf-8', errors='replace'), 1):
-            for mm in re.finditer(r'((?:simcode2?|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
+            for mm in re.finditer(r'(?<![\w~/-])((?:simcode2?|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
                 s = mm.group(1)
                 if not os.path.exists(os.path.join(ROOT, s)): errs.append(f'{f}:{i}: mentions {s}, which does not exist')
             for mm in re.finditer(r'python\s+(?:-u\s+)?-m\s+((?:simcode2?)[\w.]*)', line):

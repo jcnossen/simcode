@@ -21,7 +21,7 @@ plots/realism_scorecard.png = two --plot panels stacked (the development composi
 import json, os, sys
 import numpy as np
 
-from simcode2 import config
+from simcode import config
 HERE = os.path.join(config.root('out'), 'simreal2')         # scorecard.json (development: next to the script)
 SP = os.path.join(config.root('out'), 'scratch')
 CAM05 = config.model('insitu/camera_maps_0.5nM.npz')

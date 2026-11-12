@@ -14,15 +14,16 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/real_cl.py --cell
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-OUT = f'{REPO}/out/4pi/classical/real'
-PDIR = f'{REPO}/out/4pi/patches'
+OUT = f'{P4}/classical/real'
+PDIR = f'{P4}/patches'
 DELTA = {'MT': math.radians(-10.4), 'NPC': math.radians(-13.9)}
 GAIN = 0.23
 P = 15
@@ -113,7 +114,7 @@ def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=Non
     X, Y = cx + A['x0'], cy + A['y0']
     fitok = A['conv'] & ~A['at_bound'] & (A['chi2px'] < 4) & (A['llr'] < M.FILTERS['llr_max'])
     # pattern
-    ref = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_{cell}.json'))
+    ref = json.load(open(f'{P4}/smlm/diag/pattern_{cell}.json'))
     kref = [ref['angle0']['k'], ref['angle1']['k']]
     psel = fitok & (A['Nsum'] > 1500) & (A['R'] < 0.15) & (nn > 5)
     pat = M.estimate_pattern(A, X, Y, kref, psel)
@@ -220,9 +221,9 @@ def main():
     ap.add_argument('--order_npc', type=int, default=3); ap.add_argument('--order_mt', type=int, default=1); ap.add_argument('--hours', type=float, default=16)
     a = ap.parse_args()
     if a.follow: return follow(a)
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, DELTA[a.cell]), dev=dev)
     for fi in (a.files or []):
         if a.skip_done and os.path.exists(f'{OUT}/cl_{a.cell}_{fi:03d}{a.tag}.npz'):
@@ -233,10 +234,10 @@ def main():
 
 
 def follow(a):
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     from dc import movie_files, file_index
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)
     c4s = {c: Classic4Pi(lut, delta=(0.0, DELTA[c]), dev=dev) for c in a.cells}
     expect = {c: sorted(file_index(f) for f in movie_files(c)) for c in a.cells}

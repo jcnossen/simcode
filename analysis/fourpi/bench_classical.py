@@ -1,5 +1,5 @@
 """Stage-2 sim benchmark, classical side: isolated on-through emitters in 6-frame x 4-channel windows from the
-bead-fitted 4Pi PSF (simcode2/fourpi/sim4pi.py), known pattern and known 4Pi phase field Phi0.
+bead-fitted 4Pi PSF (simcode/fourpi/sim4pi.py), known pattern and known 4Pi phase field Phi0.
 
 Estimators:
   smlm   : astigmatic MLE on the channel- and frame-summed image (incoherent part of the 4Pi PSF): x, y, z, N, bg
@@ -13,18 +13,19 @@ Output: out/4pi/sim/bench_classical.json + table.
 """
 import json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
-from simcode2.fourpi.lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
+from simcode.fourpi.lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
 
-OUT = f'{REPO}/out/4pi/sim'
+OUT = f'{P4}/sim'
 V = 1.14 ** 2 + 0.2 ** 2
 
 
 def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
     sim = Sim4Pi(lut, dev=dev, seed=seed)
     S = sim.sample(n, p_nb=0.0, p_on=1.0, eps_range=eps_range)

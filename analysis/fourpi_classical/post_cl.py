@@ -8,8 +8,10 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/post_cl.py --cell
 """
 import argparse, glob, json, os, subprocess, sys
 import numpy as np
-REPO = '/home/jc/simcode2'
-OUT = f'{REPO}/out/4pi/classical/real'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+OUT = f'{P4}/classical/real'
 FIRST = {'MT': 0, 'NPC': 2}
 KEYS = ('w', 'x', 'y', 'z', 'sx', 'sy', 'sz', 'N', 'x0', 'y0', 'z_ast', 'sz_ast', 'xp', 'yp', 'zp', 'sxp', 'syp', 'szp', 'keep', 'keep_pix',
         'cx', 'cy', 'C', 'R', 'chi2px', 'nn', 'file_index', 'row', 'box')
@@ -20,7 +22,7 @@ def main():
     ap.add_argument('--files', type=int, nargs='*')
     a = ap.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     fs = sorted(glob.glob(f'{OUT}/cl_{a.cell}_[0-9][0-9][0-9]{a.tag}.npz'))
     if a.files: fs = [f for f in fs if int(os.path.basename(f).split('_')[2][:3]) in a.files]
     R = {}

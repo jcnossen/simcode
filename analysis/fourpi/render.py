@@ -1,13 +1,17 @@
 """Drift correction (DME v2 via analysis/baselines/dme_drift.py, run as a subprocess; DME imported read-only) and
 renders of the localization subsets; NPC ring analysis.
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, glob, subprocess, json
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-P1 = '/home/jc/simcode2/out/4pi/smlm/p1'
+P1 = f'{P4}/smlm/p1'
 FIRST = {'MT': 5, 'NPC': 10}   # subset start file: global frame = (file - first) * 18000 + 6 w + 3
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+OUT = f'{P4}/smlm'
 
 
 def load_locs(cell, kind='p2', files=None):
@@ -32,7 +36,7 @@ def run_dme(x, y, frame, sx, sy, F, tag, gpu='0'):
     fn = f'{OUT}/drift/{tag}_locs.npz'; os.makedirs(f'{OUT}/drift', exist_ok=True)
     np.savez(fn, frame=frame - 3, x=x, y=y, sx=sx, sy=sy)
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=gpu)
-    r = subprocess.run([sys.executable, '/home/jc/simcode2/analysis/baselines/dme_drift.py', fn, f'{OUT}/drift/{tag}_drift.npy', str(F)],
+    r = subprocess.run([sys.executable, f'{REPO}/analysis/baselines/dme_drift.py', fn, f'{OUT}/drift/{tag}_drift.npy', str(F)],
                        env=env, capture_output=True, text=True)
     print(r.stdout[-2000:], r.stderr[-2000:])
     return np.load(f'{OUT}/drift/{tag}_drift.npy')

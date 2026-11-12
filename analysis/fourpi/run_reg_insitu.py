@@ -2,13 +2,17 @@
 file (3 iterations: detection / ROI centring with the refined map), then the residual of that map on other files
 (registration drift). usage: python run_reg_insitu.py <cell> <ref_fi>,<fi2>,...
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import sys, os, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from register import *
 from dc import movie_files, file_index
-out = '/home/jc/simcode2/out/4pi/smlm/reg'
+out = f'{P4}/smlm/reg'
 cell = sys.argv[1]; fis = [int(v) for v in sys.argv[2].split(',')]
-off = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')['off']
+off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
 pm = PolyMap.load(f'{out}/reg_beads_{cell}.json')
 fn = lambda fi: [f for f in movie_files(cell) if file_index(f) == fi][0]
 S6 = load_s6(cell, fn(fis[0]), 0, 3600, off)

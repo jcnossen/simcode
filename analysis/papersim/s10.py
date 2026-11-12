@@ -134,11 +134,11 @@ def classical(S, R6, psf, rng):
 
 class Nets:
     def __init__(self, ns):
-        from simcode2.hd import sc as SCM
-        from simcode2.p2 import head2 as H2
-        from simcode2.p2 import dump as DU
-        from simcode2.sim.simulator import Simulator
-        from simcode2 import config
+        from simcode.hd import sc as SCM
+        from simcode.p2 import head2 as H2
+        from simcode.p2 import dump as DU
+        from simcode.sim.simulator import Simulator
+        from simcode import config
         self.SCM, self.H2, self.DU = SCM, H2, DU
         sim = Simulator(C.resolve_calib(ns) if hasattr(C, 'resolve_calib') else ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
@@ -151,8 +151,8 @@ class Nets:
 
     @torch.no_grad()
     def run(self, frames, patt):
-        from simcode2.hd import gate as GA
-        from simcode2.p2 import illum as IL
+        from simcode.hd import gate as GA
+        from simcode.p2 import illum as IL
         o = dict(frames=frames, patt_est=patt)
         r1 = GA.out_sc(self.p1, o, 0.2)
         il = IL.illum_maps(patt, FOV, FOV)
@@ -199,8 +199,8 @@ def main():
     ap.add_argument('--psf', default='vectorial', help="'vectorial' (averaged 1809/2) or 'gauss1.3' (the preprint's PSF: rendering AND the SMLM / SIMFLUX fits)")
     ap.add_argument('--nets', type=int, default=1, help='0: classical methods only (network rows nan)')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-s10')
-    from simcode2.config import netset
+    from simcode.util.proctitle import auto; auto('psim-s10')
+    from simcode.config import netset
     os.makedirs(a.out, exist_ok=True)
     ns = netset(a.netset)
     gauss = a.psf.startswith('gauss')

@@ -150,7 +150,7 @@ def main():
     ap.add_argument('--test', default='m05r3,D2,D0.5,hollow_1809_2_R12.5_x1,hollow_1809_2_R25_x8,hollow_2.5nM_2_R25_x1,Dexp2')
     ap.add_argument('--max_train_rows', type=int, default=150000)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-pvalid')
+    from simcode.util.proctitle import auto; auto('psim-pvalid')
     os.makedirs(OUTD, exist_ok=True); cache = os.path.join(OUTD, 'cache'); os.makedirs(cache, exist_ok=True)
     D = datasets(a.netset); test = [t for t in a.test.split(',') if t in D]; train = [n for n in D if n not in test]
     print('train', train, '\ntest', test, flush=True)

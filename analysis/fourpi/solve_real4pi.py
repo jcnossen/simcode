@@ -13,13 +13,14 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/solve_real4pi.py --cell NPC
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.solve4pi import Solve4Pi, kin_starts, best_of
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.solve4pi import Solve4Pi, kin_starts, best_of
 
-OUT = f'{REPO}/out/4pi/net'
+OUT = f'{P4}/net'
 DELTA = {'MT': math.radians(-10.4), 'NPC': math.radians(-13.9)}   # per-angle 4Pi phase offset (SMLM_REPORT 5.2)
 
 
@@ -115,11 +116,11 @@ def main():
     p.add_argument('--dchi', type=float, default=7.81)   # kin vs free: 3 extra dof
     p.add_argument('--repattern', type=int, default=1)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-solve')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import auto; auto('4pi-solve')     # recognizable name in nvidia-smi / ps
     dev = 'cuda'
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
-    pat = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_{a.cell}.json'))
+    pat = json.load(open(f'{P4}/smlm/diag/pattern_{a.cell}.json'))
     tb = Solve4Pi(lut); tb.build_table()          # tabulated read-out sums (same for every file)
     summ = {}
     for fi in a.files:

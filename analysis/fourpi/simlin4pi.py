@@ -13,15 +13,16 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/simlin4pi.py --tag iso --fr
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import solve_real4pi as SR
 from simsolve4pi import repattern_xy
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.solve4pi import kin_starts, best_of
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.linread4pi import linear_readout, border_bg
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.solve4pi import kin_starts, best_of
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.linread4pi import linear_readout, border_bg
 
 WINS = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))
 dev = 'cuda'
@@ -49,10 +50,10 @@ def main():
     p.add_argument('--img_cpu', type=int, default=0, help='1: keep the candidate patches in host memory (large movies; batches go to the GPU)')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-simlin')
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'
+    from simcode.util.proctitle import auto; auto('4pi-simlin')
+    d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     t0 = time.time()
     F = np.load(f'{d}/front_SIM_000_{a.front}.npz')
@@ -65,7 +66,7 @@ def main():
     bm = border_bg(img).to(dev)
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
-        from simcode2.fourpi.loadhead import load_head
+        from simcode.fourpi.loadhead import load_head
         net, _ = load_head(a.head); bl = []
         with torch.no_grad():
             for i in range(0, n, 1000):

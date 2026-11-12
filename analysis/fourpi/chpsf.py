@@ -2,13 +2,17 @@
 4Pi phase Phi (4 bins of 90 deg); per channel the 6-frame-summed, background-subtracted, UNWARPED ROI is accumulated on
 a 2x oversampled grid centred on the emitter (sub-pixel alignment by binning pixel-centre offsets), normalised by the
 emitter's total (4-channel) amplitude. Also the bead z-stack channel images. usage: python chpsf.py <cell>"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json, glob
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from register import PolyMap
 
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+OUT = f'{P4}/smlm'
 OS = 2; HW = 6.5
 
 

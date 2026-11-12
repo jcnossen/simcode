@@ -12,11 +12,13 @@ import argparse, json, os, sys
 import numpy as np
 from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
+from simcode.fourpi.setup import P4
 from dafl4pi import analyse
 PX = 128.0
-OUT = f'{REPO}/out/4pi/classical'
+OUT = f'{P4}/classical'
 
 
 def frc(xa, ya, xb, yb, px=4.0):
@@ -555,7 +557,7 @@ def main():
         zinfo = dict(ptp_net_nm=float(np.ptp(zd['net'])), ptp_cl_nm=float(np.ptp(zd['cl'])),
                      rms_diff_net_cl_nm=float(np.sqrt(np.mean((zd['net'][:n_] - zd['cl'][:n_] - np.mean(zd['net'][:n_] - zd['cl'][:n_])) ** 2))))
         lg(f'z drift {zinfo}')
-        reg = json.load(open(f'{REPO}/out/4pi/patches/regions_MT.json'))
+        reg = json.load(open(f'{P4}/patches/regions_MT.json'))
         boxes = [dict(b, id=i) for i, b in enumerate(reg['boxes']) if b.get('save')]
         D['crossings'] = pick_xings(D); lg(f'crossings {D["crossings"]}')
         fo = mt_overview(D, boxes, a.tag); lg(fo)

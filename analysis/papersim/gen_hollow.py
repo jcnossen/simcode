@@ -93,7 +93,7 @@ def main():
     ap.add_argument('--block', type=int, default=600)
     ap.add_argument('--out', default=None)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-hollow')
+    from simcode.util.proctitle import auto; auto('psim-hollow')
     import torch
     d = a.out or os.path.join(HOLLOW, f'{a.cond}_R{a.radius_nm:g}_x{a.phot_scale:g}')
     os.makedirs(d, exist_ok=True)

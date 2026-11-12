@@ -14,11 +14,12 @@ Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_movie.py --tag 
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.lut4pi import LUT4Pi
 
 # (p0, control, p2) in um, (z at p0, z at p2) in um (z linear along the curve parameter)
 FILS = [((0.0, 2.0), (3.8, 1.6), (7.68, 2.6), (-0.15, -0.15)),     # A: low, nearly horizontal
@@ -76,8 +77,8 @@ def main():
     p.add_argument('--r', type=float, default=0.025, help='label radius um (0.025 antibody, 0.0125 bare tube)')
     p.add_argument('--seed', type=int, default=0); p.add_argument('--fchunk', type=int, default=1500)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-scmovie')
-    out = f'{REPO}/out/4pi/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
+    from simcode.util.proctitle import auto; auto('4pi-scmovie')
+    out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     if os.path.exists(f'{out}/meta.json'):
         print('exists', out); return
     rng = np.random.default_rng(a.seed)
@@ -102,7 +103,7 @@ def main():
     fr, ev, q = fr[k_], ev[k_], q[k_]
     o_ = np.argsort(fr, kind='stable'); fr, ev, q = fr[o_], ev[o_], q[o_]
     x, y, z = S[site[ev], 0], S[site[ev], 1], S[site[ev], 2]
-    pat = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_MT.json'))
+    pat = json.load(open(f'{P4}/smlm/diag/pattern_MT.json'))
     step = fr % 6; ang = step // 3
     k = np.array([pat['angle0']['k'], pat['angle1']['k']]); psi = np.radians(np.array([pat['angle0']['psi_deg'], pat['angle1']['psi_deg']]))
     m = 0.9
@@ -111,7 +112,7 @@ def main():
     Phi = phi0_field(x, y, fr, H, W, T) + np.where(ang == 1, DELTA, 0.0)
     print(f'sites {len(S)}, events {len(site)}, emitter-frames {len(fr)} ({len(fr) / T:.1f} per frame = {len(fr) / T / area:.2f} /um^2/frame)', flush=True)
     dev = 'cuda'
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     R = 21; h = R // 2
     lut = LUT4Pi(st, P=R, dev=dev)
     o = torch.arange(R, device=dev)

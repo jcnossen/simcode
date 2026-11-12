@@ -10,7 +10,7 @@ usage: CUDA_VISIBLE_DEVICES=2 python run_simcode_real.py net <cache.npy> --movie
        CUDA_VISIBLE_DEVICES=2 python run_simcode_real.py ndi <cache.npy> <out.npz> --fix_sign 1   (1 = sign-fixed SIMCODE (b))
 """
 import argparse, json, os, time, sys
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 SMLMTORCH_MODELS = os.environ.get('SMLMTORCH_MODELS') or _cfg._config().get('smlmtorch_models') or os.path.expanduser('~/smlmtorch/scripts/models')
 os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 import numpy as np, torch

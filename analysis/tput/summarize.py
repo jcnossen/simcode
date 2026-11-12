@@ -1,12 +1,12 @@
 """markdown tables from acc_gate.json, movie_*.json, bench_*.json, movies/*/timing.json; the directory is an argument (default
-<simcode2 out>/tput); acc_gate.json / movie_*.json (accuracy acceptance) are optional.
+<simcode out>/tput); acc_gate.json / movie_*.json (accuracy acceptance) are optional.
 Keeps per section the first measurement whose time window had no foreign GPU process (gpu_samples.log of gpu_sampler.sh)
 -> clean_<data>.json.
 usage: python analysis/tput/summarize.py [tput dir]"""
 import json, os, glob, sys
 if len(sys.argv) > 1: T = os.path.join(sys.argv[1], '')
 else:
-    from simcode2 import config
+    from simcode import config
     T = os.path.join(config.out_dir('tput'), '')
 L = []
 G = json.load(open(T + 'acc_gate.json')) if os.path.exists(T + 'acc_gate.json') else {}

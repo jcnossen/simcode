@@ -1,5 +1,5 @@
 """psf3d retrain (2026-11-11), item 2: selection-aware sigma rescale against the strict product's winner's curse.
-sigma' = sigma * g(u), u = strict_u (the per-10-px-tile sigma rank quantile among the good rows, simcode2/strict.py), g = the robust
+sigma' = sigma * g(u), u = strict_u (the per-10-px-tile sigma rank quantile among the good rows, simcode/strict.py), g = the robust
 zcal of the matched rows per u bin, fitted on sim movies with GT. The strict selection itself is unchanged (u is computed from the
 unrescaled sigma); only the reported sx, sy change. zcal = 1.4826 median |e / sigma| per axis on rows with |e| < 50 nm (robust),
 e = position - GT (window rows matched one-to-one within 1 px to GT event windows, evalproto/lib.match_fast; the median error of
@@ -10,7 +10,7 @@ the matched set, a global gauge offset, is removed per movie).
         windows; recall of the GT target windows, unmatched good rows (FP), GT RMS on identical GT windows per GT-photon bin, gross > 50 nm"""
 import json, os, sys
 import numpy as np
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 
 PX = 108.33
 UE = [0.0, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 1.0]

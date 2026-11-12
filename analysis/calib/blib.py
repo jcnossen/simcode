@@ -1,10 +1,10 @@
-"""Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode2.hd.sc.sc_solve with a
+"""Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode.hd.sc.sc_solve with a
 calibration dict, match targets as gate_report_xdet (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
 RMS / CRLB_SF_multi, zcal, the oracle convex mix with the prior (per-bin optimal alpha), paired FOV-bootstrap CIs."""
 import glob, json, os
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 import numpy as np, torch
-from simcode2.hd.gate_report import match
+from simcode.hd.gate_report import match
 
 PX = 108.33
 FE = os.path.join(_cfg.root('out'), 'bright', 'fe')
@@ -41,7 +41,7 @@ def targets(R, thr=0.5):
 
 @torch.no_grad()
 def solve(R, oi, cal, patt='est', chunk=8192, dev='cuda'):
-    from simcode2.hd import sc as SCM
+    from simcode.hd import sc as SCM
     P = torch.tensor(R['patt_est' if patt == 'est' else 'patt_true'], device=dev, dtype=torch.float32)
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     res = {k: [] for k in ('x', 'y', 'sx', 'sy', 'q', 'p', 'xp', 'yp', 'xmap', 'ymap')}

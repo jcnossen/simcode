@@ -5,26 +5,26 @@ Protocol (every method identically; README.md in this directory):
      locs npz; SIMCODE v2: pass-2 `sel`, the recommended full output).
   2. Disjoint windows only: all four methods localize 6-frame windows (SMLM / SIMFLUX: a window at every frame; DECODE and
      SIMCODE v2: every 3 frames), so overlapping windows re-use the same photons. Only window starts f % 6 == 0 are kept (the G6
-     grid of simcode2.evalproto.lib), so no photon is counted twice and every method samples the same windows.
+     grid of simcode.evalproto.lib), so no photon is counted twice and every method samples the same windows.
   3. Uncertainty filter, the same rule for all: max(sigma_x, sigma_y) < 0.15 px (16.2 nm), the paper's crlb_filter(0.15), with
      each method's own per-localization sigma (SMLM / SIMFLUX: CRLB; DECODE: its predicted sigma; SIMCODE v2: calibrated sigma).
   4. Common region: the evalproto crop (x, y in [5, 115) px) for every method (excludes the sensor edge).
   5. Drift: each method's OWN DME v2 drift (analysis/baselines/dme_drift.py), estimated on that method's rows from 2-4
      (time = window start + 3, crlb = its sigma), subtracted at window start + 3.
   6. FRC: alternating 300-frame halves (half = window start // 300 % 2), 5-nm histogram renders, 5-bin smoothed curve, 1/7
-     threshold = simcode2.evalproto.lib.frc_std (= frc_split, blk 300); frc_curve() below is the same computation that also
+     threshold = simcode.evalproto.lib.frc_std (= frc_split, blk 300); frc_curve() below is the same computation that also
      returns the curve and is asserted to give lib.frc's value.
   7. Counts next to the FRC: n_frc (rows in the FRC = steps 1-4), plus n_all (step 1) and n_disjoint (steps 1-2, 4).
   Secondary numbers (not plotted): FRC without the sigma filter (steps 1, 2, 4-6) and with the paper's 30-frame halves.
 
 API: T = load(kind, path); R = evaluate(T, nframes, drift_cache=<npy>)  ->  dict(frc_nm, freq, curve, n_*, drift, mask, x_dc, y_dc)
 CLI: CUDA_VISIBLE_DEVICES=1 python analysis/paper/frc_fair.py <out.json> <nframes> name=kind:path [name=kind:path ...]
-     kinds: smlm (smlm.npy), sf (sf.hdf5 / any smlmtorch hdf5), decode (decode_paper.py npz), v2 (simcode2 locs_p*.npz; rows `sel`)"""
+     kinds: smlm (smlm.npy), sf (sf.hdf5 / any smlmtorch hdf5), decode (decode_paper.py npz), v2 (simcode locs_p*.npz; rows `sel`)"""
 import os, sys, json, time, contextlib, io
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.evalproto import lib as EP
+from simcode.evalproto import lib as EP
 
 PX = EP.PX
 SIGMA_MAX = 0.15          # px, the paper's crlb_filter(0.15)
@@ -65,8 +65,8 @@ def masks(T, sigma_max=SIGMA_MAX, grid=GRID, crop=CROP):
 
 
 def dme_v2(x, y, t, sx, sy, F):
-    """DME v2 (simcode2/util/drift.py, as analysis/baselines/dme_drift.py) -> drift [F, 2] px, info"""
-    from simcode2.util import drift as DR
+    """DME v2 (simcode/util/drift.py, as analysis/baselines/dme_drift.py) -> drift [F, 2] px, info"""
+    from simcode.util import drift as DR
     pos = np.c_[x, y].astype(np.float32); crlb = np.c_[sx, sy].astype(np.float32)
     ok = (t >= 0) & (t < F) & (crlb.max(1) < 1.0) & (crlb.min(1) > 0)
     d, info = DR.dme_v2(pos[ok], t[ok].astype(np.int64), crlb[ok], F, return_info=True)
@@ -74,7 +74,7 @@ def dme_v2(x, y, t, sx, sy, F):
 
 
 def frc_curve(xa, ya, xb, yb, px=5.0):
-    """simcode2.evalproto.lib.frc (same bounds, render, smoothing, 1/7 crossing) returning (resolution nm, freq 1/nm, curve)"""
+    """simcode.evalproto.lib.frc (same bounds, render, smoothing, 1/7 crossing) returning (resolution nm, freq 1/nm, curve)"""
     s = PX / px
     lo = np.floor(min(xa.min(), ya.min(), xb.min(), yb.min())); hi = np.ceil(max(xa.max(), ya.max(), xb.max(), yb.max()))
     n = int((hi - lo) * s); n += n % 2

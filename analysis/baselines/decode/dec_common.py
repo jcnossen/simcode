@@ -24,7 +24,7 @@ Matched models (this work): DECODE trained on DECODE's own simulator with the si
   camera   = Poisson + 0.9 e read noise, 0.56 e/ADU floor, baseline 100 ADU, output in photons (as the movie's (ADU-off)*gain)
 """
 import os, sys, math, glob
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 import numpy as np, torch
 import decode
@@ -59,7 +59,7 @@ class LutPSF(PSF):
         self.R = luts[0].shape[-1]
         self.zmax = zmax_um; self.halo = halo; self.device = device
 
-    def _render(self, lut, x, y, z):          # = simcode2.sim.simulator.Simulator.render_psf
+    def _render(self, lut, x, y, z):          # = simcode.sim.simulator.Simulator.render_psf
         fx, fy = x - torch.round(x), y - torch.round(y)
         tx = (fx + 0.5) * self.ls; ty = (fy + 0.5) * self.ls
         ix = tx.floor().long().clamp(0, self.ls - 1); iy = ty.floor().long().clamp(0, self.ls - 1)
@@ -169,7 +169,7 @@ def sim_luts(device='cuda'):
     """base + 3 jittered LUTs of the movie's PSF model (RealSim '2.5nM' calibration) with seed 3 (the movie used seed 7)."""
     global _LUTS
     if _LUTS is None:
-        from simcode2.hd.realsim import RealSim
+        from simcode.hd.realsim import RealSim
         # (2026-11-11, opt-in) DEC_CALIB=<calib json>: the movie's in-situ 3D PSF (e.g. models/insitu/calib_*_psf3d.json) instead of
         # the preset's; a per-pattern-angle PSF enters as its angle average (DECODE is pattern-free; exact for the 6-frame sums)
         over = {'calib': os.environ['DEC_CALIB']} if os.environ.get('DEC_CALIB') else {}

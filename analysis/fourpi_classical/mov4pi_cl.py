@@ -14,7 +14,7 @@ Filters (SI Table 2 + standard fit rejections): see FILTERS / flags().
 """
 import math, os, sys
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from cl4pi import Classic4Pi, wrap

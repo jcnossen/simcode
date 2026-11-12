@@ -1,5 +1,5 @@
 """4Pi-SIMFLUX front end on raw dcimg: detection on the registered 4-channel 6-frame sum, unwarped 15 x 15 channel
-patches at the mapped positions, the 4Pi head (simcode2/fourpi/head4pi.py). Writes the head outputs per candidate.
+patches at the mapped positions, the 4Pi head (simcode/fourpi/head4pi.py). Writes the head outputs per candidate.
 
 Windows: frames 6w .. 6w+5 of each file (every file starts at pattern step 0, SMLM_REPORT 1.3).
 Detection (same rule as the classical pass 1, process.py, on GPU): DoG (1.5 / 5 px) on the registered sum, 7 x 7
@@ -14,17 +14,18 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/front4pi.py --cell NPC --fi
 import argparse, json, os, sys, time, threading, queue
 import numpy as np, torch
 import torch.nn.functional as F
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from dc import Dcimg, movie_files, crops, file_index
 from register import PolyMap
-from simcode2.fourpi.head4pi import Head4Pi
+from simcode.fourpi.head4pi import Head4Pi
 
 GAIN = 0.23
 XLIM = (55, 305)
 P = 15
-OUT = f'{REPO}/out/4pi/net'
+OUT = f'{P4}/net'
 
 
 def gauss_kernel(s, dev):
@@ -42,8 +43,8 @@ def blur(img, s):
 class Front:
     def __init__(self, cell, dev='cuda'):
         self.dev = dev
-        self.off = torch.tensor(np.load(f'{REPO}/out/4pi/smlm/camera/camera_{cell}.npz')['off'], device=dev, dtype=torch.float32)
-        self.pm = pm = PolyMap.load(f'{REPO}/out/4pi/smlm/reg/reg_insitu_{cell}.json')
+        self.off = torch.tensor(np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off'], device=dev, dtype=torch.float32)
+        self.pm = pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
         yy, xx = np.mgrid[0:200, 0:360].astype(np.float64)
         self.grid = [None]
         for c in (1, 2, 3):
@@ -111,9 +112,9 @@ def main():
     p.add_argument('--save_patches', default='', help='directory: save the raw ADU candidate patches (default off; see README there)')
     p.add_argument('--patch_regions', default='', help='json with boxes (x0, x1, y0, y1, save) on the candidate pixel; only those candidates are saved')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-front')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import auto; auto('4pi-front')     # recognizable name in nvidia-smi / ps
     os.makedirs(a.out, exist_ok=True)
-    from simcode2.fourpi.loadhead import load_head     # all head architectures (v2..v8)
+    from simcode.fourpi.loadhead import load_head     # all head architectures (v2..v8)
     net, ck = load_head(a.model)
     fr = Front(a.cell)
     for fi in a.files:

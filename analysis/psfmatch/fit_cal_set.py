@@ -6,7 +6,7 @@ import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
 import plib as P
-from simcode2 import config
+from simcode import config
 
 OUT = os.path.join(config.root('out'), 'psfmatch')
 

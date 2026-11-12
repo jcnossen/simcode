@@ -1,15 +1,16 @@
-"""Consistency test of the explicit solve (simcode2/fourpi/solve4pi.py) against the simulator: feed the GT read-out
+"""Consistency test of the explicit solve (simcode/fourpi/solve4pi.py) against the simulator: feed the GT read-out
 targets (T, C) without noise and a loose prior around the truth; the solve must return the truth (all modes), and
 the phase mode must return Phi0."""
-import json, math, sys
+import json, math, os, sys
 import torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi
-from simcode2.fourpi.solve4pi import Solve4Pi, psi_from_eps
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.fourpi.solve4pi import Solve4Pi, psi_from_eps
 
-st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
 lut = LUT4Pi(st, P=15)
 S = Sim4Pi(lut, seed=5).sample(2000, p_nb=0.0, p_on=1.0)
 n = 2000

@@ -20,18 +20,19 @@ Usage: CUDA_VISIBLE_DEVICES=<g> python analysis/fourpi_classical/full_cl.py --ce
 import argparse, json, math, os, sys, threading, queue, time
 import numpy as np, torch
 import torch.nn.functional as F
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
+from simcode.fourpi.setup import P4
 from dc import Dcimg, movie_files, file_index, crops
 from front4pi import Front, XLIM
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.lut4pi import LUT4Pi
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 import real_cl as RC
 
-OUT = f'{REPO}/out/4pi/classical/real'
-PSAVE = f'{REPO}/out/4pi/classical/patches'
+OUT = f'{P4}/classical/real'
+PSAVE = f'{P4}/classical/patches'
 P = 15; H_ = P // 2
 GAIN = 0.23
 DET_THRESH = 4.0
@@ -115,7 +116,7 @@ def reader(fn, nfr, chunk, q):
     q.put(None)
 
 
-TMP = f'{REPO}/out/4pi/classical/tmp'
+TMP = f'{P4}/classical/tmp'
 
 
 def tmp_size_gb():
@@ -198,7 +199,7 @@ def main():
     ap.add_argument('--pix', type=int, default=1); ap.add_argument('--tag', default='_wv')
     ap.add_argument('--tmp_max_gb', type=float, default=60.0)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True); os.makedirs(TMP, exist_ok=True)
     order = []
     for cell in a.cells:
@@ -222,9 +223,9 @@ def main():
         open(f'{TMP}/READER_DONE', 'w').write(time.strftime('%H:%M'))
         print('reader done', flush=True); return
     # fitter: claim ready files in movie order (atomic rename of the marker)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)
-    reg = json.load(open(f'{REPO}/out/4pi/patches/regions_MT.json'))
+    reg = json.load(open(f'{P4}/patches/regions_MT.json'))
     c4s, frs = {}, {}
     while True:
         claimed = None

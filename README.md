@@ -1,4 +1,4 @@
-# simcode2
+# simcode
 
 SIMCODE v2 localizes emitters in DMD-SIMFLUX DNA-PAINT data, where the illumination pattern is modulated and stepped every
 frame. It is a per-window deep-learning method:
@@ -35,7 +35,7 @@ Dependencies:
 
 - numpy, scipy, tifffile, torch (CUDA GPU required); matplotlib for the calibration / figure scripts; h5py for
   `--format hdf5` and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
-- The PSF LUT's Catmull-Rom spline basis is vendored from torch-spline-3d (`simcode2/psf/lut.py`), so that package is no
+- The PSF LUT's Catmull-Rom spline basis is vendored from torch-spline-3d (`simcode/psf/lut.py`), so that package is no
   longer needed.
 
 Only the baselines need more:
@@ -44,13 +44,13 @@ Only the baselines need more:
 |---|---|
 | SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`~/smlmtorch/scripts/models`, or env `SMLMTORCH_MODELS`) |
 | DECODE | the `decode` fork (`~/decode2`) |
-| DME v2 drift | the `dme` package ≥ 2.0 (`github.com/jcnossen/drift-estimation`): `pip install git+https://github.com/jcnossen/drift-estimation`, or a checkout given by env `DME_PATH` / config key `dme`; used through `simcode2/util/drift.py` |
+| DME v2 drift | the `dme` package ≥ 2.0 (`github.com/jcnossen/drift-estimation`): `pip install git+https://github.com/jcnossen/drift-estimation`, or a checkout given by env `DME_PATH` / config key `dme`; used through `simcode/util/drift.py` |
 
 ## Run
 
 ```bash
 export CUDA_VISIBLE_DEVICES=1           # GPU 1 or 2 on the lab server (keep GPU 0 free)
-python -m simcode2.run --movie /mnt/data/dmdsf/bn_dnapaint/dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif \
+python -m simcode.run --movie /mnt/data/dmdsf/bn_dnapaint/dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif \
     --calib insitu/calib_0.5nM.json --out out_05nM [--pass2]
 ```
 
@@ -93,7 +93,7 @@ Table columns:
 `strict` is a per-10-px-tile σ quantile among the good rows: in every tile the fraction q with the smallest calibrated σ
 is kept. By default q comes from the GT-free row density ρ (good rows in the crop per window start per µm²), interpolated
 between anchors measured on the three real movies, where q reproduces SIMCODE's coverage (occupied 20-nm bins): pass 1
-ρ 0.49 → q 0.275, ρ ≥ 0.87 → 0.12; pass 2 ρ 0.64 → 0.25, 1.69 → 0.12, ≥ 2.22 → 0.10 (`simcode2/strict.py`). The per-tile
+ρ 0.49 → q 0.275, ρ ≥ 0.87 → 0.12; pass 2 ρ 0.64 → 0.25, 1.69 → 0.12, ≥ 2.22 → 0.10 (`simcode/strict.py`). The per-tile
 q does not depend on the solve calibration, so the default holds with the automatic c (`--autoc 1`, default) and with the
 fixed c (`--autoc 0`): on the real 0.5 / 2.5 / 20 nM movies its coverage is 0.98–1.02 × SIMCODE's in both cases (pass 1;
 `analysis/evalproto/strictq.py`, `analysis/results/evalproto/strictq_*.txt`). This match is in-sample (the anchors were set on these movies). Without `--drift` the crop, tiles and ρ use raw
@@ -106,12 +106,12 @@ coverage (`locs_p*_info.json`) or set q yourself. Options:
   and then 7.0 nm keeps only 0.68–0.82 × SIMCODE's coverage (q 0.17 / 0.05 / 0.06 instead of 0.27 / 0.11 / 0.13).
 
 The table can be rebuilt at any time with
-`python -m simcode2.strict <out> [--tag est2] [--drift drift.npy] [--strict_q 0.25]`.
+`python -m simcode.strict <out> [--tag est2] [--drift drift.npy] [--strict_q 0.25]`.
 
 Which settings produced the numbers in `docs/RESULTS.md` (`--cand_pmin 0.5 --autoc 0`, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
 
-The expert entry point with every development flag is `python -m simcode2.pipeline.run_uncalibrated`
+The expert entry point with every development flag is `python -m simcode.pipeline.run_uncalibrated`
 (`--frontend sc|sc2p`, `--fast`, `--compile`, `--cand_pmin`, `--p1_solve`, `--pattern_field`, `--ref_pattern`, ...).
 
 Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. The
@@ -120,16 +120,16 @@ estimator). Pass 2 adds about 25 s per chunk.
 
 ## Paths and configuration
 
-No path is hard-coded (`simcode2/config.py`). There are three roots:
+No path is hard-coded (`simcode/config.py`). There are three roots:
 
 | root | env var | config key | default |
 |---|---|---|---|
-| models | `SIMCODE2_MODELS` | `models` | `<repo>/models` |
-| data | `SIMCODE2_DATA` | `data` | none: pass full movie paths, or names relative to it |
-| out | `SIMCODE2_OUT` | `out` | `./simcode2_out`; used by the benchmark / analysis scripts |
+| models | `SIMCODE_MODELS` | `models` | `<repo>/models` |
+| data | `SIMCODE_DATA` | `data` | none: pass full movie paths, or names relative to it |
+| out | `SIMCODE_OUT` | `out` | `./simcode_out`; used by the benchmark / analysis scripts |
 
-The config file is `$SIMCODE2_CONFIG`, else `<repo>/simcode2.json`, else `~/.config/simcode2.json`; see
-`simcode2.example.json`. Network and calibration arguments are resolved relative to the models dir (also `calib/` and
+The config file is `$SIMCODE_CONFIG`, else `<repo>/simcode.json`, else `~/.config/simcode.json`; see
+`simcode.example.json`. Network and calibration arguments are resolved relative to the models dir (also `calib/` and
 `insitu/`), so `--calib insitu/calib_0.5nM.json` works from anywhere.
 
 ## Models and calibrations (`models/`, committed; every file < 10 MB)
@@ -141,12 +141,12 @@ The config file is `$SIMCODE2_CONFIG`, else `<repo>/simcode2.json`, else `~/.con
 | `p2_det.pt`, `p2_head_long.pt` | pass-2 (pattern-aware) detector and head (p2L) |
 | `hd_sc7bg.pt` | optional head with a dense BgNet background; not production |
 | `calib/` | solve calibrations: pass 1 real / sim / autoc, the full-run autoc results r05 / r25 / r20, pass 2 real / sim / gate; see `docs/METHOD.md` |
-| `insitu/` | in-situ PSF + camera calibrations of the 0.5 nM, 2.5 nM movie 2 and 20 nM movie 2 data, with their camera maps; `beads/` = the bead z-stack PSF fit (Zernike init of the in-situ fit); recipe in `simcode2/insitu/README.md` |
+| `insitu/` | in-situ PSF + camera calibrations of the 0.5 nM, 2.5 nM movie 2 and 20 nM movie 2 data, with their camera maps; `beads/` = the bead z-stack PSF fit (Zernike init of the in-situ fit); recipe in `simcode/insitu/README.md` |
 
 ## Repository layout
 
 ```
-simcode2/            the package
+simcode/            the package
   run.py               production CLI
   strict.py            localization table + strict product
   autoc.py             automatic c

@@ -2,9 +2,13 @@
 r_t = (ch0 + ch2) / (ch1 + ch3) (per-frame channel means over the illuminated area, normalised by a 6-frame running mean).
 For each block of 50 windows (300 frames) the 6-slot profile is matched (cyclic shift) to the file's first block.
 A step slip shows as a block with best shift != 0. usage: python syncchk.py <cell> <fi> ..."""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import sys, json
 import numpy as np
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+OUT = f'{P4}/smlm'
 cell = sys.argv[1]; res = {}
 for fi in [int(v) for v in sys.argv[2:]]:
     f = np.load(f'{OUT}/p1/p1_{cell}_{fi:03d}.npz')['fmean']

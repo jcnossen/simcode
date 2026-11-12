@@ -53,7 +53,7 @@ recomputed for critic 40 from the published `sfhd-ndi.hdf5`, read-only).
   - **Our advantage over the published result is not caused by the bug:** on the table's protocol published and (b) differ
     by 0.6–1.1 nm, while published is 3.0–4.9 nm and (b) 1.8–4.3 nm above ours' strict product.
 
-- The ours rows are the per-tile strict product (`simcode2/strict.py`; covpool "tileq"). Within every 10-px tile it keeps
+- The ours rows are the per-tile strict product (`simcode/strict.py`; covpool "tileq"). Within every 10-px tile it keeps
   the q best rows by calibrated σ, with q set so that the set covers exactly as many occupied 20-nm bins as SIMCODE's
   output (fixed-c runs). That gives q = 0.28 / 0.12 / 0.13 for p1 and 0.25 / 0.12 / 0.10 for p2L. The shipped default
   (no SIMCODE run available) sets q from the GT-free row density instead; on these movies it reproduces SIMCODE's
@@ -247,7 +247,7 @@ SIMCODE's zero/one-FP operating points on rs05qm (p2L 0.19 vs 0.31) and m05r (p1
 - **Strict-product q under the shipped defaults (critic 40 #1).** The earlier default (q matched to the global
   σ ≤ 7.0 / 7.4 nm set) was derived with the fixed c. Under the automatic c (the CLI default) σ is ~10–17 % larger and that
   rule kept only 0.82 / 0.71 / 0.68 × SIMCODE's occupied 20-nm bins (pass 1, 0.5 / 2.5 / 20 nM; pass 2 at 2.5 nM 0.89).
-  The default is now a per-density q (row density ρ = good rows in the crop per window start per µm²; `simcode2/strict.py`).
+  The default is now a per-density q (row density ρ = good rows in the crop per window start per µm²; `simcode/strict.py`).
   Check on the covpool protocol (`analysis/evalproto/strictq.py`, `analysis/results/evalproto/strictq_*.txt`), occupied
   bins / SIMCODE's:
 
@@ -321,7 +321,7 @@ Scripts are in `analysis/` (run with `PYTHONPATH=<repo>`). Text snapshots of the
 **Our runs (all real-data tables).**
 
 ```bash
-python -m simcode2.run --movie <tif> --calib insitu/calib_0.5nM.json | insitu/calib_2p5nM_m2_sc.json | insitu/calib_20nM_m2_sc.json \
+python -m simcode.run --movie <tif> --calib insitu/calib_0.5nM.json | insitu/calib_2p5nM_m2_sc.json | insitu/calib_20nM_m2_sc.json \
     --out <dir> --pass2 --autoc 0 --cand_pmin 0.5
 ```
 
@@ -330,7 +330,7 @@ python -m simcode2.run --movie <tif> --calib insitu/calib_0.5nM.json | insitu/ca
   development run used `calib_p2L_movie_b10` plus a post-hoc real σ rescale; positions are the same.
 - Automatic-c variants (`--autoc 1`): `calib/calib_autoc_r05 / r25 / r20.json` hold the full-run θ.
 - 0.5 / 2.5 nM ran on the reference code path, 20 nM on the fast path; the fast path is equivalent (README "History").
-- Strict product: `python -m simcode2.strict <dir> [--tag est2] --drift <own DME npz>`. The section 1 rows used the
+- Strict product: `python -m simcode.strict <dir> [--tag est2] --drift <own DME npz>`. The section 1 rows used the
   exactly coverage-matched q (`--strict_q` 0.283 / 0.124 / 0.127 for p1, 0.252 / 0.121 / 0.099 for p2L, the covpool tileq
   values). The default (density) q is checked with `analysis/evalproto/strictq.py` (section 5).
 
@@ -342,7 +342,7 @@ python analysis/baselines/run_simcode_real.py net <cache.npy> --movie <tif> --mo
 python analysis/baselines/run_simcode_real.py ndi <cache.npy> sc_b.npz --fix_sign 1
 ```
 
-**Drift: DME v2** (the `dme` package, `github.com/jcnossen/drift-estimation`, through `simcode2/util/drift.py`; 'v3e' in file and method names is its development name). Each method gets its own drift, at time = window start + 3, with
+**Drift: DME v2** (the `dme` package, `github.com/jcnossen/drift-estimation`, through `simcode/util/drift.py`; 'v3e' in file and method names is its development name). Each method gets its own drift, at time = window start + 3, with
 crlb = its own σ and crlb < 1 px. Ours uses the disjoint rows (window start % 6 == 0, p ≥ 0.63) of pass 1 and pass 2
 separately; SIMCODE uses all its rows.
 
@@ -376,14 +376,14 @@ separately; SIMCODE uses all its rows.
     For p2L, use a view dir with `pass2_est2_*` linked as `pass2_est_*`.
   - PSF shape and m05rb: `analysis/psfshape/evalgt.py`.
   - Gate: `GPU=1 bash analysis/gate/run_gate.sh iso` (expect iso 1.17 [1.14, 1.20]).
-    - SIMCODE on the gate: `python -m simcode2.eff.simcode_gate --model ni6_3 --scen iso,pair2,rs05qm`.
+    - SIMCODE on the gate: `python -m simcode.eff.simcode_gate --model ni6_3 --scen iso,pair2,rs05qm`.
     - Paired comparison: `analysis/gate/gate_paired.py _scode_ni6_3 _hd_sc5nbb15pmb10 iso,pair2,rs05qm --offset`.
-    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `python -m simcode2.eff.simcode_gate --model ni6_3 --scen pair1,pair1.5,rs05qm`
+    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `python -m simcode.eff.simcode_gate --model ni6_3 --scen pair1,pair1.5,rs05qm`
       and `--model L64_5 --scen rs25qm` (gate npz `_scode_<net>` / `_scodenf_<net>`), then `analysis/gate/merged_d1.py` and
       `analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
       (reproduces the snapshots in `analysis/results/gate/` exactly).
   - m05q / m25q / m05qh / m25qh vs SIMCODE: `analysis/baselines/compare.py`, CRLB_ref = gate rs05pm / rs25pm
-    (`SIMCODE2_GATE_DIR`).
+    (`SIMCODE_GATE_DIR`).
   - m25qh / m20qh (§3b †): `analysis/hd_compare/score.py <spec>`, with ours b22 = `analysis/hd_compare/calib_b22/*`.
     - Paired CIs: `compare_ci_r.py` with rs25pm.
     - Movies: `analysis/simreal/recipes.sh m25qh | m20qh` (`sim_movie.py` / `sim_movie20.py`; m05qh too). Classical inputs:
@@ -403,7 +403,7 @@ separately; SIMCODE uses all its rows.
   `lm_icrlb.py`, joint SIMFLUX MLE `sf_gate.py`, `icrlb.py`), real renders (`recon_full*.py`, `hdzoom.py`, `render_matched20.py`,
   `render_strict20.py`, zooms `zoompick.py`), summaries (`fig_gap.py`, `scorecard.py --stack`, `frc_plot.py`,
   `field/plot_field_offsets.py` with its inputs `field/check1_offsets.py`, `field_maps.py`, `check3_pattern.py`).
-- **In-situ PSF / camera calibration:** `simcode2/insitu/README.md`.
+- **In-situ PSF / camera calibration:** `simcode/insitu/README.md`.
 - **Not reproducible from this repo alone:**
   - the injection movies of evalgt
   - the real depth fields (`field/depth/real05|real25/field_own.pt`)

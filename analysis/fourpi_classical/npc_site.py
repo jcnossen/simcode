@@ -2,6 +2,10 @@
 top view (x-y, colour = z), the two rings separately, and side views. Selection is automatic and stated in the figure:
 ring radius, radial scatter, angular coverage of both z rings, isolation.
 usage: python analysis/fourpi_classical/npc_site.py [n_sites]"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import sys, os, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg')
@@ -24,7 +28,7 @@ def zdrift_struct(x, y, z, w, bin_nm=60.0, blk_w=500, n_it=8, clip=150.0):
         md[np.array(g.size().reindex(range(nb)).fillna(0).to_numpy()) < 200] = 0
         drift = drift + gaussian_filter1d(md, 1.0); drift -= drift.mean()
     return drift
-PX = 128.0; OUT = '/home/jc/simcode2/out/4pi/classical'
+PX = 128.0; OUT = f'{P4}/classical'
 nshow = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 C = np.load(f'{OUT}/real/cl_NPC_wv_all.npz')
 k = C['keep_pix'] & np.isfinite(C['xpd']) & np.isfinite(C['zp'])

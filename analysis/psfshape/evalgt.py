@@ -7,10 +7,10 @@ For inj, also the REAL (non-injected) rows of the same movie: ours (prior - fina
 [2026-11-11 critic 39, opt-in env EVALGT_BINBY = gt (default) | ours | sc]: photon variable of the bins.  Injected / sim rows: GT window
 photons | our row's phot | SIMCODE NDI row's photons; the REAL rows of an inj movie (no GT): SC photons for gt / sc, ours for ours.
 Output json gets the suffix _by<binby> when not gt.  same algorithm; changes: compare.py from
-analysis/baselines, pattern_frames from simcode2.pipeline.common, the inj-mode pattern (e.g. the real 0.5 nM pass-1 run's
+analysis/baselines, pattern_frames from simcode.pipeline.common, the inj-mode pattern (e.g. the real 0.5 nM pass-1 run's
 pattern_est.pt) is an optional 4th field inj:<inj_dir>:<ours_tag>:<pattern_est.pt> (default <inj_dir>/pattern_est.pt), and the
-json goes to $EVALGT_OUT (default <simcode2 out>/psfshape). The report is printed to stdout.
-The injection movies and the PSF-diversity heads (sc5pd_*) are not part of simcode2.
+json goes to $EVALGT_OUT (default <simcode out>/psfshape). The report is printed to stdout.
+The injection movies and the PSF-diversity heads (sc5pd_*) are not part of simcode.
 usage: python analysis/psfshape/evalgt.py <name>=sim:<sim_dir>:<ours_dir>:<ours_tag>:<sc_fix.npz> [...] > evalgt_<...>.txt"""
 import sys, os, json, numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'baselines'))
@@ -31,7 +31,7 @@ for arg in sys.argv[1:]:
         sd, tag = pp[:2]; od = f'{sd}/ours'; scf = f'{sd}/sc_fix.npz'
         I = np.load(f'{sd}/inj_gt.npz'); NF = int(I['nf']); N = len(I['x'])
         import torch
-        from simcode2.pipeline.common import pattern_frames
+        from simcode.pipeline.common import pattern_frames
         Pt = torch.load(pp[2] if len(pp) > 2 else f'{sd}/pattern_est.pt', weights_only=False)
         patt = pattern_frames(Pt, np.arange(NF), 0, 0, dev='cpu').numpy().astype(np.float64)
         G = dict(x=I['x'], y=I['y'], bright=I['bright'], t0=I['t0'], t1=I['t1'], ea=np.ones((N, 2)), es=np.ones((N, 6)), patt=patt, nf=NF)
@@ -98,7 +98,7 @@ for arg in sys.argv[1:]:
             print(f'  real rows {bn:>10} n {b["n"]:6d} | ours prior-final rsd x/y {b["ours_pf_x"]:.2f}/{b["ours_pf_y"]:.2f} | SC net-NDI {b["sc_nn_x"]:.2f}/{b["sc_nn_y"]:.2f}')
 _od = os.environ.get('EVALGT_OUT')
 if not _od:
-    from simcode2 import config
+    from simcode import config
     _od = config.out_dir('psfshape')
 os.makedirs(_od, exist_ok=True)
 json.dump(OUT, open(os.path.join(_od, f'evalgt_{"_".join(OUT)}{"" if BINBY == "gt" else "_by" + BINBY}.json'), 'w'), indent=1)

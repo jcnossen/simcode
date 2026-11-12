@@ -23,7 +23,7 @@ fi
 if [[ $WHAT == sf || $WHAT == all ]]; then             # joint SIMFLUX MLE (pattern known, one bg per angle, kinetics off)
   f "$HERE/sf_gate.py" iso,rs05q,rs05qm 301,302,303 11 angle
 fi
-if [[ $WHAT == scode || $WHAT == all ]]; then          # repaired SIMCODE on the gate (needs smlmtorch; see simcode2/eff/simcode_gate.py)
-  (cd "$REPO" && f -m simcode2.eff.simcode_gate --model ni6_3 --scen ${SCEN:-rs05q,rs05qm})
+if [[ $WHAT == scode || $WHAT == all ]]; then          # repaired SIMCODE on the gate (needs smlmtorch; see simcode/eff/simcode_gate.py)
+  (cd "$REPO" && f -m simcode.eff.simcode_gate --model ni6_3 --scen ${SCEN:-rs05q,rs05qm})
 fi
 echo DONE

@@ -17,7 +17,7 @@ sys.argv = sys.argv[:2]
 src = open(os.path.join(_HERE, 'covpool.py')).read().split('MKF = ')[0]
 __file__ = os.path.join(_HERE, 'covpool.py')
 exec(src)
-from simcode2.pipeline.pattern_field import field_at
+from simcode.pipeline.pattern_field import field_at
 
 
 def env_fn(P):

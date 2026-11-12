@@ -34,8 +34,8 @@ usage: python compare.py <sim_dir> <gate_scene> <out_prefix> name=kind:path [...
        'ours_est:<dir>') | sc_net / sc_ndi / sc_mrg (run_simcode npz)  same protocol and code; the only change is where
 crlb_ref() finds the gate scenes (gate npz with the GT CRLB column gt_sf_m, any front-end tag; the CRLB does not depend on
 the method): <gate_scene> may be a glob ('.../rs05pm__s30[123]_*.npz'); a bare scene name is looked up as
-$SIMCODE2_GATE_DIR/<scene>__s30[123]<tag>.npz with tag $SIMCODE2_GATE_TAG (default '_hd_sc5nb15pm', the dev tag; the
-analysis/gate/run_gate.sh tag is '_sc5nb_b10'), SIMCODE2_GATE_DIR default <simcode2 out>/gate.
+$SIMCODE_GATE_DIR/<scene>__s30[123]<tag>.npz with tag $SIMCODE_GATE_TAG (default '_hd_sc5nb15pm', the dev tag; the
+analysis/gate/run_gate.sh tag is '_sc5nb_b10'), SIMCODE_GATE_DIR default <simcode out>/gate.
 Also the library of analysis/simreal/compare_ci_r.py, analysis/hd_compare/score.py, analysis/psfshape/evalgt.py and
 analysis/evalproto/{valid,filt}.py.
 """
@@ -88,12 +88,12 @@ def crlb_ref(scene):
     if '/' in scene or '*' in scene:
         fs = sorted(glob.glob(scene))
     else:
-        gd = os.environ.get('SIMCODE2_GATE_DIR')
+        gd = os.environ.get('SIMCODE_GATE_DIR') or os.environ.get('SIMCODE2_GATE_DIR')
         if not gd:
-            from simcode2 import config
+            from simcode import config
             gd = config.out_dir('gate', make=False)
-        fs = sorted(glob.glob(f'{gd}/{scene}__s30[123]{os.environ.get("SIMCODE2_GATE_TAG", "_hd_sc5nb15pm")}.npz'))
-    if not fs: raise FileNotFoundError(f'crlb_ref: no gate npz for {scene!r} (set SIMCODE2_GATE_DIR / SIMCODE2_GATE_TAG or pass a glob)')
+        fs = sorted(glob.glob(f'{gd}/{scene}__s30[123]{(os.environ.get("SIMCODE_GATE_TAG") or os.environ.get("SIMCODE2_GATE_TAG") or "_hd_sc5nb15pm")}.npz'))
+    if not fs: raise FileNotFoundError(f'crlb_ref: no gate npz for {scene!r} (set SIMCODE_GATE_DIR / SIMCODE_GATE_TAG or pass a glob)')
     ph, c = [], []
     for f in fs:
         d = np.load(f); m = (d['gt_target'] > 0) & np.isfinite(d['gt_sf_m']).all(1)

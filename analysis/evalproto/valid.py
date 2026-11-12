@@ -19,7 +19,7 @@ import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'baselines'))
 import datasets as DS
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 import compare as C       # analysis/baselines/compare.py
 PX = E.PX
 spec = sys.argv[1]; SPEC = json.load(open(spec))

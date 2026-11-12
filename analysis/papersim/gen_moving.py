@@ -1,5 +1,5 @@
 """S3 (SI S8) movie generator: moving microtubules (Brownian motion + spring constraints), the preprint's simulation
-(smlmtorch scripts/fig_moving_tubules.py, unchanged since 93c3e2a; read here from commit 5f7fdcb) rendered with the simcode2
+(smlmtorch scripts/fig_moving_tubules.py, unchanged since 93c3e2a; read here from commit 5f7fdcb) rendered with the simcode
 simulator and the averaged 1809/2 PSF.
 
 Ported verbatim from the old script (compiled from its git source, common.load_functions): generate_microtubule_points
@@ -46,7 +46,7 @@ def main():
     ap.add_argument('--avg_on_time', type=float, default=None)
     ap.add_argument('--psf', default='vectorial', help="'vectorial' or e.g. 'gauss1.3' (the preprint's PSF; calib_sim.json still names the vectorial PSF)")
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-genmov')
+    from simcode.util.proctitle import auto; auto('psim-genmov')
     import torch
     d = a.out or C.movie_dir('moving'); os.makedirs(d, exist_ok=True)
     t00 = time.time()

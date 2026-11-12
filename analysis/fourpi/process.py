@@ -7,6 +7,10 @@ Read noise variance in the 6-frame 4-channel sum: 24 x rn^2 (rn 1.14 e); the bil
 by a position-dependent factor (ignored: v = 24 x 1.3 e^2 is used as the noise floor).
 usage: python process.py <out_dir> <nworkers> CELL:fi[:nframes] ...  (one sequential reader process + workers)
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, time
 import numpy as np
 import torch
@@ -63,7 +67,7 @@ def _reader(jobs, q, nworkers):
     cams = {}
     for cell, fi, n in jobs:
         if cell not in cams:
-            cams[cell] = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')['off']
+            cams[cell] = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
         fn = [f for f in movie_files(cell) if file_index(f) == fi][0]
         d = Dcimg(fn); n = n or d.nframes
         for a0 in range(0, n, CHUNK):
@@ -80,7 +84,7 @@ def _worker(q, r):
         if it is None: break
         cell, fi, a0, n, E = it
         if cell not in warps:
-            pm = PolyMap.load(f'/home/jc/simcode2/out/4pi/smlm/reg/reg_insitu_{cell}.json')
+            pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
             warps[cell] = (Warp(lambda c, xx, yy, pm=pm: pm.inv(c, xx, yy)), pm)
         r.put((cell, fi, a0, n, detect_chunk(E, a0, *warps[cell])))
 
