@@ -69,7 +69,7 @@ def main():
     acc = []
     for fi in a.files:
         if a.table:
-            D = dict(np.load(a.table.format(cell=a.cell, file=fi))); kept = D['ok'].astype(bool)
+            D = dict(np.load(a.table.format(cell=a.cell, file=fi))); kept = D['ok' if 'ok' in D else 'keep'].astype(bool) & np.isfinite(D['x']) & np.isfinite(D['z'])
         else:
             D = dict(np.load(f'{REPO}/out/4pi/net/locs_{a.cell}_{fi:03d}_{a.tag}.npz'))
             kept = D['good'] & (D['N'] >= 1000) & (D['sz'] < 0.025 * np.sqrt(a.K)) & (D['sx'] < 0.12) & (D['sy'] < 0.12)

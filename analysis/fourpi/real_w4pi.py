@@ -40,6 +40,8 @@ def main():
     p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
     p.add_argument('--ksum', type=int, default=1, help='K > 1: real dense data by summing K source windows (stride --kstride windows) frame by frame; virtual reader, exact camera model')
     p.add_argument('--kstride', type=int, default=25)
+    p.add_argument('--pattern_from', default='', help='summary json of a K = 1 run (locs_<cell>_<head>_summary.json): use that file\'s SIM pattern as a calibration instead of estimating it from this (dense) data')
+    p.add_argument('--field_from', default='', help='K = 1 table pattern with {file} (locs_<cell>_{file:03d}_<head>.npz): use its 4Pi phase field (tile map M + time blocks d; 12 px tiles, 50-window blocks) as a calibration, averaged over the K source windows')
     p.add_argument('--regions', default='', help='json with boxes (x0, x1, y0, y1 on the candidate pixel): the final solve only for candidates inside (pattern and phase field still from the whole field)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()
@@ -118,6 +120,8 @@ def main():
         # ---- B: pattern
         selp = (mI * 6 > 1500) & (R['nn'] > 6) & (I.min(1) > 0.25 * mI)
         patf = repattern_xy(I, Xp, pat0, selp)
+        if a.pattern_from:
+            patc = json.load(open(a.pattern_from))[str(fi)]['pattern']; patf = dict(patf, **{k: patc[k] for k in ('angle0', 'angle1')})
         psi, m, _ = SR.pattern_psi(patf, cx, cy, dev)
         sv.k2 = tuple(tuple(patf[f'angle{i}']['k']) for i in range(2))
         tdoff = torch.tensor(R['doff'], device=dev)
@@ -145,6 +149,12 @@ def main():
         gphi = sphi < 0.8
         f, diag = SR.phase_field(Xp[cand, 0], Xp[cand, 1], R['w'][cand], phi, gphi / np.maximum(sphi, 0.05) ** 2, tile=a.tile, tblk=a.tblk)
         Phi0 = torch.tensor(f(Xp[:, 0], Xp[:, 1], R['w']), device=dev, dtype=torch.float32)
+        if a.field_from:   # calibration field of the K = 1 run: M(x, y) + circular mean over the K source windows of d(t)
+            Fc = np.load(a.field_from.format(file=fi)); Mc, dc_ = Fc['M'], Fc['d']
+            ix = np.clip((Xp[:, 0] / 12.0).astype(int), 0, Mc.shape[1] - 1); iy = np.clip((Xp[:, 1] / 12.0).astype(int), 0, Mc.shape[0] - 1)
+            wr = (R['w'] // S)[:, None] * (K * S) + (R['w'] % S)[:, None] + S * np.arange(K)[None]          # raw windows of the K sources
+            dm = np.angle(np.exp(1j * dc_[np.clip(wr // 50, 0, len(dc_) - 1)]).mean(1))
+            Phi0 = torch.tensor(Mc[iy, ix] + dm, device=dev, dtype=torch.float32)
         tC = time.time() - t0 - tA
         print(f'{a.cell} {fi}: pattern psi {[np.round(patf[f"angle{i}"]["psi_deg"], 1).tolist() for i in range(2)]} m {patf["angle0"]["m_median"]:.2f}/{patf["angle1"]["m_median"]:.2f}'
               f' R {patf["angle0"]["R"]:.2f}/{patf["angle1"]["R"]:.2f} ({int(selp.sum())} emitters); phase field R {diag["R"]:.3f} ({int(gphi.sum())} used), {tC:.0f}s', flush=True)
