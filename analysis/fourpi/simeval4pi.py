@@ -159,7 +159,7 @@ def crlb_units(U, idx, meta, lut, dev):
         P = 1 + m * torch.cos(arg)
         dlogP.append(torch.stack([-m * k[a][0] * torch.sin(arg) / P, -m * k[a][1] * torch.sin(arg) / P], -1))
     dlogP = torch.stack(dlogP, 1)                                        # [n,6,2]
-    bg = torch.tensor(BG, device=dev)
+    bg = torch.tensor(meta.get('bg', BG), device=dev)       # K-summed movies store K x background in the meta
 
     def fj(th, sl):
         Phi_, Nt_, dlogP_ = Phi[sl], Nt[sl], dlogP[sl]
@@ -183,7 +183,7 @@ def crlb_units(U, idx, meta, lut, dev):
         sl = slice(i, i + 2000)
         th = torch.cat([torch.stack([x0[sl], y0[sl], torch.tensor(U['z'][idx][sl], device=dev, dtype=torch.float32),
                                      torch.ones_like(x0[sl])], 1), bg[None].expand(len(x0[sl]), 4)], 1)
-        out.append(crlb(fisher_j(lambda t_: fj(t_, sl), th, 1.14 ** 2))[:, :3])
+        out.append(crlb(fisher_j(lambda t_: fj(t_, sl), th, (meta.get('rn_adu', 4.9) * meta.get('gain', 0.23)) ** 2))[:, :3])   # read variance from the meta (K-summed: K x)
     return torch.cat(out).cpu().numpy()
 
 

@@ -25,16 +25,17 @@ from simcode2.fourpi.linread4pi import linear_readout, border_bg
 
 WINS = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))
 dev = 'cuda'
+SB = 0.2      # prior sd of the residual background per channel (e/px); x sqrt(K) for K-summed movies
 
 
-def solve_all(sv, D, idx, Phi0, m, psi, chunk=2000, kin0s=None, sb=0.2, **kw):
+def solve_all(sv, D, idx, Phi0, m, psi, chunk=2000, kin0s=None, sb=None, **kw):
     """D: dict(Y, Lb, Ws, W, dxy, z, ls, doff). Exact window model + background nuisance."""
     res = []
     for i in range(0, len(idx), chunk):
         j = idx[i:i + chunk]
         if kin0s is not None: kw['kin0'] = kin0s[j]
         oo = dict(Y=D['Y'][j], Lb=D['Lb'][j], dxy=D['dxy'][j], z=D['z'][j], ls=D['ls'][j], W=D['W'][j], Wsum=D['Ws'][j],
-                  sb=torch.full((len(j), 4), sb, device=dev))
+                  sb=torch.full((len(j), 4), sb if sb is not None else SB, device=dev))
         res.append(sv.solve(oo, Phi0[j], D['doff'][j], m[j], psi[j], **kw))
     return {k: torch.cat([r[k] for r in res]) for k in res[0]}
 
@@ -47,9 +48,11 @@ def main():
     p.add_argument('--phi', default='field'); p.add_argument('--pattern', default='iter')
     p.add_argument('--chi2_max', type=float, default=1.6, help="'good': chi2 / dof below this")
     p.add_argument('--img_cpu', type=int, default=0, help='1: keep the candidate patches in host memory (large movies; batches go to the GPU)')
+    p.add_argument('--ksum', type=int, default=1, help='K-summed movie: read variance K x in the read-out covariance')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-simlin')
+    global SB; SB = 0.2 * math.sqrt(a.ksum)
     d = f'{REPO}/out/4pi/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))
     st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
@@ -66,11 +69,23 @@ def main():
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
         from simcode2.fourpi.loadhead import load_head
-        net, _ = load_head(a.head); bl = []
+        net, _ = load_head(a.head); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
+        net.vread = a.ksum * 1.14 ** 2 + (0.2 * a.ksum) ** 2
+        nbr = None
+        if getattr(net, 'nbr_in', False):   # pass 0: the head's prior positions -> map of the other candidates of each window
+            from simcode2.fourpi.head4pi_w import candidate_neighbours, nbr_map
+            with torch.no_grad():
+                p0 = torch.cat([net(img[i:i + 1000], D['doff'][i:i + 1000])['dxy'] for i in range(0, n, 1000)]).cpu().numpy()
+            ndx, ndy, nval = candidate_neighbours(F['w'], F['cx'] + p0[:, 0], F['cy'] + p0[:, 1])
+            # offsets relative to the candidate PIXEL (the patch centre): add the candidate's own prior offset
+            nbr = (torch.tensor(ndx + p0[:, :1], device=dev), torch.tensor(ndy + p0[:, 1:2], device=dev), torch.tensor(nval, device=dev))
         with torch.no_grad():
             for i in range(0, n, 1000):
-                j = slice(i, i + 1000); oh = net(img[j].to(dev), D['doff'][j])
+                j = slice(i, i + 1000)
+                oh = net(img[j], D['doff'][j], **({'nbr': nbr_map(nbr[0][j], nbr[1][j], nbr[2][j], D['doff'][j])} if nbr is not None else {}))
                 Ys.append(oh['Y']); Ls.append(oh['Lb']); Wss.append(oh['Wsum']); Wl.append(oh['W']); bl.append(oh['bgc'])
+                for k in pri: pri[k].append(oh[k])
+        D.update({k: torch.cat(v) for k, v in pri.items()})     # the head's own prior (trained for these conditions)
         bm = torch.cat(bl)
     else:
         for i in range(0, n, 2000):
@@ -79,7 +94,7 @@ def main():
             Ys.append(Y); Ls.append(Lb); Wss.append(Ws); Wl.append(W)
     D.update(Y=torch.cat(Ys), Lb=torch.cat(Ls), Ws=torch.cat(Wss), W=torch.cat(Wl))
     I = D['Y'][..., 0].sum(2).cpu().numpy(); mI = I.mean(1)                    # per-frame photons (matched-filter read-out)
-    Xp = np.stack([cx + F['dxy'][:, 0], cy + F['dxy'][:, 1]], 1)
+    pdxy = D['dxy'].detach().cpu().numpy(); Xp = np.stack([cx + pdxy[:, 0], cy + pdxy[:, 1]], 1)
     ref = {f'angle{i}': dict(k=meta['k'][i], psi_deg=meta['psi_deg'][i], m_median=0.85) for i in range(2)}
     if a.pattern == 'oracle':
         patf = {f'angle{i}': dict(k=meta['k'][i], psi_deg=meta['psi_deg'][i], m_median=meta['m']) for i in range(2)}
@@ -134,7 +149,7 @@ def main():
                sx=sg[:, 0].cpu().numpy(), sy=sg[:, 1].cpu().numpy(), sz=sg[:, 2].cpu().numpy(), N=N.cpu().numpy(),
                on=np.ones(n, bool), kin=usek.cpu().numpy(), chi2_on=ron['chi2'].cpu().numpy(), chi2_free=rk['chi2'].cpu().numpy(),
                chi2=chi2.cpu().numpy(), dof=dof.cpu().numpy(), good=good.cpu().numpy(),
-               phi=phi, sphi=sphi, Phi0=Phi0.cpu().numpy(), zprior=F['z'], szprior=np.exp(F['ls'][:, 2]),
+               phi=phi, sphi=sphi, Phi0=Phi0.cpu().numpy(), zprior=D['z'].detach().cpu().numpy(), szprior=np.exp(D['ls'].detach().cpu().numpy()[:, 2]),
                xprior=Xp[:, 0], yprior=Xp[:, 1], w=w, nn=nn, Tsum=Tsum,
                bg=(bm + pick(rk['th'][:, -4:], ron['th'][:, -4:])).cpu().numpy())
     tag = f"{a.pattern}{a.head or 'lin'}" + ('' if a.phi == 'field' else '_phiO')

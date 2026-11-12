@@ -89,6 +89,7 @@ def main():
     p.add_argument('--frames', type=int, default=4000); p.add_argument('--H', type=int, default=50)
     p.add_argument('--W', type=int, default=50); p.add_argument('--ton', type=float, default=10.0)
     p.add_argument('--seed', type=int, default=0)
+    p.add_argument('--ksum', type=int, default=1, help='K-summed conditions (real dense data by summing K windows): K x background, sqrt(K) read noise; the offset stays one OFF (= the sum with (K - 1) offsets removed)')
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-sim')
     out = f'{REPO}/out/4pi/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
@@ -147,16 +148,16 @@ def main():
     img = img[:, :, h:h + H, h:h + W]
     yy, xx = torch.meshgrid(torch.arange(H, device=dev) / H, torch.arange(W, device=dev) / W, indexing='ij')
     bgs = 1 + 0.2 * torch.sin(2 * math.pi * (xx * 0.8 + 0.3)) * torch.cos(2 * math.pi * (yy * 0.6))
-    lam = img + torch.tensor(BG, device=dev)[None, :, None, None] * bgs[None, None]
+    lam = img + a.ksum * torch.tensor(BG, device=dev)[None, :, None, None] * bgs[None, None]
     g = torch.Generator(device=dev).manual_seed(a.seed)
-    adu = torch.poisson(lam, generator=g) / GAIN + OFF + RN_ADU * torch.randn(lam.shape, device=dev, generator=g)
+    adu = torch.poisson(lam, generator=g) / GAIN + OFF + RN_ADU * math.sqrt(a.ksum) * torch.randn(lam.shape, device=dev, generator=g)
     adu = adu.round().clamp(0, 65535).to(torch.int32).cpu().numpy().astype(np.uint16)       # [T,4,H,W]
     raw = np.concatenate([adu[:, 0], adu[:, 1], adu[:, 2, :, ::-1], adu[:, 3, :, ::-1]], 2)   # sensor layout, ch2/3 mirrored
     np.save(f'{out}/movie.npy', raw)
     np.savez(f'{out}/gt_sites.npz', sites=S)
     np.savez(f'{out}/gt_events.npz', site=site, t0=t0, dur=dur, F=F)
     np.savez(f'{out}/gt_frames.npz', frame=fr, event=ev, q=q, x=x, y=y, z=z, N=Nph, Phi=Phi)
-    meta = dict(tag=a.tag, H=H, W=W, T=T, px_um=PX, gain=GAIN, offset=OFF, rn_adu=RN_ADU, bg=BG, delta_deg=-10.4, m=m,
+    meta = dict(tag=a.tag, H=H, W=W, T=T, px_um=PX, gain=GAIN, offset=OFF, rn_adu=RN_ADU * math.sqrt(a.ksum), bg=[b * a.ksum for b in BG], ksum=a.ksum, delta_deg=-10.4, m=m,
                 k=k.tolist(), psi_deg=np.degrees(psi).tolist(), reg=REG, ton=a.ton, dens_target=a.dens,
                 dens_actual=len(fr) / T / area, n_sites=len(S), n_events=int(len(site)), psf='NPC_f_dxy15',
                 render_s=time.time() - tb)

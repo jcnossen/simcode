@@ -121,10 +121,16 @@ def main():
         psi, m, _ = SR.pattern_psi(patf, cx, cy, dev)
         sv.k2 = tuple(tuple(patf[f'angle{i}']['k']) for i in range(2))
         tdoff = torch.tensor(R['doff'], device=dev)
+        nb = None
+        if getattr(net, 'nbr_in', False):   # map of the other candidates of each window (prior positions), relative to the candidate pixel
+            from simcode2.fourpi.head4pi_w import candidate_neighbours, nbr_map
+            ndx, ndy, nval = candidate_neighbours(R['w'], Xp[:, 0], Xp[:, 1])
+            nb = (ndx + R['dxy'][:, :1], ndy + R['dxy'][:, 1:2], nval)
 
         def chunk_out(j):
             with torch.no_grad():
-                o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j])
+                kwn = {'nbr': nbr_map(torch.tensor(nb[0][j], device=dev), torch.tensor(nb[1][j], device=dev), torch.tensor(nb[2][j], device=dev), tdoff[j])} if nb is not None else {}
+                o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j], **kwn)
             return dict(Y=o['Y'], Lb=o['Lb'], dxy=o['dxy'], z=o['z'], ls=o['ls'], W=o['W'], Wsum=o['Wsum'],
                         sb=torch.full((len(j), 4), 0.2 * math.sqrt(a.ksum), device=dev)), o
 
@@ -148,6 +154,7 @@ def main():
             for b in bx: inb |= (R['cx'] >= b['x0']) & (R['cx'] < b['x1']) & (R['cy'] >= b['y0']) & (R['cy'] < b['y1'])
             ii = np.nonzero(inb)[0]
             R = {k: v[ii] for k, v in R.items()}; n = len(ii); cx, cy = cx[ii], cy[ii]; Xp = Xp[ii]; Tsum = Tsum[ii]; I = I[ii]
+            if nb is not None: nb = tuple(v[ii] for v in nb)
             jt_ = torch.tensor(ii, device=dev); psi, m, Phi0, tdoff = psi[jt_], m[jt_], Phi0[jt_], tdoff[jt_]
             print(f'{a.cell} {fi}: {n} candidates inside the {len(bx)} boxes', flush=True)
         # ---- D: final solve

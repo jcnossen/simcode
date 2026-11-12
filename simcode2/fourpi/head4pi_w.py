@@ -120,3 +120,23 @@ def load_v10(net, state):
         elif k == 'cin.weight':
             own[k].zero_(); own[k][:, :v.shape[1]] = v
     net.load_state_dict(own)
+
+
+def candidate_neighbours(w, x, y, m=10, r=9.0):
+    """for every candidate (window w, position x, y in ch0 px; numpy arrays) the offsets to up to m other candidates of the same window
+    within r px (nearest first) -> dx, dy [n,m] float32 (relative to the candidate's own position), valid [n,m] bool"""
+    import numpy as np
+    from scipy.spatial import cKDTree
+    n = len(w); dx = np.zeros((n, m), np.float32); dy = np.zeros((n, m), np.float32); val = np.zeros((n, m), bool)
+    order = np.argsort(w, kind='stable'); u, st = np.unique(w[order], return_index=True); st = np.r_[st, n]
+    for i in range(len(u)):
+        a = order[st[i]:st[i + 1]]
+        if len(a) < 2: continue
+        k = min(m + 1, len(a))
+        d, j = cKDTree(np.c_[x[a], y[a]]).query(np.c_[x[a], y[a]], k=k, distance_upper_bound=r)
+        d = d[:, 1:]; j = j[:, 1:]; ok = np.isfinite(d)
+        jj = np.where(ok, j, 0)
+        dx[a[:, None].repeat(k - 1, 1), np.arange(k - 1)[None]] = np.where(ok, x[a][jj] - x[a][:, None], 0)
+        dy[a[:, None].repeat(k - 1, 1), np.arange(k - 1)[None]] = np.where(ok, y[a][jj] - y[a][:, None], 0)
+        val[a[:, None].repeat(k - 1, 1), np.arange(k - 1)[None]] = ok
+    return dx, dy, val
