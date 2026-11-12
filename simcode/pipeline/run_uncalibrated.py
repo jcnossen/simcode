@@ -2,7 +2,7 @@
 Expert entry point of the SIMCODE v2 pipeline (same flags and file layout as the development pipeline; the user-facing CLI
 is `python -m simcode.run`, which calls this module's stages with the production defaults).
 
-  pass1    detector (det_n1) + per-candidate head (sc5nb): network per-frame intensities with covariance, per-frame bg,
+  pass1    detector + per-candidate head: network per-frame intensities with covariance, per-frame bg,
            pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/pipeline/sc_front[_fast].py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
            network intensities alone                                                (simcode/pipeline/pattern_est.py)
@@ -12,11 +12,18 @@ is `python -m simcode.run`, which calls this module's stages with the production
                             pass-1 solve
 Only the camera maps and the PSF are taken from --calib (in-situ calibration json). Optional --ref_pattern: the solve is
 repeated with that pattern on the same detections (tag 'ref' / 'ref2'; for comparisons only).
+
+Chunks are the units of the shared work driver (simcode/fileio/work.py): a finished chunk is skipped (--redo 1 repeats it),
+every output is written atomically (a killed run leaves no truncated chunk file), the free disk space is checked before a
+chunk starts (--min_free_gb), and each chunk leaves a small record (pass1_<f0>.json ...) from which runtime.json is merged.
+With --claim 1 several copies of the same command (one per GPU, python -m simcode.fileio.launch) share the chunks of the
+pass-1 and pass-2 stages; the pattern stage then runs in one of them, after all pass-1 chunks exist.
+
 usage: python -m simcode.pipeline.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir> [--frontend sc|sc2p]
-       [--fast 1 --compile auto] [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000]
+       [--fast 1 --compile auto] [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000] [--claim 1]
 Outputs in --out: pass1_<f0>.npz, pattern_est.pt / pattern_est.json, pass2_<tag>_<f0>.npz, runtime.json, log.txt
 """
-import argparse, glob, hashlib, json, os, time
+import argparse, hashlib, json, os, time
 import numpy as np, torch
 from simcode import config
 
@@ -39,6 +46,8 @@ def main(argv=None):
     ap.add_argument('--nn_min', type=float, default=3.0)
     ap.add_argument('--min_phot', type=float, default=300.0)
     ap.add_argument('--redo', type=int, default=0)
+    ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); prefetch is off then
+    ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
     # --pattern_field (2026-11-10, opt-in; default '' = unchanged): pattern field maps (simcode/pipeline/pattern_field.py):
     # 'est' = estimate a 10 px phase map + Legendre-2 depth field from the pass-1 rows after the pattern stage, or a saved
     # field .pt. Adds an extra pass-2 tag 'estfld' (pass2_estfld_<f0>.npz; sc front-end); pass2_est unchanged.
@@ -70,7 +79,7 @@ def main(argv=None):
     ap.add_argument('--solve_batch', type=int, default=16384)
     ap.add_argument('--solve_opts', default='{}')       # json, msolve_fast options, e.g. '{"prune_k": 0.2}'
     ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) fast path: read the next chunk's frames in a background thread
-                                                        # (pipeline/common.PrefetchMovie; identical data); 0 = synchronous reads
+                                                        # (fileio/movie.Prefetch; identical data); 0 = synchronous reads
     ap.add_argument('--p1_solve', type=int, default=1)  # sc2p: 0 skips the pass-1 pattern solve (pass2_est files; not needed by pass 2)
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
@@ -85,22 +94,30 @@ def main(argv=None):
         print(f'stored-candidate cut p >= {a.cand_pmin}', flush=True)
     fast = bool(a.fast)
     solve_opts = dict(json.loads(a.solve_opts), compile=a.compile) if fast else {}
-    from simcode.pipeline.common import Movie, load_calib
+    from simcode.pipeline.common import load_calib, load_pass1_rows, chunk_read_plan
+    from simcode.fileio.movie import open_movie, Prefetch
+    from simcode.fileio.work import Units, atomic_json, atomic_torch_save
     os.makedirs(a.out, exist_ok=True)
     crop = tuple(int(v) for v in a.crop.split(','))
     rt_path = f'{a.out}/runtime.json'
     RT = json.load(open(rt_path)) if os.path.exists(rt_path) else {}
-    save_rt = lambda: json.dump(RT, open(rt_path, 'w'), indent=1)
     log = open(f'{a.out}/log.txt', 'a')
     def say(*s):
         msg = ' '.join(str(v) for v in s); print(msg, flush=True); log.write(msg + '\n'); log.flush()
-    movie = Movie(a.movie)
+    units = lambda stage: Units(a.out, stage, claim=a.claim, redo=a.redo, min_free_gb=a.min_free_gb, log=say)
+    def save_rt(stage=None, U=None):
+        """runtime.json = the set-up entries of this process + the per-chunk records of the stage (merged, never overwritten by
+        another worker's partial view)"""
+        if U is not None: RT.setdefault(stage, {}).update({str(k): v for k, v in U.records(chunks).items()})
+        atomic_json(rt_path, RT, indent=1)
+    movie = open_movie(a.movie)
     nf = min(movie.n, a.nframes) if a.nframes else movie.n
     chunks = list(range(0, nf, a.chunk))
     if a.chunk_list: chunks = [int(v) for v in a.chunk_list.split(',')]
     t0 = time.time(); cal = load_calib(a.calib); RT['setup_psf_s'] = time.time() - t0
     say(f'movie {a.movie}: {movie.n} frames ({len(movie.parts)} parts), processing {nf} in {len(chunks)} chunks')
     stages = a.stages.split(',')
+    prefetch = fast and a.prefetch and not a.claim
 
     if 'pass1' in stages:
         t0 = time.time()
@@ -116,14 +133,11 @@ def main(argv=None):
             RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
         torch.cuda.synchronize(); RT['setup_nets_s'] = time.time() - t0
         RT.setdefault('pass1', {})
+        U = units('pass1')
         mv1 = movie
-        if fast and a.prefetch:
-            from simcode.pipeline.common import PrefetchMovie, chunk_read_plan
-            todo = [f0 for f0 in chunks if a.redo or not os.path.exists(f'{a.out}/pass1_{f0}.npz')]
-            mv1 = PrefetchMovie(movie, chunk_read_plan(movie, todo, a.chunk, nf, crop, a.margin))
-        for f0 in chunks:
-            fn = f'{a.out}/pass1_{f0}.npz'
-            if os.path.exists(fn) and not a.redo: continue
+        if prefetch:
+            mv1 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
+        for f0 in U.todo(chunks):
             tm = {}; t0 = time.time()
             if fast:
                 R, info = p1.run_chunk(mv1, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm,
@@ -131,58 +145,45 @@ def main(argv=None):
             else:
                 R, info = p1.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm)
             tm['total'] = time.time() - t0
-            np.savez(fn, **R, X0=info['X0'], Y0=info['Y0'], S=info['S'], own=np.array(info['own']),
-                     loaded=np.array(info['loaded']), crop=np.array(crop))
-            RT['pass1'][str(f0)] = dict(tm, n_det=int(len(R['x'])), n_out=int(R['out'].sum()), frames=int(min(f0 + a.chunk, nf) - f0))
-            save_rt()
+            U.save(f0, **R, X0=info['X0'], Y0=info['Y0'], S=info['S'], own=np.array(info['own']),
+                   loaded=np.array(info['loaded']), crop=np.array(crop))
+            U.record(f0, dict(tm, n_det=int(len(R['x'])), n_out=int(R['out'].sum()), frames=int(min(f0 + a.chunk, nf) - f0)))
+            save_rt('pass1', U)
             say(f'pass1 f0={f0}: {len(R["x"])} detections, {int(R["out"].sum())} localizations; ' +
                 ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
+        if prefetch: mv1.close()
 
     if 'pattern' in stages:
-        from simcode.pipeline.pattern_est import estimate_pattern
-        t0 = time.time()
-        cols = ('wstart', 'x', 'y', 'sx', 'sy', 'I', 'phot', 'tc')
-        Ls = [np.load(f'{a.out}/pass1_{f0}.npz') for f0 in chunks]
-        # windows loaded by two chunks (padding) are taken from one chunk only (start in [own0 - 3, own1 - 3));
-        # 'out' recomputed globally = central half (time centroid) & inside the crop
-        keep = np.concatenate([(L['wstart'] >= int(L['own'][0]) - 3) & ((L['wstart'] < int(L['own'][1]) - 3) | (f0 == chunks[-1]))
-                               for L, f0 in zip(Ls, chunks)])
-        R = {c: np.concatenate([L[c] for L in Ls])[keep] for c in cols}
-        # the constant prior-position bias of the head (sc_cal 'prior_off', px) is removed before the pattern estimation too;
-        # otherwise the estimated phases absorb it and it reappears in the final positions
-        po = json.load(open(a.sc_cal)).get('prior_off')
-        if po is not None:
-            R['x'] = R['x'] - po[0]; R['y'] = R['y'] - po[1]; say(f'pattern: prior_off {po} px removed from the pass-1 priors')
-        x0c, y0c, szc = crop
-        R['out'] = (R['tc'] >= 1.0) & (R['tc'] < 4.0) & (R['x'] >= x0c) & (R['x'] < x0c + szc) & (R['y'] >= y0c) & (R['y'] < y0c + szc)
-        t_load = time.time() - t0
-        t0 = time.time()
-        P, info = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say)
-        RT['pattern'] = dict(load_s=t_load, estimate_s=time.time() - t0)
-        torch.save(P, f'{a.out}/pattern_est.pt')
-        json.dump(info, open(f'{a.out}/pattern_est.json', 'w'), indent=1, default=float)
-        save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
+        # one unit: with --claim 1 only one worker estimates the pattern (the others wait for pattern_est.pt); without
+        # claiming the stage always runs when it is requested (as before)
+        UP = Units(a.out, 'pattern', pattern='pattern_est.pt', claim=a.claim, redo=not a.claim, log=say)
+        for _ in UP.todo(['']):
+            from simcode.pipeline.pattern_est import estimate_pattern
+            t0 = time.time()
+            # the constant prior-position bias of the head (sc_cal 'prior_off', px) is removed before the pattern estimation too;
+            # otherwise the estimated phases absorb it and it reappears in the final positions
+            po = json.load(open(a.sc_cal)).get('prior_off')
+            R = load_pass1_rows(a.out, chunks, crop, po)
+            if po is not None: say(f'pattern: prior_off {po} px removed from the pass-1 priors')
+            t_load = time.time() - t0
+            t0 = time.time()
+            P, info = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say)
+            RT['pattern'] = dict(load_s=t_load, estimate_s=time.time() - t0)
+            atomic_json(f'{a.out}/pattern_est.json', info, indent=1, default=float)
+            atomic_torch_save(P, f'{a.out}/pattern_est.pt')
+            save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
 
     if 'pass2' in stages and not (fast and a.frontend == 'sc2p' and not a.p1_solve):
         pats = [('est', f'{a.out}/pattern_est.pt')] + ([('ref', a.ref_pattern)] if a.ref_pattern else [])
         FLD = None
         if a.pattern_field:
             if a.pattern_field in ('est', 'est_depth'):
-                from simcode.pipeline.pattern_est import estimate_pattern  # noqa (same R as the pattern stage)
                 from simcode.pipeline.pattern_field import estimate_field
-                Ls = [np.load(f'{a.out}/pass1_{f0}.npz') for f0 in chunks]
-                cols = ('wstart', 'x', 'y', 'sx', 'sy', 'I', 'phot', 'tc')
-                keep = np.concatenate([(L['wstart'] >= int(L['own'][0]) - 3) & ((L['wstart'] < int(L['own'][1]) - 3) | (f0 == chunks[-1]))
-                                       for L, f0 in zip(Ls, chunks)])
-                Rf = {c: np.concatenate([L[c] for L in Ls])[keep] for c in cols}
-                po = json.load(open(a.sc_cal)).get('prior_off')
-                if po is not None: Rf['x'] = Rf['x'] - po[0]; Rf['y'] = Rf['y'] - po[1]
-                x0c, y0c, szc = crop
-                Rf['out'] = (Rf['tc'] >= 1.0) & (Rf['tc'] < 4.0) & (Rf['x'] >= x0c) & (Rf['x'] < x0c + szc) & (Rf['y'] >= y0c) & (Rf['y'] < y0c + szc)
+                Rf = load_pass1_rows(a.out, chunks, crop, json.load(open(a.sc_cal)).get('prior_off'))
                 dep = a.pattern_field == 'est_depth'
                 FLD = estimate_field(Rf, torch.load(f'{a.out}/pattern_est.pt'), movie.shape, cell=10, mode='shrink', depth=True, verbose=say,
                                      phase=not dep)
-                torch.save(FLD, f'{a.out}/pattern_field{"_depth" if dep else ""}.pt')
+                atomic_torch_save(FLD, f'{a.out}/pattern_field{"_depth" if dep else ""}.pt')
             else:
                 FLD = torch.load(a.pattern_field, weights_only=False)
             ftag = 'estdep' if (a.pattern_field == 'est_depth' or not FLD.get('phase_on', True)) else 'estfld'
@@ -190,9 +191,8 @@ def main(argv=None):
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})
-            for f0 in chunks:
-                fn = f'{a.out}/pass2_{tag}_{f0}.npz'
-                if os.path.exists(fn) and not a.redo: continue
+            U = units(f'pass2_{tag}')
+            for f0 in U.todo(chunks):
                 L = dict(np.load(f'{a.out}/pass1_{f0}.npz'))
                 info = dict(X0=int(L['X0']), Y0=int(L['Y0']), S=int(L['S']), loaded=tuple(int(v) for v in L['loaded']))
                 tm = {}; t0 = time.time()
@@ -204,8 +204,8 @@ def main(argv=None):
                     from simcode.pipeline.sc_front import run_chunk_pass2
                     O = run_chunk_pass2(L, info, Pt, a.sc_cal, timing=tm, field=FLD if tag in ('estfld', 'estdep') else None)
                 tm['total'] = time.time() - t0
-                np.savez(fn, **O, pattern=pf)
-                RT[f'pass2_{tag}'][str(f0)] = tm; save_rt()
+                U.save(f0, **O, pattern=pf)
+                U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
     if 'pass2' in stages and a.frontend == 'sc2p':
         from simcode.p2.front import Pass2P2, direct_view
@@ -220,14 +220,11 @@ def main(argv=None):
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})
+            U = units(f'pass2_{tag}'); Ub = Units(a.out, f'pass2_{tag}b', log=say)
             mv2 = movie
-            if fast and a.prefetch:
-                from simcode.pipeline.common import PrefetchMovie, chunk_read_plan
-                todo = [f0 for f0 in chunks if a.redo or not os.path.exists(f'{a.out}/pass2_{tag}_{f0}.npz')]
-                mv2 = PrefetchMovie(movie, chunk_read_plan(movie, todo, a.chunk, nf, crop, a.margin))
-            for f0 in chunks:
-                fn = f'{a.out}/pass2_{tag}_{f0}.npz'
-                if os.path.exists(fn) and not a.redo: continue
+            if prefetch:
+                mv2 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
+            for f0 in U.todo(chunks):
                 tm = {}; t0 = time.time()
                 if fast:
                     O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
@@ -235,10 +232,11 @@ def main(argv=None):
                 else:
                     O = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm)
                 tm['total'] = time.time() - t0
-                np.savez(fn, **O, pattern=pf)
-                np.savez(f'{a.out}/pass2_{tag}b_{f0}.npz', **direct_view(O), pattern=pf)
-                RT[f'pass2_{tag}'][str(f0)] = tm; save_rt()
+                Ub.save(f0, **direct_view(O), pattern=pf)       # the head-prior variant first: the chunk counts as done by the
+                U.save(f0, **O, pattern=pf)                      # main file, so a run killed in between repeats both
+                U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: {len(O["x_hy0"])} localizations; ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
+            if prefetch: mv2.close()
     say('done')
 
 
