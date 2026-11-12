@@ -159,7 +159,12 @@ def main():
         if nm == 'net':
             S['net_nochi2'] = (L['x'], L['y'], L['z'], L['w'], base)
             S['net_all'] = (L['x'], L['y'], L['z'], L['w'], np.ones(len(L['x']), bool))
-    K = dict(np.load(f'{REPO}/out/4pi/showcase/cl/{a.tag}/cl_{a.tag}.npz'))
+    fk = f'{REPO}/out/4pi/showcase/cl/{a.tag}/cl_{a.tag}.npz'
+    if os.path.exists(fk):
+        K = dict(np.load(fk)); res['classical_failed'] = False
+    else:   # sim_cl.py stopped (no emitter passes its selection for the pattern / phase-field fit): no classical output
+        z0 = np.zeros(0); K = dict(x=z0, y=z0, z=z0, w=z0.astype(int), keep=z0.astype(bool), xp=z0, yp=z0, zp=z0, keep_pix=z0.astype(bool))
+        res['classical_failed'] = True
     S['cl_pub'] = (K['x'], K['y'], K['z'], K['w'], K['keep'])
     S['cl_pix'] = (K['xp'], K['yp'], K['zp'], K['w'], K['keep_pix'])
     S['cl_pub_nofilt'] = (K['x'], K['y'], K['z'], K['w'], np.isfinite(K['z']))
@@ -179,7 +184,10 @@ def main():
     for nm, (x, y, z, w, ok) in S.items():
         ok = ok & inr(x, y, 1.0) & np.isfinite(z) & np.isfinite(x) & np.isfinite(y)
         x, y, z, w = x[ok], y[ok], z[ok], w[ok].astype(np.int64)
-        mg, ml = match(GA['w'], GA['x'], GA['y'], w, x, y)
+        if len(x):
+            mg, ml = match(GA['w'], GA['x'], GA['y'], w, x, y)
+        else:
+            mg, ml = np.full(len(GA['w']), -1), np.zeros(0, int)
         lin = inr(x, y)
         prec = float((ml[lin] >= 0).mean()) if lin.any() else float('nan')
         m = mg[gsel]; mm = m >= 0

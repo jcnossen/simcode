@@ -46,6 +46,7 @@ def main():
     p.add_argument('--dnll', type=float, default=9.21)
     p.add_argument('--phi', default='field'); p.add_argument('--pattern', default='iter')
     p.add_argument('--chi2_max', type=float, default=1.6, help="'good': chi2 / dof below this")
+    p.add_argument('--img_cpu', type=int, default=0, help='1: keep the candidate patches in host memory (large movies; batches go to the GPU)')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     a = p.parse_args()
     from simcode2.util.proctitle import auto; auto('4pi-simlin')
@@ -56,25 +57,25 @@ def main():
     t0 = time.time()
     F = np.load(f'{d}/front_SIM_000_{a.front}.npz')
     assert 'img' in F.files, 'run simfront4pi.py with --save_img 1'
-    img = torch.tensor(F['img'].astype(np.float32), device=dev)
+    img = torch.tensor(F['img'].astype(np.float32), device='cpu' if a.img_cpu else dev)
     n = img.shape[0]
     D = dict(dxy=torch.tensor(F['dxy'], device=dev), z=torch.tensor(F['z'], device=dev), ls=torch.tensor(F['ls'], device=dev),
              doff=torch.tensor(F['doff'], device=dev))
     w = F['w']; nn = F['nn']; cx, cy = F['cx'].astype(np.float64), F['cy'].astype(np.float64)
-    bm = border_bg(img)
+    bm = border_bg(img).to(dev)
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
         from simcode2.fourpi.loadhead import load_head
         net, _ = load_head(a.head); bl = []
         with torch.no_grad():
             for i in range(0, n, 1000):
-                j = slice(i, i + 1000); oh = net(img[j], D['doff'][j])
+                j = slice(i, i + 1000); oh = net(img[j].to(dev), D['doff'][j])
                 Ys.append(oh['Y']); Ls.append(oh['Lb']); Wss.append(oh['Wsum']); Wl.append(oh['W']); bl.append(oh['bgc'])
         bm = torch.cat(bl)
     else:
         for i in range(0, n, 2000):
             j = slice(i, i + 2000)
-            Y, Lb, Ws, W = linear_readout(img[j], D['doff'][j], lut, WINS, D['dxy'][j], D['z'][j], bm[j], return_w=True)
+            Y, Lb, Ws, W = linear_readout(img[j].to(dev), D['doff'][j], lut, WINS, D['dxy'][j], D['z'][j], bm[j], return_w=True)
             Ys.append(Y); Ls.append(Lb); Wss.append(Ws); Wl.append(W)
     D.update(Y=torch.cat(Ys), Lb=torch.cat(Ls), Ws=torch.cat(Wss), W=torch.cat(Wl))
     I = D['Y'][..., 0].sum(2).cpu().numpy(); mI = I.mean(1)                    # per-frame photons (matched-filter read-out)

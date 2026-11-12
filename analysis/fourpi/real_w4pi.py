@@ -36,7 +36,7 @@ def main():
     p.add_argument('--p_min', type=float, default=0.5); p.add_argument('--tile', type=float, default=12.0); p.add_argument('--tblk', type=int, default=50)
     p.add_argument('--dnll', type=float, default=9.21); p.add_argument('--chi2_max', type=float, default=2.5)
     p.add_argument('--coh', type=float, default=1.0, help='interference-contrast scale of the PSF model in the solve')
-    p.add_argument('--iters', type=int, default=15); p.add_argument('--batch', type=int, default=3000)
+    p.add_argument('--iters', type=int, default=15); p.add_argument('--batch', type=int, default=1500)
     p.add_argument('--min_photons', type=float, default=300.0, help='candidates below this photon read-out per window are not kept (the good selection needs N > 300)')
     p.add_argument('--tag', default='', help='suffix of the output name'); p.add_argument('--nphi', type=int, default=60000)
     a = p.parse_args()

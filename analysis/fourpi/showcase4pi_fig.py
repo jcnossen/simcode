@@ -125,6 +125,7 @@ def fig_sections(tag, E):
 
 def fig_profiles(Es):
     tags = [t for t in TAGS if t in Es]
+    tags = tags + [t for t in Es if t not in tags]
     fig, axs = plt.subplots(2, len(tags), figsize=(2.3 * len(tags), 4.4), sharex=True, squeeze=False)
     b = np.arange(-80, 80.1, 3.0); c = 0.5 * (b[1:] + b[:-1])
     for j, t in enumerate(tags):
@@ -134,8 +135,8 @@ def fig_profiles(Es):
                 if len(e) < 100: continue
                 h, _ = np.histogram(e, b); h = h / h.max()
                 axs[i, j].plot(c, h, color=COL[nm], lw=1.6 if nm != 'gt' else 1.0, ls='-' if nm != 'gt' else '--', label=lab)
-        axs[0, j].set_title(f"{Es[t]['dens']:.2f} /µm²/frame")
-        axs[1, j].set_xlabel('distance from tube axis (nm)')
+        axs[0, j].set_title(f"{Es[t]['dens']:.2f} /µm²/frame" + (', 25 nm tube' if t.endswith('r125') else ''))
+        axs[1, j].set_xlabel('position across the tube (nm)')
     axs[0, 0].set_ylabel('in-plane profile\n(normalised count)'); axs[1, 0].set_ylabel('axial profile\n(normalised count)')
     axs[0, -1].legend(fontsize=6, frameon=False, loc='upper right')
     plt.tight_layout(); fig.savefig(f'{OUT}/profiles.png', dpi=150); plt.close(fig)
@@ -169,7 +170,7 @@ def fig_summary(Es):
 
 def main():
     Es = {}
-    for t in TAGS:
+    for t in TAGS + ['sc_d03_r125']:
         f = f'{OUT}/{t}/eval.json'
         if os.path.exists(f): Es[t] = json.load(open(f))
     for t, E in Es.items():
