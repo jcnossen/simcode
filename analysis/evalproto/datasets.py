@@ -1,8 +1,8 @@
 """Dataset loader of the evaluation-protocol scripts (covpool.py, nnlag.py, blockphase.py). A dataset is a json spec:
 
   {"name": "real 0.5 nM", "mode": "real", "grid": 3, "n_frames": 90000, "reference": "SIMCODE (b)",
-   "sets": {"ours p1":     {"kind": "ours", "dir": "<simcode2 output dir>", "tag": "est",  "drift": "<drift>"},
-            "ours p2L":    {"kind": "ours", "dir": "<simcode2 output dir>", "tag": "est2", "drift": "<drift>"},
+   "sets": {"ours p1":     {"kind": "ours", "dir": "<simcode output dir>", "tag": "est",  "drift": "<drift>"},
+            "ours p2L":    {"kind": "ours", "dir": "<simcode output dir>", "tag": "est2", "drift": "<drift>"},
             "SIMCODE (b)": {"kind": "simcode", "npz": "<sc_b.npz>", "drift": "<drift>"}}}
   sim mode: "mode": "sim", "gt": "<sim_gt.npz>" (simreal/sim_movie_r.py output), sets as above (kind "simcode" reads the NDI
   rows ndi_x / ndi_y / ndi_sx / ndi_sy of a SIMCODE run npz), no drift.
@@ -15,7 +15,7 @@ Sim mode adds the GT match (lib.match_fast on the prior / detection position, 1 
 400-2000 ph), e [n, 2] nm, ev (GT event), site, P (GT window photons)."""
 import glob, json, os
 import numpy as np
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 
 PMIN = 0.63
 
@@ -112,6 +112,6 @@ def load(spec, baselines=False):
 
 def out_path(spec, prefix, out_dir=None):
     name = os.path.splitext(os.path.basename(spec))[0] if isinstance(spec, str) else 'dataset'
-    from simcode2 import config
+    from simcode import config
     d = out_dir or config.out_dir('evalproto')
     return os.path.join(d, f'{prefix}_{name}')

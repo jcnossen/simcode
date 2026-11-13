@@ -8,7 +8,7 @@ The networks never see the illumination pattern in pass 1. Instead they output p
 covariance. The pattern-encoded position then comes from an explicit intensity-domain solve. No pixel-level linear
 intensity fit is done anywhere in the method.
 
-## Pipeline (`python -m simcode2.run`)
+## Pipeline (`python -m simcode.run`)
 
 | stage | what | code |
 |---|---|---|
@@ -19,6 +19,22 @@ intensity fit is done anywhere in the method.
 | 4. pattern solve | Per row, a Levenberg–Marquardt fit of (x, y, B[, t_on, t_off]) to I_t with the covariance Σ(μ). The prior is a Gaussian term. Starts: the prior centre plus the 8 fringe-shifted starts (±1 period per angle). The on/off kinetics model is kept only if it lowers the NLL by > 9.21. The output is the fringe posterior mean over the deduplicated starts. σ_cal = (chi²-aware Fisher σ + posterior spread) × a per-photon-bin factor, calibrated on sims and rescaled for real data. | `hd/msolve.py`, `hd/msolve_fast.py`, `hd/sc.py:sc_solve` |
 | 5. pass 2 (`--pass2`) | Pattern-aware detector **p2_det** and head **p2_head_long** (p2L). They are det_n1 / sc5nb with extra input channels for the estimated illumination, zero-initialised and then fine-tuned with a realistic pattern-error model. Their output goes through the same pattern solve (`models/calib/calib_p2L_b10_real.json`). | `p2/front.py`, `p2/head2.py`, `p2/det2.py` |
 | 6. table | Localization table. The phase-calibrated selection `sel` keeps, per photon band, the pass fraction of p ≥ 0.63, taken as the top-p rows in each 6 × 6 sub-pixel cell. `strict` is the recommended strict product: a per-10-px-tile σ quantile; q from the GT-free row density (anchors where it matches SIMCODE's coverage on the real movies, in-sample, under the automatic and the fixed c alike). | `strict.py` |
+
+### Network sets (2026-11)
+
+The paper's runs use **PSF-matched network sets** (`simcode/netsets.json`: `m1809`, `m25`, `g13`; `--netset`, default
+`m1809`). A set has the same four architectures and training recipes as described below; the simulator's PSF is the
+averaged in-situ PSF of the target movie (`--calib` of the trainers), and the pass-1 head is fine-tuned from `hd_sc5nb`
+(`models/README.md` has the recipe and the file list). In the table above, read det_n1 / sc5nb / p2_det / p2_head_long as
+the detector / head / pass-2 detector / pass-2 head of the set (`det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`,
+`p2headL_<set>.pt`) and the solve calibrations as the set's (`calib/calib_sc_hd_<set>_real.json`,
+`calib/calib_p2L_<set>_real.json`). The earlier default networks named in this document (det_n1, hd_sc5nb, p2_det,
+p2_head_long) are the ancestors of the sets; they are no longer a selectable set.
+
+Production recipe (`python -m simcode.run --dataset <name>`; `_production` in `netsets.json`): `--autoc 0 --cand_pmin 0.3`,
+pass 2, the set's selection-aware sigma rescale, and the main selection **`strict_u ≤ u_max`, u_max 0.45** (`simcode.strict.select(table)`; rows with a rank,
+i.e. p ≥ 0.63 inside the crop, whose per-tile sigma rank quantile is at most 0.45). Stage 3 (automatic c) is therefore
+opt-in (`--autoc 1`); its sigma table exists only for hd_sc5nb.
 
 ### Fast path
 
@@ -46,12 +62,14 @@ All networks are trained only on the experiment-matched simulator (`hd/realsim.p
 
 | network | trainer | notes |
 |---|---|---|
-| det_n1 | `python -m simcode2.det.up2 train --up 1` | focal loss on the nearest-pixel targets, offset NLL |
-| sc5nb | `python -m simcode2.hd.sc4 prep5`, then `train --arch sc4n --init <sc5n> --bright_tail ...` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
-| p2_det / p2_head_long | `python -m simcode2.p2.det2 train`, `python -m simcode2.p2.head2 train --pert real` | illumination channels zero-initialised from det_n1 / sc5nb |
-| hd_sc7bg (optional) | `python -m simcode2.hd.sc7bg train` | sc5nb + a dense BgNet background (bg 3.5× → 1.1× CRLB, positions unchanged); not production |
+| det_n1 | `python -m simcode.det.up2 train --up 1` | focal loss on the nearest-pixel targets, offset NLL |
+| sc5nb | `python -m simcode.hd.sc4 prep5`, then `train --arch sc4n --init <sc5n> --bright_tail ...` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
+| p2_det / p2_head_long | `python -m simcode.p2.det2 train`, `python -m simcode.p2.head2 train --pert real` | illumination channels zero-initialised from det_n1 / sc5nb |
 
-### Exact training commands of the shipped networks
+### Exact training commands of the earlier default networks (the ancestors of the network sets)
+
+The recipe of a PSF-matched set (the same commands with `--calib <averaged PSF>` and the fine-tune from `hd_sc5nb.pt`) is in
+`models/README.md`.
 
 From the `args` stored in each checkpoint (`torch.load(f, weights_only=False)['args']`); `runs/` is any work directory.
 Paths of the dev runs are given relative; the shipped files are the `final.pt` of each run.
@@ -59,36 +77,33 @@ Paths of the dev runs are given relative; the shipped files are the `final.pt` o
 ```bash
 export CUDA_VISIBLE_DEVICES=1
 # det_n1 (40k steps)
-python -m simcode2.det.up2 train --up 1 --out runs/det_n1 --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 \
+python -m simcode.det.up2 train --up 1 --out runs/det_n1 --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 \
     --nnw 1 --em_photons 40,2500 --seed 0
 # held-out set of the head trainer (<out>/sc4/heldout5.pt, det_n1 candidates)
-python -m simcode2.hd.sc4 prep5
+python -m simcode.hd.sc4 prep5
 # hd_sc5n (100k steps from scratch), then hd_sc5nb = 18k-step fine-tune with the bright tail
-python -m simcode2.hd.sc4 train --arch sc4n --out runs/hd_sc5n --steps 100000 --batch 16 --lr 5e-4 --ch 96 --det det_n1.pt \
+python -m simcode.hd.sc4 train --arch sc4n --out runs/hd_sc5n --steps 100000 --batch 16 --lr 5e-4 --ch 96 --det det_n1.pt \
     --paper 1 --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 0 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000
-python -m simcode2.hd.sc4 train --arch sc4n --out runs/hd_sc5nb --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det det_n1.pt \
+python -m simcode.hd.sc4 train --arch sc4n --out runs/hd_sc5nb --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det det_n1.pt \
     --paper 1 --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init runs/hd_sc5n/final.pt --pct 0.1 \
     --bright_tail 0.1,2000,20000 --ckpt_every 6000
 # p2_det (40k steps; illumination channels zero-initialised from det_n1)
-python -m simcode2.p2.det2 train --out runs/p2_det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 \
+python -m simcode.p2.det2 train --out runs/p2_det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 \
     --seed 11 --eval_every 2500 --ckpt_every 5000
 # p2_head (24k steps from hd_sc5nb; its --det was p2_det's 25k-step checkpoint, identical to runs/p2_det/ckpt_25000.pt),
 # then p2_head_long = 50k steps from p2_head with the 'real' pattern-error model
-python -m simcode2.p2.head2 train --out runs/p2_head --det runs/p2_det/ckpt_25000.pt --init hd_sc5nb.pt --steps 24000 \
+python -m simcode.p2.head2 train --out runs/p2_head --det runs/p2_det/ckpt_25000.pt --init hd_sc5nb.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0
-python -m simcode2.p2.head2 train --out runs/p2_head_long --det runs/p2_det/final.pt --init runs/p2_head/final.pt --steps 50000 \
+python -m simcode.p2.head2 train --out runs/p2_head_long --det runs/p2_det/final.pt --init runs/p2_head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
     --pert_model real --hold_v1 15
-# hd_sc7bg (optional): sc7bg trainer, --init runs/hd_sc5nb/final.pt, args in models/hd_sc7bg.pt
 ```
 
 All four entry points were run for 3 steps with these arguments (2026-11-11, `--init` from the shipped files). On this
 server, put the env's `bin/` on PATH (`conda activate`): otherwise triton cannot find `ptxas` in the head trainers'
-backward pass. `simcode2/hd/sc.py` (`python -m simcode2.hd.sc`) is the base SCHead trainer of the earlier sc heads, and
-`python -m simcode2.det.train` is the earlier pattern-free detector trainer of the det_stem lineage (DetNet input variants,
-`--pert` PSF-perturbation augmentation). Neither produced a shipped network.
+backward pass.
 
 `hd/realgen.py` (`--gen r1`) is an optional realistic training generator. The networks retrained with it (p1r / p2r) were
 **not** adopted: the pre-registered rules failed.
@@ -97,6 +112,7 @@ backward pass. `simcode2/hd/sc.py` (`python -m simcode2.hd.sc`) is the base SCHe
 
 | file | use |
 |---|---|
+| `calib/calib_sc_hd_<set>_real.json`, `calib_sc_hd_<set>.json`, `calib_p2L_<set>_real.json`, `calib_p2L_<set>.json`, `sigu/sigu_p{1,2}_<set>.json` | the calibrations of a network set (pass-1 / pass-2 solve with real-data or sim σ; selection-aware σ rescale): fitted with `analysis/psfmatch/fit_cal_set.py` on the gate scenes rendered with the set's PSF, templates = the hd_sc5nb files below; `analysis/psf3d_nets/sigcal.py` for the rescale |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright_real.json` | pass-1 solve with fixed c (0.10 + 0.10). The σ table is fitted on the gate tuning seed and rescaled for real data with the real 0.5 nM M4 zcal × the sim (true / M4) ratio. |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright.json` | same, sim σ (gate scenes, sim movies; start point of the autoc fit) |
 | `calib/calib_sc_hd_sc5nbb15_pm_autoc1.json` | σ table for the automatic-c solve; `run` writes `<out>/calib_autoc.json` = this table + the estimated (c, c_a) |
@@ -111,7 +127,7 @@ seeds 301–303: `analysis/calib/dump_fe.py`, then `fit_cal.py`. The pass-2 equi
 (`fit_cal`). The real-data rescale uses the real M4 zcal × the sim (true / M4) ratio.
 
 The in-situ calibration itself (bead fit → camera maps → tracks → stage A → stage B → `calib_<movie>.json`) is described
-in `simcode2/insitu/README.md`.
+in `simcode/insitu/README.md`.
 
 Only the camera maps and the PSF of the in-situ calibration are used by the pipeline. Its pattern entry is never used:
 the pattern is always estimated from the data.

@@ -12,7 +12,7 @@ if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2 import config
+from simcode import config
 D7 = os.path.join(config.root('out'), 'sc7')
 NETS = (sys.argv[1] if len(sys.argv) > 1 else 'sc5n,sc5nb,sc6n').split(',')
 SCS = (sys.argv[2] if len(sys.argv) > 2 else 'iso,rs05q,rs05qm').split(',')
@@ -83,7 +83,7 @@ def main():
                 for lo, hi in NB if ((d['ph'] >= 200) & (d['nn'] >= lo) & (d['nn'] < hi)).sum() >= 30))
     open(os.path.join(DEST or D7, 'icrlb_report.txt'), 'w').write('\n'.join(L) + '\n')
     # ---------------- combined figure
-    from simcode2.hd import gate_report as GR
+    from simcode.hd import gate_report as GR
     from plot_crlb_sc3 import curves
     import plot_crlb_sc3 as P3
     P3.BINS = PBINS

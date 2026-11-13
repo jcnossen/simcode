@@ -5,6 +5,10 @@ after a 1.5 px DoG band-pass that removes the smooth background). The per-emitte
 over many emitters / phases. Correction: inv_new(p) = inv_old(p + d(p)), d fitted by a quadratic polynomial over
 tiles; fwd refitted from inv on a grid. usage: python reg_xcorr.py <cell> <ref_fi> [check_fi ...]
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 from scipy import ndimage as ndi
@@ -14,8 +18,8 @@ from dc import Dcimg, crops, movie_files, file_index
 from register import PolyMap, feats, fit_poly
 from quickloc import Warp
 
-OUT = '/home/jc/simcode2/out/4pi/smlm/reg'
-GAIN = 0.23
+OUT = f'{P4}/smlm/reg'
+from simcode.fourpi.setup import GAIN
 
 
 def mean_img(cell, fi, off, f0=0, n=3600):
@@ -62,7 +66,7 @@ def refine(pm, S, order=2):
 
 if __name__ == '__main__':
     cell, ref = sys.argv[1], int(sys.argv[2]); checks = [int(v) for v in sys.argv[3:]]
-    off = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')['off']
+    off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
     pm = PolyMap.load(f'{OUT}/reg_beads_{cell}.json')
     M = mean_img(cell, ref, off)
     report = {}

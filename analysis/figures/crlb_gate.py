@@ -3,9 +3,9 @@ Per GT target: nearest prediction of the method in the same FOV within 1 px (gre
 Hungarian at 0.5 px). RMSD over matched targets incl. outliers; recall shown in the lower panel.
 Fronts pf / det / hd (the development-era hybrid front-ends; gate npz with pf_* / det_* / hd_* columns). -> <out>/plots/crlb_gate.png"""
 import argparse, os
-from simcode2 import config
+from simcode import config
 ap = argparse.ArgumentParser(description=__doc__)
-ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode2.hd.gate)')
+ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode.hd.gate)')
 ap.add_argument('--out', default='', help='png (default <out>/plots/crlb_gate.png)')
 A_ = ap.parse_args()
 OUTPNG = A_.out or os.path.join(config.out_dir('plots'), 'crlb_gate.png')

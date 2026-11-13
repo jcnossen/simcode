@@ -12,7 +12,7 @@ z: emitter height above the coverslip, z_um = z0 + dz * arange(nz), z0 = -0.03, 
 usage: python analysis/psf3d/export_zstack.py <calib.json> <out.npz>"""
 import sys, json
 import numpy as np, torch
-from simcode2.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
+from simcode.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
 
 calib, outp = sys.argv[1:3]
 dev = 'cuda'

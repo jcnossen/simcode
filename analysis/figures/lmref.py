@@ -3,7 +3,7 @@ Evaluation-only REFERENCE (user request 2026-11-09): a basic single-emitter Leve
 method (the method stays network-only); used only as a reference line in the CRLB plots (analysis/figures/crlb_all_v2.py).
 Model on a P x P ROI (default 11 x 11) centred on a pixel (cx, cy), all T frames:
     mu_t(px) = I_t * psf(px; x, y, z0) + bg_t
-  psf = the calibrated vectorial PSF (calib_0.5nM, simcode2.psf.lut.make_lut on P x P; simulator normalisation, so I_t = photons),
+  psf = the calibrated vectorial PSF (calib_0.5nM, simcode.psf.lut.make_lut on P x P; simulator normalisation, so I_t = photons),
   z FIXED at z0 = 0.05 um (the emitter median height, = the head's PSF template PSFCol) or free (zfree=True, clamped to
   [0, zmax], start z0); parameters theta = (x, y, [z,] I_1..I_T, bg_1..bg_T) (14 / 15), no pattern, no neighbours (single emitter: neighbours contaminate the fit by design).
 Likelihood: sCMOS Poisson (Huang et al. 2013): y + rn^2 ~ Poisson(mu + rn^2) per pixel, rn = the per-pixel read-noise
@@ -11,8 +11,8 @@ map; LM with Fisher scoring (F = J^T diag(1 / (mu + rn^2)) J), multiplicative da
 Returns the estimate and the inverse Fisher at the estimate (I-block -> covariance for the explicit pattern solve).
 """
 import torch
-from simcode2.psf.lut import make_lut          # identical to the development hd/solve.make_lut
-from simcode2.hd.sc import patches
+from simcode.psf.lut import make_lut          # identical to the development hd/solve.make_lut
+from simcode.hd.sc import patches
 
 
 class LMRef:
@@ -138,7 +138,7 @@ LM_CAL = dict(kap_p=1.0, kap_I2=1.0, sig_a=1.0, sig_g=0.0, box=1.5, ms_xdet=Fals
 #     mu_t(px) = B * a_t * il_t(X, Y) * psf(px; x, y, z) + bg_t
 #   il_t(X, Y) = rel_t (1 + m_t cos(kx_t X + ky_t Y - phi_t)) at the absolute FOV position (X, Y) = (cx + x, cy + y)
 #   a_t = 1 (kin=False: always on, the iso model) or the on-fraction of frame t for an on-interval [t0, t1]
-#         (kin=True: the CRLB_SF kinetics nuisance, simcode2.sim.crlb onfrac)
+#         (kin=True: the CRLB_SF kinetics nuisance, simcode.sim.crlb onfrac)
 #   bg: 'frame' (6 bg_t), 'angle' (one per pattern angle, = the CRLB_SF model) or 'one'
 # theta = (x, y, [z,] B, [t0, t1,] bg...). Same ROI / candidates / sCMOS-Poisson likelihood / Fisher-scoring LM as LMRef.
 # Start: the pattern-free LMRef fit (z free) from the detector point; then the SIMFLUX LM from the 9 fringe-shifted starts

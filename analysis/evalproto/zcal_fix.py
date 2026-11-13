@@ -15,8 +15,8 @@ usage: python analysis/evalproto/zcal_fix.py <fit sim specs, comma> <test sim sp
 import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode2.evalproto import lib as E
-from simcode2 import config
+from simcode.evalproto import lib as E
+from simcode import config
 QE = (0, .01, .02, .05, .10, .20, .35, .50, .70, 1.0)
 ARGS = sys.argv[1:]
 if '--out' in ARGS:

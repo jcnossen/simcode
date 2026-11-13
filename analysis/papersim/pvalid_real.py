@@ -18,7 +18,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('locs'); ap.add_argument('nframes', type=int)
     ap.add_argument('--model', default=os.path.join(PV.OUTD, 'pvalid_m1809.joblib')); ap.add_argument('--sim', default='D2'); ap.add_argument('--name', default=None)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-pvreal')
+    from simcode.util.proctitle import auto; auto('psim-pvreal')
     import frc_fair
     name = a.name or os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(a.locs)))) + '_' + os.path.basename(os.path.dirname(os.path.abspath(a.locs)))
     z, pv, M = AP.apply(a.locs, a.model)

@@ -10,6 +10,10 @@ V_p = clipped temporal variance.
   but not between the MT and NPC days (r = 0.15); the column FPN is stable across days (r = 0.94). See build().
 usage: python camera.py <out_dir>
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import sys, os
 import numpy as np
 from scipy.ndimage import median_filter, gaussian_filter
@@ -69,4 +73,4 @@ def build(out_dir, K=1200):
 
 
 if __name__ == '__main__':
-    build(sys.argv[1] if len(sys.argv) > 1 else '/home/jc/simcode2/out/4pi/smlm/camera')
+    build(sys.argv[1] if len(sys.argv) > 1 else f'{P4}/smlm/camera')

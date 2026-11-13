@@ -5,12 +5,14 @@ Pairs: window w and w + 1, nearest neighbour within r_link px, both with sigma_x
 (no second candidate within 2 r_link). Bins by the network photon count.
 Usage: python analysis/fourpi/dafl4pi.py --cell MT --file 5 --model v2
 """
-import argparse, json, os
+import argparse, json, os, sys
 import numpy as np
 from scipy.spatial import cKDTree
 
-REPO = '/home/jc/simcode2'
-PX = 128.0
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+from simcode.fourpi.setup import PX_NM as PX
 
 
 def pairs(w, x, y, r=0.35):
@@ -54,7 +56,7 @@ def main():
     p.add_argument('--cell', default='MT'); p.add_argument('--file', type=int, default=5); p.add_argument('--model', default='v2')
     a = p.parse_args()
     R = []
-    D = np.load(f'{REPO}/out/4pi/net/locs_{a.cell}_{a.file:03d}_{a.model}.npz')
+    D = np.load(f'{P4}/net/locs_{a.cell}_{a.file:03d}_{a.model}.npz')
     for mode, sel in (('net kin', D['on']), ('net free (lateral = prior)', ~D['on'])):
         s = sel & (D['sx'] < 0.15) & (D['sy'] < 0.15) & (D['N'] > 300)
         R.append(analyse(mode, D['w'][s], D['x'][s], D['y'][s], D['sx'][s], D['sy'][s], D['N'][s], D['z'][s], D['sz'][s]))
@@ -62,7 +64,7 @@ def main():
     R.append(analyse('net all, z', D['w'][s], D['x'][s], D['y'][s], D['sx'][s], D['sy'][s], D['N'][s], D['z'][s], D['sz'][s]))
     s = s & (D['szprior'] < 0.2)
     R.append(analyse('net prior z (astig, Phi-free)', D['w'][s], D['x'][s], D['y'][s], D['sx'][s], D['sy'][s], D['N'][s], D['zprior'][s], D['szprior'][s]))
-    fp1 = f'{REPO}/out/4pi/smlm/p1/p1_{a.cell}_{a.file:03d}.npz'
+    fp1 = f'{P4}/smlm/p1/p1_{a.cell}_{a.file:03d}.npz'
     if os.path.exists(fp1):
         C = np.load(fp1, allow_pickle=True, mmap_mode='r')
         g, cr = np.asarray(C['gfit']), np.asarray(C['gcrlb'])
@@ -76,7 +78,7 @@ def main():
         R.append(analyse('classical pass 1 (Gaussian, summed), filtered', np.asarray(C['w'])[q], np.asarray(C['x'])[q], np.asarray(C['y'])[q],
                          cr[q, 0], cr[q, 1], g[q, 2] * 1.35))
         R[-1]['kept_frac'] = float(q.sum() / max(s.sum(), 1))
-    fp2 = f'{REPO}/out/4pi/smlm/p1/p2_{a.cell}_{a.file:03d}.npz'
+    fp2 = f'{P4}/smlm/p1/p2_{a.cell}_{a.file:03d}.npz'
     if os.path.exists(fp2):
         C = np.load(fp2, allow_pickle=True)
         pf, pc = C['pfit'], C['pcrlb']
@@ -85,8 +87,8 @@ def main():
         q = s & (C['pchi2'] <= 4 * 15 * 15) & (np.abs(pf[:, 2]) < 0.88) & (pc[:, 2] < 0.06)
         R.append(analyse('classical PSF refit (summed 3D PSF), filtered', C['w'][q], C['x'][q], C['y'][q], pc[q, 0], pc[q, 1], pf[q, 3], pf[q, 2], pc[q, 2]))
         R[-1]['kept_frac'] = float(q.sum() / max(s.sum(), 1))
-    os.makedirs(f'{REPO}/out/4pi/net/check', exist_ok=True)
-    json.dump(R, open(f'{REPO}/out/4pi/net/check/dafl_{a.cell}_{a.file:03d}_{a.model}.json', 'w'), indent=1)
+    os.makedirs(f'{P4}/net/check', exist_ok=True)
+    json.dump(R, open(f'{P4}/net/check/dafl_{a.cell}_{a.file:03d}_{a.model}.json', 'w'), indent=1)
     for r in R:
         print(f"\n{r['name']} ({r['n_pairs']} pairs" + (f", kept {r['kept_frac']:.2f} of the unfiltered rows" if 'kept_frac' in r else '') + ')')
         for b in r['bins']:

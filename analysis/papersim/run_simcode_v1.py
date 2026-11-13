@@ -23,7 +23,7 @@ def main():
     ap.add_argument('movie_dir'); ap.add_argument('--out', default=None); ap.add_argument('--maxframes', type=int, default=0)
     ap.add_argument('--pattern', default='est'); ap.add_argument('--fix_sign', type=int, default=0)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-v1')
+    from simcode.util.proctitle import auto; auto('psim-v1')
     md = os.path.abspath(a.movie_dir)
     out = os.path.abspath(a.out or os.path.join(md, 'full', 'v1', 'locs.npz'))
     wd = os.path.dirname(out); os.makedirs(wd, exist_ok=True)

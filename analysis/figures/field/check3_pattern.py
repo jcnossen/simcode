@@ -14,8 +14,8 @@ if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import numpy as np, torch
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2 import config
-from simcode2.pipeline.pattern_est import select, angle_Z, _interp_eps, T
+from simcode import config
+from simcode.pipeline.pattern_est import select, angle_Z, _interp_eps, T
 from field_maps import G0, CS, NC, SHIFT, smooth_fit, wcorr
 from check1_offsets import DS, PX
 

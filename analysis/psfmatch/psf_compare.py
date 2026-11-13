@@ -2,7 +2,7 @@
 Uses the averaged (mean over pattern axes) z-stacks out/psf3d/final/zstack_<movie>_psf3d.npz (31 x 31 px, 108.33 nm).
 Per z (weighted by the TIRF depth profile exp(-z / 0.082 um) over the stack range) and pair of movies:
   L1   = sum |A - B| of the unit-sum 31 x 31 images (0 = identical, 2 = disjoint)
-  dE3  = difference of 3 x 3 / 11 x 11 energy (the spot-shape number of analysis/psf3d_nets/spotshape.py)
+  dE3  = difference of 3 x 3 / 11 x 11 energy (the spot-shape number)
   m2   = second moment (px^2) of the 11 x 11 core, per movie
   ratio of the Fisher-information-based lateral CRLB (Poisson, 1000 ph, bg 10 / px) of A vs B
 usage: python analysis/psfmatch/psf_compare.py > out/psfmatch/psf_compare.txt"""

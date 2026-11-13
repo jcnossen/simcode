@@ -1,4 +1,4 @@
-"""Train the 4Pi head (simcode2/fourpi/head4pi.py) on on-the-fly simulated candidate windows (simcode2/fourpi/sim4pi.py,
+"""Train the 4Pi head (simcode/fourpi/head4pi.py) on on-the-fly simulated candidate windows (simcode/fourpi/sim4pi.py,
 bead-fitted 4Pi PSF). Loss = (T, C) 2x2 Gaussian NLL per (frame, channel) + 3D prior NLL.
 
 Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/train_head4pi.py --tag v1 --steps 30000 [--batch 512]
@@ -6,14 +6,15 @@ Output: out/4pi/models/head4pi_<tag>.pt, log out/4pi/models/head4pi_<tag>.log
 """
 import argparse, json, math, os, sys, time
 import torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.ckpt import save as safe_save   # atomic, disk-guarded
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi
-from simcode2.fourpi.head4pi import Head4Pi, nll_2x2, nll_prior
+from simcode.fourpi.setup import P4
+from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.fourpi.head4pi import Head4Pi, nll_2x2, nll_prior
 
-OUT = f'{REPO}/out/4pi/models'
+OUT = f'{P4}/models'
 
 
 def main():
@@ -27,10 +28,10 @@ def main():
     p.add_argument('--template', default='gauss', help="'lut': 4Pi PSF template read-out (v7)")
     p.add_argument('--eps_range', type=float, default=0.3, help='pattern phase range at the patch centre (rad); pi = arbitrary (v3)')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-train')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import auto; auto('4pi-train')     # recognizable name in nvidia-smi / ps
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     sim = Sim4Pi(lut, seed=a.seed)
     net = Head4Pi(ch=a.ch, nblk=a.nblk).cuda()

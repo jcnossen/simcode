@@ -14,11 +14,11 @@ import sys, os, math
 import numpy as np, torch
 sys.argv, ARGS = sys.argv[:1], sys.argv[1:]
 if not ARGS or ARGS[0] in ('-h', '--help'): print(__doc__); sys.exit(0)
-from simcode2.sim import simtools as ST
-from simcode2.sim.simtools import CD, dev, S
-from simcode2.hd import gate as GA, sc as SCM
-from simcode2.det.model import select_subpixel
-from simcode2 import config
+from simcode.sim import simtools as ST
+from simcode.sim.simtools import CD, dev, S
+from simcode.hd import gate as GA, sc as SCM
+from simcode.det.model import select_subpixel
+from simcode import config
 OUTR = config.root('out')
 
 OUT = os.path.join(OUTR, 'sc7')

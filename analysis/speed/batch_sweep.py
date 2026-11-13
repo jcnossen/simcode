@@ -6,9 +6,9 @@ import sys, os, time, json
 import numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import DATA, P2_CAL, OUT, gpu_state, canon, qstats, dump
-from simcode2 import config
-from simcode2.pipeline.common import Movie, load_calib
-from simcode2.pipeline import sc_front_fast as SFF
+from simcode import config
+from simcode.pipeline.common import Movie, load_calib
+from simcode.pipeline import sc_front_fast as SFF
 name, nf = sys.argv[1], int(sys.argv[2]); reps = int(sys.argv[3]) if len(sys.argv) > 3 else 2
 passes = sys.argv[4].split(',') if len(sys.argv) > 4 else ['p1', 'p2']
 D = DATA[name]; f0 = D['f0']; f1 = f0 + nf; SFF.CAND_PMIN = 0.3

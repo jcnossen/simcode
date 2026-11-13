@@ -2,14 +2,14 @@
 p2real/analyze_p2.py stage dme (pass 2, 0.5 / 2.5 nM) and real20/dme20.py (20 nM): same row selections, same DME calls, same
 checkerboard halves and bp / xref_err (verbatim ~/dme/gpu/loop/realcheck2.py, px -> nm with 108.33 nm), same npz layout
 (R: drift_full [F, 2] px, chosen, cv, t_full, N, D {method: (half A, half B) nm}). DME v2 (method key 'v3e', its development name) = the
-`dme` package through simcode2/util/drift.py (not part of simcode2), as analysis/baselines/dme_drift.py.
+`dme` package through simcode/util/drift.py (not part of simcode), as analysis/baselines/dme_drift.py.
 
 DME stage (GPU):  CUDA_VISIBLE_DEVICES=1 python analysis/dme/dme_splithalf.py run <spec.json> <set> [<set> ...]
   spec: {"n_frames": 90000, "out": "<dir>",                       -> <out>/<set>.npz (re-uses / completes an existing npz)
          "methods": ["v3e", "grid_fpb20", "grid_fpb10"],          halves to compute (dev 0.5 / 2.5 nM pass 1 + SIMCODE: all 8 of
                                                                   METHODS below; pass 2 and 20 nM: these three)
          "crlb_min_pos": false,                                   true = also drop rows with crlb <= 0 (dev 20 nM only)
-         "sets": {"<set>": {"kind": "ours", "dir": "<simcode2 run dir>", "tag": "est", "grid": 6, "pmin": 0.63}, ...
+         "sets": {"<set>": {"kind": "ours", "dir": "<simcode run dir>", "tag": "est", "grid": 6, "pmin": 0.63}, ...
                   "<set>": {"kind": "simcode", "npz": "<sc_b.npz>"},  (run_simcode_real.py ndi output, all rows)
                   "<set>": {"kind": "hdf5", "file": "<smlm.hdf5 | sfhd-ndi.hdf5 | ...>", "df": 0, "dxy": 0, "dt": 3}}}
   rows: ours = p >= pmin, finite positions, wstart % grid == 0 (6 = disjoint '_disj' sets, 3 = stride-3 '_ovl'), time = wstart
@@ -58,7 +58,7 @@ def xref_err(D, R):                       # verbatim realcheck2.xref_err
 def _dme():
     REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode2.util import drift as DR
+    from simcode.util import drift as DR
     DR.dme_package()
     from dme.dme_grid import dme_grid_estimate
     from dme.dme_pipeline import dme_estimate_gpu

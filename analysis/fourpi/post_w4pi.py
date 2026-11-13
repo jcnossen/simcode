@@ -2,16 +2,18 @@
 lateral drift by DME v2 (analysis/baselines/dme_drift.py, subprocess), sample z drift (structure-based estimator of the
 classical worker, analysis/fourpi_classical/fig_cl.zdrift_struct, imported read-only; per 500-window block), sigma
 multipliers from adjacent-window pairs (DAFL; precision only), render, summary json.
-Global frame = (file - first file) * 18000 + 6 w (as post4pi.py and the classical tables).
+Global frame = (file - first file) * 18000 + 6 w (as the classical tables).
 Columns of net_<cell>_<head>_all.npz: x, y (px, raw), xd, yd (drift corrected), z (um, raw), zd (um, z drift removed),
 sx, sy, sz (reported), sx_cal, sy_cal, sz_cal, N, good, sel (>= 1000 e and |z| <= 0.3 um), kin, chi2, dof, frame, w, fidx, on (all True), drift [F,2], zdrift.
 Usage: python analysis/fourpi/post_w4pi.py --cell NPC --head v10
 """
 import argparse, glob, json, os, re, subprocess, sys
 import numpy as np
-REPO = '/home/jc/simcode2'
-OUT = f'{REPO}/out/4pi/net'
-PX = 128.0
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+OUT = f'{P4}/net'
+from simcode.fourpi.setup import PX_NM as PX
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -24,7 +26,7 @@ def main():
     p.add_argument('--kstride', type=int, default=25)
     a = p.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode2.util.proctitle import auto; auto('4pi-post-w')
+    from simcode.util.proctitle import auto; auto('4pi-post-w')
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
     fidx = lambda f: int(re.search(rf'locs_{a.cell}_(\d\d\d)_', os.path.basename(f)).group(1))     # the head tag may contain underscores
     if a.files: fs = [f for f in fs if fidx(f) in a.files]
@@ -43,17 +45,15 @@ def main():
     R['good'] = good; R['on'] = np.ones(n_all, bool)
     F = int(R['frame'].max()) + 6
     tag = f'net_{a.cell}_{a.head}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '')
-    fn = f'{OUT}/{tag}_dmein.npz'
-    np.savez(fn, frame=R['frame'][good], x=R['x'][good], y=R['y'][good], sx=R['sx'][good], sy=R['sy'][good])
-    r = subprocess.run([sys.executable, f'{REPO}/analysis/baselines/dme_drift.py', fn, f'{OUT}/{tag}_drift.npy', str(F)],
-                       capture_output=True, text=True, env=dict(os.environ))
-    print(r.stdout[-800:], r.stderr[-800:])
-    d = np.load(f'{OUT}/{tag}_drift.npy'); os.remove(fn)
+    from simcode.util.drift import drift_of_table
+    from simcode.fileio.work import atomic_save
+    d, dinfo = drift_of_table(dict(frame=R['frame'][good], x=R['x'][good], y=R['y'][good], sx=R['sx'][good], sy=R['sy'][good]), F, return_info=True)
+    print(f'DME v2 {dinfo["version"]} on {dinfo["n"]} rows, chosen {dinfo["chosen"]}; drift ptp {np.ptp(d, 0) * PX} nm')
+    atomic_save(f'{OUT}/{tag}_drift.npy', d)
     fi_ = np.clip(R['frame'] + 3, 0, F - 1)
     R['xd'] = R['x'] - d[fi_, 0]; R['yd'] = R['y'] - d[fi_, 1]
     # sample z drift (structure based), from the good rows; global window index
-    sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
-    from fig_cl import zdrift_struct
+    from simcode.fourpi.zdrift import zdrift_struct
     wg = R['frame'] // 6
     zd = zdrift_struct(R['xd'][good] * PX, R['yd'][good] * PX, R['z'][good] * 1000, wg[good])
     R['zd'] = R['z'] - zd[np.clip(wg // 500, 0, len(zd) - 1)] / 1000.0

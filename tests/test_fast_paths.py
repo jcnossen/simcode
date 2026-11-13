@@ -1,7 +1,9 @@
 """
 Regression test of the fast inference paths (the production default) against the reference code paths on a fixed,
 deterministic sim chunk. Run:  CUDA_VISIBLE_DEVICES=<gpu> python tests/test_fast_paths.py   (or: pytest tests)
-Needs a CUDA GPU (~1 min) and the models directory (simcode2/config.py). Checks:
+Needs a CUDA GPU (~1 min) and the models directory (simcode/config.py). Networks and calibrations: the default network set
+(m1809, simcode/netsets.json); PSF / camera: the in-situ calibration of the 1809/2 movie; pattern: the pattern estimate of
+the 1809/2 production run with that set (tests/data/pattern_est_1809_2.pt). Checks:
   pass 1 (Pass1SC vs Pass1SCFast; queued, 1- and 2-stream, partial head batches, optional compiled head):
     fp32 (bf16 autocast and TF32 off in both): identical candidate list, |dx|, |dy| < 1e-4 px, |dI| < 1e-2 ph
     bf16 (as in production): identical candidate list; I / x differences <= 2 x the bf16 noise reference (the original
@@ -14,15 +16,15 @@ import contextlib, json, os, sys
 import numpy as np, torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from simcode2 import config
-CALIB = config.model(config.INSITU_05)
+from simcode import config
+CALIB = config.model('insitu/calib_1809_2_psf3d.json')
 HEAD = config.model(config.HEAD)
 DET = config.model(config.DET)
 P2H = config.model(config.P2_HEAD)
 P2D = config.model(config.P2_DET)
 SCAL = config.model(config.CAL_P1_REAL)
 P2CAL = config.model(config.CAL_P2_SIM)
-PATT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pattern_est_0.5nM.pt')   # real 0.5 nM pattern estimate
+PATT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pattern_est_1809_2.pt')   # pattern estimate of the 1809/2 movie (m1809 set)
 _C = {}
 # bf16 tolerances (production precision): the bf16 head output depends on the batch composition through the cuDNN algorithm
 # choice. On the real 0.5 nM chunk (frames 12000-18000) the original vs itself with another window batch differs by up to
@@ -30,24 +32,16 @@ _C = {}
 BF16_X, BF16_I, BF16_DET = 5e-3, 3.0, 1e-3
 
 
-class ArrayMovie:
-    """Movie-like in-memory ADU stack"""
-    def __init__(self, a):
-        self.a = a; self.n = len(a); self.shape = a.shape[1:]; self.parts = ['<array>']
-
-    def read(self, f0, f1, y0, x0, S):
-        return self.a[f0:f1, y0:y0 + S, x0:x0 + S].astype(np.float32)
-
-
 def sim_movie():
     """deterministic 2.5 nM-like 120 x 120 chunk (RealSim windows laid end to end, 240 frames) in ADU"""
     if 'mov' in _C: return _C['mov']
-    from simcode2.pipeline.common import load_calib
-    from simcode2.hd.realsim import RealSim
+    from simcode.pipeline.common import load_calib
+    from simcode.fileio.movie import ArrayMovie       # in-memory ADU stack with the reader interface
+    from simcode.hd.realsim import RealSim
     cal = load_calib(CALIB)
     with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
         torch.manual_seed(1234)
-        rs = RealSim('2.5nM', H=120, W=120, T=6, seed=1234)
+        rs = RealSim('2.5nM', H=120, W=120, T=6, seed=1234, calib=CALIB)
         o = rs.scene(40)
     fr = o['frames'].reshape(-1, 120, 120).cpu().numpy()
     adu = fr / cal['gain'] + cal['offset'][:120, :120][None]
@@ -88,8 +82,8 @@ def same_cands(Ra, Rb, tol):
 
 
 def _pass1(fp32, **kw):
-    from simcode2.pipeline.sc_front import Pass1SC
-    from simcode2.pipeline.sc_front_fast import Pass1SCFast
+    from simcode.pipeline.sc_front import Pass1SC
+    from simcode.pipeline.sc_front_fast import Pass1SCFast
     mov, cal = sim_movie()
     if 'p1' not in _C:
         A = Pass1SC(CALIB, head=HEAD, det=DET)
@@ -100,7 +94,7 @@ def _pass1(fp32, **kw):
     A, B = _C['p1']
     comp = kw.pop('compile', None)
     if comp:
-        from simcode2 import fastutil
+        from simcode import fastutil
         if not fastutil.compile_available(): return None
         B.front.heads = {'h': (torch.compile(A.head, dynamic=False), 'sc', A.head)}
     A.head.bf16 = not fp32
@@ -159,8 +153,8 @@ def _solve_cmp(a, c, tag):
 
 
 def test_pattern_solve():
-    from simcode2.hd import sc as SCM, msolve_fast as MF
-    from simcode2.pipeline.common import pattern_frames
+    from simcode.hd import sc as SCM, msolve_fast as MF
+    from simcode.pipeline.common import pattern_frames
     Ra, _, _ = _pass1(False)
     cal = json.load(open(SCAL))
     pat = torch.load(PATT, weights_only=False)
@@ -173,14 +167,14 @@ def test_pattern_solve():
     b = torch.tensor(inv, device='cuda')
     a = SCM.sc_solve(o, PW, b, cal)
     _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal), 'pattern solve (eager)')
-    from simcode2 import fastutil
+    from simcode import fastutil
     if fastutil.compile_available():
         _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal, compile='on'), 'pattern solve (compiled)')
 
 
 def test_pass2_p2_fp32():
-    from simcode2.p2.front import Pass2P2
-    from simcode2.pipeline.sc_front_fast import Pass2P2Fast
+    from simcode.p2.front import Pass2P2
+    from simcode.pipeline.sc_front_fast import Pass2P2Fast
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
     A = Pass2P2(CALIB, head=P2H, det=P2D)
@@ -202,11 +196,12 @@ def test_pass2_p2_fp32():
 
 
 def test_prefetch_reader():
-    """PrefetchMovie (background read of the next chunk) returns the same frames as Movie.read, in plan order and on a miss"""
-    from simcode2.pipeline.common import PrefetchMovie, chunk_read_plan
+    """Prefetch (background read of the next chunk) returns the same frames as the reader, in plan order and on a miss"""
+    from simcode.pipeline.common import chunk_read_plan
+    from simcode.fileio.movie import Prefetch
     mov, _ = sim_movie()
     plan = chunk_read_plan(mov, [0, 60, 120, 180], 60, mov.n, (5, 5, 110), 5)
-    pm = PrefetchMovie(mov, plan)
+    pm = Prefetch(mov, plan)
     for k in plan + [plan[0]]:                      # 4 hits, then 1 miss
         assert np.array_equal(pm.read(*k), mov.read(*k))
     assert pm.stats['hits'] == 4 and pm.stats['misses'] == 1, pm.stats
@@ -216,10 +211,10 @@ def test_prefetch_reader():
 def test_trunk_compile_bf16():
     """opt-in compiled head trunk (compile_head 'trunk'): same candidates; on the head outputs it must be at least as close
     to the fp32 head as the production eager bf16 head is (it is not bit-equivalent to the eager bf16 head)"""
-    from simcode2 import fastutil
+    from simcode import fastutil
     if not fastutil.compile_available():
         print('  skip (compile unavailable)'); return
-    from simcode2.pipeline.sc_front_fast import Pass1SCFast, QueuedFront
+    from simcode.pipeline.sc_front_fast import Pass1SCFast, QueuedFront
     mov, cal = sim_movie()
     _pass1(False)
     A, B = _C['p1']
@@ -248,12 +243,12 @@ def test_trunk_compile_bf16():
 
 
 def test_spatial_hash():
-    """simcode2/util/spatial_hash vs scipy cKDTree (key * 1e4 embedding) on a deterministic point set with duplicates, points
+    """simcode/util/spatial_hash vs scipy cKDTree (key * 1e4 embedding) on a deterministic point set with duplicates, points
     on cell borders (0.5 px grid, radius 1.0 / 2.0 / 5.0 -> many distances exactly equal to the radius), empty keys and
     keys absent from the points; CPU and (if available) CUDA. Distances / counts / found sets must be identical; nearest
     indices may differ only between equidistant points."""
     from scipy.spatial import cKDTree
-    from simcode2.util import spatial_hash as SH
+    from simcode.util import spatial_hash as SH
     rng = np.random.default_rng(7)
     n = 6000
     k = rng.integers(0, 40, n) * 3; k[k == 30] = 33                     # key 30 empty

@@ -6,6 +6,10 @@ Stage 2 (in situ): see insitu_register() - bright isolated emitters in 6-frame p
 Gaussian fits, residuals of the bead map vs field position, polynomial refit.
 PolyMap: fwd(c, x, y) -> ch0 coords; inv(c, x0, y0) -> ch c coords (separately fitted inverse polynomial).
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 import torch
@@ -15,34 +19,10 @@ from dc import Dcimg, crops, bead_align_file
 from quickloc import affine_maps
 from mle import GaussAstig, lm_fit
 
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN
 
 
-def feats(x, y, order):
-    u, v = (np.asarray(x) - 180.0) / 180.0, (np.asarray(y) - 100.0) / 100.0
-    return np.stack([u ** i * v ** j for i in range(order + 1) for j in range(order + 1 - i)], -1)
-
-
-class PolyMap:
-    def __init__(self, coef_fwd, coef_inv, order):
-        self.cf, self.ci, self.order = coef_fwd, coef_inv, order    # {c: [nf, 2]}
-
-    def fwd(self, c, x, y):
-        if c == 0: return np.asarray(x, float), np.asarray(y, float)
-        F = feats(x, y, self.order) @ self.cf[c]; return F[..., 0], F[..., 1]
-
-    def inv(self, c, x, y):
-        if c == 0: return np.asarray(x, float), np.asarray(y, float)
-        F = feats(x, y, self.order) @ self.ci[c]; return F[..., 0], F[..., 1]
-
-    def save(self, fn, **meta):
-        json.dump(dict(order=self.order, fwd={c: v.tolist() for c, v in self.cf.items()},
-                       inv={c: v.tolist() for c, v in self.ci.items()}, **meta), open(fn, 'w'), indent=1)
-
-    @staticmethod
-    def load(fn):
-        d = json.load(open(fn))
-        return PolyMap({int(c): np.array(v) for c, v in d['fwd'].items()}, {int(c): np.array(v) for c, v in d['inv'].items()}, d['order'])
+from simcode.fourpi.front import PolyMap, feats  # noqa (the registration map class lives in the package)
 
 
 def fit_poly(src, dst, order, w=None):
@@ -125,9 +105,9 @@ def bead_register(cell, off, out_dir, order_use=2):
 
 
 if __name__ == '__main__':
-    out = '/home/jc/simcode2/out/4pi/smlm/reg'; os.makedirs(out, exist_ok=True)
+    out = f'{P4}/smlm/reg'; os.makedirs(out, exist_ok=True)
     for cell in ('NPC', 'MT'):
-        off = np.load(f'/home/jc/simcode2/out/4pi/smlm/camera/camera_{cell}.npz')['off']
+        off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
         pm, rep, pos = bead_register(cell, off, out)
         print(cell, 'beads per channel', [len(p) for p in pos], 'saturated beads', [int((p[:, 5] > 0).sum()) for p in pos])
         for c in rep:

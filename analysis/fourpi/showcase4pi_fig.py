@@ -12,8 +12,10 @@ import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter
-REPO = '/home/jc/simcode2'
-OUT = f'{REPO}/out/4pi/showcase'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+OUT = f'{P4}/showcase'
 PXN = 128.0
 LO, HI = 8.0, 52.0
 TAGS = ['sc_d01', 'sc_d03', 'sc_d1', 'sc_d2', 'sc_d4']

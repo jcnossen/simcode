@@ -24,8 +24,10 @@ Writes out/4pi/fig/MT_selection_curves_<tag>.png / .json and the showcase figure
 import argparse, json, os, sys, time
 import numpy as np
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
+from simcode.fourpi.setup import P4
 import showcase_real_mt as SR
 from showcase_real_mt import FC, PX, FPF, OUTD, inrect, lg
 import matplotlib.pyplot as plt
@@ -118,10 +120,10 @@ _G = {}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{REPO}/out/4pi/classical/real/cl_MT_wv_all.npz')
+    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_MT_wv_all.npz')
     ap.add_argument('--net_locs', nargs='*', default=None); ap.add_argument('--net_all', default=None)
     ap.add_argument('--head', default='v10'); ap.add_argument('--tag', required=True)
-    ap.add_argument('--regions', default=f'{REPO}/out/4pi/patches/regions_MT.json')
+    ap.add_argument('--regions', default=f'{P4}/patches/regions_MT.json')
     ap.add_argument('--rule', default='combined sigma', help='network score used for the operating points and the matched showcase row (the ranking of all scores is reported regardless)')
     a = ap.parse_args()
     rng = np.random.default_rng(0)

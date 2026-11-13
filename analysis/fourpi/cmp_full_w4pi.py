@@ -9,8 +9,10 @@ import argparse, json, os, sys
 import numpy as np
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
+from simcode.fourpi.setup import P4
 import fig_cl as FC
 
 
@@ -67,11 +69,11 @@ def main():
     ap.add_argument('--cell', default='NPC'); ap.add_argument('--head', default='v10'); ap.add_argument('--files', type=int, nargs='*')
     ap.add_argument('--cltag', default='_wv'); ap.add_argument('--sel', type=int, default=0, help="1: network rows = the 'sel' column (>= 1000 e, |z| <= 0.3 um) instead of 'good'")
     a = ap.parse_args()
-    CL = f'{REPO}/out/4pi/classical'
-    out = f'{REPO}/out/4pi/net/cmp_{a.head}'; os.makedirs(f'{out}/fig', exist_ok=True); os.makedirs(f'{out}/real', exist_ok=True)
+    CL = f'{P4}/classical'
+    out = f'{P4}/net/cmp_{a.head}'; os.makedirs(f'{out}/fig', exist_ok=True); os.makedirs(f'{out}/real', exist_ok=True)
     FC.OUT = out
     FC.NETNAME = f'network pipeline, learned-window head {a.head} (4Pi-SIMCODE)'
-    net_fn = f'{REPO}/out/4pi/net/net_{a.cell}_{a.head}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '') + '_all.npz'
+    net_fn = f'{P4}/net/net_{a.cell}_{a.head}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '') + '_all.npz'
     D = FC.load(f'{CL}/real/cl_{a.cell}{a.cltag}_all.npz', net_fn, None, None, zdrift=True)
     if a.files:     # restrict the classical tables to the same files
         for k in ('cl', 'clp'):

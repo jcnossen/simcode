@@ -1,18 +1,22 @@
 """Shared helpers of the analysis/speed scripts: datasets, GPU-state record, NVML-free utilisation sampler (nvidia-smi)."""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode import config as _config; OUTR = _config.root('out')
 import os, subprocess, threading, time, json
 import numpy as np
 
 DATA = {
     # sparse: 1809/2 (the 0.5 nM-like DNA-PAINT movie); calib + pattern of the production run (read-only)
     '1809': dict(movie='/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif', calib='insitu/calib_1809_2.json',
-                 pattern='/home/jc/simcode2/out/paper/1809_2/v2/run_default/pattern_est.pt', f0=12000),
+                 pattern=f'{OUTR}/paper/1809_2/v2/run_default/pattern_est.pt', f0=12000),
     # dense: 20 nM movie 2
     '20nM': dict(movie='/mnt/data/dmdsf/bn_dnapaint/dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif', calib='insitu/calib_20nM_m2_sc.json',
-                 pattern='/home/jc/simcode2/out/full_20nM_m2_fast/pattern_est.pt', f0=12000),
+                 pattern=f'{OUTR}/full_20nM_m2_fast/pattern_est.pt', f0=12000),
 }
 SC_CAL = 'calib/calib_sc_hd_sc5nbb15_pm_bright_real.json'
 P2_CAL = 'calib/calib_p2L_b10_real.json'
-OUT = '/home/jc/simcode2/out/speed'
+OUT = f'{OUTR}/speed'
 
 
 def gpu_index():

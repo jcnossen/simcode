@@ -1,15 +1,15 @@
 """Combined CRLB figure v2 (user 2026-11-09) -> <out>/plots/crlb_all_v2.png + <out>/sc7/crlb_all_v2.txt.
 Rows: x/y position RMSD (gate npz, seeds 301-303, detector-matched within 1 px on x_det at score >= 0.5, resolvable
 targets), per-frame I_t RMSD and per-frame bg RMSD (icrlb npz, seeds 301-302, det = matched detector candidates, forced =
-at the GT positions). Columns: iso / rs05q / rs05qm. Networks: sc5nb, sc6n (+ PM pattern solve) [+ sc7bg if present].
+at the GT positions). Columns: iso / rs05q / rs05qm. Networks: sc5nb, sc6n (+ PM pattern solve).
 critic 34 (2026-11-10): + joint SIMFLUX MLE (lmref.SFRef, sf_gate.py -> sc7/gate_lm/*_sf11.npz; all columns) and repaired SIMCODE (ni6_3, paper
 filters; rs columns, on the targets matched by both SIMCODE and sc5nb, with sc5nb + PM on the same set); bg row reference relabelled.
 Reference: basic single-emitter LM (analysis/figures/lmref.py; lm_gate.py / lm_icrlb.py, run_lm.sh; 11 x 11 ROI, z fixed 50 nm, x, y, 6 I_t, 6 bg_t; sCMOS Poisson):
 pattern-free LM x/y and LM I_t + the same explicit pattern solve (PM) -> position; LM I_t / bg_t. The LM runs on the SAME
 detector candidates as the networks (position row: the same matched set), or at the GT positions (forced).
-Inputs (<out> = simcode2.config out root): gate/<scene>__s30?_<tag>.npz (simcode2.hd.gate, simcode2.eff.simcode_gate),
+Inputs (<out> = simcode.config out root): gate/<scene>__s30?_<tag>.npz (simcode.hd.gate, simcode.eff.simcode_gate),
 sc7/gate_lm/*_lm11*.npz / *_sf11.npz (lm_gate.py, sf_gate.py), sc7/icrlb_<net>_<scene>.npz (icrlb.py, lm_icrlb.py).
-usage: python crlb_all_v2.py [nets sc5nb,sc6n[,sc7bg]] [LM variant 11z] [--out png] [--txt txt]"""
+usage: python crlb_all_v2.py [nets sc5nb,sc6n] [LM variant 11z] [--out png] [--txt txt]"""
 import sys, os, argparse
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -23,8 +23,8 @@ A = _ap.parse_args()
 sys.argv = sys.argv[:1] + [A.nets]                   # icrlb_report reads sys.argv at import (as in the development run)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from icrlb_report import imet, bmet
-from simcode2 import config
-from simcode2.hd import gate_report as GR
+from simcode import config
+from simcode.hd import gate_report as GR
 from plot_crlb_sc3 import curves
 import plot_crlb_sc3 as P3
 
@@ -36,9 +36,9 @@ LMX = [v for v in ('11', '11z', '15') if v != LMV]   # other variants: text only
 SCS = ['iso', 'rs05q', 'rs05qm']
 GD = os.path.join(OUTR, 'gate')
 GDIR = {'sc5nb': (GD, '_hd_sc5nbb15pm'), 'sc6n': (GD, '_hd_sc6nb15pm'),
-        'sc7bg': (GD, '_hd_sc7bgb15pm'), 'lm': (f'{D7}/gate_lm', '_lm' + LMV), 'lm11': (f'{D7}/gate_lm', '_lm11'), 'lm11z': (f'{D7}/gate_lm', '_lm11z'),
+        'lm': (f'{D7}/gate_lm', '_lm' + LMV), 'lm11': (f'{D7}/gate_lm', '_lm11'), 'lm11z': (f'{D7}/gate_lm', '_lm11z'),
         'sf': (f'{D7}/gate_lm', '_sf11'), 'scode': (GD, '_scode_ni6_3')}
-COL = {'sc5nb': '#eb6834', 'sc6n': '#1baf7a', 'sc7bg': '#2a78d6', 'lm': '#7a4fb5', 'sf': '#111111', 'scode': '#8c6d1f'}
+COL = {'sc5nb': '#eb6834', 'sc6n': '#1baf7a', 'lm': '#7a4fb5', 'sf': '#111111', 'scode': '#8c6d1f'}
 SFLAB = 'joint SIMFLUX MLE (pattern known; x, y, z, I, bg/angle)'
 SCLAB = 'SIMCODE (paper net ni6_3, paper filters)'
 TITLE = {'iso': 'iso: isolated emitters, exact model',

@@ -9,8 +9,8 @@ usage: python analysis/figures/plot_crlb_sc3.py --runs '':sc,_sc2:sc2 [--out <ou
 import argparse, os
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-from simcode2 import config
-from simcode2.hd import gate_report as GR
+from simcode import config
+from simcode.hd import gate_report as GR
 
 PX = 108.33
 BINS = np.array([300, 500, 800, 1300, 2000, 3200, 5000, 8000, 13000, 20000])

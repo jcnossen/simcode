@@ -1,4 +1,4 @@
-"""Validation of the classical 4Pi-SIMFLUX fitter (cl4pi.py) on isolated on-through emitters (simcode2/fourpi/sim4pi.py,
+"""Validation of the classical 4Pi-SIMFLUX fitter (cl4pi.py) on isolated on-through emitters (simcode/fourpi/sim4pi.py,
 bead-fitted 4Pi PSF, pattern phase uniform over 2 pi at the patch centre, no neighbours), known pattern and 4Pi phase
 offset Phi0 (the movie tests estimate them). Reports RMS / CRLB per photon bin for
   summed fit (x, y, z_ast), published-style (SIMFLUX two-step x, y; 4Pi moment phase z unwrapped against z_ast),
@@ -8,15 +8,16 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/val_iso.py [--n 6
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
-from simcode2.fourpi.lm import fisher_j, crlb
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
+from simcode.fourpi.lm import fisher_j, crlb
 from cl4pi import Classic4Pi, run_chunk
 
-OUT = f'{REPO}/out/4pi/classical'
+OUT = f'{P4}/classical'
 EDGES = [300, 1000, 2000, 4000, 8000, 16000]
 
 
@@ -24,9 +25,9 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--n', type=int, default=6000); ap.add_argument('--seed', type=int, default=21)
     ap.add_argument('--chunk', type=int, default=1500)
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
     c4 = Classic4Pi(lut, delta=DELTA_A, dev=dev)
     print(f'calibration: fringe {c4.fringe_um * 1000:.0f} nm, monotone {c4.monotone}, tau {c4.tau.cpu().numpy().round(3)}, '

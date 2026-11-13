@@ -15,7 +15,7 @@ matplotlib.use('Agg')
 import smlmtorch.smlm.detection as detection
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import run_simcode as RS      # analysis/baselines/run_simcode.py
-from simcode2 import config
+from simcode import config
 
 CAP = int(os.environ.get('CAP', 2000))
 _orig = detection.SpotDetector

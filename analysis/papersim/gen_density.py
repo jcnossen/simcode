@@ -1,5 +1,5 @@
 """S1 / S2 (main Fig 2 + SI S1 / S2) movie generator: the preprint's random-microtubule ground truth (smlmtorch 5a4fda9, seed 1;
-common.preprint_tubules) at one density, rendered with the simcode2 simulator and the averaged 1809/2 in-situ PSF.
+common.preprint_tubules) at one density, rendered with the simcode simulator and the averaged 1809/2 in-situ PSF.
 
 Preprint settings kept (5a4fda9 scripts/fig_densities2.py): 40 x 40 px of 108.33 nm, 60000 frames, density in emitters ON per
 um^2 per frame (on_fraction = density x area / number of GT points), avg_on_time 6 frames (10 sub-steps), intensity 500 photons
@@ -28,7 +28,7 @@ def main():
     ap.add_argument('--block', type=int, default=600)
     ap.add_argument('--psf', default='vectorial', help="'vectorial' (default) or e.g. 'gauss1.3' (control: the preprint's PSF; calib_sim.json still names the vectorial PSF)")
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-gen')
+    from simcode.util.proctitle import auto; auto('psim-gen')
     import torch
     d = a.out or C.movie_dir(f'D{a.density:g}')
     os.makedirs(d, exist_ok=True)

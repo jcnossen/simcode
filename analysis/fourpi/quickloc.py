@@ -9,7 +9,7 @@ from scipy import ndimage as ndi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dc import crops, ROOT
 
-GAIN = 0.23
+from simcode.fourpi.setup import GAIN        # (dc.py above puts the repository on sys.path)
 
 
 def affine_maps(cell):

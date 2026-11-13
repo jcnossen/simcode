@@ -2,7 +2,7 @@
 windows, p >= 0.63); zooms at automatically detected microtubule crossings (zoompick.py). -> <out>/plots/recon_full_0.5nM_dme_cross.png"""
 import os, sys, argparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2 import config
+from simcode import config
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter

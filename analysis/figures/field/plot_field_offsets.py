@@ -10,7 +10,7 @@ import json, numpy as np, matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from simcode2 import config
+from simcode import config
 F = os.path.join(config.root('out'), 'field')
 OUTP = sys.argv[1] if len(sys.argv) > 1 else os.path.join(config.out_dir('plots'), 'field_dep_offsets.png')
 DSL = [('real05', 'real 0.5 nM'), ('real25', 'real 2.5 nM (shifted dx 2, dy 22)'), ('sim05', 'sim m05qh (1 global PSF)'), ('sim25', 'sim m25qh (1 global PSF)')]

@@ -7,7 +7,7 @@ localization error sigma its dip ratio (hollow_analysis.dip_ratio on the continu
 (no dip) at sigma / R = S1 = 0.29; a clear dip (ratio 0.9; sigma -> 0 gives 0.77) needs sigma / R <= S08 = 0.23. The SIMFLUX CRLB (and the SMLM CRLB) of the
 averaged 1809/2 PSF on a 16 x 16 ROI at the condition's mean background then gives the photon count at which the bound
 reaches those sigmas (sigma = mean of the x and y CRLB over random sub-pixel positions and pattern phases).
-usage: python analysis/papersim/hollow_summary.py [--netset default] [--cond 1809_2]
+usage: python analysis/papersim/hollow_summary.py [--netset m1809] [--cond 1809_2]
 outputs: out/papersim/hollow/summary_<netset>.json / .png, renders_<netset>_R<r>.png"""
 import os, sys, json, glob, argparse, importlib.util
 import numpy as np
@@ -112,7 +112,7 @@ def render_zooms(netset, cond, R, scales, methods=('smlm', 'sf_gtp', 'decode', '
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='default'); ap.add_argument('--cond', default='1809_2')
+    ap.add_argument('--netset', default='m1809'); ap.add_argument('--cond', default='1809_2')
     ap.add_argument('--root', default='hollow', help="out/papersim/<root>: 'hollow' (30 000 frames) or 'hollow120k' (final, 120 000 frames)")
     a = ap.parse_args()
     global OUTD; OUTD = os.path.join(C.OUT, a.root)

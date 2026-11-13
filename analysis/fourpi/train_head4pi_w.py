@@ -1,5 +1,5 @@
-"""Train the learned-window 4Pi head (simcode2/fourpi/head4pi_w.py, v10: frame-symmetric, emitter-orthogonal window changes; frozen v3L prior) with the solve-aware loss
-(simcode2/fourpi/solveloss4pi.py) on the patch simulator (neighbours p 0.5, kinetics, arbitrary pattern phase, as v3).
+"""Train the learned-window 4Pi head (simcode/fourpi/head4pi_w.py, v10: frame-symmetric, emitter-orthogonal window changes; frozen v3L prior) with the solve-aware loss
+(simcode/fourpi/solveloss4pi.py) on the patch simulator (neighbours p 0.5, kinetics, arbitrary pattern phase, as v3).
 
 Loss = NLL of the linearised solve's (x, y, z) error under its reported covariance  + prior NLL  + w_bg x background
 Huber  + w_ro x read-out NLL with the shared covariance scale (keeps the read-outs themselves and chi2 meaningful; small,
@@ -10,18 +10,19 @@ Resume: --init out/4pi/models/head4pi_<tag>.pt --steps <remaining>. Checkpoint e
 import argparse, json, math, os, sys, time
 import torch
 import torch.nn.functional as F
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.ckpt import save as safe_save
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi
-from simcode2.fourpi.head4pi import nll_prior
-from simcode2.fourpi.head4pi_k import WINS_K
-from simcode2.fourpi.head4pi_w import Head4PiW
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.solveloss4pi import solve_loss
+from simcode.fourpi.setup import P4
+from simcode.util.ckpt import save as safe_save
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.fourpi.head4pi import nll_prior
+from simcode.fourpi.windows4pi import WINS_K
+from simcode.fourpi.head4pi_w import Head4PiW
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.solveloss4pi import solve_loss
 
-OUT = f'{REPO}/out/4pi/models'
+OUT = f'{P4}/models'
 
 
 def main():
@@ -38,13 +39,13 @@ def main():
     p.add_argument('--nbr_in', type=int, default=0, help='1: neighbour-candidate map input (v11)'); p.add_argument('--train_prior', type=int, default=0)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINS_K]
-    from simcode2.util.proctitle import auto; auto('4pi-train-w')
+    from simcode.util.proctitle import auto; auto('4pi-train-w')
     torch.manual_seed(a.seed)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     sim = Sim4Pi(lut, seed=a.seed)
     net = Head4PiW(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
-    from simcode2.fourpi.head4pi_w import nbr_map, load_v10
+    from simcode.fourpi.head4pi_w import nbr_map, load_v10
     ksums = [int(v) for v in a.ksum.split(',')]
     ld = lambda f: torch.load(f if f.startswith('/') else f'{REPO}/{f}', weights_only=False)['state']
     if a.init: net.load_state_dict(ld(a.init))

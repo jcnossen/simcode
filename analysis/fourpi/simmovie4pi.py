@@ -22,9 +22,10 @@ Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simmovie4pi.py --tag d1 --d
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
 
 PX = 0.128
 GAIN, OFF, RN_ADU = 0.23, 100.0, 4.9
@@ -91,8 +92,8 @@ def main():
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--ksum', type=int, default=1, help='K-summed conditions (real dense data by summing K windows): K x background, sqrt(K) read noise; the offset stays one OFF (= the sum with (K - 1) offsets removed)')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-sim')
-    out = f'{REPO}/out/4pi/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
+    from simcode.util.proctitle import auto; auto('4pi-sim')
+    out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     rng = np.random.default_rng(a.seed)
     H, W, T = a.H, a.W, a.frames
     S = make_sites(H, W, rng)
@@ -115,7 +116,7 @@ def main():
             if qq > 0.02: fr.append(f); ev.append(e); q.append(qq)
     fr, ev, q = np.array(fr), np.array(ev), np.array(q)
     x, y, z = S[site[ev], 0], S[site[ev], 1], S[site[ev], 2]
-    pat = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_MT.json'))
+    pat = json.load(open(f'{P4}/smlm/diag/pattern_MT.json'))
     step = fr % 6; ang = step // 3
     k = np.array([pat['angle0']['k'], pat['angle1']['k']]); psi = np.radians(np.array([pat['angle0']['psi_deg'], pat['angle1']['psi_deg']]))
     m = 0.9
@@ -125,7 +126,7 @@ def main():
     print(f'sites {len(S)}, events {len(site)}, emitter-frames {len(fr)} ({len(fr) / T:.1f} per frame = {len(fr) / T / area:.2f} /um^2/frame)', flush=True)
     # render
     dev = 'cuda'
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     R = 21; h = R // 2
     lut = LUT4Pi(st, P=R, dev=dev)
     img = torch.zeros(T, 4, H + 2 * h, W + 2 * h, device=dev)

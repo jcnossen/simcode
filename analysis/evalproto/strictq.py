@@ -1,8 +1,8 @@
-"""Strict-product q check (critic 40 #1): does the default (auto-q) strict product of simcode2.strict cover as many occupied
+"""Strict-product q check (critic 40 #1): does the default (auto-q) strict product of simcode.strict cover as many occupied
 20-nm bins as SIMCODE's output, on the covpool protocol?
 
 Protocol (as covpool.py): rows on the common window grid (G3 at 0.5 / 2.5 nM, G6 at 20 nM), own-DME-v2 drift-corrected
-(window start + 3), 5-115 px crop after the correction, occupied 20-nm bins. Ours: the shipped table (simcode2.strict.build_table
+(window start + 3), 5-115 px crop after the correction, occupied 20-nm bins. Ours: the shipped table (simcode.strict.build_table
 on the whole output dir, i.e. all stride-3 rows, drift-corrected coverage), then the strict rows restricted to the grid.
 Reported for the shipped default (density rule), and per sigma_ref (earlier rule) or fixed q: q, strict rows on the grid, occupied bins, ratio vs SIMCODE; plus the exactly
 coverage-matched values on the grid: the global sigma threshold sigma_cov (top-N by sigma reaching SIMCODE's bins) and the
@@ -13,7 +13,7 @@ usage: python analysis/evalproto/strictq.py --name real0.5 --ours <out dir> --ta
 """
 import argparse, json, os, sys
 import numpy as np
-from simcode2 import strict as SP
+from simcode import strict as SP
 
 
 def load_drift(fn):
@@ -47,7 +47,7 @@ def main(argv=None):
     k = (f % a.grid == 0) & crop_mask(xs, ys)
     sc_bins = len(np.unique(SP.bin20(xs[k], ys[k], px)))
     log(f'# {a.name}: ours {a.ours} ({a.tag}), grid G{a.grid}; SIMCODE {a.sc}: {int(k.sum())} rows, {sc_bins} occupied 20-nm bins')
-    # drift as a plain [F, 2] array for simcode2.strict
+    # drift as a plain [F, 2] array for simcode.strict
     dnpy = os.path.join(os.environ.get('TMPDIR', '/tmp'), f'strictq_drift_{os.getpid()}.npy')
     np.save(dnpy, load_drift(a.drift))
     runs = [('default', None)] + [('sigma_ref', float(s)) for s in a.sigma_ref.split(',') if s] + [('fixed', float(q)) for q in a.q.split(',') if q]

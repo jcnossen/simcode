@@ -2,11 +2,15 @@
 evidence (cb0 fit / cb1 held-out, out/psf3d/ho_*.npz) for the model sequence base -> line blur -> + photoselection / + per-angle
 blur, and the cross-prediction matrix (cb1 samples of movie B with the line-blur fit of movie A). Prints markdown; writes
 out/psf3d/summary.json.  usage: python analysis/psf3d/summary.py"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode import config as _config; OUTR = _config.root('out')
 import json, os, math
 import numpy as np, torch
-from simcode2.insitu.psf_compare import summarize
+from simcode.insitu.psf_compare import summarize
 
-O = '/home/jc/simcode2/out/psf3d'
+O = f'{OUTR}/psf3d'
 MOV = [('r05', '0.5 nM cover1/1 (ref)', 'bl'), ('m1809', '1809/2 (low)', 'bli'), ('m25', '2.5 nM/2 600 mW (medium)', 'bli'), ('m20', '20 nM/2 (high)', 'bli')]
 res = {}
 

@@ -24,7 +24,7 @@ Steps (the published procedure, SI Note 2 / Extended Data Fig. 5, re-implemented
 import math
 import numpy as np
 import torch
-from simcode2.fourpi.lm import lm_poisson_j, fisher_j, crlb
+from simcode.fourpi.lm import lm_poisson_j, fisher_j, crlb
 
 V_PX = 1.14 ** 2 + 0.2 ** 2          # read noise + residual offset error variance per pixel and image (e^2)
 
@@ -173,7 +173,7 @@ class Classic4Pi:
             Sb = (S - bg0[:, None, None]).clamp(min=0); tot = Sb.sum((1, 2)).clamp(min=1e-3)
             xc = ((Sb * self.ox).sum((1, 2)) / tot).clamp(-1.5, 1.5); yc = ((Sb * self.oy).sum((1, 2)) / tot).clamp(-1.5, 1.5)
             bl = None
-            from simcode2.fourpi.lm import loglik
+            from simcode.fourpi.lm import loglik
             for zs in torch.linspace(-0.48, 0.48, 9).tolist():
                 th0 = torch.stack([xc, yc, torch.full((n,), zs, device=dev), N0, bg0, z0, z0], 1)
                 g = self._inc_sum(xc, yc, th0[:, 2], doff)

@@ -16,10 +16,10 @@ preset + paper_bright preset), SIM_MED / SIM_SD (paper_bright med0 / log-sd, e.g
 HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static light, realsim.filament_static_map: FILSTAT ph/px/frame x the
 unit-mean filament line map blurred SIG px; FOV-mean bg unchanged), SIM_STRUCT (struct_frac override: 1 = filament geometry)."""
 import json, math, os, sys
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 import numpy as np, torch, tifffile
-from simcode2.hd.realsim import RealSim
-from simcode2.hd.data import paper_bright
+from simcode.hd.realsim import RealSim
+from simcode.hd.data import paper_bright
 
 dev = 'cuda'
 
@@ -68,7 +68,7 @@ def main():
     hh = p['halo'] * torch.rand(N, 1, 1, device=dev)
     psf = (1 - hh) * psf + hh * gb
     if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (realsim.add_halo2); no extra random draws
-        from simcode2.hd.realsim import add_halo2
+        from simcode.hd.realsim import add_halo2
         psf = add_halo2(psf, x, y, float(os.environ['SIM_HALO2']), float(os.environ.get('SIM_HALO2_SIG', '4.0')))
     # background over the whole movie (fluct mode), steps = frame % 6
     steps = (torch.arange(NF, device=dev) % 6)[None]
@@ -76,13 +76,13 @@ def main():
     bgt = bgt[0]
     FILSTAT = float(os.environ.get('SIM_FILSTAT', 0) or 0)
     if FILSTAT > 0:   # filament-correlated dim static light (realsim.filament_static_map), FOV-mean bg unchanged
-        from simcode2.hd.realsim import filament_static_map
+        from simcode.hd.realsim import filament_static_map
         fp = em['fil_pts'][0] if em['fil_pts'] is not None and bool(em['fil_struct'][0]) else None
         Dm = filament_static_map(fp, H, W, float(os.environ.get('SIM_FILSTAT_SIG', '1.5'))).to(dev)
         bgt = (bgt + FILSTAT * (Dm[None] - 1)).clamp(min=0.3) if float(Dm.mean()) > 0 else bgt
         np.save(f'{out}/filstat_map.npy', Dm.cpu().numpy())
     cam = np.load(p['cam'])
-    from simcode2.pipeline.common import load_calib  # noqa (format reference)
+    from simcode.pipeline.common import load_calib  # noqa (format reference)
     off_map = torch.tensor(np.load(_cfg.model('insitu/camera_maps_0.5nM.npz'))['offset_adu'], device=dev).float()
     rn = rs.rn_map[:H, :W]
     gain_true = sim.gain * (1 + 0.01 * torch.randn(1, device=dev).item())
