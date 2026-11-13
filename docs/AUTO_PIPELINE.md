@@ -73,18 +73,22 @@ hints:
 spots:                             # stage c
   maxframe: 30000                  # spot finding / tracks on frames [0, maxframe)
   sum: 6                           # moving-sum window of the Gaussian SMLM pass (one window per frame start)
-  thr: 5.0                         # detection threshold (x robust noise of the smoothed difference image)
+  thr: 3.5                         # detection threshold (x robust noise of the smoothed difference image); low = more
+                                   # neighbours seen by the isolation test (1809_2: resid var 0.996 at 5, 0.955 at 3.5)
   roi: 11                          # fit ROI (px)
   track_roi: 11                    # sample ROI of the tracks (px; 15 at 65 nm px)
   isolation_px: 7.0
+  tracks_from: all                 # spots used for linking / isolation / camera-map mask: all detections | good fits only
 psf:                               # stage d
-  init: beads                      # beads | zero | <_psf.pt of an earlier fit>
+  init: [zero, f0.1, f0.2, f0.3, beads]   # multi-start of the base fit, lowest NLL wins: zero | f<focus um> | beads | <_psf.pt>
   nsamples: 8000
   iters: 600
   zmax_um: 0.2
   blur: line                       # none | line   (stage d1)
   photosel: 3                      # 0 | 3          (stage d2: frozen d1 + photoselection; needs k from the d pattern step)
-  lut: false                       # true: alternating fit, per-sample x, y, z on a spline table of the current model (section 4)
+  lut: false                       # true: per-sample x, y, z on a spline table of the current model (section 4)
+  lut_sub: 8                       # spline knots per pixel
+  lut_polish: 50                   # last iterations with the direct vectorial model
   heldout: true                    # checkerboard-parity fit + test (cb0 / cb1)
   readnoise_e: 1.9                 # fixed read noise / offset of the stage-A model (as fit_insitu2); null = camera stage values
   offset_adu: null
@@ -96,7 +100,8 @@ train:                             # stage e
   extra: {det: '', hd: '', p2: ''}   # extra trainer flags (e.g. g13: --dens 0.0005,0.06 --tau 3,80)
   gates: {sigma_zcal: [0.9, 1.15], rms_ratio_max: 1.05}
 process:                           # stage f
-  netset: null                     # null = the set of stage e
+  netset: null                     # null = the set of stage e; a name of simcode/netsets.json; or a netset json file
+  calib: null                      # null = the stage-d calib.json
   pass2: true
   crop: null                       # x0,y0,size px; null = the whole sensor minus 5 px
   chunk: 6000
@@ -110,7 +115,7 @@ gpus: [1, 2]
 ## 2. Stages
 
 Run order (letters = the request's stage list): `order`, `camera` (a1), `spots` (c1), `cammaps` (a2), `tracks` (c2),
-`beads` (b), `psf` (d), [`psfspline` (d2, slot)], `train` (e), `process` (f), `report` (g).
+`beads` (b), `psf` (d), [`psfrefine` (d2, slot)], `train` (e), `process` (f), `report` (g).
 
 Every stage writes `<out>/<stage>/summary.json` LAST and atomically (`simcode.fileio.work.atomic_json`); that file is the
 done marker. A finished stage is skipped unless `--redo <stage>` (which also invalidates the stages after it).
@@ -122,26 +127,31 @@ the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
 | stage | what | output (in `<out>/<stage>/`) | checks |
 |---|---|---|---|
 | `order` | only for `frame_order != blocked`: writes the movie with every complete 6-frame cycle permuted to the blocked order (as `analysis/nanoruler/reorder_any.py`), or verifies an existing `pattern.cache` (frame count, first-cycle checksum against the permutation) | `movie_blocked.tif` (on the data disk) | frame count = 6 x cycles; per-slot mean level |
-| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `insitu/camera_gain.py` generalised to any level range); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
+| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `insitu/camera_gain.py` generalised: quantile bins of the per-pixel MEAN level (integer-valued movies), the 10 % noisiest pixels excluded); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
 | `spots` (c1) | pattern-free Gaussian SMLM on `sum`-frame moving sums (window start every frame; as the SIMCODE-pipeline smlm table): smoothed difference to the per-pixel temporal median, local maxima > thr x noise, Poisson LM fit of x, y, I, bg, sigma (`analysis/nanoruler/quick_smlm.py` as a function); good-fit filter (chi2, snr, sigma range from the optics) | `spots.hdf5` (Picasso-style `locs`), `spots_good.hdf5` | spots per frame; median sigma vs the diffraction estimate 0.21 lambda / NA (+-25 %); median photons |
 | `cammaps` (a2) | per-pixel offset deviation and read-noise maps (`python -m simcode.insitu.camera_maps`, masked by `spots_good.hdf5`) | `camera_maps.npz` | corr(offset_dev, loc density) < 0.05; read-noise median |
 | `tracks` (c2) | isolated emitter tracks from `spots_good.hdf5` (`python -m simcode.insitu.extract_tracks`: link <= 0.8 px with 1-frame gaps, >= 6 frames, isolation radius, cut into T = 12 frame samples) | `tracks.npz` | number of samples >= 2 x psf.nsamples |
 | `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.fit_beads` with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
-| `psf` (d) | d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
-| `psfspline` (d2, slot, not implemented) | non-parametric spline refinement (section 5) | `psf_spline.npz` + `calib_spline.json` | held-out acceptance |
+| `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
+| `psfrefine` (d2, slot, not implemented) | refined PSF (free pupil map through the spline-gradient route, then the pattern term; section 5) | refined PSF file + `calib_refined.json` | held-out acceptance |
 | `train` (e) | network set with the PSF-matched recipe (section 6); registers it in `<out>/train/netset.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
 | `process` (f) | `simcode.run` on the movie with the set (pass 1, pattern, solve, pass 2, table, selections), through the in-memory overrides of section 7 | `run/locs_p*.npz`, `run/summary.json` | pattern pitch inside the config range; rows per frame; median sigma |
 | `report` (g) | `report.html` + `report.json`: settings, counts per stage, camera maps, PSF (images, residual moments per angle, held-out table), pattern (k, phases, depth vs the in-situ estimate), drift (DME on the table, if available), FRC (`simcode.evalproto.frc`), gate table, all checks | `report.html` | none |
 
 ## 3. Spot finding without an external SMLM table (stage c)
 
-The in-situ recipe up to now used the SIMCODE-pipeline `smlm.hdf5` of each movie (Picasso, 6-frame moving sums) to
-find isolated emitters and to mask emitters out of the camera maps. Stage c replaces it by a built-in Gaussian SMLM on
-the same kind of input (6-frame moving sums, one window per frame start), so that tracks and masks are made the same way.
-A Gaussian fit is enough for both uses: the track extraction only needs positions to 0.8 px and isolation, and the
-camera-map mask only needs positions to ~1 px. The pass-1 detector of an existing network set is the other option
-(PSF-agnostic within one setup, but it depends on a set trained for the pixel size and PSF width); it is not used by
-default because a new instrument has no set yet.
+The in-situ recipe up to now used the SIMCODE-pipeline `smlm.hdf5` of each movie to find isolated emitters and to mask
+emitters out of the camera maps. Stage c replaces it by a built-in Gaussian SMLM on 6-frame moving sums (one window per frame
+start; `simcode/auto/spots.py` = `analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
+is enough for both uses: the track extraction needs positions to 0.8 px and the isolation test, the camera-map mask
+positions to ~1 px. The pass-1 detector of an existing network set is the other option; it is not the default because a new
+instrument has no set yet.
+- All detections (`spots.tracks_from: all`) are used for linking, the isolation test and the mask: a good-fit filter breaks
+  tracks and hides neighbours from the isolation test (1809_2: 16 361 samples with the filter, 20 893 without).
+- The Picasso table of the earlier recipe is not the same kind of list (median photons 317 vs 637 per window, background
+  2x, 42.6 vs 26.2 detections per window; ~47 % of the stage-c spots match it within 1 px at any frame offset), so the
+  track sets differ by construction (section 9).
+- The samples are cut at round(mean of the track's fitted Gaussian centres), not at the smoothed peak (section 5 note).
 
 ## 4. Stage d speed-up: alternating fit on a spline table (`psf.lut: true`)
 
@@ -159,24 +169,59 @@ Alternating fit: per outer iteration
    through the table construction (d loss / d knots from the spline evaluation, then the vector-Jacobian product of the
    knots with respect to Zernikes, focus, blur, gamma, zeta). The cost of that step does not grow with the number of samples.
 
-Acceptance: fitted parameters equal to the direct fit within the run-to-run scatter of the direct fit (Zernikes rms
-< 0.003 waves, focus < 3 nm, blur < 0.01 px^2, gamma / zeta < 0.005), the same held-out NLL, and the speed-up measured on
-the same GPU. The final intensities / residuals are always computed with the vectorial model.
+Implementation (`simcode/auto/psffit.py`, `fit(..., lut=True)`): knots S = 8 per pixel, hz = 10 nm (spline error 4e-5
+of the peak, rms 5e-6), |x|, |y| <= 2 px; the spline is evaluated separably (only the 4 x 4P x 4P knots the P x P pixels use
+are gathered, then contracted along z, y, x: equal to `PSFLUT.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
+iterations (positions only) use one table; then one table per iteration with the graph to the PSF parameters; the last
+`lut_polish` = 50 iterations are direct vectorial steps (the focus / z direction is nearly flat and the spline optimum is
+offset along it by a few nm). Final residuals and intensities always use the vectorial model.
 
-## 5. Stage d2 slot: non-parametric spline PSF (not implemented here; explored in a separate session)
+Measured (1809_2 reference tracks, 8000 samples, 600 iterations, idle RTX 3090): per iteration the vectorial PSF with
+gradients costs 0.056 s, the spline 0.032 s with knot gradients and 0.022 s with position gradients only; varpro + NLL are
+~0.06 s either way, so the gain is bounded:
+| fit | direct | spline + polish | parameters vs direct |
+|---|---|---|---|
+| Zernike + focus + line blur (1 PSF per sample) | 48 s | 39 s (1.24x) | Zernikes rms 0.0003 waves (max 0.0007), focus -4.4 nm, blur -0.0016 px^2, NLL/px +3.5e-6 |
+| bl frozen + photoselection 3 (2 PSFs per sample) | 111 s | 71 s (1.56x) | gamma -1.9e-5, zeta +5.4e-5, NLL/px +2e-7 |
+The focus difference of the first fit is within the direct fit's own non-convergence (its focus still moves by ~1 nm per
+100 iterations at the end). Opt-in (`psf.lut: true`); the held-out refits of stage d always use the spline (positions only).
 
-Interface:
-- input: the stage-d calib json (vectorial PSF, per-angle terms) and `tracks.npz`;
-- output: `psf_spline.npz` = spline knots per pattern angle (same geometry as `simcode.psf.lut.PSFLUT`: S, hz, z0, u0,
-  knot array [nz, nv, nu]) plus `calib_spline.json` = the stage-d calib with a key `psf_spline` (relative path);
-- acceptance: held-out (cb0 train / cb1 test) NLL per sample improves with a paired z > 5 and the chi2 per pixel
-  improves; CRLB change reported; training is possible because the simulators render through tabulated PSFs
-  (`sim.simulator.Simulator.lut`, `lut_angle`), which can be filled from the knots (proposal P5).
+## 5. Stage d2 slot: refined PSF beyond Zernike + blur + photoselection (not implemented here; separate session)
+
+Interface (slot `psfrefine`, between `psf` and `train`):
+- input: the stage-d calib json (vectorial PSF, per-angle terms), `tracks.npz`, the stage-d pattern (k, phases, relint);
+- output: a refined PSF file usable by the simulators and the pipeline, plus `calib_refined.json` = the stage-d calib with a
+  key naming it (relative path);
+- acceptance: held-out (cb0 train / cb1 test) NLL per sample improves clearly (paired z > 5) and chi2 per pixel improves;
+  CRLB change reported; networks can be trained on it because the simulators render through tabulated PSFs
+  (`sim.simulator.Simulator.lut`, `lut_angle`), which can be filled from the refined model (proposal P5).
+
+Recommended method (results of the user's spline-PSF study, simulation, one seed; code in the user's torch-spline-3d
+branch `insitu-study`: `study/insitu/run_pattern.py`, `fit.py` (`fit_pupil_insitu`), `docs/insitu_spline_psf.md` 3.3-3.5):
+- refine a free PUPIL map (phase + log-amplitude pixels on top of Zernike 5-21), fitted through the spline-gradient route of
+  section 4 (spline table of the current model, gradients to the pupil through the table construction); NOT free spline
+  knots (knots keep a z-dependent lateral tilt and a z relabelling);
+- with the SIM pattern term in the localization step (each emitter's x, y, z shared between the PSF term and
+  I_t = N relint_t (1 + m cos(k_t . r - phi_t))), the pupil fit reaches < 1.3 nm y / z error over 700 nm z;
+- order matters: first refine the Zernikes on the summed frames without the pattern, then switch the pattern on (a pattern
+  fit started from a poor PSF locks emitters onto the wrong fringe). The stage-d output (Zernikes + blur + photoselection,
+  pattern from the track intensities) is that first step.
+
+Note for stages c / d from the same study: a z-dependent lateral tilt of ~30 nm appeared only on patches cut from a movie by
+spot detection (crop around the smoothed peak), not on clean patches; the cause (centring or selection) is not established.
+Here the track samples are cut at round(mean of the track's fitted Gaussian centres) (`insitu/extract_tracks.py`), i.e. a
+refined-fit centre, not the smoothed peak; the validation checks the slope of (vectorial-fit position - Gaussian centre)
+against the fitted z (section 9).
 
 ## 6. Stage e: network set (recipe of `runs/psfmatch/chain2.sh` + `eval.sh`)
 
-Trainers (unchanged entry points, run through `simcode/auto/simwrap.py`, which patches `simcode.hd.realsim.PRESETS` in
+Trainers (unchanged entry points, run through `simcode/auto/runwrap.py`, which patches `simcode.hd.realsim.PRESETS` in
 memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `analysis/nanoruler/nrwrap.py`):
+
+Quick mode (`--quick`): `train.quick_steps` (30) steps per trainer, the detector starts from the template set's detector
+(det_m1809; from scratch it detects nothing after 30 steps), gate scenes iso + rs05qm with seeds 202 / 301 and 400 targets;
+if a calibration fit has no matched targets the template calibrations are copied (flagged `calib_fallback`); the set is named
+`q<name>` and is a plumbing artefact only.
 
 | step | command (all with `--calib <out>/psf/calib_avg.json` + `train.extra`) | steps (full / quick) |
 |---|---|---|
@@ -207,7 +252,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
 | 4 | strict CROP fixed to (5, 5, 110) (`strict.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `strict.CROP` and the bound defaults of `tile_of` / `bin20` in memory (P4) |
 | 5 | detector batch 64 windows (`run_uncalibrated --det_batch`, not exposed by `run.py`); 400 x 400 px needs > 12 GB | `process.det_batch` is set as the argparse default in memory |
 | 6 | optics / camera constants in `insitu/fit_insitu2.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/auto/psffit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
-| 7 | `hd/realsim.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in realsim / plib / sigcal | stage e: in-memory preset patch (`simcode/auto/simwrap.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
+| 7 | `hd/realsim.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in realsim / plib / sigcal | stage e: in-memory preset patch (`simcode/auto/runwrap.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
 | 8 | gate photon settings hard-coded in `hd/gate.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | strict-product density anchors fitted on the DMD movies (`strict.Q_DENSITY`) | not changed; the main selection (global sigma threshold) does not use them |
 | 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | stage e trains pass 2 with the dataset's pattern; the generic pass-2 option (`--pgen`, other worker) is used when it is adopted |
@@ -221,14 +266,74 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
 - P3 (`pattern_est.estimate_k`, `run.py`, `run_uncalibrated.py`): a `--pitch_px lo,hi` flag (default 1.6,2.8).
 - P4 (`strict.py`): `build_table(..., crop=)` already takes the crop; `tile_of` / `bin20` should default to it instead of
   the module constant `CROP`; `run.py --crop` default = the sensor minus 5 px.
-- P5 (`sim/simulator.py`, `det/psfpert.build_lut`, `hd/realsim.py`): optional calib key `psf_spline` (knots per angle): the
-  Simulator LUTs are filled from the spline, the jitter bank adds the spline-minus-vectorial residual to each LUT.
+- P5 (`sim/simulator.py`, `det/psfpert.build_lut`, `hd/realsim.py`, `pipeline/common.load_calib`): optional calib key for the
+  refined PSF of stage d2 (e.g. a pupil map): the Simulator / pipeline LUTs are built from it, the jitter bank applies its
+  Zernike jitter on top of it.
 - P6 (`hd/realsim.py`, `analysis/calib/plib.py`, `analysis/psf3d_nets/sigcal.py`): pixel size and preset values from the
   calib json / a preset json argument (`--preset`), instead of `PRESETS` / `PX_NM`.
 - P7 (`hd/gate.py`): scene photon / background settings from the preset.
 - P8 (`run.py`): expose `--det_batch`; accept a network set given as a json file (`--netset path.json`).
 - P9 (`pyproject.toml`): `[project.scripts] simcode-auto = "simcode.auto.pipeline:main"`.
 
-## 9. Validation (filled in after the runs)
+## 9. Validation (2026-11-13)
 
-See `out/auto/STATUS.md`.
+Scripts and logs: `out/auto/val/` (`t_*.py`), `analysis/auto/cmp_calib.py`; work directories `out/auto/<name>` ->
+`/mnt/data/dmdsf/simcode2_out/auto/<name>`.
+
+### 9.1 Stage d code against fit_insitu2
+- `psffit.fit` on the reference tracks with the reference start: bit-identical to `out/psf3d/final/m1809_bl` (Zernikes,
+  focus, blur, residual variance) and, with photoselection, to `m1809_blps3` (gamma / zeta differ by 3e-8).
+- Spline-table mode: section 4 (1.24x / 1.56x, parameters within 0.0007 waves, 4 nm focus, 5e-5 gamma / zeta).
+
+### 9.2 1809_2 (DMD-SIMFLUX), stages a-d against `calib_1809_2_psf3d.json` / `camera_maps_1809_2.npz`
+| item | result |
+|---|---|
+| camera gain | config 0.56; measured 0.560 (the generalised estimator; `camera_gain.py` returns a negative slope on this movie: 7 ADU of background levels, integer medians); 0.5 nM movie 0.570 vs `camera_gain.py` 0.552 |
+| camera maps | offset map corr 0.977, rms difference 0.33 ADU (reference sd 1.55); read-noise map (both from the 0.5 nM map, shifted) corr 0.99977, rms 0.02 e |
+| spots (thr 3.5) | 34.8 detections per 6-frame window (Picasso table 42.6), median Gaussian sigma 1.28 px |
+| tracks | 22 438 samples from 9 632 isolated tracks (reference, Picasso table: 50 422 / 33 971); thr 5: 20 893, good-fit spots only: 16 361 |
+| beads (stage b) | NLL -8487532.94 vs the shipped fit -8487532.89 |
+| start | bead Zernikes are in another basin (NLL/px +5e-4 on the reference tracks); the reference started from the 0.5 nM base fit; multi-start picks the focus 0.3 um basin (lowest base NLL on every track set, including the reference tracks: 2.53389 vs 2.53400) |
+| PSF vs reference | Zernike rms 0.017 waves (max Noll 6, 0.058), focus 302 vs 148 nm, emitter z median 0.10 vs 0.077 um, blur 0.061 vs 0.204 px^2 (stage d on the reference tracks, same basin: 0.002); PSF images at matched emitter z: rms 1.4 % of the peak (1.4 % also for stage d on the reference tracks), at equal z 2.6 % |
+| photoselection | gamma 0.066 vs 0.094, zeta 0.36 vs 0.36; held-out ps3 - bl: z -7.2 (reference tracks -6.1) |
+| held-out line blur | bl - base: z -1.6 (thr 3.5), +6.9 on the reference tracks in this basin (blur not supported there) |
+| residual variance | 0.955 (thr 3.5), 0.966 (thr 4), 0.996 (thr 5); reference tracks 0.928: fewer detections leave dim neighbours in the "isolated" samples |
+| CRLB (1000 ph, bg 6, matched z) | x +2.2 %, y +3.4 % vs the reference calibration (reference tracks: -1.7 %, +0.6 %) |
+| crop centre vs z | slope of (vectorial-fit position - Gaussian crop centre) vs z: x -0.9, y +1.6 nm per 100 nm z (reference tracks -0.3 / +2.3): no z-dependent crop offset |
+Conclusion: the remaining difference to the reference calibration is the near-degenerate focus / emitter-z / spherical /
+blur direction of in-situ 2D data (both calibrations fit the data about equally; the basin depends on the start), not the
+spot finder. Downstream on the same 6000 frames (stage f, m1809 set): u <= 0.45 FRC 17.21 nm with either calibration,
+main selection 18.27 (auto, 127 455 rows) vs 18.75 nm (reference, 118 490 rows).
+
+### 9.3 Stage e (quick) and stage f
+- Stage e `--quick` on 1809_2: all five trainers (30 steps), gate scenes, dumps, calibration fits (fallback used: no
+  targets), acceptance (zcal 0.88-1.07 with the 30-step nets, gates FAIL as expected), `netset.json`; 163 s. The quick set
+  runs through stage f (3000 frames: pass 1, pattern k found, pass 2, tables).
+- Stage f on 1809_2 frames 0-6000 (m1809, reference calibration): all 6 output npz bit-identical to `python -m simcode.run`
+  with the same arguments (the wrapper applies no override for the DMD defaults).
+
+### 9.4 Nanoruler (sim4_1, 80 nm; Pockels / mechanical steps, interleaved order, 65 nm px)
+| item | result |
+|---|---|
+| order | the existing blocked cache verified (30 000 frames, permutation checked on 4 cycles) |
+| camera | gain 0.45 / offset 100 assumed (config); measured gain 0.66 with r^2 flagged (not measurable: background ~3 ADU above the offset, as found before) |
+| spots (thr 5) | 13.7 good fits per window (reference quick SMLM 13.65), photons p5 / 50 / 95 406 / 1157 / 2065 (409 / 1158 / 2059), sigma 1.848 px (1.845) |
+| tracks | 31 859 samples / 14 247 isolated tracks (reference 33 794 / 11 082) |
+| camera maps | offset corr 0.998 (rms 0.07 ADU), read noise corr 0.9998 (rms 0.009 e) |
+| pattern (track intensities) | k (-0.00236, 1.85712), (1.86051, 0.00184) rad/px vs reference (-0.0024, 1.8572), (1.8605, 0.0019); pitch 3.383 / 3.377 px; phases 0.73, -1.33, 2.80 / 2.37, 0.47, -1.62 vs 0.82, -1.38, 2.81 / 2.28, 0.42, -1.50 |
+| PSF | Zernike rms 0.00018 waves (max 0.0004), focus 69 vs 72 nm, blur ~0 vs 0.012 px^2, gamma 0.154 vs 0.151, zeta 0.385 vs 0.384, dipole tensors within 0.002, images rms 0.08 % of the peak, CRLB within 0.2 %; held-out photoselection z -20 (reference -23.6) |
+| stage f | chunk 0 (1500 frames, nr80 set, reference calibration): `pass1_0.npz` bit-identical to `out/nanoruler/runs/real_p1` (made with `analysis/nanoruler/ev_run.py`); with the auto calibration (3000 frames): pitch 3.383 / 3.377 px found, 108 447 rows, 54 459 cycle-aligned |
+
+### 9.5 Cost of a full run (GPU-hours on an idle RTX 3090; measured here on shared GPUs unless noted)
+| stage | 1809_2 (120 x 120 px, 120k frames) | nanoruler (400 x 400 px, 30k frames) |
+|---|---|---|
+| order | 0 (blocked) | ~45 min I/O once (cache existed) |
+| camera | 30 s CPU | 20 s CPU |
+| spots (30k frames) | 3 min GPU | 6 min GPU |
+| cammaps + tracks | 1 min CPU | 2 min CPU |
+| beads | ~10 min GPU (shared) | - |
+| psf (5 starts, bl, ps3, held-out) | ~9 min GPU (~6 min with `psf.lut`) | ~25 min on a shared GPU |
+| train (full recipe) | 6.8 GPU-h training + ~1.5 GPU-h gates / dumps / calibrations (+ ~0.5 GPU-h for a sig_u sim movie, not wrapped) | same (+ wall time on shared GPUs 2x) |
+| process | ~1.8 GPU-h (pass 1 + 2, full movie) | ~0.2 GPU-h pass 1 (pass 2 needs the generic pass-2 nets) |
+| report (DME drift + FRC) | ~2 min CPU / GPU | ~1.5 min |
+| total | ~10.5 GPU-h | ~9 GPU-h |
