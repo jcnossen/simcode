@@ -7,8 +7,13 @@ name = "simcode"
 version = "2.0.0"
 description = "SIMCODE v2: per-window deep-learning localization for DMD-SIMFLUX DNA-PAINT data"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy", "tifffile", "torch>=2.1"]
-# also required, not on PyPI: torch_convspline (~/torch-spline-3d, PSF LUT). Optional: h5py (hdf5 tables).
+dependencies = [
+    "numpy", "scipy", "tifffile", "torch>=2.1",
+    # DME v2 drift estimation (MIT), pinned to the commit the paper results were made with
+    "dme @ git+https://github.com/jcnossen/drift-estimation.git@374300f12b893a934067703c34a0097c6659bdc1",
+]
+# Optional: h5py (hdf5 tables). A local checkout of drift-estimation can still override the installed dme
+# (env DME_PATH or the config key "dme"), see simcode/util/drift.py.
 
 [project.scripts]
 simcode-run = "simcode.run:main"

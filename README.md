@@ -53,7 +53,7 @@ Only the baselines need more:
 |---|---|
 | SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`~/smlmtorch/scripts/models`, or env `SMLMTORCH_MODELS`) |
 | DECODE | the `decode` fork (`~/decode2`) |
-| DME v2 drift | the `dme` package ≥ 2.0 (`github.com/jcnossen/drift-estimation`): `pip install git+https://github.com/jcnossen/drift-estimation`, or a checkout given by env `DME_PATH` / config key `dme`; used through `simcode/util/drift.py` |
+| DME v2 drift | the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml` (installed by `pip install -e <repo>`); a local checkout given by env `DME_PATH` / config key `dme` overrides it; used through `simcode/util/drift.py` |
 
 ## Run
 
