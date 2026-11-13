@@ -120,7 +120,10 @@ Run order (letters = the request's stage list): `order`, `camera` (a1), `spots` 
 Every stage writes `<out>/<stage>/summary.json` LAST and atomically (`simcode.fileio.work.atomic_json`); that file is the
 done marker. A finished stage is skipped unless `--redo <stage>` (which also invalidates the stages after it).
 Long stages are resumable inside: `spots` and `process` work in chunks through `simcode.fileio.work.Units`, `train`
-per trainer (a trainer with `final.pt` is skipped). Each summary holds the settings used, the timing, the main numbers
+per trainer (a trainer with `final.pt` is skipped). The chunk directories are keyed by a hash of their inputs
+(`spots/chunks_<key>`: movie, gain, offset, spot settings; `process/run_<key>`: the simcode.run arguments, the calibration
+file content, the network set and the overrides), so a redo with other settings never reuses stale chunks; stage d reuses a
+fit only if it is newer than the tracks and was made from the same start. Each summary holds the settings used, the timing, the main numbers
 and a list `checks` of `{name, value, range, ok}`; a failed check stops the run (unless `--force`) and is listed in
 the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
 
@@ -135,7 +138,7 @@ the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
 | `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
 | `psfrefine` (d2, slot, not implemented) | refined PSF (free pupil map through the spline-gradient route, then the pattern term; section 5) | refined PSF file + `calib_refined.json` | held-out acceptance |
 | `train` (e) | network set with the PSF-matched recipe (section 6); registers it in `<out>/train/netset.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
-| `process` (f) | `simcode.run` on the movie with the set (pass 1, pattern, solve, pass 2, table, selections), through the in-memory overrides of section 7 | `run/locs_p*.npz`, `run/summary.json` | pattern pitch inside the config range; rows per frame; median sigma |
+| `process` (f) | `simcode.run` on the movie with the set (pass 1, pattern, solve, pass 2, table, selections), through the in-memory overrides of section 7 | `run_<key>/locs_p*.npz`, `run_<key>/summary.json` | pattern pitch inside the config range; rows per frame; median sigma |
 | `report` (g) | `report.html` + `report.json`: settings, counts per stage, camera maps, PSF (images, residual moments per angle, held-out table), pattern (k, phases, depth vs the in-situ estimate), drift (DME on the table, if available), FRC (`simcode.evalproto.frc`), gate table, all checks | `report.html` | none |
 
 ## 3. Spot finding without an external SMLM table (stage c)
@@ -302,8 +305,9 @@ Scripts and logs: `out/auto/val/` (`t_*.py`), `analysis/auto/cmp_calib.py`; work
 | crop centre vs z | slope of (vectorial-fit position - Gaussian crop centre) vs z: x -0.9, y +1.6 nm per 100 nm z (reference tracks -0.3 / +2.3): no z-dependent crop offset |
 Conclusion: the remaining difference to the reference calibration is the near-degenerate focus / emitter-z / spherical /
 blur direction of in-situ 2D data (both calibrations fit the data about equally; the basin depends on the start), not the
-spot finder. Downstream on the same 6000 frames (stage f, m1809 set): u <= 0.45 FRC 17.21 nm with either calibration,
-main selection 18.27 (auto, 127 455 rows) vs 18.75 nm (reference, 118 490 rows).
+spot finder. Downstream on the same 6000 frames (stage f, m1809 set, FRC of 300-frame block halves after DME): main
+selection 18.84 nm / 126 618 rows with the final auto calibration (thr 3.5), 18.27 nm / 127 455 rows with the thr-5 one,
+18.75 nm / 118 490 rows with the reference calibration; u <= 0.45 17.21 nm for the thr-5 and the reference calibration.
 
 ### 9.3 Stage e (quick) and stage f
 - Stage e `--quick` on 1809_2: all five trainers (30 steps), gate scenes, dumps, calibration fits (fallback used: no

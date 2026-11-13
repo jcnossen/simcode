@@ -171,7 +171,10 @@ class Dataset:
         d = self.dir('spots')
         self.torch_dev(4)
         sig0 = 1.15 * C.sigma_px(c)
-        L = spots.run(self.movie, d, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
+        import hashlib
+        key = hashlib.sha1(json.dumps([self.movie, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0]).encode()).hexdigest()[:10]
+        cd = os.path.join(d, 'chunks_' + key); os.makedirs(cd, exist_ok=True)     # chunk files keyed by the settings (no stale reuse)
+        L = spots.run(self.movie, cd, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
         m, s_med = spots.good(L, sp['chi2_max'], sp['snr_min'], sp['sigma_range'])
         spots.write_hdf5(L, os.path.join(d, 'spots.hdf5')); spots.write_hdf5(L[m], os.path.join(d, 'spots_good.hdf5'))
         nf = int(L['frame'].max()) + 1 if len(L) else 0

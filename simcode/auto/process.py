@@ -72,9 +72,14 @@ def cycle_subset(out):
 
 
 def run(ds):
-    out = os.path.join(ds.dir('process'), 'run')
+    import hashlib
     ns = netset_of(ds)
     W = wrap(ds, ns)
+    a0 = argv(ds, 'X', netset=ns)
+    from simcode import config as SC
+    calib = SC.resolve(a0[a0.index('--calib') + 1])
+    key = hashlib.sha1(json.dumps([a0, open(calib).read() if os.path.exists(calib) else calib, ns[1], open(W).read()]).encode()).hexdigest()[:10]
+    out = os.path.join(ds.dir('process'), 'run_' + key)     # keyed by arguments, calibration, set and overrides: chunk files are never stale
     g = ds.gpu(10)
     txt = ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.run'] + argv(ds, out, netset=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
     S = json.load(open(os.path.join(out, 'summary.json')))
