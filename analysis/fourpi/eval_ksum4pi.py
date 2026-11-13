@@ -65,6 +65,7 @@ def main():
     ap.add_argument('--tag', default='v10_k4', help='summed table = locs_<cell>_<file>_<tag>.npz')
     ap.add_argument('--K', type=int, default=4); ap.add_argument('--S', type=int, default=25)
     ap.add_argument('--ref', default='net'); ap.add_argument('--out', default='')
+    ap.add_argument('--regions', default='', help='json with boxes (x0, x1, y0, y1; px): reference and summed rows only inside the boxes shrunk by 2 px (box-restricted runs)')
     ap.add_argument('--table', default='', help='alternative summed table pattern with {cell} {file} (e.g. a classical run on the summed data); columns x, y, z, w, N, ok')
     a = ap.parse_args()
     acc = []
@@ -75,7 +76,13 @@ def main():
             D = dict(np.load(f'{REPO}/out/4pi/net/locs_{a.cell}_{fi:03d}_{a.tag}.npz'))
             kept = D['good'] & (D['N'] >= 1000) & (D['sz'] < 0.025 * np.sqrt(a.K)) & (D['sx'] < 0.12) & (D['sy'] < 0.12)
         nblk = (int(D['w'].max()) + 1 + a.S - 1) // a.S
-        R, ws = to_sum(load_ref(a.cell, fi, a.ref), a.K, a.S, nblk)
+        Rr = load_ref(a.cell, fi, a.ref)
+        if a.regions:
+            bx = [b for b in json.load(open(a.regions))['boxes'] if b.get('save', True)]
+            inb = lambda x, y: np.any([(x >= b['x0'] + 2) & (x < b['x1'] - 2) & (y >= b['y0'] + 2) & (y < b['y1'] - 2) for b in bx], 0)
+            mr = inb(Rr['x'], Rr['y']); Rr = {k: v[mr] for k, v in Rr.items()}
+            kept = kept & inb(D['x'], D['y'])
+        R, ws = to_sum(Rr, a.K, a.S, nblk)
         Rall = {k: v[R['any']] for k, v in R.items()}; wall = ws[R['any']]
         G, wg, nrep = merge({k: v[R['ok']] for k, v in R.items()}, ws[R['ok']])
         # neighbours: other reference emitters (any quality, >= 300 e) of the summed window within 7 px
@@ -99,10 +106,10 @@ def main():
                 used[dd[k[j]]] = True; mi[g[j]] = dd[k[j]]; md[g[j]] = dist[j]
         m = mi >= 0
         dz0 = np.median((D['z'][mi[m]] - G['z'][m])) if m.any() else 0.0
-        acc.append(dict(N=G['N'], nnb=nnb, m=m, dx=np.where(m, (D['x'][mi] - G['x']) * PX, np.nan), dy=np.where(m, (D['y'][mi] - G['y']) * PX, np.nan),
+        acc.append(dict(N=G['N'], nnb=nnb, m=m, zref=(G['z'] - np.median(G['z'])) * 1000, dx=np.where(m, (D['x'][mi] - G['x']) * PX, np.nan), dy=np.where(m, (D['y'][mi] - G['y']) * PX, np.nan),
                         dz=np.where(m, (D['z'][mi] - G['z'] - dz0) * 1000, np.nan), n_kept=int(kept.sum()), n_used=int(used.sum()), nwin=int(D['w'].max()) + 1,
                         nrep=nrep, n_ref=len(wg), n_all=int(len(wall))))
-    A = {k: np.concatenate([x[k] for x in acc]) for k in ('N', 'nnb', 'm', 'dx', 'dy', 'dz')}
+    A = {k: np.concatenate([x[k] for x in acc]) for k in ('N', 'nnb', 'm', 'dx', 'dy', 'dz', 'zref')}
     nk = sum(x['n_kept'] for x in acc); nu = sum(x['n_used'] for x in acc); nw = sum(x['nwin'] for x in acc)
     res = dict(cell=a.cell, files=a.files, tag=a.table or a.tag, K=a.K, ref=a.ref, kept_rows=nk, matched=nu, precision_lower_bound=nu / max(nk, 1),
                ref_emitters=int(len(A['N'])), ref_per_summed_window=len(A['N']) / nw, ref_any_per_summed_window=sum(x['n_all'] for x in acc) / nw,
@@ -126,6 +133,18 @@ def main():
             nm = 'all' if (nlo, nhi) == (0, 99) else (str(nlo) if nlo == nhi else (f'{nlo}-{nhi}' if nhi < 99 else f'>= {nlo}'))
             res['rows'].append(dict(lo=lo, hi=hi, nb=nm, **r))
             print(f"| {lo}-{hi} | {nm} | {r['n']} | {r['recall']:.2f} | " + ' / '.join(f'{v:.1f}' for v in r['robust']) + ' | ' + ' / '.join(f'{v:.1f}' for v in r['rms']) + f" | {r['fringe']:.3f} |")
+    # direction of the fringe errors (z of the summed run minus the K = 1 z): a biased hop direction moves emitters between structures asymmetrically
+    mm = A['m'] & (A['N'] >= 1000)
+    fp = float(np.mean(A['dz'][mm] > 100)); fn = float(np.mean(A['dz'][mm] < -100))
+    hi = mm & (np.abs(A['dz']) > 100)
+    res['fringe_up'] = fp; res['fringe_down'] = fn; res['fringe_abs_median_nm'] = float(np.median(np.abs(A['dz'][hi]))) if hi.any() else None
+    print(f"fringe errors by direction (matched, >= 1000 e): dz > +100 nm {fp:.3f}, dz < -100 nm {fn:.3f}; median |dz| of those {res['fringe_abs_median_nm']} nm; "
+          f"central part: median dz {np.median(A['dz'][mm & (np.abs(A['dz']) < 60)]):+.2f} nm")
+    # recall and fringe errors vs the reference z (relative to the file median): a z-dependent recall changes the relative height of structures
+    s24 = (A['N'] >= 2000) & (A['N'] < 4000); res['by_z'] = []
+    print('2-4k e by reference z (nm, relative to the file median): ' + ' | '.join(
+        f"{lo:+d}..{hi:+d}: recall {np.mean(A['m'][s24 & (A['zref'] >= lo) & (A['zref'] < hi)]):.2f}, fringe {np.mean(np.abs(A['dz'][s24 & A['m'] & (A['zref'] >= lo) & (A['zref'] < hi)]) > 100):.3f}"
+        for lo, hi in ((-200, -100), (-100, -50), (-50, 0), (0, 50), (50, 100), (100, 200), (200, 300))))
     if a.out:
         json.dump(res, open(a.out, 'w'), indent=1)
 
