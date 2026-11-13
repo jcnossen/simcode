@@ -2,8 +2,8 @@
 Multi-start intensity-domain pattern solve (critic review 28 #6; no training).
 pattern_solve_all = hybrid_q.pattern_solve_cov with explicit start offsets dr [n,H,2] (relative to the prior centre r0)
 that returns the per-start results (best kinetic start per start), so the same set of starts can be selected by the
-posterior NLL (attainable) or by an oracle (closest to the truth; ideal). solve_ms = kinetic model selection
-(as hybrid_q.solve_select_cov: kinetics only if it lowers q by > thr) + start selection.
+posterior NLL. fringe_posterior = kinetic model selection + the posterior over the starts (the solve of the pipeline,
+reference implementation; simcode/hd/msolve_fast.py is the fast version).
 Start sets: base points (r_net = the prior centre, x_det = the detector point, ...) each with the (2 nf + 1)^2 fringe
 shifts; box = per-start position box half-width (px).
 """
@@ -14,13 +14,11 @@ T = 6
 
 
 def pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
-                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), nu=None, cmult=0.0, logdet=True, cang=0.0):
-    # nu: Student-t position prior (2-D radial, nu dof; iteration 30, critic 29 #4): 2 NLL = (nu + 2) log(1 + |rp|^2 / nu),
-    # minimised by IRLS (weights (nu + 2) / (nu + |rp|^2) on the prior residual); None = Gaussian (unchanged)
+                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0):
     # cmult (2026-11-09, critic 32 #5): nuisance-aware intensity covariance Sigma(p) = Sig + diag((cmult mu_t(p))^2) with the
     # CURRENT model mean mu_t (multiplicative per-frame emitter-brightness noise; not the observed I_t), re-whitened at every
     # LM evaluation; cang: + a per-angle common factor, Sigma += cang^2 mu mu^T within each angle's frames (GLS Jacobian: d Sigma / d p ignored; the cost is the exact Gaussian NLL incl. log det Sigma(p) - log det
-    # Sig if logdet). Returned 'nll' = that cost (start / kinetic selection), 'chi2' = the whitened residual + prior part.
+    # Sig). Returned 'nll' = that cost (start / kinetic selection), 'chi2' = the whitened residual + prior part.
     n, T_ = I.shape; dev = I.device
     Km, ang = C.angle_k(pt)
     H = dr.shape[1]
@@ -79,20 +77,15 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
             if cang > 0: Sp = Sp + cang ** 2 * (mup[:, :, None] * mup[:, None, :]) * (oh @ oh.transpose(1, 2))
             Lp, _ = torch.linalg.cholesky_ex(Sp)
             Lri = torch.linalg.solve_triangular(Lp, eyeT.expand(M, T_, T_), upper=False)
-            if logdet: ldx = 2 * torch.log(Lp.diagonal(dim1=1, dim2=2).clamp(min=1e-12)).sum(1) - ld0
+            ldx = 2 * torch.log(Lp.diagonal(dim1=1, dim2=2).clamp(min=1e-12)).sum(1) - ld0
         else:
             Lri = Lr
         rI = (Lri @ (Ir - mu)[..., None])[..., 0]
         JI = -(Lri @ Jm)
         rp = (p[:, :2] - r0r) / spr
         Jp = torch.zeros(M, 2, NP, device=dev); Jp[:, 0, 0] = 1 / spr[:, 0]; Jp[:, 1, 1] = 1 / spr[:, 1]
-        if nu is None:
-            r = torch.cat([rI, rp], 1); J = torch.cat([JI, Jp], 1)
-            return r, J, (r ** 2).sum(1) + ldx, rI
-        r2 = (rp ** 2).sum(1)
-        om = ((nu + 2) / (nu + r2)).sqrt()[:, None]
-        r = torch.cat([rI, rp * om], 1); J = torch.cat([JI, Jp * om[..., None]], 1)
-        return r, J, (rI ** 2).sum(1) + (nu + 2) * torch.log1p(r2 / nu) + ldx, rI
+        r = torch.cat([rI, rp], 1); J = torch.cat([JI, Jp], 1)
+        return r, J, (r ** 2).sum(1) + ldx, rI
 
     p = clamp(p); lam = torch.full((M,), 1e-2, device=dev)
     r, J, cost, rI = rj(p)
@@ -131,42 +124,16 @@ def start_offsets(pt, r0, bases, nf=1):
 
 
 @torch.no_grad()
-def solve_ms(I, Sig, r0, sp, pt, bases, nf=1, box=0.75, thr=9.21, iters=30, truth=None, nu=None, cmult=0.0, cang=0.0):
-    """returns dict(nll=..., oracle=...) of (r [n,2], s [n,2], q [n], dof [n], kin [n]) and the per-start arrays."""
-    dr = start_offsets(pt, r0, bases, nf)
-    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=False, iters=iters, box=box, nu=nu, cmult=cmult, cang=cang)
-    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=iters, box=box, nu=nu, cmult=cmult, cang=cang)
-    n = len(I); ar = torch.arange(n, device=I.device)
-    out = {}
-    # NLL selection: as solve_select_cov (best start per kinetic model, then the thr model selection)
-    b0 = o0['nll'].argmin(1); b1 = o1['nll'].argmin(1)
-    q0 = o0['nll'][ar, b0]; q1 = o1['nll'][ar, b1]; use = (q0 - q1) > thr
-    sel = lambda k, b: (o1 if k else o0)[b]
-    r = torch.where(use[:, None], o1['r'][ar, b1], o0['r'][ar, b0]); s = torch.where(use[:, None], o1['s'][ar, b1], o0['s'][ar, b0])
-    out['nll'] = dict(r=r, s=s, q=torch.where(use, q1, q0), dof=torch.where(use, o1['dof'], o0['dof']), kin=use,
-                      start=torch.where(use, b1, b0))
-    if truth is not None:
-        # oracle: per start the kinetic selection, then the start whose solution is closest to the truth
-        u = (o0['nll'] - o1['nll']) > thr
-        R = torch.where(u[..., None], o1['r'], o0['r']); Sg = torch.where(u[..., None], o1['s'], o0['s'])
-        Q = torch.where(u, o1['nll'], o0['nll'])
-        bo = ((R - truth[:, None]) ** 2).sum(-1).argmin(1)
-        out['oracle'] = dict(r=R[ar, bo], s=Sg[ar, bo], q=Q[ar, bo], dof=torch.where(u[ar, bo], o1['dof'], o0['dof']),
-                             kin=u[ar, bo], start=bo)
-    return out
-
-
-@torch.no_grad()
-def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0, logdet=True, cang=0.0):
-    """posterior over the fringe starts (iteration 31, critic 30 #1): as solve_ms (same MAP: best start of the selected
-    kinetic model), plus the per-start solutions of that model, deduplicated (a start whose solution lies within `dedup`
+def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
+    """posterior over the fringe starts (iteration 31, critic 30 #1): kinetic model selection (kinetics only if it lowers the
+    cost by > thr), MAP = best start of the selected kinetic model, plus the per-start solutions of that model, deduplicated (a start whose solution lies within `dedup`
     px of a lower-cost start is the same mode), weighted w_m ~ exp(-(cost_m - cost_min) / (2 temp)) (cost = chi^2 incl.
-    the prior = -2 log L). Returns dict(r, s, q, dof, kin: MAP as solve_ms['nll']; dnll = (cost_2nd - cost_min) / 2 of the
+    the prior = -2 log L). Returns dict(r, s, q, dof, kin: the MAP; dnll = (cost_2nd - cost_min) / 2 of the
     best distinct competitor (inf if none); R [n,H,2], S [n,H,2], w [n,H] (0 for duplicates); r_pm posterior mean,
     spread [n,2] = sqrt(sum w (R - r_map)^2) per axis, spread_pm = sqrt(sum w (R - r_pm)^2))"""
     dr = start_offsets(pt, r0, bases, nf)
-    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=False, iters=iters, box=box, cmult=cmult, logdet=logdet, cang=cang)
-    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=iters, box=box, cmult=cmult, logdet=logdet, cang=cang)
+    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=False, iters=iters, box=box, cmult=cmult, cang=cang)
+    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=iters, box=box, cmult=cmult, cang=cang)
     n = len(I); ar = torch.arange(n, device=I.device)
     b0 = o0['nll'].argmin(1); b1 = o1['nll'].argmin(1)
     q0 = o0['nll'][ar, b0]; q1 = o1['nll'][ar, b1]; use = (q0 - q1) > thr

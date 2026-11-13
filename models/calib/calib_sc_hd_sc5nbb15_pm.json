@@ -11,8 +11,6 @@
  "kap_p_raw": 0.8945196270942688,
  "kap_I2_raw": 0.7926039058284609,
  "box": 1.5,
- "ms_xdet": false,
- "mix": "pm",
  "mix_T": 1.0,
  "note": "calib_sc_hd_sc5nbb15.json + fringe-start posterior mean / mixture sigma (PM, T = 1; as calib_sc_hd_sc5nb15_pm.json for sc5n, sigma calibration not refitted; iteration 32, no training)"
 }

@@ -11,8 +11,6 @@
  "kap_p_raw": 0.8945196270942688,
  "kap_I2_raw": 0.7926039058284609,
  "box": 1.5,
- "ms_xdet": false,
- "mix": "pm",
  "mix_T": 1.0,
  "note": "2026-11-09 bright-regime calibration (<out>/bright/fit_cal.py): base calib_sc_hd_sc5nbb15.json + fringe-start posterior mean / mi...; nuisance Sigma {'cmult': 0.1, 'cmult_ang': 0.1}; per-network-photon-bin kap_p / kap_I2 / sigma factor fitted on the tuning seed 202 of ['rs05qm', 'rs25qm', 'rs05pm'] | _real: sigma factor rescaled for real 0.5 nM data (sig_ph_real_mult)",
  "cmult": 0.1,

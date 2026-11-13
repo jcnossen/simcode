@@ -94,7 +94,7 @@ def table(setn, d, crop):
     import simcode2.strict as SP
     S = A.SETS[setn]; crop = tuple(float(c) for c in crop)
     SP.CROP = crop; SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]; SP.bin20.__defaults__ = SP.bin20.__defaults__[:-1] + (crop,)
-    T, info = SP.build_table(d, S['tag'], A.PX, None, None, None, None)
+    T, info = SP.build_table(d, S['tag'], A.PX)
     R = SP.load_rows(d, S['tag'])
     for k in ('sx_nb', 'sy_nb', 'sx_f', 'sy_f', 'sx_raw', 'sy_raw', 'x_raw', 'y_raw'): T[k] = R[k].astype(np.float32 if k[0] == 's' else np.float64)
     # sx_u, sy_u: calibrated sigma x g(strict_u), the chain's selection-aware rescale of this pass (out/nanoruler/models/calib/sigu_p<pass>_nr80.json,

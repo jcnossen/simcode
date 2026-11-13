@@ -1,4 +1,4 @@
-"""Stage e (train): PSF-matched network set of the dataset, the recipe of runs/psfmatch/chain2.sh + eval.sh
+"""Stage e (train): PSF-matched model of the dataset, the recipe of runs/psfmatch/chain2.sh + eval.sh
 (docs/AUTO_PIPELINE.md section 6), as a wrapper around the existing trainers (unchanged entry points, through
 simcode/auto/runwrap.py for the in-memory preset overrides of a non-DMD setup).
 
@@ -8,7 +8,7 @@ directory 'quick/'):
   gate scenes (simcode.hd.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (det + hd) and pass 2 (p2det + p2headL)
   -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
-  -> <dir>/netset.json (format of simcode/netsets.json, absolute paths)
+  -> <dir>/model.json (format of simcode/models.json, absolute paths)
 Not in this wrapper (reported): the selection-aware sigma rescale sig_u (needs a simulated movie with ground truth,
 analysis/psf3d_nets/sigcal.py) and the sim-movie GT sanity gate of runs/psfmatch/eval.sh."""
 import json, os, shutil
@@ -45,8 +45,8 @@ def presets(ds):
 
 def run(ds):
     c, Tc = ds.c, ds.c['train']
-    if Tc['netset'] and not Tc['quick']:
-        return dict(netset=Tc['netset'], skipped=True, note='existing set from the config; nothing trained', checks=[])
+    if Tc['model'] and not Tc['quick']:
+        return dict(model=Tc['model'], skipped=True, note='existing model from the config; nothing trained', checks=[])
     quick = Tc['quick']
     D = os.path.join(ds.dir('train'), 'quick' if quick else 'full'); os.makedirs(D, exist_ok=True)
     cal = ds.summary('psf')['calib_avg']
@@ -68,7 +68,7 @@ def run(ds):
         return os.path.join(d, 'final.pt')
 
     from simcode import config as SC
-    det_init = Tc['init']['det'] or (SC.resolve(SC.netset(Tc['real_mult_from'])['det']) if quick else None)   # quick: a few steps on top of the template detector
+    det_init = Tc['init']['det'] or (SC.resolve(SC.model_set(Tc['real_mult_from'])['det']) if quick else None)   # quick: a few steps on top of the template detector
     det = stage('det', ['--init', det_init] if det_init else [])
     hd = stage('hd', ['--det', det, '--init', Tc['init']['hd']] + (['--hold', hold] if os.path.exists(hold) else []))
     p2det = stage('p2det', ['--init_n1', det])
@@ -86,7 +86,7 @@ def run(ds):
     seeds = '202,301' if quick else '202,301,302,303'
     scen = 'iso,' + SCEN_FIT if quick else 'iso,pair1,pair2,' + SCEN_FIT
     nt = '400' if quick else '3500'
-    env = dict(SIMCODE2_GATE_CALIB=cal, SIMCODE2_GATE_DIR=G, GATE_PSF_CHUNK='1500', SIMCODE_OUT=D)
+    env = dict(SIMCODE2_GATE_CALIB=cal, SIMCODE2_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
         ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.hd.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
                'calib/calib_sc_hd_sc5nbb15_pm_bright.json', '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
@@ -102,7 +102,7 @@ def run(ds):
     fcs = os.path.join(REPO, 'analysis', 'psfmatch', 'fit_cal_set.py')
     rm = Tc['real_mult_from']
     from simcode import config as SC
-    tmpl = SC.netset(rm)
+    tmpl = SC.model_set(rm)
     fallback = []
     for fr, base, ks, ksr in (('s1', 'calib/calib_sc_hd_sc5nbb15_pm_bright.json', 'cal_sim', 'cal_real'), ('s2', 'calib/calib_p2L.json', 'p2_cal_sim', 'p2_cal_real')):
         ds.sh(['-m', 'simcode.auto.runwrap', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
@@ -127,8 +127,8 @@ def run(ds):
     if A.get('p2_over_p1') is not None:
         chk.append(dict(name=f'pass-2 / pass-1 RMS/CRLB on {SCEN_FIT} (200-2000 ph) <= 1', value=A['p2_over_p1'], ok=A['p2_over_p1'] <= 1.0, warn_only=quick))
     gates = 'NOT EVALUATED' if not chk else 'PASS' if all(k['ok'] for k in chk) else 'FAIL'
-    S = {name: dict(_doc=f'simcode.auto network set of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
+    S = {name: dict(_doc=f'simcode.auto model of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
                          f'PSF {cal}; sig_u not fitted', _gates=gates, psf=cal, **files, **cals, sig_u='')}
-    json.dump(S, open(os.path.join(ds.dir('train'), 'netset.json'), 'w'), indent=1)
-    return dict(netset=name, quick=quick, calib_fallback=fallback, steps=steps, dir=D, files=files, calibs=cals, accept=A, gates=gates,
-                netset_json=os.path.join(ds.dir('train'), 'netset.json'), wrap=json.load(open(W)), checks=chk)
+    json.dump(S, open(os.path.join(ds.dir('train'), 'model.json'), 'w'), indent=1)
+    return dict(model=name, quick=quick, calib_fallback=fallback, steps=steps, dir=D, files=files, calibs=cals, accept=A, gates=gates,
+                model_json=os.path.join(ds.dir('train'), 'model.json'), wrap=json.load(open(W)), checks=chk)

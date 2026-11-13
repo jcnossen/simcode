@@ -1,11 +1,11 @@
 """
-Fast (opt-in) versions of the sc front-end chunks (2026-11-10, throughput; run_uncalibrated --fast). Same networks, same
-candidate rules, same outputs and file formats as simcode/pipeline/sc_front.py (pass 1, pattern solve) and
-simcode/p2/front.py (pattern-aware pass 2); the originals are unchanged.
+Fast versions of the sc front-end chunks (2026-11-10, throughput; the pipeline's code path). Same networks, same
+candidate rules, same outputs and file formats as the reference implementations simcode/pipeline/sc_front.py (pass 1,
+pattern solve) and simcode/p2/front.py (pattern-aware pass 2), which are kept as the test oracle (tests/test_fast_paths.py).
 
 Queued fixed-size batching (shared by pass 1 and pass 2):
   detector  on `det_batch` windows at a time (default 64) -> padded top-k -> neighbour maps from the padded list (no
-            boolean compaction needed; invalid entries carry p = 0) -> the p >= 0.5 candidates (one index compaction per
+            boolean compaction needed; invalid entries carry p = 0) -> the p >= CAND_PMIN candidates (one index compaction per
             detector batch) are appended to a GPU queue of (window index, pixel, sub-pixel point, logit); the chunk's frames
             and neighbour maps stay on the GPU (zero-padded once per chunk), so a queue entry needs no patch storage
   head      drains the queue in fixed batches of `head_batch` (default 1024; the last one padded by repeating the last
@@ -15,18 +15,18 @@ Queued fixed-size batching (shared by pass 1 and pass 2):
             syncs are the per-detector-batch candidate counts, on the detector stream)
   outputs   written into preallocated GPU tensors, post-processed (time centroid, central / inside / own flags) once per chunk,
             copied to the CPU once per chunk
-  compile   the head is NOT compiled by default: torch.compile of SCHead4 changed the outputs far beyond the bf16 noise on the
-            real 0.5 nM chunk (I up to 275 ph, p99.9 59 ph vs 1.4 ph run-to-run) -> `compile_head` ('off' default) exists only
-            for diagnostics; `compile` ('auto' | 'on' | 'off') applies to the pattern solve's LM step (msolve_fast)
+  compile   the heads are not compiled (torch.compile of SCHead4 changed the outputs far beyond the bf16 noise on the real
+            0.5 nM chunk: I up to 275 ph, p99.9 59 ph vs 1.4 ph run-to-run); `compile` ('auto' | 'on' | 'off') applies to the
+            pattern solve's LM step (msolve_fast)
 Pattern solve (the explicit intensity-domain solve; not "pass 2"): simcode/hd/msolve_fast.sc_solve_fast over the whole chunk
-in batches of `solve_batch` rows (default 16384), exact options by default (solve_opts for the approximate ones).
+in batches of `solve_batch` rows (default 16384).
 Timing keys: read, detector, head, solve (GPU busy time per stage from CUDA events; with streams the stage sums can exceed
 the wall time) + wall.
 """
 import json, time
 import numpy as np, torch
 import torch.nn.functional as F
-from simcode.pipeline.common import Movie, region, pattern_frames
+from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
 
 T = 6
 PP = 21
@@ -103,38 +103,18 @@ class QueuedFront:
     """detector -> GPU queue -> fixed-size head batches (see the module doc); heads: dict name -> (module, kind) with kind
     'sc' (sc.apply_head inputs: patch, off, psf, nbr) or 'p2' (+ illumination patches)"""
 
-    def __init__(self, det, needs_il, heads, col, dev='cuda', compile_head='off', channels_last=False):
-        from simcode import fastutil
+    def __init__(self, det, needs_il, heads, col, dev='cuda'):
         self.det, self.needs_il, self.col, self.dev = det, needs_il, col, dev
-        self.heads = {}
-        for nm, (h, kind) in heads.items():
-            if channels_last: h = h.to(memory_format=torch.channels_last)
-            if compile_head in ('trunk', 'trunk_on'):
-                # (2026-11-11, speed branch) torch.compile of the bf16 CNN trunk + MLP only (SCHead4.trunk); the fp32 read-out,
-                # covariance and intensity algebra stay eager. 'trunk' = compile when available (else eager), 'trunk_on' =
-                # compile or raise. The module itself is not modified (a reference path sharing it stays eager).
-                bm = h.trunk
-                tf = fastutil.maybe_compile(bm, 'auto' if compile_head == 'trunk' else 'on', dynamic=False)
-                self.heads[nm] = (h, kind, h, tf if tf is not bm else None)
-                continue
-            if compile_head == 'blk':
-                # only the residual conv stack compiled (opt-in): head 30 % faster on a busy GPU, but I / x differences 4x the
-                # bf16 run-to-run noise on the real 0.5 nM chunk (dI median 0.30 vs 0.08 ph, max 4.3 vs 1.2 ph) -> not default
-                if fastutil.resolve('auto') and not hasattr(h, '_blk_eager'):
-                    h._blk_eager = h.blk; h.blk = fastutil.maybe_compile(h.blk, 'auto', dynamic=False)
-                self.heads[nm] = (h, kind, h, None)
-            else:
-                self.heads[nm] = (fastutil.maybe_compile(h, compile_head, dynamic=False), kind, h, None)
+        self.heads = dict(heads)
 
     def _head_call(self, nm, pt, off, nbp, ilp):
-        hc, kind, h, tf = (self.heads[nm] + (None,))[:4]
+        h, kind = self.heads[nm]
         psf = self.col(off) if self.col is not None else None
-        kw = {} if tf is None else dict(trunk_fn=tf)
         if kind == 'p2':
-            return hc(pt, None, off, psf, nbp, ilp, **kw)
+            return h(pt, None, off, psf, nbp, ilp)
         if getattr(h, 'nbr', False):
-            return hc(pt, None, off, psf, nbp, **kw)
-        return hc(pt, None, off, psf)
+            return h(pt, None, off, psf, nbp)
+        return h(pt, None, off, psf)
 
     @torch.no_grad()
     def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy'),
@@ -158,8 +138,6 @@ class QueuedFront:
         res = {nm: {k: [] for k in outs} for nm in self.heads}
         pend = []                      # queued (not yet processed) candidate pieces: dicts of [m] tensors
         npend = 0; keep_alive = []
-        if PWall is not None:
-            Km_il = None
 
         def drain(final=False):
             nonlocal pend, npend
@@ -240,13 +218,10 @@ def _np(r):
 
 
 # ------------------------------------------------------------------------------------------------ pass 1
-CAND_PMIN = 0.5     # stored-candidate cut (head runs on p >= CAND_PMIN); run_uncalibrated --cand_pmin (2026-11-10, default unchanged)
-
-
 class Pass1SCFast:
     """= sc_front.Pass1SC (same constructor arguments) with the queued front-end"""
 
-    def __init__(self, calib_path, head=HEAD, det=DET_N1, dev='cuda', compile_head='off', channels_last=False, compile=None):
+    def __init__(self, calib_path, head=HEAD, det=DET_N1, dev='cuda'):
         from simcode.hd import sc as SCM
         from simcode.sim.simulator import Simulator
         self.SCM = SCM
@@ -255,7 +230,7 @@ class Pass1SCFast:
         self.head = SCM.load(head)
         self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
-        self.front = QueuedFront(self.det, False, {'h': (self.head, 'sc')}, self.col, dev, compile_head=compile_head, channels_last=channels_last)
+        self.front = QueuedFront(self.det, False, {'h': (self.head, 'sc')}, self.col, dev)
 
     @torch.no_grad()
     def run_chunk(self, movie: Movie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
@@ -297,15 +272,13 @@ class Pass1SCFast:
 
 # ------------------------------------------------------------------------------------------------ pattern solve (pass-1 rows)
 @torch.no_grad()
-def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_batch=16384, timing=None, solve_opts=None, field=None):
+def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_batch=16384, timing=None, compile='auto'):
     """= sc_front.run_chunk_pass2 (same output columns) with msolve_fast.sc_solve_fast, results kept on the GPU until the
-    end of the chunk. field (2026-11-10, opt-in, default None = unchanged): a pattern-field dict (pattern_field.py; e.g. a
-    depth-only field) applied per row as in sc_front.run_chunk_pass2 (phase += phi_a(r_prior), depth x f_a(r_prior))."""
+    end of the chunk"""
     from simcode.hd import msolve_fast as MF
     timing = timing if timing is not None else {}
     t_ = time.time()
     cal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
-    opts = dict(solve_opts or {})
     keep = R['out'].astype(bool)
     X0, Y0 = info['X0'], info['Y0']
     ws = R['wstart'][keep]
@@ -321,16 +294,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
         sl = slice(c0, c0 + solve_batch)
         o = dict(I=G['I'][sl], L=G['L'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
                  x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0)
-        if field is not None:
-            from simcode.pipeline.pattern_field import field_at
-            ii = idx_all[sl]
-            dp, df = field_at(field, R['x'][ii].astype(np.float64), R['y'][ii].astype(np.float64))
-            PWr = PW[binv[sl]].clone()                                                # [n, T, 5] per-row pattern
-            ang = torch.tensor(((ws[sl][:, None] + np.arange(T)[None]) % 6) // 3, device=dev)
-            PWr[..., 2] = PWr[..., 2] + torch.gather(tt(dp), 1, ang); PWr[..., 3] = (PWr[..., 3] * torch.gather(tt(df), 1, ang)).clamp(0, 1)
-            so = MF.sc_solve_fast(o, PWr, torch.arange(len(ii), device=dev), cal, **opts)
-        else:
-            so = MF.sc_solve_fast(o, PW, binv[sl], cal, **opts)
+        so = MF.sc_solve_fast(o, PW, binv[sl], cal, compile=compile)
         for k in acc: acc[k].append(so.get(k, so['r']) if k != 'dnll' else so.get('dnll', torch.full_like(so['q'], float('nan'))))
     A = {k: torch.cat(v).float().cpu().numpy() if v else np.zeros((0, 2) if k in ('r', 's_cal', 'r_map') else 0, np.float32) for k, v in acc.items()}
     out = {}
@@ -357,7 +321,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
 class Pass2P2Fast:
     """= p2.front.Pass2P2 (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
 
-    def __init__(self, calib_path, head=None, det=None, pf_head=None, dev='cuda', compile='off', channels_last=False, compile_head='off'):
+    def __init__(self, calib_path, head=None, det=None, dev='cuda', compile='auto'):
         from simcode.hd import sc as SCM
         from simcode.p2 import head2 as H2, front as FR
         from simcode.sim.simulator import Simulator
@@ -365,28 +329,21 @@ class Pass2P2Fast:
         self.SCM, self.H2 = SCM, H2
         self.det, self.needs_il = H2.load_det(det)
         self.head = H2.load(head) if ('p2_head' in head or H2.is_p2_head(head)) else SCM.load(head)
-        self.pf_head = SCM.load(pf_head) if pf_head else None
         self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
         kind = 'p2' if getattr(self.head, 'p2', False) else 'sc'
-        self.fronts = {}
-        self._mk = lambda use_pf: QueuedFront(self.det, self.needs_il,
-                                              dict(h=(self.head, kind), **({'pf': (self.pf_head, 'sc')} if use_pf else {})),
-                                              self.col, dev, compile_head=compile_head, channels_last=channels_last)
+        self.front = QueuedFront(self.det, self.needs_il, dict(h=(self.head, kind)), self.col, dev)
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
     def run_chunk(self, movie: Movie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024,
-                  streams=True, solve_batch=16384, timing=None, solve_opts=None, return_head=False):
+                  streams=True, solve_batch=16384, timing=None, return_head=False):
         from simcode.hd import msolve_fast as MF
-        dev = self.dev; SCM = self.SCM
+        dev = self.dev
         timing = timing if timing is not None else {}
         tw = time.time()
         scal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
-        prior = scal.get('p2_prior', 'own')
-        use_pf = self.pf_head is not None and prior == 'pf'
-        if use_pf not in self.fronts: self.fronts[use_pf] = self._mk(use_pf)
-        front = self.fronts[use_pf]
+        front = self.front
         X0, Y0, S = region(movie, crop, margin)
         own0, own1 = f0, min(f1, movie.n)
         l0 = max(f0 - pad, 0) // 6 * 6; l1 = min(own1 + pad, movie.n)
@@ -404,35 +361,27 @@ class Pass2P2Fast:
         outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy')
         q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, head_batch=head_batch, streams=streams, outs=outs, ev=ev)
         oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
-        if use_pf:
-            pf = q['heads']['pf']; oh.update(pf_x=pf['x'], pf_y=pf['y'], pf_lsxy=pf['lsxy'])
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         tc, fabs, keep = _flags(I, ws, oh['x'] + X0, oh['y'] + Y0, l0, starts[-1], crop, own0, own1, dev)
         k_ = torch.nonzero(keep)[:, 0]
         o = {kk: v[k_] for kk, v in oh.items()}
-        if use_pf:
-            o = dict(o, x=o['pf_x'], y=o['pf_y'], lsxy=o['pf_lsxy'])
         bw = q['w'][k_]
         done = ev.rec('solve')
         acc = {k: [] for k in ('r', 's_cal', 'q', 'kin')}
         for c0 in range(0, len(k_), solve_batch):
             sl = slice(c0, c0 + solve_batch)
-            so = MF.sc_solve_fast({kk: v[sl] for kk, v in o.items()}, PWall, bw[sl], scal, **dict(dict(compile=self.compile), **(solve_opts or {})))
+            so = MF.sc_solve_fast({kk: v[sl] for kk, v in o.items()}, PWall, bw[sl], scal, compile=self.compile)
             for k in acc: acc[k].append(so[k])
         done()
         so = {k: torch.cat(v) if v else torch.zeros((0, 2) if k in ('r', 's_cal') else 0, device=dev) for k, v in acc.items()}
         sp = oh['lsxy'][k_].exp()
         ph = I[k_].sum(1)
-        fdir = torch.ones_like(ph)
-        if 'kap_bins_dir' in scal:
-            fdir = SCM._binval(scal['kap_bins_dir'], 'kap_p', ph) * SCM._binval(scal['sig_ph_dir'], 'f', ph)
-        po = torch.tensor(scal.get('prior_off_dir', [0.0, 0.0]), device=dev)
         p = torch.sigmoid(q['lg'])
         r = dict(wstart=ws[k_], x_hy0=so['r'][:, 0] + X0, y_hy0=so['r'][:, 1] + Y0, sx_cal=so['s_cal'][:, 0], sy_cal=so['s_cal'][:, 1],
                  sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                  x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
-                 x_dir=oh['x'][k_] - po[0] + X0, y_dir=oh['y'][k_] - po[1] + Y0, sx_dir=sp[:, 0] * fdir, sy_dir=sp[:, 1] * fdir,
+                 x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
                  frame=fabs[k_], I_net=I[k_])
         R = _np(r); R['wstart'] = R['wstart'].astype(np.int64)
         for k, v in ev.totals().items(): timing[k] = timing.get(k, 0) + v

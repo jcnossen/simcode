@@ -8,10 +8,14 @@ is `python -m simcode.run`, which calls this module's stages with the production
            network intensities alone                                                (simcode/pipeline/pattern_est.py)
   pass2    --frontend sc:   the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz)
            --frontend sc2p: + the pattern-aware pass 2 (pass-2 detector + head fed the estimated pattern, then the same
-                            solve; pass2_est2_<f0>.npz, head-prior variant pass2_est2b_<f0>.npz); --p1_solve 0 skips the
-                            pass-1 solve
+                            solve; pass2_est2_<f0>.npz, head-prior variant pass2_est2b_<f0>.npz); the pass-1 solve is
+                            the --frontend sc stage (simcode.run runs both)
 Only the camera maps and the PSF are taken from --calib (in-situ calibration json). Optional --ref_pattern: the solve is
 repeated with that pattern on the same detections (tag 'ref' / 'ref2'; for comparisons only).
+
+Code path: the fast front-ends (simcode/pipeline/sc_front_fast.py: queued detector -> head batching, 2 CUDA streams) and the
+fast solve (simcode/hd/msolve_fast.py, torch.compile of its LM step when available); the reference implementations
+(sc_front.py, p2/front.py, hd/sc.sc_solve) are the test oracle only (tests/test_fast_paths.py).
 
 Chunks are the units of the shared work driver (simcode/fileio/work.py): a finished chunk is skipped (--redo 1 repeats it),
 every output is written atomically (a killed run leaves no truncated chunk file), the free disk space is checked before a
@@ -20,7 +24,7 @@ With --claim 1 several copies of the same command (one per GPU, python -m simcod
 pass-1 and pass-2 stages; the pattern stage then runs in one of them, after all pass-1 chunks exist.
 
 usage: python -m simcode.pipeline.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir> [--frontend sc|sc2p]
-       [--fast 1 --compile auto] [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000] [--claim 1]
+       [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000] [--claim 1]
 Outputs in --out: pass1_<f0>.npz, pattern_est.pt / pattern_est.json, pass2_<tag>_<f0>.npz, runtime.json, log.txt
 """
 import argparse, hashlib, json, os, time
@@ -30,6 +34,11 @@ from simcode import config
 
 def md5(p):
     return hashlib.md5(open(p, 'rb').read()).hexdigest()[:10]
+
+
+# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
+RETIRED = {'--fast': '1', '--compile': 'auto', '--cand_pmin': '0.3', '--p1_solve': '0', '--compile_head': 'off', '--solve_opts': '{}',
+           '--pattern_field': '', '--p2_pf_head': ''}
 
 
 def main(argv=None):
@@ -48,52 +57,28 @@ def main(argv=None):
     ap.add_argument('--redo', type=int, default=0)
     ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); prefetch is off then
     ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
-    # --pattern_field (2026-11-10, opt-in; default '' = unchanged): pattern field maps (simcode/pipeline/pattern_field.py):
-    # 'est' = estimate a 10 px phase map + Legendre-2 depth field from the pass-1 rows after the pattern stage, or a saved
-    # field .pt. Adds an extra pass-2 tag 'estfld' (pass2_estfld_<f0>.npz; sc front-end); pass2_est unchanged.
-    # 'est_depth' (2026-11-10): DEPTH-ONLY field (Legendre-2 depth, no phase map; pattern_field_depth.pt) -> tag 'estdep'; a saved
-    # depth-only .pt (phase_on False) also gives tag 'estdep'. Since 2026-11-10 a field also runs on the --fast path (was: ignored).
-    ap.add_argument('--pattern_field', default='')
-    ap.add_argument('--frontend', default='sc', choices=['sc', 'sc2p'])   # sc: pass 1 + pattern + solve; sc2p: + pattern-aware pass 2
+    ap.add_argument('--frontend', default='sc', choices=['sc', 'sc2p'])   # stage pass2: sc = the solve of the pass-1 rows; sc2p = the pattern-aware pass 2
     ap.add_argument('--sc_head', default=config.HEAD)
     ap.add_argument('--sc_det', default=config.DET)
     ap.add_argument('--sc_cal', default=config.CAL_P1_REAL)
-    # --frontend sc2p (simcode/p2/front.py): passes 1 / pattern / pass-1 solve as 'sc', then pass 2 with the
-    # pattern-aware networks (pass-2 detector + head fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz
+    # --frontend sc2p (simcode/p2/front.py): pass 2 with the pattern-aware networks (pass-2 detector + head fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz
     # (solve) and pass2_est2b_<f0>.npz (variant b: the pass-2 head prior); with --ref_pattern also est2 / est2b on that pattern ('ref2')
     ap.add_argument('--p2_det', default=config.P2_DET)
     ap.add_argument('--p2_head', default=config.P2_HEAD)
     ap.add_argument('--p2_cal', default=config.CAL_P2_REAL)
-    ap.add_argument('--p2_pf_head', default=config.HEAD)   # only used by a pass-2 calibration with p2_prior 'pf'
     ap.add_argument('--chunk_list', default='')         # explicit chunk starts, e.g. '12000,60000' (default: all)
-    # --fast 1 (default 0 here = the reference code paths; simcode.run uses --fast 1): sc / sc2p front-ends via
-    # simcode/pipeline/sc_front_fast.py (queued fixed-size detector -> head batching, 2 CUDA streams, one CPU copy per chunk)
-    # and the pattern solve via simcode/hd/msolve_fast.py (exact restructuring; approximate options only via --solve_opts)
-    ap.add_argument('--fast', type=int, default=0)
-    ap.add_argument('--cand_pmin', type=float, default=0.5)   # (2026-11-10, opt-in) stored-candidate detection cut of the sc / sc2p
-                                                              # front-ends (head + solve run on p >= cand_pmin); 0.5 = unchanged
-    ap.add_argument('--compile', default='off')         # fast path: torch.compile of the pattern-solve LM step: auto | on | off
-    ap.add_argument('--compile_head', default='off')    # fast path, opt-in, NOT bf16-noise equivalent: 'blk' compiles the head's conv stack
     ap.add_argument('--det_batch', type=int, default=64)
     ap.add_argument('--head_batch', type=int, default=1024)
     ap.add_argument('--solve_batch', type=int, default=16384)
-    ap.add_argument('--solve_opts', default='{}')       # json, msolve_fast options, e.g. '{"prune_k": 0.2}'
-    ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) fast path: read the next chunk's frames in a background thread
+    ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) read the next chunk's frames in a background thread
                                                         # (fileio/movie.Prefetch; identical data); 0 = synchronous reads
-    ap.add_argument('--p1_solve', type=int, default=1)  # sc2p: 0 skips the pass-1 pattern solve (pass2_est files; not needed by pass 2)
-    a = ap.parse_args(argv)
+    from simcode.util import retired
+    a = ap.parse_args(retired.strip(argv, RETIRED, 'run_uncalibrated'))
     from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
-    for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'p2_pf_head', 'ref_pattern'):
+    for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'ref_pattern'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')
-    if a.pattern_field and a.pattern_field not in ('est', 'est_depth'): a.pattern_field = config.resolve(a.pattern_field, 'out')
-    if a.cand_pmin != 0.5:
-        from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
-        from simcode.p2 import front as _p2f
-        _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = a.cand_pmin
-        print(f'stored-candidate cut p >= {a.cand_pmin}', flush=True)
-    fast = bool(a.fast)
-    solve_opts = dict(json.loads(a.solve_opts), compile=a.compile) if fast else {}
+    COMPILE = 'auto'                                     # torch.compile of the solve's LM step when available (simcode/fastutil.py)
     from simcode.pipeline.common import load_calib, load_pass1_rows, chunk_read_plan
     from simcode.fileio.movie import open_movie, Prefetch
     from simcode.fileio.work import Units, atomic_json, atomic_torch_save
@@ -117,20 +102,14 @@ def main(argv=None):
     t0 = time.time(); cal = load_calib(a.calib); RT['setup_psf_s'] = time.time() - t0
     say(f'movie {a.movie}: {movie.n} frames ({len(movie.parts)} parts), processing {nf} in {len(chunks)} chunks')
     stages = a.stages.split(',')
-    prefetch = fast and a.prefetch and not a.claim
+    prefetch = a.prefetch and not a.claim
 
     if 'pass1' in stages:
         t0 = time.time()
-        if fast:
-            from simcode.pipeline.sc_front_fast import Pass1SCFast
-            p1 = Pass1SCFast(a.calib, head=a.sc_head, det=a.sc_det, compile_head=a.compile_head)
-            RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
-            RT['fast'] = dict(compile=a.compile, compile_head=a.compile_head, det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch,
-                              solve_opts=solve_opts, p1_solve=a.p1_solve)
-        else:
-            from simcode.pipeline.sc_front import Pass1SC
-            p1 = Pass1SC(a.calib, head=a.sc_head, det=a.sc_det)
-            RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
+        from simcode.pipeline.sc_front_fast import Pass1SCFast
+        p1 = Pass1SCFast(a.calib, head=a.sc_head, det=a.sc_det)
+        RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
+        RT['fast'] = dict(compile=COMPILE, det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch)
         torch.cuda.synchronize(); RT['setup_nets_s'] = time.time() - t0
         RT.setdefault('pass1', {})
         U = units('pass1')
@@ -139,11 +118,8 @@ def main(argv=None):
             mv1 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
         for f0 in U.todo(chunks):
             tm = {}; t0 = time.time()
-            if fast:
-                R, info = p1.run_chunk(mv1, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm,
-                                       det_batch=a.det_batch, head_batch=a.head_batch)
-            else:
-                R, info = p1.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm)
+            R, info = p1.run_chunk(mv1, cal, f0, min(f0 + a.chunk, nf), crop=crop, margin=a.margin, timing=tm,
+                                   det_batch=a.det_batch, head_batch=a.head_batch)
             tm['total'] = time.time() - t0
             U.save(f0, **R, X0=info['X0'], Y0=info['Y0'], S=info['S'], own=np.array(info['own']),
                    loaded=np.array(info['loaded']), crop=np.array(crop))
@@ -173,21 +149,9 @@ def main(argv=None):
             atomic_torch_save(P, f'{a.out}/pattern_est.pt')
             save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
 
-    if 'pass2' in stages and not (fast and a.frontend == 'sc2p' and not a.p1_solve):
+    if 'pass2' in stages and a.frontend == 'sc':
+        # the pattern solve of the pass-1 rows (pass2_est); --frontend sc2p runs only the pattern-aware pass 2
         pats = [('est', f'{a.out}/pattern_est.pt')] + ([('ref', a.ref_pattern)] if a.ref_pattern else [])
-        FLD = None
-        if a.pattern_field:
-            if a.pattern_field in ('est', 'est_depth'):
-                from simcode.pipeline.pattern_field import estimate_field
-                Rf = load_pass1_rows(a.out, chunks, crop, json.load(open(a.sc_cal)).get('prior_off'))
-                dep = a.pattern_field == 'est_depth'
-                FLD = estimate_field(Rf, torch.load(f'{a.out}/pattern_est.pt'), movie.shape, cell=10, mode='shrink', depth=True, verbose=say,
-                                     phase=not dep)
-                atomic_torch_save(FLD, f'{a.out}/pattern_field{"_depth" if dep else ""}.pt')
-            else:
-                FLD = torch.load(a.pattern_field, weights_only=False)
-            ftag = 'estdep' if (a.pattern_field == 'est_depth' or not FLD.get('phase_on', True)) else 'estfld'
-            pats = pats + [(ftag, f'{a.out}/pattern_est.pt')]
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})
@@ -196,25 +160,17 @@ def main(argv=None):
                 L = dict(np.load(f'{a.out}/pass1_{f0}.npz'))
                 info = dict(X0=int(L['X0']), Y0=int(L['Y0']), S=int(L['S']), loaded=tuple(int(v) for v in L['loaded']))
                 tm = {}; t0 = time.time()
-                if fast:
-                    from simcode.pipeline.sc_front_fast import run_chunk_pattern_solve_fast
-                    O = run_chunk_pattern_solve_fast(L, info, Pt, a.sc_cal, timing=tm, solve_batch=a.solve_batch, solve_opts=solve_opts,
-                                                     field=FLD if tag in ('estfld', 'estdep') else None)
-                else:
-                    from simcode.pipeline.sc_front import run_chunk_pass2
-                    O = run_chunk_pass2(L, info, Pt, a.sc_cal, timing=tm, field=FLD if tag in ('estfld', 'estdep') else None)
+                from simcode.pipeline.sc_front_fast import run_chunk_pattern_solve_fast
+                O = run_chunk_pattern_solve_fast(L, info, Pt, a.sc_cal, timing=tm, solve_batch=a.solve_batch, compile=COMPILE)
                 tm['total'] = time.time() - t0
                 U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
     if 'pass2' in stages and a.frontend == 'sc2p':
-        from simcode.p2.front import Pass2P2, direct_view
+        from simcode.p2.front import direct_view
+        from simcode.pipeline.sc_front_fast import Pass2P2Fast
         t0 = time.time()
-        if fast:
-            from simcode.pipeline.sc_front_fast import Pass2P2Fast
-            p2 = Pass2P2Fast(a.calib, head=a.p2_head, det=a.p2_det, pf_head=a.p2_pf_head, compile=a.compile, compile_head=a.compile_head)
-        else:
-            p2 = Pass2P2(a.calib, head=a.p2_head, det=a.p2_det, pf_head=a.p2_pf_head)
+        p2 = Pass2P2Fast(a.calib, head=a.p2_head, det=a.p2_det, compile=COMPILE)
         torch.cuda.synchronize(); RT['setup_p2_s'] = time.time() - t0; RT['p2'] = dict(det=a.p2_det, head=a.p2_head, cal=a.p2_cal)
         pats = [('est2', f'{a.out}/pattern_est.pt')] + ([('ref2', a.ref_pattern)] if a.ref_pattern else [])
         for tag, pf in pats:
@@ -226,11 +182,8 @@ def main(argv=None):
                 mv2 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
             for f0 in U.todo(chunks):
                 tm = {}; t0 = time.time()
-                if fast:
-                    O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
-                                     det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch, solve_opts=solve_opts)
-                else:
-                    O = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm)
+                O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
+                                 det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch)
                 tm['total'] = time.time() - t0
                 Ub.save(f0, **direct_view(O), pattern=pf)       # the head-prior variant first: the chunk counts as done by the
                 U.save(f0, **O, pattern=pf)                      # main file, so a run killed in between repeats both

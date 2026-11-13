@@ -58,12 +58,10 @@ def compile_available(verbose=True):
 
 
 def resolve(mode):
-    """'auto' | 'on' | 'off' (or bool) -> bool use-compile. Env SIMCODE_COMPILE overrides 'auto'."""
+    """'auto' | 'on' | 'off' (or bool) -> bool use-compile (the pipeline always uses 'auto'; 'on' / 'off' for tests)"""
     if isinstance(mode, bool):
         mode = 'on' if mode else 'off'
     mode = (mode or 'auto').lower()
-    if mode == 'auto':
-        mode = (os.environ.get('SIMCODE_COMPILE') or os.environ.get('SIMCODE2_COMPILE') or 'auto').lower()
     if mode == 'off':
         return False
     if mode == 'on':

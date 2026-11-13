@@ -79,7 +79,7 @@ stage('write_pass2_est2_npz', lambda: (np.savez(f'{OUT}/prof_{name}/pass2_est2_{
 from simcode import strict as SP
 px = json.load(open(calib))['pixelsize_um'] * 1e3
 def tab(tag, nm):
-    T_, inf = SP.build_table(f'{OUT}/prof_{name}', tag, px, None, None, None)
+    T_, inf = SP.build_table(f'{OUT}/prof_{name}', tag, px)
     return SP.write_table(T_, inf, f'{OUT}/prof_{name}/{nm}', ['npz'])
 stage('table_strict_p1', lambda: tab('est', 'locs_p1'))
 stage('table_strict_p2', lambda: tab('est2', 'locs_p2'))

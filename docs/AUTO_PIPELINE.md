@@ -9,7 +9,7 @@ Goal: one config file per dataset, then one command that
 2. fits the bead z-stack (optional),
 3. localizes the movie with a pattern-free spot finder to collect isolated emitter tracks (no external SMLM table),
 4. fits the in-situ PSF on those tracks (variable projection, line blur, photoselection) with a held-out check,
-5. trains the PSF-matched network set (recipe of `runs/psfmatch/chain2.sh`),
+5. trains the PSF-matched model (recipe of `runs/psfmatch/chain2.sh`),
 6. processes the whole movie (`simcode.run` with that set),
 7. writes a report page.
 
@@ -35,7 +35,7 @@ Unknown keys are an error (typos must not pass silently). The full config, with 
 `<out>/config_resolved.json` at the start of every run.
 
 ```yaml
-name: 1809_2                       # dataset tag (file names, network-set name 'a<name>' unless netset.name is given)
+name: 1809_2                       # dataset tag (file names, model name 'a<name>' unless train.model is given)
 movie: /mnt/data/.../simflux_5.5ms_500mW.tif   # first part; further parts (_X1.tif ...) are found by the reader
 out: /mnt/data/dmdsf/simcode2_out/auto/1809_2  # work directory (large); a symlink out/auto/<name> is made
 beads:                             # optional (stage b): bead z-stacks of the same optics
@@ -93,16 +93,15 @@ psf:                               # stage d
   readnoise_e: 1.9                 # fixed read noise / offset of the stage-A model (as fit_insitu2); null = camera stage values
   offset_adu: null
 train:                             # stage e
-  netset: null                     # null = 'a<name>'; an existing set name = skip training and use it
+  model: null                      # null = 'a<name>'; an existing model name = skip training and use it (key netset before 2026-11-14)
   quick: false                     # few steps per trainer (plumbing test)
   steps: {det: 40000, hd: 18000, p2det: 40000, p2head: 24000, p2headL: 50000}
   init: {det: null, hd: hd_sc5nb.pt}
   extra: {det: '', hd: '', p2: ''}   # extra trainer flags (e.g. g13: --dens 0.0005,0.06 --tau 3,80)
   gates: {sigma_zcal: [0.9, 1.15], rms_ratio_max: 1.05}
 process:                           # stage f
-  netset: null                     # null = the set of stage e; a name of simcode/netsets.json; or a netset json file
+  model: null                      # null = the model of stage e; a name of simcode/models.json; or a model json file
   calib: null                      # null = the stage-d calib.json
-  pass2: true
   crop: null                       # x0,y0,size px; null = the whole sensor minus 5 px
   chunk: 6000
   nframes: 0                       # 0 = all
@@ -122,7 +121,7 @@ done marker. A finished stage is skipped unless `--redo <stage>` (which also inv
 Long stages are resumable inside: `spots` and `process` work in chunks through `simcode.fileio.work.Units`, `train`
 per trainer (a trainer with `final.pt` is skipped). The chunk directories are keyed by a hash of their inputs
 (`spots/chunks_<key>`: movie, gain, offset, spot settings; `process/run_<key>`: the simcode.run arguments, the calibration
-file content, the network set and the overrides), so a redo with other settings never reuses stale chunks; stage d reuses a
+file content, the model and the overrides), so a redo with other settings never reuses stale chunks; stage d reuses a
 fit only if it is newer than the tracks and was made from the same start. Each summary holds the settings used, the timing, the main numbers
 and a list `checks` of `{name, value, range, ok}`; a failed check stops the run (unless `--force`) and is listed in
 the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
@@ -137,7 +136,7 @@ the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
 | `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.fit_beads` with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
 | `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
 | `psfrefine` (d2, slot, not implemented) | refined PSF (free pupil map through the spline-gradient route, then the pattern term; section 5) | refined PSF file + `calib_refined.json` | held-out acceptance |
-| `train` (e) | network set with the PSF-matched recipe (section 6); registers it in `<out>/train/netset.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
+| `train` (e) | model with the PSF-matched recipe (section 6); registers it in `<out>/train/model.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
 | `process` (f) | `simcode.run` on the movie with the set (pass 1, pattern, solve, pass 2, table, selections), through the in-memory overrides of section 7 | `run_<key>/locs_p*.npz`, `run_<key>/summary.json` | pattern pitch inside the config range; rows per frame; median sigma |
 | `report` (g) | `report.html` + `report.json`: settings, counts per stage, camera maps, PSF (images, residual moments per angle, held-out table), pattern (k, phases, depth vs the in-situ estimate), drift (DME on the table, if available), FRC (`simcode.evalproto.frc`), gate table, all checks | `report.html` | none |
 
@@ -147,7 +146,7 @@ The in-situ recipe up to now used the SIMCODE-pipeline `smlm.hdf5` of each movie
 emitters out of the camera maps. Stage c replaces it by a built-in Gaussian SMLM on 6-frame moving sums (one window per frame
 start; `simcode/auto/spots.py` = `analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
 is enough for both uses: the track extraction needs positions to 0.8 px and the isolation test, the camera-map mask
-positions to ~1 px. The pass-1 detector of an existing network set is the other option; it is not the default because a new
+positions to ~1 px. The pass-1 detector of an existing model is the other option; it is not the default because a new
 instrument has no set yet.
 - All detections (`spots.tracks_from: all`) are used for linking, the isolation test and the mask: a good-fit filter breaks
   tracks and hides neighbours from the isolation test (1809_2: 16 361 samples with the filter, 20 893 without).
@@ -216,7 +215,7 @@ Here the track samples are cut at round(mean of the track's fitted Gaussian cent
 refined-fit centre, not the smoothed peak; the validation checks the slope of (vectorial-fit position - Gaussian centre)
 against the fitted z (section 9).
 
-## 6. Stage e: network set (recipe of `runs/psfmatch/chain2.sh` + `eval.sh`)
+## 6. Stage e: model (recipe of `runs/psfmatch/chain2.sh` + `eval.sh`)
 
 Trainers (unchanged entry points, run through `simcode/auto/runwrap.py`, which patches `simcode.hd.realsim.PRESETS` in
 memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `analysis/nanoruler/nrwrap.py`):
@@ -237,10 +236,10 @@ if a calibration fit has no matched targets the template calibrations are copied
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 
-The set is registered in `<out>/train/netset.json` (format of `simcode/netsets.json`, absolute paths); stage f reads it
-through an in-memory addition to `config.netsets()` (no edit of `netsets.json`). The selection-aware sigma rescale (`sig_u`,
+The model is registered in `<out>/train/model.json` (format of `simcode/models.json`, absolute paths; `netset.json` before
+2026-11-14, still read); stage f reads it through an in-memory addition to `config.model_sets()` (no edit of `models.json`). The selection-aware sigma rescale (`sig_u`,
 fitted on a simulated movie with ground truth, `analysis/psf3d_nets/sigcal.py`) is not in the quick path; without it stage f
-runs with `--sig_u ''`.
+runs without it (the model's `sig_u` is empty).
 
 Cost of a full stage e on an idle RTX 3090 (measured on the m1809 / m25 / g13 chains): det 0.65 + hd 0.65 + p2det 1.1 +
 p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-rescale sim movie ~0.5 GPU-h.
@@ -275,7 +274,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
 - P6 (`hd/realsim.py`, `analysis/calib/plib.py`, `analysis/psf3d_nets/sigcal.py`): pixel size and preset values from the
   calib json / a preset json argument (`--preset`), instead of `PRESETS` / `PX_NM`.
 - P7 (`hd/gate.py`): scene photon / background settings from the preset.
-- P8 (`run.py`): expose `--det_batch`; accept a network set given as a json file (`--netset path.json`).
+- P8 (`run.py`): expose `--det_batch`; accept a model given as a json file (`--model path.json`).
 - P9 (`pyproject.toml`): `[project.scripts] simcode-auto = "simcode.auto.pipeline:main"`.
 
 ## 9. Validation (2026-11-13)

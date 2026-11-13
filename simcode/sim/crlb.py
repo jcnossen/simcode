@@ -21,8 +21,7 @@ from simcode.nn.blocks import extract_patches
 from simcode import config as _cfg
 
 a = types.SimpleNamespace(calib=_cfg.model(_cfg.INSITU_05))
-import os as _os
-_CDIV = int(_os.environ.get('GATE_CRLB_DIV', '3'))   # (2026-11-11) per-angle PSF CRLB batch divisor (memory only; same results)
+_CDIV = 3   # (2026-11-11) per-angle PSF CRLB batch divisor (memory only; same results)
 dev = 'cuda'; S = 64; P = 11; h = P // 2; R = 15; HR = R // 2
 BOXP, BOXM = 9, 14          # parameter set / expected-image set (Chebyshev px from the target pixel)
 
@@ -181,7 +180,6 @@ def psf_stack(rpsf, x, y, z, focus, chunk=1024):
     (2026-11-11) [N,8,R,R] (angle 0 | angle 1) if rpsf has a per-angle PSF (models() of a per-angle calib)."""
     pos = torch.stack([x - torch.round(x), y - torch.round(y), z], 1)
     kws = getattr(rpsf, 'angle_kw', None) or [{}]
-    if len(kws) > 1: chunk = min(chunk, int(_os.environ.get('GATE_PSF_INNER', chunk)))   # (2026-11-11) opt-in memory cap, per-angle PSF
     out = []
     for p in pos.split(chunk):
         f = torch.full((len(p),), focus, device=dev); im = []

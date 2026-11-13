@@ -3,8 +3,8 @@ GT-free, and pattern-free beyond the pattern the solve already uses; the same co
 
 Noise model of a window's network intensities around the model mean mu(p) (T = 6 frames):
     Sigma(theta) = s * Sigma_net + c^2 diag(mu^2) + c_a^2 (mu mu^T within each angle)            theta = (s, c, c_a)
-(s = cal 'sig_scale' (global scale of the network covariance incl. the kap_I2 bins), c = cal 'cmult', c_a = cal 'cmult_ang':
-exactly the Sigma(p) of msolve.pattern_solve_all.)
+(s = global scale of the network covariance incl. the kap_I2 bins, applied here as L -> sqrt(s) L; c = cal 'cmult', c_a = cal
+'cmult_ang': exactly the Sigma(p) of msolve.pattern_solve_all.)
 Residuals e = I_net - mu(p_hat) at the solve's MAP. Non-kinetic, isolated rows (no other pass-1 detection within R_ISO px in the
 same window). For a GLS fit of p = (x, y, B) with the Gaussian position prior (precision P = diag(1/s_p^2), 0 for B) the
 residual covariance is exactly V_e(theta) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^T (J = d mu / d p at p_hat), so
@@ -13,7 +13,7 @@ residual covariance is exactly V_e(theta) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^
                  B is shared, so h is the per-angle brightness ratio: it splits c_a from c)
 binned by the frame SNR^2 = mu_t^2 / Sigma_net,tt (low SNR pins s, high SNR pins c^2 + c_a^2) and the window SNR^2 of the
 contrast; theta minimises sum_bins wt (median u - 1/2)^2 (robust to FP / merged tails) at the fixed solutions; the solve is
-re-run with theta and the fit repeated (fixed point, 3 iterations). Pipeline use: run_dir(<output dir>) -> theta; make_calib(theta) -> the solve calibration (simcode.run --autoc 1).
+re-run with theta and the fit repeated (fixed point, 3 iterations). Analysis estimator (2026-11-14: no longer a pipeline stage): run_dir(<pipeline output dir>) -> theta; make_calib(theta) -> a solve calibration.
 The 'q/dof' of the solve uses dof = T + 2 - n_free
 (5 = 6 intensities + 2 prior pseudo-observations - (x, y, B); 3 with the kinetic on/off times)."""
 import json, os, glob
@@ -71,7 +71,7 @@ def pipeline_rows(d, chunks=None, nmax=120000, seed=0, pattern=None):
 
 # ------------------------------------------------------------------------------------------------------------- solve
 def with_theta(cal, th):
-    c = dict(cal); c['sig_scale'] = float(th[0]); c['cmult'] = float(th[1]); c['cmult_ang'] = float(th[2])
+    c = dict(cal); c['_s'] = float(th[0]); c['cmult'] = float(th[1]); c['cmult_ang'] = float(th[2])   # _s: applied to L here (solve_rows)
     return c
 
 
@@ -90,8 +90,9 @@ def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True):
         for c0 in range(0, n, chunk):
             sl = slice(c0, c0 + chunk)
             oo = {k: v[sl] for k, v in o.items()}
-            s = solve(oo, PW, b[sl], cal)
-            Sn = s['Sig'] / float(cal.get('sig_scale', 1.0))        # network part at scale 1 (incl. the kap_I2 bins)
+            sc_ = float(cal.get('_s', 1.0))                          # covariance scale s: L -> sqrt(s) L
+            s = solve(dict(oo, L=oo['L'] * sc_ ** 0.5), PW, b[sl], cal)
+            Sn = s['Sig'] / sc_                                       # network part at scale 1 (incl. the kap_I2 bins)
             pt = PW[b[sl]]
             il, dx, dy = C.illum_at(pt, s['r_map'][:, 0], s['r_map'][:, 1])
             Bh = s['mu'].sum(1) / il.sum(1).clamp(min=1e-6)
@@ -218,7 +219,7 @@ def make_calib(theta, table=None, src=''):
     from simcode import config
     c = json.load(open(config.model(table or config.CAL_P1_AUTOC)))
     s, cm, ca = theta
-    c.update(sig_scale=1.0, cmult=float(cm), cmult_ang=float(ca), autoc_theta=[float(s), float(cm), float(ca)], autoc_from=src)
+    c.update(cmult=float(cm), cmult_ang=float(ca), autoc_theta=[float(s), float(cm), float(ca)], autoc_from=src)
     return c
 
 

@@ -12,7 +12,7 @@ anywhere: no pixel-level per-frame intensity fit, no wing subtraction, no pixel-
                          in the pass-1 file format (wstart, x, y, sx, sy, z, p, phot, phot_t, I, sI, bg, out, tc, frame)
                          + L [n,6,6], x_det, y_det. pattern_est.py runs on these network intensities unchanged.
   pass 2                 the explicit intensity-domain pattern solve (simcode/hd/sc.sc_solve -> msolve: fringe starts,
-                         kinetic model selection, box 1.5, calibrated sigma; cal 'mix' = fringe-start posterior mean) with
+                         kinetic model selection, box 1.5, calibrated sigma, fringe-start posterior mean) with
                          the estimated pattern (pattern_frames of pattern_est.pt) on the stored head outputs; output in
                          the pass-2 format (x_hy0, y_hy0, sig_hy0 (mean calibrated sigma), kin_hy, fringe_hy, pf_hy,
                          chi2_hy, B_hy, Klin_hy) + sc columns (sx_cal, sy_cal, q_dof, phot, x_prior, y_prior, dnll), rows
@@ -21,7 +21,7 @@ Coordinates: movie (camera) pixels.
 """
 import json, time
 import numpy as np, torch
-from simcode.pipeline.common import Movie, region, pattern_frames
+from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
@@ -30,8 +30,6 @@ HEAD = _cfg.model(_cfg.HEAD)
 SC_CAL = _cfg.model(_cfg.CAL_P1_REAL)
 THR0 = 0.2
 
-
-CAND_PMIN = 0.5     # stored-candidate cut; run_uncalibrated --cand_pmin (2026-11-10, default unchanged)
 
 
 class Pass1SC:
@@ -78,7 +76,7 @@ class Pass1SC:
             if len(b) == 0: continue
             t_ = time.time()
             nbr = SCM.nbr_for(self.head, dd['logit'], b, iy, ix, xs, ys, lg)
-            s5 = torch.sigmoid(lg) >= CAND_PMIN                 # the gate operating point (score >= 0.5; run_uncalibrated --cand_pmin)
+            s5 = torch.sigmoid(lg) >= CAND_PMIN                 # stored-candidate cut (pipeline.common)
             b, iy, ix, xs, ys, lg = (v[s5] for v in (b, iy, ix, xs, ys, lg))
             if len(b) == 0: continue
             outs = []
@@ -111,10 +109,8 @@ class Pass1SC:
 
 
 @torch.no_grad()
-def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=None, field=None):
-    """pattern solve on the stored pass-1 head outputs of the `out` rows (identical rows for every pattern).
-    field (2026-11-10, opt-in, default None = unchanged): a pattern-field dict (simcode/pipeline/pattern_field.py); the
-    pattern of each row then gets the phase map phi_a(r_prior) added and its depth scaled by f_a(r_prior)."""
+def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=None):
+    """pattern solve on the stored pass-1 head outputs of the `out` rows (identical rows for every pattern)"""
     from simcode.hd import sc as SCM
     timing = timing if timing is not None else {}
     t_ = time.time()
@@ -135,16 +131,7 @@ def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=Non
         o = dict(I=tt(R['I'][idx]), L=tt(R['L'][idx]), x=tt(R['x'][idx] - X0), y=tt(R['y'][idx] - Y0),
                  lsxy=torch.log(tt(np.c_[R['sx'][idx], R['sy'][idx]])), x_det=tt(R['x_det'][idx] - X0), y_det=tt(R['y_det'][idx] - Y0))
         b = torch.tensor(inv[sl], device=dev)
-        if field is not None:
-            from simcode.pipeline.pattern_field import field_at
-            dp, df = field_at(field, R['x'][idx].astype(np.float64), R['y'][idx].astype(np.float64))
-            PWr = PW[b].clone()                                                       # [n, T, 5] per-row pattern
-            ang = torch.tensor(((ws[sl][:, None] + np.arange(T)[None]) % 6) // 3, device=dev)
-            dpt = torch.gather(tt(dp), 1, ang); dft = torch.gather(tt(df), 1, ang)
-            PWr[..., 2] = PWr[..., 2] + dpt; PWr[..., 3] = (PWr[..., 3] * dft).clamp(0, 1)
-            so = SCM.sc_solve(o, PWr, torch.arange(len(idx), device=dev), cal)
-        else:
-            so = SCM.sc_solve(o, PW, b, cal)
+        so = SCM.sc_solve(o, PW, b, cal)
         r = so['r'].cpu().numpy(); sc_ = so['s_cal'].cpu().numpy()
         out['x_hy0'][sl] = r[:, 0] + X0; out['y_hy0'][sl] = r[:, 1] + Y0
         out['sx_cal'][sl] = sc_[:, 0]; out['sy_cal'][sl] = sc_[:, 1]; out['sig_hy0'][sl] = sc_.mean(1)

@@ -1,5 +1,5 @@
 """
-Paths of a SIMCODE v2 installation and the network sets. Nothing in the package hard-codes an absolute path; everything goes
+Paths of a SIMCODE v2 installation and the models (a "model" = one trained set of networks + their solve calibrations). Nothing in the package hard-codes an absolute path; everything goes
 through here.
 
 Roots, each set by (in order of precedence) an environment variable, a key in a json config file, or a default:
@@ -18,7 +18,8 @@ variables, <repo>/simcode2.json, ~/.config/simcode2.json (the new name wins when
 
 resolve(p, kind) turns a user path into an absolute one: absolute paths and paths that exist relative to the current directory
 are kept; otherwise the path is looked up under the given root (models: also under models/calib and models/insitu).
-netset(name) returns one network set of simcode/netsets.json (the single definition of the sets).
+model_set(name) returns one model of simcode/models.json (the single definition of the models; netset() / netsets() are the
+names used before 2026-11-14, kept as aliases).
 """
 import json, os
 from pathlib import Path
@@ -93,38 +94,44 @@ def model(name):
     return resolve(name, 'models')
 
 
-# ---- network sets: the single definition is simcode/netsets.json (next to this file)
-NETSETS_FILE = Path(__file__).with_name('netsets.json')
+# ---- models: the single definition is simcode/models.json (next to this file); called "network sets" (netsets.json) until
+# 2026-11-14
+MODELS_FILE = Path(__file__).with_name('models.json')
+NETSETS_FILE = MODELS_FILE
 _nets = None
 
 
-def netsets():
-    """the whole netsets.json (network sets, '_default', '_production')"""
+def model_sets():
+    """the whole models.json (models, '_default', '_production')"""
     global _nets
-    if _nets is None: _nets = json.load(open(NETSETS_FILE))
+    if _nets is None: _nets = json.load(open(MODELS_FILE))
     return _nets
 
 
-def netset(name=None):
-    """network set by name (default: env SIMCODE_NETSET, else '_default' of netsets.json) -> dict with the file names relative
-    to the models directory: det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u ('<pass 1 json>,<pass 2 json>'),
-    psf, name"""
-    S = netsets()
-    name = name or env('NETSET') or S['_default']
+def model_set(name=None):
+    """model by name (default: env SIMCODE_MODEL (or the older SIMCODE_NETSET), else '_default' of models.json) -> dict with the
+    file names relative to the models directory: det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u
+    ('<pass 1 json>,<pass 2 json>'), psf, name"""
+    S = model_sets()
+    name = name or env('MODEL') or env('NETSET') or S['_default']
     if name.startswith('_') or name not in S:
-        raise KeyError(f'network set {name!r} is not defined in {NETSETS_FILE} (sets: {[k for k in S if not k.startswith("_")]})')
+        raise KeyError(f'model {name!r} is not defined in {MODELS_FILE} (models: {[k for k in S if not k.startswith("_")]})')
     d = {k: v for k, v in S[name].items() if not k.startswith('_')}
     d['name'] = name
     return d
 
 
+netsets = model_sets          # names before 2026-11-14
+netset = model_set
+
+
 def production():
-    """the paper's production recipe ('_production' of netsets.json): flags, selection, datasets (movie, calib, netset)"""
-    return netsets()['_production']
+    """the paper's production recipe ('_production' of models.json): calibration kind, selection, datasets (movie, calib, model)"""
+    return model_sets()['_production']
 
 
-# files of the default network set (models directory, relative names)
-_S = netset()
+# files of the default model (models directory, relative names)
+_S = model_set()
 DET = _S['det']                                                # pass-1 detector
 HEAD = _S['head']                                              # pass-1 head (SCHead4, neighbour-aware)
 P2_DET = _S['p2_det']                                          # pass-2 (pattern-aware) detector

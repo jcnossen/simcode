@@ -10,6 +10,9 @@ from simcode.psf.vectorial import VectorialPSF
 from simcode.fileio.movie import TiffMovie, Prefetch
 
 PX_NM = 108.33
+# stored-candidate detection cut of the pass-1 / pass-2 front-ends: the head and the solve run on the detector candidates with
+# p >= CAND_PMIN (production value since 2026-11-10; the phase-calibrated selection needs candidates below p 0.63)
+CAND_PMIN = 0.3
 
 
 # the readers live in simcode/fileio/movie.py (shared with the 4Pi pipelines); the old names stay valid

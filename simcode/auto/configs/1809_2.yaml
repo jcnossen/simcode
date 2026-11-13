@@ -20,5 +20,5 @@ camera:
 psf:
   init: [zero, f0.1, f0.2, f0.3, beads]   # multi-start (focus-staggered; focus / z gauge), lowest base-fit NLL wins
 process:
-  netset: m1809
+  model: m1809
 gpus: [1, 2, 0]

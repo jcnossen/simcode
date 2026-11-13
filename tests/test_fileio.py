@@ -6,7 +6,7 @@ CPU tests of the shared file handling (simcode/fileio) and of the configuration 
   work driver   : atomic writes (a leftover temporary file is neither 'done' nor matched by '*.npz'), resume skips finished
                   units, claims are exclusive between processes, a claim of a dead process is taken over, a killed writer
                   leaves no output, per-unit records, the claim loop ends only when all units are done
-  config        : network sets resolve; the pre-rename names (SIMCODE2_* variables, simcode2.json) are still accepted
+  config        : models resolve (and the older netset names); the pre-rename names (SIMCODE2_* variables, simcode2.json) are still accepted
 """
 import glob, json, multiprocessing as mp, os, signal, subprocess, sys, tempfile, time
 import numpy as np
@@ -175,7 +175,7 @@ def test_config_names():
                            env={k: v for k, v in dict(env, **e).items() if v is not None})
         assert r.returncode == 0, r.stderr
         return r.stdout.strip()
-    clean = dict(SIMCODE_OUT=None, SIMCODE2_OUT=None, SIMCODE_MODELS=None, SIMCODE2_MODELS=None, SIMCODE_NETSET=None, SIMCODE2_NETSET=None)
+    clean = dict(SIMCODE_OUT=None, SIMCODE2_OUT=None, SIMCODE_MODELS=None, SIMCODE2_MODELS=None, SIMCODE_NETSET=None, SIMCODE2_NETSET=None, SIMCODE_MODEL=None, SIMCODE2_MODEL=None)
     with tempfile.TemporaryDirectory() as d:
         json.dump(dict(out='o_new'), open(f'{d}/simcode.json', 'w')); json.dump(dict(out='o_old', data='/dd'), open(f'{d}/simcode2.json', 'w'))
         c = 'from simcode import config; print(config.root("out"), config.root("data"), config.root("fourpi"))'
@@ -184,23 +184,25 @@ def test_config_names():
         assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json', SIMCODE2_OUT='/x')).split()[0] == '/x'                    # old variable name
         assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json', SIMCODE2_OUT='/x', SIMCODE_OUT='/y')).split()[0] == '/y'  # the new name wins
     from simcode import config
-    S = config.netsets()
+    S = config.model_sets()
+    assert config.netsets is config.model_sets and config.netset is config.model_set           # the names before 2026-11-14
     sets = [k for k in S if not k.startswith('_')]
-    assert S['_default'] in sets and config.netset()['name'] == (config.env('NETSET') or S['_default'])
+    assert S['_default'] in sets and config.model_set()['name'] == (config.env('MODEL') or config.env('NETSET') or S['_default'])
     for n in sets:
-        N = config.netset(n)
+        N = config.model_set(n)
         assert all(k in N for k in ('det', 'head', 'cal_sim', 'cal_real', 'p2_det', 'p2_head', 'p2_cal_sim', 'p2_cal_real', 'sig_u', 'psf'))
         for k in ('cal_sim', 'cal_real', 'p2_cal_sim', 'p2_cal_real'):             # the calibration json files are in the repository
             assert os.path.exists(os.path.join(config.REPO, 'models', N[k])), (n, N[k])
     for ds, D in config.production()['datasets'].items():
-        assert D['netset'] is None or D['netset'] in sets
+        assert D['model'] is None or D['model'] in sets
         assert os.path.exists(os.path.join(config.REPO, 'models', D['calib'])), D['calib']
     try:
-        config.netset('default'); assert False
+        config.model_set('default'); assert False
     except KeyError:
         pass
     assert run('from simcode import config; print(config.netset()["name"])', **dict(clean, SIMCODE2_NETSET='m25')) == 'm25'
-    print(f'  ok config: sets {sets}, default {S["_default"]}; old environment / config file names accepted')
+    assert run('from simcode import config; print(config.model_set()["name"])', **dict(clean, SIMCODE_MODEL='m25')) == 'm25'
+    print(f'  ok config: models {sets}, default {S["_default"]}; old environment / config file names accepted')
 
 
 if __name__ == '__main__':

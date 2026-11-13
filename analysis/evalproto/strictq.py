@@ -50,13 +50,15 @@ def main(argv=None):
     # drift as a plain [F, 2] array for simcode.strict
     dnpy = os.path.join(os.environ.get('TMPDIR', '/tmp'), f'strictq_drift_{os.getpid()}.npy')
     np.save(dnpy, load_drift(a.drift))
-    runs = [('default', None)] + [('sigma_ref', float(s)) for s in a.sigma_ref.split(',') if s] + [('fixed', float(q)) for q in a.q.split(',') if q]
+    # (2026-11-14) the sigma_ref rule was removed from simcode.strict; --sigma_ref is no longer accepted
+    if a.sigma_ref: raise SystemExit('--sigma_ref: the sigma_ref rule was removed from simcode.strict (2026-11-14)')
+    runs = [('default', None)] + [('fixed', float(q)) for q in a.q.split(',') if q]
     log('| mode | sigma_ref (nm) | q (all rows) | strict rows on grid | occupied bins | bins / SIMCODE |')
     log('|---|---|---|---|---|---|')
     T0 = None
     R = {}
     for mode, v in runs:
-        T, info = SP.build_table(a.ours, a.tag, px, dnpy, v if mode == 'fixed' else None, v if mode == 'sigma_ref' else None)
+        T, info = SP.build_table(a.ours, a.tag, px, dnpy, v if mode == 'fixed' else None)
         T0 = T
         g = (T['frame'] % a.grid == 0) & T['strict']
         b = len(np.unique(SP.bin20(T['x_dc'][g], T['y_dc'][g], px)))

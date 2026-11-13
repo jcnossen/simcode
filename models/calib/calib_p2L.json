@@ -11,8 +11,6 @@
  "kap_p_raw": 0.8945196270942688,
  "kap_I2_raw": 0.7926039058284609,
  "box": 1.5,
- "ms_xdet": false,
- "mix": "pm",
  "mix_T": 1.0,
  "note": "2026-11-09 pass-2 benchmark calibration (p2L: front p2L, prior own); tuning seed 202 of ['rs05qm', 'rs25qm', 'rs05pm']; base calib_sc_hd_sc5nbb15_pm_bright.json",
  "cmult": 0.1,
@@ -75,6 +73,5 @@
    1.107264757156372,
    1.0539305210113525
   ]
- },
- "p2_prior": "own"
+ }
 }
