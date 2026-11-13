@@ -3,8 +3,7 @@ Origin of the spline method: torch-spline-3d (package torch_convspline) by Jelme
 https://gitlab.com/jcnossen/torch-spline-3d . The convolutional 3D spline, i.e. evaluating a Catmull-Rom 3D spline
 (value and d/dz, d/dy, d/dx) as a grouped conv2d of 4x4x4 weight kernels over the block of knots around each emitter,
 is the method developed there; this module re-implements that evaluation for the PSF lookup table (with stride S and a
-single-index knot gather, see below) and copies its Catmull-Rom geometry matrix (geometry_matrix). Credit for the
-approach goes to that repository.
+single-index knot gather, see below).
 
 Cached PSF for the fast LM: an oversampled z-stack of the calibrated VectorialPSF, interpolated with that
 conv2d-based Catmull-Rom 3D spline, which also gives d/d(z, y, x).
@@ -29,8 +28,7 @@ from simcode.psf.vectorial import VectorialPSF, copy_psf_extras
 
 
 def geometry_matrix(device, tau: float = 0.5):
-    """Catmull-Rom basis as in torch-spline-3d (torch_convspline.conv_spline.geometry_matrix, MIT licence, (c) 2023/2024
-    Jelmer Cnossen), vendored unchanged: per-axis weights w = [1, t, t^2, t^3] @ G."""
+    """Catmull-Rom basis: per-axis weights w = [1, t, t^2, t^3] @ G."""
     return torch.tensor([
         [0.0, 1.0, 0.0, 0.0],
         [-tau, 0.0, tau, 0.0],

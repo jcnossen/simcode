@@ -24,10 +24,11 @@ QMED = {'0.5nM': 1260.0, '2.5nM': 1890.0}
 
 
 class Gen2(Gen):
-    def __init__(self, H=64, W=64, T=6, seed=0, calib=None):
+    def __init__(self, H=64, W=64, T=6, seed=0, calib=None, pgen=None):
         super().__init__(H, W, T, seed, calib=calib)       # calib (2026-11-11, opt-in): PSF calib mixture, see hd/data.Gen
         for rs in self.all_rs():
             rs.p['frame_sd'] = 0.09
+            if pgen: rs.p['pgen'] = dict(pgen)   # (2026-11-13 generic p2, opt-in) generic pattern draw (hd/realsim.RealSim._pgen); None = unchanged
 
     def batch2(self, nb, mix='paper', dens=(0.0005, 0.04), pair_frac=0.25, pair_sep=(0.5, 3.0), pair_curr=False,
                tau_r=(15.0, 80.0), bright_tail=(0.1, 2000.0, 20000.0), pert_scale=1.0, bgr=(1.0, 30.0),

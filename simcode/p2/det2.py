@@ -137,6 +137,13 @@ def eval_hold(net, H, p2=True, thr=0.5):
 
 
 # ------------------------------------------------------------------------------------------------ training
+def _load_pgen(v):
+    """(2026-11-13 generic p2, opt-in) --pgen: '' -> None (unchanged), a json file path, or inline json"""
+    import json as _j, os as _o
+    if not v: return None
+    return _j.load(open(v)) if _o.path.exists(v) else _j.loads(v)
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -161,6 +168,7 @@ def train(argv):
     # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
+    ap.add_argument('--pgen', default='')   # (2026-11-13 generic p2, opt-in; '' = unchanged) json file or inline json: realsim pgen dict
     ap.add_argument('--init_n1', default='')               # (opt-in) det_n1-type checkpoint for the zero-init (default det_n1.pt)
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-p2det')     # recognizable name in nvidia-smi / ps
@@ -174,7 +182,8 @@ def train(argv):
         from simcode.hd.realgen import RGen
         gen = RGen(a.size, a.size, 6, seed=a.seed)
     else:
-        gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None)
+        gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None,
+                   pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
     psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))

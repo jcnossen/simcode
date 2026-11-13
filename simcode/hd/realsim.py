@@ -325,6 +325,54 @@ class RealSim:
         return x, y, site, z_site, dict(site_x=sx, site_y=sy, site_z=z_site, site_fov=sfov, site_a=sa, site_b=sb, site_w=w)
 
     # ----------------------------------------------------------------------------------------------- pattern
+    def _pgen(self, pg, nb, k, phi, m, rel, steps):
+        """(2026-11-13 generic p2, opt-in; RealSim key pgen = dict) generic illumination patterns, so the pass-2 networks accept an
+        arbitrary measured pattern. Per FOV, with probability 1 - p_std (else the standard draw above is kept):
+          pitch    common pitch log-uniform pitch (px) x per-angle factor U(1 +- pitch_ang)
+          angles   orientation of angle 0 U(ang0) deg, of angle 1 U(ang1) deg with the separation in sep (rejection, 16 tries,
+                   fallback ang0 + 90); the sectors keep angle 0 within 45 deg of x and angle 1 within 45 deg of y, as
+                   core.angle_index / illum.angle_of (|kx| > |ky|) and the solver require
+          ksign    random sign per angle of k (the phase is negated with it: same illumination, other quadrature convention)
+          phase    'indep': every slot's phase U(0, 2 pi) (no step structure: any step size / direction / irregular steps);
+                   'steps': the standard equal steps (sign-flipped with k)
+          order    frame -> slot assignment, probabilities (cycle, perm, inter): cycle = the standard order rolled by U{0..5};
+                   perm = random permutation of the 6 slots; inter = interleaved 0,3,1,4,2,5 rolled by U{0..5}.
+                   angle = slot // 3 stays true, so every steps // 3 user (bg_ang, phase field, emitter angle factor, per-angle
+                   PSF, estimate errors) remains consistent
+          depth    per-angle depth U(depth), + N(0, 0.005) per slot
+          rel / rel_ang  per-slot and per-angle power factors log-uniform, normalised to mean 1 over the slots"""
+        g = lambda *s: torch.rand(*s, device=dev)
+        U = lambda r, *s: r[0] + (r[1] - r[0]) * g(*s)
+        LU = lambda r, *s: torch.exp(math.log(r[0]) + (math.log(r[1]) - math.log(r[0])) * g(*s))
+        gm = g(nb) >= pg.get('p_std', 0.0)                                                     # generic FOVs
+        pa = pg.get('pitch_ang', 0.03)
+        pit = LU(pg.get('pitch', (1.8, 4.0)), nb, 1) * (1 + (2 * g(nb, 2) - 1) * pa)          # [nb,2]
+        th0 = torch.deg2rad(U(pg.get('ang0', (-40.0, 40.0)), nb))
+        sep = pg.get('sep', (60.0, 120.0))
+        c1 = torch.deg2rad(U(pg.get('ang1', (50.0, 130.0)), nb, 16))
+        d1 = torch.rad2deg(c1 - th0[:, None]); okc = (d1 >= sep[0]) & (d1 <= sep[1])
+        th1 = torch.where(okc.any(1), c1.gather(1, okc.float().argmax(1, keepdim=True))[:, 0], th0 + math.pi / 2)
+        th = torch.stack([th0, th1], 1)
+        kg = torch.stack([torch.cos(th), torch.sin(th)], -1) * (2 * math.pi / pit)[..., None]   # [nb,2,2]
+        sg = torch.where(g(nb, 2) < 0.5, -1.0, 1.0) if pg.get('ksign', True) else torch.ones(nb, 2, device=dev)
+        kg = kg * sg[..., None]
+        sg6 = sg.repeat_interleave(3, 1)                                                       # [nb,6] per slot
+        phg = g(nb, 6) * 2 * math.pi if pg.get('phase', 'indep') == 'indep' else phi * sg6
+        mg = (U(pg.get('depth', (0.5, 1.0)), nb, 2).repeat_interleave(3, 1) + torch.randn(nb, 6, device=dev) * 0.005).clamp(0, 1)
+        rg = LU(pg.get('rel', (0.8, 1.25)), nb, 6) * LU(pg.get('rel_ang', (0.8, 1.25)), nb, 2).repeat_interleave(3, 1)
+        rg = rg / rg.mean(1, keepdim=True)
+        T = steps.shape[1]; ar = torch.arange(T, device=dev)
+        pr = torch.tensor(pg.get('order', (0.4, 0.4, 0.2)), device=dev, dtype=torch.float32)
+        mode = torch.multinomial(pr / pr.sum(), nb, replacement=True)                            # 0 cycle, 1 perm, 2 inter
+        roll = torch.randint(0, 6, (nb, 1), device=dev)
+        s_cyc = (roll + ar[None]) % 6
+        s_perm = torch.argsort(g(nb, 6), 1)[:, :T]
+        s_int = torch.tensor([0, 3, 1, 4, 2, 5], device=dev)[(roll + ar[None]) % 6]
+        stg = torch.where((mode == 0)[:, None], s_cyc, torch.where((mode == 1)[:, None], s_perm, s_int))
+        w1, w2, w3 = gm[:, None], gm[:, None, None], gm[:, None]
+        return (torch.where(w2, kg, k), torch.where(w1, phg, phi), torch.where(w1, mg, m), torch.where(w1, rg, rel),
+                torch.where(w3, stg, steps))
+
     def pattern(self, nb, exact_est=False):
         p = self.p; T = self.T; H, W = self.H, self.W
         g = lambda *s: torch.rand(*s, device=dev)
@@ -343,9 +391,15 @@ class RealSim:
         rel = rel / rel.mean(1, keepdim=True)
         step0 = torch.randint(0, 2, (nb,), device=dev) * 3       # windows start at a step-0 or step-3 frame
         steps = (step0[:, None] + torch.arange(T, device=dev)[None]) % 6
+        pg = p.get('pgen')
+        if pg:   # (2026-11-13 generic p2, opt-in) generic pattern draw, see _pgen; absent key = unchanged (no extra draws)
+            k, phi, m, rel, steps = self._pgen(pg, nb, k, phi, m, rel, steps)
         angle = steps // 3
         kk = k[torch.arange(nb, device=dev)[:, None], angle]                                    # [nb,T,2]
-        eps = torch.cumsum(torch.randn(nb, T, device=dev), 1) * (0.25 / PX_NM * 2 * math.pi / 2.07)   # drift (rad)
+        if pg:   # (2026-11-13 generic p2, opt-in) drift 0.25 nm / frame converted with each frame's own |k| (not the fixed 2.07 px pitch)
+            eps = torch.cumsum(torch.randn(nb, T, device=dev), 1) * (0.25 / PX_NM) * kk.norm(dim=-1)
+        else:
+            eps = torch.cumsum(torch.randn(nb, T, device=dev), 1) * (0.25 / PX_NM * 2 * math.pi / 2.07)   # drift (rad)
         ph = phi.gather(1, steps) + eps; mm = m.gather(1, steps); rr = rel.gather(1, steps)
         patt = torch.stack([kk[..., 0], kk[..., 1], ph, mm, rr], -1)                             # [nb,T,5]
         # estimate errors
