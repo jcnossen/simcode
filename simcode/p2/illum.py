@@ -34,6 +34,11 @@ REL_SD = 0.02
 MODELS = dict(
     v1=dict(pitch=PITCH_SD, ang=ANG_SD, ph=PH_SD, phf=PHF_SD, dlo=DEP_LO, dhi=DEP_HI, dang=0.01, rel=REL_SD, rela=0.0),
     real=dict(pitch=1.5e-3, ang=7.0e-4, ph=0.16, phf=0.06, dlo=-0.10, dhi=0.04, dang=0.02, rel=0.02, rela=0.03))
+# (2026-11-13 generic p2, opt-in) 'realw': as 'real', but the per-angle common phase error sd, the per-frame phase error sd and the
+# per-frame relint jitter sd are drawn PER FOV from ranges (lo, hi) (non-repeating cycle-to-cycle pattern jitter of mechanically
+# stepped setups: the networks learn how much to trust the pattern; SIMFLUX nanoruler setup measured 0.058 rad common per
+# orientation, no significant step-to-step jitter). A tuple value = per-FOV U(lo, hi) sd; existing models unchanged (no extra draws).
+MODELS['realw'] = dict(MODELS['real'], ph=(0.0, 0.25), phf=(0.0, 0.20), rel=(0.0, 0.05))
 
 
 def angle_of(patt):
@@ -50,6 +55,9 @@ def perturb(patt, H, W, scale=1.0, model='v1'):
     dev = patt.device
     ang = angle_of(patt)
     g = lambda *s: torch.randn(*s, device=dev)
+    # (2026-11-13 generic p2, opt-in) per-FOV sd for tuple-valued entries (model 'realw'); scalars unchanged
+    _sd = lambda v: (v[0] + (v[1] - v[0]) * torch.rand(nb, 1, device=dev)) if isinstance(v, tuple) else v
+    PH_SD, PHF_SD, REL_SD = _sd(PH_SD), _sd(PHF_SD), _sd(REL_SD)
     s = 1 + g(nb, 2) * PITCH_SD * scale
     th = g(nb, 2) * ANG_SD * scale
     sa, ta = s.gather(1, ang), th.gather(1, ang)
