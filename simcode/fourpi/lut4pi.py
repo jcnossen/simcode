@@ -4,7 +4,8 @@ dependence.
 For a global interferometer phase offset Phi (psf4pi phi_extra) every channel image is exactly
     g_c(x, y, z; Phi) = inc_c(x, y, z) + cos(Phi) cr_c(x, y, z) - sin(Phi) ci_c(x, y, z)
 (inc = incoherent part, cr + i ci = coherent cross term). The three components per channel are tabulated from
-g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks, reusing simcode.psf.lut.PSFLUT's evaluation (instances are
+g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks, reusing simcode.psf.lut.PSFLUT's evaluation (the convolutional 3D spline of torch-spline-3d,
+https://gitlab.com/jcnossen/torch-spline-3d) (instances are
 created with their knot stacks set directly; PSFLUT itself is imported, not modified).
 
 LUT4Pi(psf, zmin, zmax).evaluate(pos [N,3], Phi [N], grad=False) -> [N,4,P,P] (and d/dx, d/dy, d/dz, d/dPhi).

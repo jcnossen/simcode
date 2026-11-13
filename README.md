@@ -44,8 +44,10 @@ Dependencies:
 
 - numpy, scipy, tifffile, torch (CUDA GPU required); matplotlib for the calibration / figure scripts; h5py for
   `--format hdf5` and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
-- The PSF LUT's Catmull-Rom spline basis is vendored from torch-spline-3d (`simcode/psf/lut.py`), so that package is no
-  longer needed.
+- The PSF lookup tables use the convolutional 3D spline (Catmull-Rom spline evaluated as a grouped conv2d, value and
+  gradients) from torch-spline-3d by Jelmer Cnossen (MIT, https://gitlab.com/jcnossen/torch-spline-3d). `simcode/psf/lut.py`
+  re-implements its evaluation for the PSF LUT (strided, single-index knot gather) and copies its geometry matrix, so the
+  package itself is not a dependency.
 
 Only the baselines need more:
 

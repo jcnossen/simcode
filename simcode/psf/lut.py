@@ -1,7 +1,13 @@
 """
-Cached PSF for the fast LM: an oversampled z-stack of the calibrated VectorialPSF, interpolated with the user's
-conv2d-based Catmull-Rom 3D spline (as in torch-spline-3d / torch_convspline, J. Cnossen, MIT licence; the only piece
-needed, the Catmull-Rom geometry matrix, is vendored below), which also gives d/d(z, y, x).
+Origin of the spline method: torch-spline-3d (package torch_convspline) by Jelmer Cnossen, MIT licence,
+https://gitlab.com/jcnossen/torch-spline-3d . The convolutional 3D spline, i.e. evaluating a Catmull-Rom 3D spline
+(value and d/dz, d/dy, d/dx) as a grouped conv2d of 4x4x4 weight kernels over the block of knots around each emitter,
+is the method developed there; this module re-implements that evaluation for the PSF lookup table (with stride S and a
+single-index knot gather, see below) and copies its Catmull-Rom geometry matrix (geometry_matrix). Credit for the
+approach goes to that repository.
+
+Cached PSF for the fast LM: an oversampled z-stack of the calibrated VectorialPSF, interpolated with that
+conv2d-based Catmull-Rom 3D spline, which also gives d/d(z, y, x).
 
 The pixel-integrated PSF is shift invariant: psf(x, y, z)[i, j] = g(o_j - x, o_i - y, z), o = pixel offset from the ROI
 centre. g is sampled once on a uniform grid (spacing 1/S px in u, v; hz um in z) by evaluating the same VectorialPSF
