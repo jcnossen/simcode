@@ -63,15 +63,15 @@ def main():
             ax[1, 1].plot(t, g('jaccard') - u['jaccard'], **kw)
             ax[1, 2].plot(t, rms / u['rms_nm'], **kw)
             ax[1, 3].plot(t, g('n_all') / u['n_all'], **kw)
-    ax[1, 0].set_ylim(-3, 5); ax[1, 0].set_ylabel('FRC − FRC(u ≤ 0.45) (nm)'); ax[1, 0].set_title('e  sims: FRC (lower is better; sets < 2000 rows hidden)', loc='left', fontsize=9)
-    ax[1, 1].set_ylim(-0.25, 0.2); ax[1, 1].set_ylabel('Jaccard − Jaccard(u ≤ 0.45)'); ax[1, 1].set_title('f  sims: Jaccard 10 nm (higher is better)', loc='left', fontsize=9)
-    ax[1, 2].set_ylim(0.7, 1.6); ax[1, 2].set_ylabel('RMS error vs GT / u ≤ 0.45'); ax[1, 2].set_title('g  sims: RMS error vs GT (sets < 2000 rows hidden)', loc='left', fontsize=9)
-    ax[1, 3].set_yscale('log'); ax[1, 3].set_ylim(0.003, 3); ax[1, 3].set_ylabel('count / count(u ≤ 0.45)'); ax[1, 3].set_title('h  sims: localizations', loc='left', fontsize=9)
+    ax[1, 0].set_ylim(-3, 5); ax[1, 0].set_ylabel('FRC − FRC(u ≤ 0.45) (nm)'); ax[1, 0].set_title('e  sims: FRC, lower is better\n(sets < 2000 rows hidden)', loc='left', fontsize=9)
+    ax[1, 1].set_ylim(-0.25, 0.2); ax[1, 1].set_ylabel('Jaccard − Jaccard(u ≤ 0.45)'); ax[1, 1].set_title('f  sims: Jaccard 10 nm,\nhigher is better', loc='left', fontsize=9)
+    ax[1, 2].set_ylim(0.7, 1.6); ax[1, 2].set_ylabel('RMS error vs GT / u ≤ 0.45'); ax[1, 2].set_title('g  sims: RMS error vs ground truth\n(sets < 2000 rows hidden)', loc='left', fontsize=9)
+    ax[1, 3].set_yscale('log'); ax[1, 3].set_ylim(0.003, 3); ax[1, 3].set_ylabel('count / count(u ≤ 0.45)'); ax[1, 3].set_title('h  sims: localizations\n(all rows of the rule)', loc='left', fontsize=9)
     for k in range(4): ax[1, k].axhline(0 if k < 2 else 1, color=INK, lw=0.8, ls=':')
-    h = ax[1, 3].get_legend_handles_labels()
+    h = ax[1, 2].get_legend_handles_labels()
     from matplotlib.lines import Line2D
     dh = [Line2D([], [], color=INK, ls=LS[j], lw=1.6, label=f'density {d}') for j, d in enumerate(('0.5', '1', '2', '4'))]
-    ax[1, 3].legend(h[0] + dh, h[1] + [x.get_label() for x in dh], fontsize=7, frameon=False, loc='lower right')
+    ax[1, 2].legend(h[0] + dh, h[1] + [x.get_label() for x in dh], fontsize=7, frameon=False, loc='upper left')
     for A in ax.flat:
         A.axvline(a.chosen, color='#0b0b0b', lw=1, alpha=0.5); A.set_xlim(5, 16.8); A.grid(axis='y', color='#e5e4e0', lw=0.6)
     for A in ax[1]: A.set_xlabel(r'$\sigma_{max}$: max($\sigma_x$, $\sigma_y$) ≤ $\sigma_{max}$ (nm)')

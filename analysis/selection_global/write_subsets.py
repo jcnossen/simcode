@@ -17,7 +17,7 @@ for ds, run in RUNS.items():
     T = {k: L[k] for k in ('x', 'y', 'frame', 'sx', 'sy', 'photons', 'strict_u')}; T['px_nm'] = L['px_nm']
     fn = SP.write_subset(T, f'{REPO}/{run}/locs_p2', 'main', sigma_max=a.sigma_max)
     S = np.load(fn); C = np.load(f'{REPO}/out/selection_global/cache/{ds}.npz')
-    m = np.maximum(C['sx'], C['sy']) * float(L['px_nm']) <= a.sigma_max
+    m = np.maximum(C['sx'], C['sy']).astype(np.float64) * float(L['px_nm']) <= a.sigma_max
     assert np.array_equal(S['x'], C['x'][m]) and np.array_equal(S['frame'], C['frame'][m])
     ij = f'{REPO}/{run}/locs_p2_info.json'; info = json.load(open(ij))
     info.update(main_rule='max(sx, sy) <= sigma_max (rows with a rank)', sigma_max=a.sigma_max, n_main=int(len(S['x'])),
