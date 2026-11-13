@@ -1,5 +1,9 @@
 """Step 5 pattern diagnostics on the refit tables (p2_*.npz). usage: python diag_pattern.py <cell>
 Writes out/4pi/smlm/diag/pattern_<cell>.json and figures fig/pattern_<cell>_*.png."""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -8,7 +12,7 @@ from render import load_locs
 from pattern import AnglePattern, wrap, cmean, emitter_phase, refine_k, slotZ
 from register import feats
 
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+OUT = f'{P4}/smlm'
 K0 = (np.array([3.84, -0.026]), np.array([0.0, 3.852]))
 
 

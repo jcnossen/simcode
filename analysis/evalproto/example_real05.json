@@ -1,5 +1,5 @@
 {"name": "real 0.5 nM", "mode": "real", "grid": 3, "reference": "SIMCODE (b)",
- "_comment": "paths: a simcode2.run output dir (pass2_est_* = pass 1, pass2_est2_* = pass 2), the sign-fixed SIMCODE npz (analysis/baselines/run_simcode_real.py ndi ... --fix_sign 1) and each set's own DME v2 drift (analysis/baselines/dme_drift.py). Use grid 6 at 20 nM.",
+ "_comment": "paths: a simcode.run output dir (pass2_est_* = pass 1, pass2_est2_* = pass 2), the sign-fixed SIMCODE npz (analysis/baselines/run_simcode_real.py ndi ... --fix_sign 1) and each set's own DME v2 drift (analysis/baselines/dme_drift.py). Use grid 6 at 20 nM.",
  "sets": {"ours p1":     {"kind": "ours", "dir": "out_05nM", "tag": "est",  "drift": "out_05nM/drift_p1.npy"},
           "ours p2L":    {"kind": "ours", "dir": "out_05nM", "tag": "est2", "drift": "out_05nM/drift_p2.npy"},
           "SIMCODE (b)": {"kind": "simcode", "npz": "simcode_05nM/sc_b.npz", "drift": "simcode_05nM/drift_sc_b.npy"}}}

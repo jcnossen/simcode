@@ -7,7 +7,7 @@
 usage: fit_cal.py out.json scen1,scen2 '{"cmult":0.10,"cmult_ang":0.10}' [base.json]"""
 import os
 import sys, json, numpy as np
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import blib as B
 EDG = [100, 300, 500, 800, 1200, 2000, 3000, 5000, 1e9]

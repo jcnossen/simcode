@@ -6,14 +6,15 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/gatek4pi.py --head v9   -> 
 """
 import argparse, json, math, os, sys
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.sim4pi import Sim4Pi
-from simcode2.fourpi.solve4pi import psi_from_eps
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.loadhead import load_head
+from simcode.fourpi.setup import P4
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.fourpi.solve4pi import psi_from_eps
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.loadhead import load_head
 
 EDGES = (1000, 2000, 4000, 8000, 16000)
 dev = 'cuda'
@@ -48,7 +49,7 @@ def main():
     S = Sim4Pi(lut, seed=11).sample(6000, p_nb=0.0, p_on=1.0, eps_range=math.pi, **kw)
     Nw = S['Nt'].sum(1).cpu().numpy(); tr = torch.stack([S['x'], S['y'], S['z']], 1)
     if K == 1:
-        bc = torch.load(f'{REPO}/out/4pi/sim/bench_classical_epspi.pt', weights_only=False)
+        bc = torch.load(f'{P4}/sim/bench_classical_epspi.pt', weights_only=False)
         assert torch.allclose(bc['S']['x'], S['x'])
         cr = (bc['cr_p'][:, :3] * sc).cpu().numpy()
         rows = {'pixel MLE': ((bc['th_p'][:, :3] - tr) * sc).cpu().numpy()}
@@ -76,7 +77,7 @@ def main():
     S = Sim4Pi(lut, seed=12).sample(6000, p_nb=1.0, p_on=1.0, eps_range=math.pi, nb_max=a.nb_max, **kw)
     nbr = None
     if getattr(net, 'nbr_in', False):   # the other candidates as a detector would give them (0.3 px jitter, 20 % missed), fixed seed
-        from simcode2.fourpi.head4pi_w import nbr_map
+        from simcode.fourpi.head4pi_w import nbr_map
         gg = torch.Generator(device=dev).manual_seed(3)
         dxn = torch.zeros(6000, a.nb_max, device=dev); dyn = torch.zeros_like(dxn); val = torch.zeros_like(dxn, dtype=torch.bool)
         for j, nb in enumerate(S['nb']):
@@ -98,7 +99,7 @@ def main():
         print(f'| {nm} | ' + ' | '.join(cells) + ' |')
         print('   error / reported sigma (robust): ' + ' | '.join(' / '.join(f'{1.4826 * np.median(np.abs(u[(Nw >= lo) & (Nw < hi), k])):.2f}' for k in range(3)) for lo, hi in zip(EDGES[:-1], EDGES[1:])))
     hn = os.path.basename(a.head).replace('head4pi_', '').replace('.pt', '')
-    json.dump(out, open(f'{REPO}/out/4pi/sim/gatek_{hn}' + (f'_k{K}' if K > 1 else '') + '.json', 'w'), indent=1)
+    json.dump(out, open(f'{P4}/sim/gatek_{hn}' + (f'_k{K}' if K > 1 else '') + '.json', 'w'), indent=1)
 
 
 if __name__ == '__main__':

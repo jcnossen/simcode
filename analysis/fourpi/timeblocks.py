@@ -4,6 +4,10 @@ registration map). Per block and angle: SIM period (k refined per block), per-st
 median per-emitter modulation depth, plane-wave coherence; plus the background polarization step signature (per-frame
 angle assignment) and the population 4Pi phase (mean exp(i Phi) of the channel aperture fractions).
 usage: python timeblocks.py <cell> <out.npy> [NB] [nworkers]"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, time
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -11,8 +15,8 @@ from dc import Dcimg, movie_files, crops, file_index
 from quickloc import Warp, window_photometry, rows_to_arrays
 from register import PolyMap
 
-GAIN = 0.23
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+from simcode.fourpi.setup import GAIN
+OUT = f'{P4}/smlm'
 
 
 def _reader(cell, fs, NB, q, nw):

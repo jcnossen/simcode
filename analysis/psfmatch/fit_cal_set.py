@@ -1,12 +1,12 @@
 """PSF-matched retrain (2026-11-11): sim-sigma solve calibration of a front-end on the tuning seed 202 of ONE PSF's averaged-PSF
-gate scenes (= analysis/psf3d_nets/fit_cal_new.py, which pooled the 3 per-axis PSFs; same plib.fit_cal procedure, prior_off from iso
+gate scenes (as the earlier fit of the mixture set, which pooled the 3 per-axis PSFs; same plib.fit_cal procedure, prior_off from iso
 of the same PSF). The _real variant multiplies the sigma factor by sig_ph_real_mult of an existing _real calib (copied, not re-measured).
 usage: python fit_cal_set.py <front> <fe tag, e.g. m1809a> <fit scenes, comma> <base calib> <out sim calib> <out real calib> <real-mult src>"""
 import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
 import plib as P
-from simcode2 import config
+from simcode import config
 
 OUT = os.path.join(config.root('out'), 'psfmatch')
 

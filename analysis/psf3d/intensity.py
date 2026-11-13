@@ -9,7 +9,7 @@ per-axis (per pattern angle) PSF, for per-frame intensities and for a SIMFLUX jo
 usage: python analysis/psf3d/intensity.py <fit _psf.pt (blps3)> <calib json (pattern)> <out prefix>"""
 import sys, json, math
 import numpy as np, torch
-from simcode2.psf.vectorial import VectorialPSF
+from simcode.psf.vectorial import VectorialPSF
 
 import os
 dev = os.environ.get('PSF3D_DEV', 'cuda')

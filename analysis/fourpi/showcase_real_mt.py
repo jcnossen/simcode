@@ -30,16 +30,18 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter, convolve, label, distance_transform_edt
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
 sys.path.insert(0, f'{REPO}/analysis/figures')
+from simcode.fourpi.setup import P4
 import fig_cl as FC                     # read-only: zdrift_struct, em2, fwhm (none of these write files)
 from zoompick import pick_crossings
 from skel import skeletonize
-FC.OUT = f'{REPO}/out/4pi/fig/tmp_showcase'       # never write into the classical worker's directory
-PX = 128.0
+FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
+from simcode.fourpi.setup import PX_NM as PX
 FPF = 18000                              # frames per file
-OUTD = f'{REPO}/out/4pi/fig'
+OUTD = f'{P4}/fig'
 METH = [('net', '4Pi-SIMCODE (network)'), ('cl', 'classical 4Pi-SIMFLUX,\npublished-style'),
         ('clp', 'classical 4Pi-SIMFLUX,\npixel MLE'), ('ast', 'astigmatism-only z')]
 ZCMAP = LinearSegmentedColormap.from_list('zdiv', ['#3987e5', '#c3c2b7', '#eb6834'])
@@ -313,12 +315,12 @@ def scalebar(ax, frac, lab, x=0.05, y=0.06):
 # ----------------------------------------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{REPO}/out/4pi/classical/real/cl_MT_wv_all.npz')
+    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_MT_wv_all.npz')
     ap.add_argument('--net_locs', nargs='*', default=None, help='glob(s) of per-file network tables (raw x, y)')
     ap.add_argument('--net_all', default=None, help='merged network table with its own xd, yd (post_w4pi.py)')
     ap.add_argument('--head', default='v10'); ap.add_argument('--tag', required=True)
     ap.add_argument('--samefiles', action='store_true', help='also write <tag>_samefiles: classical rows restricted to the network files')
-    ap.add_argument('--regions', default=f'{REPO}/out/4pi/patches/regions_MT.json')
+    ap.add_argument('--regions', default=f'{P4}/patches/regions_MT.json')
     a = ap.parse_args()
     assert a.net_locs or a.net_all
     os.makedirs(OUTD, exist_ok=True)

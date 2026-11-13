@@ -1,17 +1,17 @@
 """RMSD vs GT window photons on the gate scenes: our sc front-ends vs SIMCODE (paper network L48 + eq.-2 pattern fit + MVU
-merge, simcode2/eff/simcode_gate.py), with the CRLB lines. Matching as gate_report_xdet: one-to-one within 1 px on the
+merge, simcode/eff/simcode_gate.py), with the CRLB lines. Matching as gate_report_xdet: one-to-one within 1 px on the
 detection position (x_det), targets with CRLB_SF_multi < 25 nm only (as gate_report_xdet), score >= 0.5; RMSD per axis of the final estimate (incl. outliers). -> <out>/plots/crlb_vs_simcode.png"""
 import argparse, os
-from simcode2 import config
+from simcode import config
 ap = argparse.ArgumentParser(description=__doc__)
-ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode2.hd.gate)')
+ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode.hd.gate)')
 ap.add_argument('--out', default='', help='png (default <out>/plots/crlb_vs_simcode.png)')
 A_ = ap.parse_args()
 OUTPNG = A_.out or os.path.join(config.out_dir('plots'), 'crlb_vs_simcode.png')
 import glob, sys
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-from simcode2.hd.gate_report import load, match
+from simcode.hd.gate_report import load, match
 PX = 108.33
 D = A_.gate_dir
 scenes = ['iso', 'pair2', 'rs05p', 'rs25p', 'rs05pm', 'rs25pm']

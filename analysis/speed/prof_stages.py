@@ -8,16 +8,16 @@ import sys, os, time, json, io
 import numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import DATA, SC_CAL, P2_CAL, OUT, gpu_state, UtilSampler, dump
-from simcode2 import config
-from simcode2.pipeline.common import Movie, load_calib, region
-from simcode2.pipeline import sc_front_fast as SFF
+from simcode import config
+from simcode.pipeline.common import Movie, load_calib, region
+from simcode.pipeline import sc_front_fast as SFF
 
 A = sys.argv[1:]
 trace_nf = 300
 if '--trace_nf' in A: i = A.index('--trace_nf'); trace_nf = int(A[i + 1]); del A[i:i + 2]
 name = A[0]; nf = int(A[1]) if len(A) > 1 else 3000
 D = DATA[name]; f0 = D['f0']; f1 = f0 + nf
-SFF.CAND_PMIN = 0.3                         # production stored-candidate cut (simcode2.run default)
+SFF.CAND_PMIN = 0.3                         # production stored-candidate cut (simcode.run default)
 calib = config.resolve(D['calib']); sc_cal = config.resolve(SC_CAL); p2_cal = config.resolve(P2_CAL)
 REP = dict(dataset=name, f0=f0, nf=nf, gpu=torch.cuda.get_device_name(), gpu_state_start=gpu_state(), cand_pmin=0.3)
 S = {}
@@ -59,7 +59,7 @@ S['write_pass1_npz']['mb'] = round(os.path.getsize(f'{OUT}/prof_{name}/pass1_{f0
 stage('read_pass1_npz', lambda: dict(np.load(f'{OUT}/prof_{name}/pass1_{f0}.npz')))
 # --- 4. pattern solve (compiled LM step as production, eager for reference), warm-up on a small subset
 L = dict(R); Lw = dict(R); Lw['out'] = R['out'] & (np.cumsum(R['out']) <= 20000)
-from simcode2 import fastutil
+from simcode import fastutil
 comp = 'on' if fastutil.compile_available() else 'off'
 SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, sc_cal, solve_opts=dict(compile=comp))
 SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, sc_cal, solve_opts=dict(compile='off'))
@@ -72,11 +72,11 @@ p2.run_chunk(movie, cal, f0, f0 + 600, Pt, p2_cal)
 tm2 = {}
 O2 = stage('pass2_total', lambda: p2.run_chunk(movie, cal, f0, f1, Pt, p2_cal, timing=tm2))
 S['pass2_total']['events'] = {k: round(v, 3) for k, v in tm2.items()}; S['pass2_total']['n'] = int(len(O2['x_hy0']))
-from simcode2.p2.front import direct_view
+from simcode.p2.front import direct_view
 stage('write_pass2_est2_npz', lambda: (np.savez(f'{OUT}/prof_{name}/pass2_est2_{f0}.npz', **O2, pattern=D['pattern']),
                                        np.savez(f'{OUT}/prof_{name}/pass2_est2b_{f0}.npz', **direct_view(O2), pattern=D['pattern'])))
-# --- 6. table + strict product on this chunk (as simcode2.run step 6)
-from simcode2 import strict as SP
+# --- 6. table + strict product on this chunk (as simcode.run step 6)
+from simcode import strict as SP
 px = json.load(open(calib))['pixelsize_um'] * 1e3
 def tab(tag, nm):
     T_, inf = SP.build_table(f'{OUT}/prof_{name}', tag, px, None, None, None)

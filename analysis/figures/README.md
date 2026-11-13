@@ -1,7 +1,7 @@
 # analysis/figures
 
-Figure scripts for the paper and the summary plots. `<out>` is the out root of `simcode2.config` (`SIMCODE2_OUT`, or `out` in
-`simcode2.json`), and `<data>` is the data root. Inputs are read from `<out>` under the same relative paths as in the
+Figure scripts for the paper and the summary plots. `<out>` is the out root of `simcode.config` (`SIMCODE_OUT`, or `out` in
+`simcode.json`), and `<data>` is the data root. Inputs are read from `<out>` under the same relative paths as in the
 development tree. Every script writes its PNG to `<out>/plots/` by default; `--out` or the first argument redirects it.
 Run the scripts from the repo with `PYTHONPATH=<repo>`. Use `--help` on any script for its usage.
 
@@ -12,7 +12,7 @@ one. Every checked output was pixel-identical or byte-identical, except as noted
 
 | script | makes | inputs |
 |---|---|---|
-| `crlb_all_v2.py [sc5nb,sc6n,sc7bg] [11z]` | `crlb_all_v2.png`, `<out>/sc7/crlb_all_v2.txt` | `<out>/gate/*.npz` (networks, `_scode_ni6_3`), `<out>/sc7/gate_lm/*_lm11*.npz`, `*_sf11.npz`, `<out>/sc7/icrlb_*.npz` |
+| `crlb_all_v2.py [sc5nb,sc6n] [11z]` | `crlb_all_v2.png`, `<out>/sc7/crlb_all_v2.txt` | `<out>/gate/*.npz` (networks, `_scode_ni6_3`), `<out>/sc7/gate_lm/*_lm11*.npz`, `*_sf11.npz`, `<out>/sc7/icrlb_*.npz` |
 | `icrlb_report.py` | `crlb_sc6_all.png`, `<out>/sc7/icrlb_report.txt` | `<out>/sc7/icrlb_*.npz` |
 | `lm_robust.py` | `<out>/sc7/lm_robust.txt` | as `crlb_all_v2.py` |
 | `plot_crlb_sc3.py` | `crlb_sc3.png` (generic gate CRLB plot; `curves()` is used by the scripts above) | `<out>/gate` |
@@ -24,10 +24,10 @@ The evaluation-only references are generated on GPU with `run_crlb_refs.sh [icrl
 - `icrlb.py`: per-frame I_t and bg of a head vs their CRLBs.
 - `lm_icrlb.py` and `lm_gate.py`: the basic single-emitter LM.
 - `sf_gate.py`: the joint SIMFLUX MLE.
-- `simcode2.eff.simcode_gate`: SIMCODE, which needs smlmtorch.
+- `simcode.eff.simcode_gate`: SIMCODE, which needs smlmtorch.
 
 `lmref.py` holds the LM and SIMFLUX-MLE references (`LMRef`, `SFRef`). They are not part of the method. It uses
-`simcode2.psf.lut.make_lut`, which is identical to the development `hd/solve.make_lut`. The first 175 detector candidates of
+`simcode.psf.lut.make_lut`, which is identical to the development `hd/solve.make_lut`. The first 175 detector candidates of
 `iso` seed 301 FOV-batch 1 reproduce the stored `gate_lm` x_lm, x_sc and SFRef x bit for bit.
 
 The `sc6n` network is not shipped in `models/`. Its `icrlb_sc6n_*` and `_hd_sc6nb15pm` records exist only as development
@@ -62,5 +62,5 @@ outputs.
 composite command was not saved. Their font rendering differs slightly.
 
 `field/`: run `check1_offsets.py`, `check1_summary.py`, `field_maps.py` and `check3_pattern.py`, then `plot_field_offsets.py`.
-On a fresh out root (`SIMCODE2_OUT`) with links to the run dirs, these reproduced every stored `<out>/field` npz / txt / json
+On a fresh out root (`SIMCODE_OUT`) with links to the run dirs, these reproduced every stored `<out>/field` npz / txt / json
 file and the PNG exactly.

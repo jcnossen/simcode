@@ -5,7 +5,7 @@ Per density (<movie>/full, net set --netset): row 1 renders of the same crop (th
 movie), Jaccard vs frames. Rows rendered = each method's FRC set (disjoint windows, max sigma < 0.15 px; SIMCODE v1 = its merged
 'sfhd-ndi+smlm' rows in that set; v2 = strict / q 0.45 / sel), 5.4 nm pixels (zoom 20), 1-pixel Gaussian blur, 99.5 % clip.
 DECODE = dec_1809_2, OUT of its training range for these movies (flagged in the labels).
-usage: python analysis/papersim/fig_density.py [--netset default] [--densities 0.5,1,2,4]
+usage: python analysis/papersim/fig_density.py [--netset m1809] [--densities 0.5,1,2,4]
 outputs: out/papersim/fig_density_D<d>_<netset>.png, out/papersim/summary_density_<netset>.json / .md"""
 import os, sys, json, argparse
 import numpy as np
@@ -63,7 +63,7 @@ def fig(d, netset, sub='full', prefix='D', suffix=''):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='default'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
+    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
     a = ap.parse_args()
     rows = []; md_lines = [f'# Density sweep, v2 net set {a.netset} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
                            '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm |', '|---|---|---|---|---|---|---|---|---|---|---|---|']

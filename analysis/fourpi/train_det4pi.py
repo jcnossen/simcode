@@ -1,7 +1,7 @@
-"""Train det4pi: the det_n1 detector (simcode2/det/up2.DetUp, up = 1) on 4Pi scenes.
+"""Train det4pi: the det_n1 detector (simcode/det/up2.DetUp, up = 1) on 4Pi scenes.
 
 Input: the registered 4-channel sum of the 6 frames (6 planes, photons) = det_n1's input format, from the full-scene
-4Pi simulator (simcode2/fourpi/realsim4pi.py: dense scenes 0.01-2 /um^2, filaments / rings / close pairs, kinetics,
+4Pi simulator (simcode/fourpi/realsim4pi.py: dense scenes 0.01-2 /um^2, filaments / rings / close pairs, kinetics,
 pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss and nn weights: those of det_n1
 (det/up2.targets, focal_w, gt_nn, hd/sc4.nn_weights); the GT position is the emitter position (not the image centroid,
 which sits ~0.25 px away for the 4Pi PSF), so candidates come out centred on the emitter.
@@ -11,15 +11,16 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --out out/4
 import argparse, json, os, sys, time
 import torch
 import torch.multiprocessing as mp
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode2.fourpi.ckpt import save as safe_save   # atomic, disk-guarded
+from simcode.fourpi.setup import P4
+from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 
 def worker(q, seed, psf, B, size, dens, ksums=(1,)):
     import torch
-    from simcode2.fourpi.realsim4pi import RealSim4Pi
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{psf}.json'))['psf']
+    from simcode.fourpi.realsim4pi import RealSim4Pi
+    st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
     rs = RealSim4Pi(st, H=size, W=size, seed=seed, n_psf=6)
     while True:
         S = rs.sample(B=B, dens=dens, ksum=ksums[int(torch.randint(len(ksums), (1,)))])
@@ -44,11 +45,11 @@ def main():
     ap.add_argument('--ckpt_every', type=int, default=5000)
     ap.add_argument('--ksum', default='1', help='comma list of K (summed windows: K x background, sqrt(K) read noise), one drawn per batch')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-det')
-    from simcode2.det.up2 import build, targets, focal_w, gt_nn
-    from simcode2.det.model import n_params
-    from simcode2.hd.sc4 import nn_weights
-    from simcode2.config import resolve
+    from simcode.util.proctitle import auto; auto('4pi-det')
+    from simcode.det.up2 import build, targets, focal_w, gt_nn
+    from simcode.det.model import n_params
+    from simcode.hd.sc4 import nn_weights
+    from simcode.config import resolve
     dev = 'cuda'
     os.makedirs(a.out, exist_ok=True)
     args = dict(up=1, ch=[48, 96, 160], stem_ch=16, fch=32, **{k: v for k, v in vars(a).items()})

@@ -1,5 +1,5 @@
 {"name": "real 20 nM", "mode": "real", "grid": 6, "reference": "SIMCODE (b)",
- "_comment": "20 nM movie 2: grid G6; p2L = pass2_est2 of a simcode2.run --pass2 output (real sigma calib; dev tag est2r); each set its own DME v2 drift (analysis/baselines/dme_drift.py or analysis/dme/dme_splithalf.py). Baseline sets (realproto.py only) are the published result hdf5 files of the movie (results/cover1_500mW_5.5ms_cf660/). Extra keys for spatial.py / envmap.py: envmap, envmap_key, depth_field, movie, camera_maps (see those scripts).",
+ "_comment": "20 nM movie 2: grid G6; p2L = pass2_est2 of a simcode.run --pass2 output (real sigma calib; dev tag est2r); each set its own DME v2 drift (analysis/baselines/dme_drift.py or analysis/dme/dme_splithalf.py). Baseline sets (realproto.py only) are the published result hdf5 files of the movie (results/cover1_500mW_5.5ms_cf660/). Extra keys for spatial.py / envmap.py: envmap, envmap_key, depth_field, movie, camera_maps (see those scripts).",
  "sets": {"ours p1":     {"kind": "ours", "dir": "out_20nM", "tag": "est",  "drift": "out_20nM/drift_p1.npy"},
           "ours p2L":    {"kind": "ours", "dir": "out_20nM", "tag": "est2", "drift": "out_20nM/drift_p2.npy"},
           "SIMCODE (b)": {"kind": "simcode", "npz": "simcode_20nM/sc_b.npz", "drift": "simcode_20nM/drift_sc_b.npy"},

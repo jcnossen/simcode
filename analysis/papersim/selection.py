@@ -25,7 +25,7 @@ Curves: precision (fraction correct of the kept rows) vs fraction of sel rows ke
 decile (monotone?); ROC AUC per score. Operating point per target: the loosest threshold with the kept set's precision >= target
 (at least 300 rows kept), its absolute score value, kept fraction, and (papersim) the FRC (fair protocol, disjoint windows) and
 Jaccard (10 nm) of the kept rows.
-usage: python analysis/papersim/selection.py [--netset default] [--datasets all] -> out/papersim/selection/selection_<netset>.json / .png"""
+usage: python analysis/papersim/selection.py [--netset m1809] [--datasets all] -> out/papersim/selection/selection_<netset>.json / .png"""
 import os, sys, json, glob, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -46,7 +46,7 @@ def datasets(netset):
     for h in sorted(glob.glob(os.path.join(C.OUT, 'hollow', '*_x1'))):
         D.append(dict(name='hollow_' + os.path.basename(h), kind='papersim', locs=os.path.join(h, 'full', f'v2_{netset}', 'locs_p2_sim.npz'),
                       gt=os.path.join(h, 'gt.npz'), gen=os.path.join(h, 'gen.json')))
-    run = {'default': ('psf3d_nets', 'run_cur'), 'm1809': ('psfmatch', 'run_m1809')}.get(netset)
+    run = {'m1809': ('psfmatch', 'run_m1809')}.get(netset)
     if run:
         for s in ('m05r3', 'm25rc3'):
             D.append(dict(name=s, kind='simreal', locs=os.path.join(C.REPO, 'out', run[0], 'sims', s, run[1], 'locs_p2.npz'),
@@ -169,9 +169,9 @@ def frc_jaccard(ds, T, keep, nframes):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='default'); ap.add_argument('--datasets', default='all')
+    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); ap.add_argument('--datasets', default='all')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-select')
+    from simcode.util.proctitle import auto; auto('psim-select')
     os.makedirs(OUTD, exist_ok=True)
     DS = datasets(a.netset)
     if a.datasets != 'all': DS = [d for d in DS if d['name'] in a.datasets.split(',')]

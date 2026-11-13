@@ -7,7 +7,7 @@ Legendre-2 smooth-fit R^2, the width map), used by plot_field_offsets.py.
 import os, numpy as np, json, sys
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2 import config
+from simcode import config
 from check1_offsets import load, DS, PX, gt_errors, GT
 
 OUT = config.out_dir('field')

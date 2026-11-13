@@ -15,7 +15,7 @@ import os, sys, glob, json
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import smoke_metrics as SM
-from simcode2 import config
+from simcode import config
 H = config.root('out') + '/'
 D20 = H + 'real20/'
 PX = 108.33
@@ -31,7 +31,7 @@ _c = {}
 
 
 def phase_thr(p, x, y, ph, thr=PMIN):
-    from simcode2.strict import phase_thr as _pt      # = the development p2prior/lib.phase_thr
+    from simcode.strict import phase_thr as _pt      # = the development p2prior/lib.phase_thr
     return _pt(p, x, y, ph, thr)
 
 

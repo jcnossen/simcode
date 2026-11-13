@@ -15,12 +15,13 @@ Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simeval4pi.py --tag d1 --pa
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.lm import lm_poisson_j, fisher_j, crlb
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.lm import lm_poisson_j, fisher_j, crlb
 
 LO, HI = 8.0, 42.0
 EDGES = (300, 1000, 2000, 4000, 8000, 30000)
@@ -216,10 +217,10 @@ def main():
     p.add_argument('--tag', default='d1'); p.add_argument('--model', default='v2'); p.add_argument('--pattern', default='iter')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--chi2_max', type=float, default=4.0); p.add_argument('--sxy_max', type=float, default=0.12)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-sim')
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'; dev = 'cuda'
+    from simcode.util.proctitle import auto; auto('4pi-sim')
+    d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     meta = json.load(open(f'{d}/meta.json'))
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{meta["psf"]}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{meta["psf"]}.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
     U = gt_units(d, meta['T'])
     inr = lambda x, y: (x >= LO) & (x < HI) & (y >= LO) & (y < HI)

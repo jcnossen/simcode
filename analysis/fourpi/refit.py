@@ -8,16 +8,20 @@ summed PSF at the fitted (x, y, z) mapped into channel c's pixel grid (PSF norma
 linear LSQ (weights 1 / (mu + rn^2), 3 reweighting passes, A unconstrained), errors from the 2 x 2 Fisher matrix.
 usage: python refit.py <cell> <file_index> <psf_knots.npz>
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, time
 import numpy as np
 import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, '/home/jc/simcode2/analysis/baselines'); sys.path.insert(0, '/home/jc/simcode2')
+sys.path.insert(0, f'{REPO}/analysis/baselines'); sys.path.insert(0, REPO)
 from zpsf import ZStackLUT
 from mle import PSFModel, lm_fit, loglik
 from register import PolyMap
 
-P1 = '/home/jc/simcode2/out/4pi/smlm/p1'
+P1 = f'{P4}/smlm/p1'
 RN2 = 1.3
 
 
@@ -125,7 +129,7 @@ def run(cell, fi, knots, out=None):
     g = D['gfit']
     s1 = np.nonzero((g[:, 2] > 600) & (np.abs(g[:, 0]) < 2) & (np.abs(g[:, 1]) < 2))[0]
     psf = LUTPSF(knots)
-    pm = PolyMap.load(f'/home/jc/simcode2/out/4pi/smlm/reg/reg_insitu_{cell}.json')
+    pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
     th, cr, ll, chi2, dev = psf_refit(psf, D['roi_sum'][s1], g[s1])
     print(f'{cell} {fi}: PSF refit {len(th)} in {time.time() - t0:.0f}s', flush=True)
     x = D['cx'][s1] + th[:, 0]; y = D['cy'][s1] + th[:, 1]

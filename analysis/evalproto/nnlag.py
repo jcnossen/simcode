@@ -5,7 +5,7 @@ usage: python analysis/evalproto/nnlag.py <dataset.json> [out_dir]   -> nnlag_<d
 import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 spec = sys.argv[1]
 LINES = []; OUT = {}
 def log(s=''):

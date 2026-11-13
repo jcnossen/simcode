@@ -25,7 +25,7 @@ usage: python smoke_metrics.py --run <run_dir> --simcode <sfhd-ndi.hdf5> --f0 12
 import argparse, glob, json, os, pickle
 import numpy as np
 from scipy.spatial import cKDTree
-from simcode2 import config
+from simcode import config
 
 # SIMCODE's published localizations of the 0.5 nM movie (read-only, next to the movie under the data root)
 SIMCODE_05 = 'dnapaint/0.5nM/cover1/1/results/simflux_5.5ms_500mW/sfhd-ndi.hdf5'
@@ -75,24 +75,7 @@ def theil_sen(x, y, n=4000, seed=0):
     return float(np.median((y[i] - y[j])[ok] / (x[i] - x[j])[ok]))
 
 
-def frc(xa, ya, xb, yb, px=5.0):
-    """FRC of two localization sets (px coordinates) rendered on a px-nm grid; returns the 1/7 resolution (nm)"""
-    s = PX / px
-    lo = np.floor(min(xa.min(), ya.min(), xb.min(), yb.min())); hi = np.ceil(max(xa.max(), ya.max(), xb.max(), yb.max()))
-    n = int((hi - lo) * s); n += n % 2
-    h = lambda x, y: np.histogram2d(y, x, bins=n, range=[[lo, lo + n / s], [lo, lo + n / s]])[0]
-    A, B = np.fft.fftshift(np.fft.fft2(h(xa, ya))), np.fft.fftshift(np.fft.fft2(h(xb, yb)))
-    yy, xx = np.indices(A.shape) - n // 2; rr = np.hypot(xx, yy).astype(int)
-    num = np.bincount(rr.ravel(), (A * B.conj()).real.ravel()); da = np.bincount(rr.ravel(), (np.abs(A) ** 2).ravel())
-    db = np.bincount(rr.ravel(), (np.abs(B) ** 2).ravel())
-    c = np.convolve(num / np.sqrt(da * db + 1e-12), np.ones(5) / 5, 'same')
-    below = np.nonzero((c[3:n // 2] < 1 / 7))[0]
-    return float('nan') if len(below) == 0 else float(n * px / (below[0] + 3))
-
-
-def frc_split(x, y, fr, blk=300):
-    h = (fr // blk) % 2 == 0
-    return frc(x[h], y[h], x[~h], y[~h])
+from simcode.evalproto.frc import frc, frc_halves as frc_split  # noqa (the one FRC implementation)
 
 
 mad = lambda v: 1.4826 * np.median(np.abs(v - np.median(v))) if len(v) else np.nan
@@ -198,7 +181,7 @@ def main():
     pr(f'M2 photon units (ours label / SIMCODE, exact pairs, 200-2000): Theil-Sen {J["M2"]["theil_sen"]:.3f}, median ratio {J["M2"]["median_ratio"]:.3f} '
        f'(pre-registered kappa {K}); per SIMCODE bin: ' + ' '.join(f'{k}:{v:.2f}' for k, v in J['M2']['per_bin'].items()))
     # ---- M3 q/dof vs the sim reference (same network + calibration, same units)
-    from simcode2.hd.gate_report import load, match as gmatch
+    from simcode.hd.gate_report import load, match as gmatch
     J['M3'] = {}
     rq = rp = None
     if a.ref_run:
@@ -262,7 +245,7 @@ def main():
            + ('   <-- 300-450' if 300 <= lo < 450 else ''))
     # ---- M6x (2026-11-09): our counts per output mode (per-window / photon-disjoint / merged chains) x detection cut, binned by
     #      our photons / kappa AND by our photons / the measured M2 ratio (empirical cross-calibration), vs SIMCODE
-    from simcode2.pipeline import dedup as DD
+    from simcode.pipeline import dedup as DD
     J['M6x'] = {}
     Oa = {k: v[(O_all['wstart'] >= a.f0) & (O_all['wstart'] < a.f1) & np.isfinite(O_all['x_hy0'])] for k, v in O_all.items()}
     k2 = J['M2']['median_ratio']

@@ -26,7 +26,7 @@ CRLB from the ground truth (Poisson, zpsf PSF at z_fit, 16 x 16 ROI): SMLM (x, y
 (x, y, I, bg) and SIMFLUX with a bg per frame (x, y, I, bg_1..6; the bound that applies under the U(1, 6) condition).
 Per bin the stored numbers are: RMSD per axis (trim 2 %, trim 5 %, none), mean and RMS of the predicted sigma, mean CRLBs
 (the old script's .mean(0)), recall (networks), n.
-usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/s10.py [--netset default] [--bins all|i,j] [--cond const1,unif16]
+usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/s10.py [--netset m1809] [--bins all|i,j] [--cond const1,unif16]
           [--n 1000] [--out out/papersim/s10]
 outputs: <out>/s10_<netset>.json (+ per-emitter npz), s10_<netset>.png"""
 import os, sys, json, time, math, argparse, importlib.util
@@ -134,11 +134,11 @@ def classical(S, R6, psf, rng):
 
 class Nets:
     def __init__(self, ns):
-        from simcode2.hd import sc as SCM
-        from simcode2.p2 import head2 as H2
-        from simcode2.p2 import dump as DU
-        from simcode2.sim.simulator import Simulator
-        from simcode2 import config
+        from simcode.hd import sc as SCM
+        from simcode.p2 import head2 as H2
+        from simcode.p2 import dump as DU
+        from simcode.sim.simulator import Simulator
+        from simcode import config
         self.SCM, self.H2, self.DU = SCM, H2, DU
         sim = Simulator(C.resolve_calib(ns) if hasattr(C, 'resolve_calib') else ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
@@ -151,8 +151,8 @@ class Nets:
 
     @torch.no_grad()
     def run(self, frames, patt):
-        from simcode2.hd import gate as GA
-        from simcode2.p2 import illum as IL
+        from simcode.hd import gate as GA
+        from simcode.p2 import illum as IL
         o = dict(frames=frames, patt_est=patt)
         r1 = GA.out_sc(self.p1, o, 0.2)
         il = IL.illum_maps(patt, FOV, FOV)
@@ -190,7 +190,7 @@ def summarize(err, sig):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--bins', default='all')
     ap.add_argument('--cond', default='const1,unif16')
     ap.add_argument('--n', type=int, default=1000)
@@ -199,8 +199,8 @@ def main():
     ap.add_argument('--psf', default='vectorial', help="'vectorial' (averaged 1809/2) or 'gauss1.3' (the preprint's PSF: rendering AND the SMLM / SIMFLUX fits)")
     ap.add_argument('--nets', type=int, default=1, help='0: classical methods only (network rows nan)')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-s10')
-    netset = lambda n: json.load(open(os.path.join(HERE, 'netsets.json')))[n]   # (run_simcode is shadowed by analysis/baselines on sys.path)
+    from simcode.util.proctitle import auto; auto('psim-s10')
+    from simcode.config import netset
     os.makedirs(a.out, exist_ok=True)
     ns = netset(a.netset)
     gauss = a.psf.startswith('gauss')

@@ -4,12 +4,12 @@ usage: python lm_robust.py [txt] -> <out>/sc7/lm_robust.txt (or txt)"""
 import os, sys
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import numpy as np
-from simcode2.hd import gate_report as GR
-from simcode2 import config
+from simcode.hd import gate_report as GR
+from simcode import config
 OUTR = config.root('out')
 PX = 108.33
 D7 = os.path.join(OUTR, 'sc7'); G = os.path.join(OUTR, 'gate')
-RUNS = [('sc5nb+PM', G, '_hd_sc5nbb15pm', 'sc'), ('sc6n+PM', G, '_hd_sc6nb15pm', 'sc'), ('sc7bg+PM', G, '_hd_sc7bgb15pm', 'sc'),
+RUNS = [('sc5nb+PM', G, '_hd_sc5nbb15pm', 'sc'), ('sc6n+PM', G, '_hd_sc6nb15pm', 'sc'),
         ('LM11z pf', f'{D7}/gate_lm', '_lm11z', 'lm'), ('LM11z+PM', f'{D7}/gate_lm', '_lm11z', 'sc'), ('LM11 pf', f'{D7}/gate_lm', '_lm11', 'lm'), ('LM11+PM', f'{D7}/gate_lm', '_lm11', 'sc')]
 BINS = [(150, 500), (500, 1300), (1300, 3200), (3200, 20000)]
 L = []

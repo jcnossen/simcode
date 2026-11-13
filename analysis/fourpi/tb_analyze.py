@@ -1,6 +1,10 @@
 """Analyse timeblocks.py output: per sampled block (first / last NB frames of every file) and angle: SIM period, step
 phases, step differences, median depth, coherence; background step signature; population 4Pi phase. Plot vs absolute
 frame index. usage: python tb_analyze.py <cell>"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -8,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pattern import refine_k, slotZ, emitter_phase, wrap, cmean
 from fourpi import chan_phase
 
-OUT = '/home/jc/simcode2/out/4pi/smlm'
+OUT = f'{P4}/smlm'
 K0 = {'MT': (np.array([3.8388, -0.0238]), np.array([0.0031, 3.8511])), 'NPC': (np.array([3.8262, -0.0279]), np.array([0.0131, 3.8448]))}
 FIRST = {'MT': 0, 'NPC': 2}
 

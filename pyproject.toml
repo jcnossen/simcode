@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "simcode2"
+name = "simcode"
 version = "2.0.0"
 description = "SIMCODE v2: per-window deep-learning localization for DMD-SIMFLUX DNA-PAINT data"
 requires-python = ">=3.10"
@@ -11,8 +11,11 @@ dependencies = ["numpy", "scipy", "tifffile", "torch>=2.1"]
 # also required, not on PyPI: torch_convspline (~/torch-spline-3d, PSF LUT). Optional: h5py (hdf5 tables).
 
 [project.scripts]
-simcode2-run = "simcode2.run:main"
-simcode2-strict = "simcode2.strict:main"
+simcode-run = "simcode.run:main"
+simcode-strict = "simcode.strict:main"
 
 [tool.setuptools.packages.find]
-include = ["simcode2*"]
+include = ["simcode*"]
+
+[tool.setuptools.package-data]
+simcode = ["netsets.json", "fourpi/datasets.json"]

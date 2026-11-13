@@ -1,8 +1,12 @@
 """Markdown tables of the 4Pi-SIMFLUX high-density showcase (from out/4pi/showcase/<tag>/eval.json) -> stdout and
 out/4pi/showcase/tables.md. Usage: python analysis/fourpi/showcase4pi_table.py"""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import json, os
 import numpy as np
-OUT = '/home/jc/simcode2/out/4pi/showcase'
+OUT = f'{P4}/showcase'
 TAGS = ['sc_d01', 'sc_d03', 'sc_d1', 'sc_d2', 'sc_d4', 'sc_d03_r125']
 NAMES = {'net': 'network, in-situ pattern + field', 'net_bound': 'network, true pattern + field (bound)',
          'net_nochi2': 'network, no chi2 selection', 'net_all': 'network, all candidates',

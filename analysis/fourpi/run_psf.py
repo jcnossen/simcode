@@ -2,6 +2,10 @@
 usage: python run_psf.py <cell> <tag> [--px 0.128 --NA 1.35 --lam 0.60 --nmed 1.406 --two_arm 0 --ntrain 3000 --nheld 2000]
 Outputs out/4pi/smlm/psf/<cell>_<tag>.json (+ _knots.npz with --knots 1).
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, json, argparse, time, glob
 import numpy as np
 import torch
@@ -19,15 +23,15 @@ ap.add_argument('--iters', type=int, default=300); ap.add_argument('--knots', ty
 ap.add_argument('--init', default=''); ap.add_argument('--threads', type=int, default=4)
 a = ap.parse_args()
 torch.set_num_threads(a.threads); torch.manual_seed(0)
-OUT = '/home/jc/simcode2/out/4pi/smlm/psf'; os.makedirs(OUT, exist_ok=True)
+OUT = f'{P4}/smlm/psf'; os.makedirs(OUT, exist_ok=True)
 t0 = time.time()
 res = dict(args=vars(a))
 kw = dict(px=a.px, NA=a.NA, n_imm=a.nimm, n_med=a.nmed, lam=a.lam, depth=a.depth)
 
 # ---------------- bead z-stack ----------------
 Rb = 21
-B = np.load(f'/home/jc/simcode2/out/4pi/smlm/zcal/zstack_rois_{a.cell}.npy').sum(1)       # [61,21,21] e (4-ch sum)
-zc = json.load(open(f'/home/jc/simcode2/out/4pi/smlm/zcal/zcal_{a.cell}.json'))
+B = np.load(f'{P4}/smlm/zcal/zstack_rois_{a.cell}.npy').sum(1)       # [61,21,21] e (4-ch sum)
+zc = json.load(open(f'{P4}/smlm/zcal/zcal_{a.cell}.json'))
 zst = np.array(zc['zstage']); good = np.array(zc['good']) & (np.abs(zst) <= 0.7)
 db = torch.as_tensor(B[good], dtype=torch.float32)
 xyb = torch.as_tensor(np.c_[zc['x'], zc['y']][good], dtype=torch.float32)
@@ -46,7 +50,7 @@ res['bead'] = dict(s=s, deviance_half=L, n=int(len(db)), z0=rb['zoff'], psf=summ
 print('bead fit:', json.dumps(summary(mb)), f'{time.time() - t0:.0f}s', flush=True)
 
 # ---------------- in-situ samples ----------------
-fs = sorted(glob.glob(f'/home/jc/simcode2/out/4pi/smlm/p1/p1_{a.cell}_*.npz'))
+fs = sorted(glob.glob(f'{P4}/smlm/p1/p1_{a.cell}_*.npz'))
 rois, xy0 = [], []
 for f in fs:
     D = np.load(f)

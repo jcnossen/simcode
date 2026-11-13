@@ -5,7 +5,7 @@ Mirrors the development dme_v2_full05/25.load_set + own-DME-v2 correction."""
 import os, sys, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import smoke_metrics as SM
-from simcode2 import config
+from simcode import config
 PX = 108.33
 _O = config.root('out')
 CONC = {

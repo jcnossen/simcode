@@ -8,6 +8,9 @@ Coherence R = |mean exp(i delta_e)|. Noise-limited R_noise: same emitters, simul
 amplitude-fit errors (pattern exactly a plane wave), same estimator. R / R_noise = coherence of the pattern model itself.
 Global k, psi_j: maximise sum_j |Z_j|^2, Z_j = <(I_j / mean - 1) exp(-i k . r)>, psi_j = -arg Z_j.
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 import numpy as np
 
 TWO_PI = 2 * np.pi
@@ -22,32 +25,7 @@ def cmean(a, w=None):
     return np.average(e, weights=w) if w is not None else e.mean()
 
 
-def slotZ(I3, X, k):
-    m = I3.mean(1, keepdims=True)
-    r = I3 / m - 1
-    return 2 * (r * np.exp(-1j * (X @ k))[:, None]).mean(0)
-
-
-def refine_k(I3, X, k0, span=0.05, n=41, rounds=2):
-    k = np.array(k0, float)
-    for rd in range(rounds):
-        sp = span / (8 ** rd)
-        best = (-1, k)
-        for dx in np.linspace(-sp, sp, n):
-            for dy in np.linspace(-sp, sp, n):
-                kk = k + [dx, dy]
-                s = (np.abs(slotZ(I3, X, kk)) ** 2).sum()
-                if s > best[0]: best = (s, kk)
-        k = best[1]
-    return k
-
-
-def emitter_phase(I3, psi):
-    """I3 [n,3], psi [3] -> phi [n], m [n], B [n] (exact 3-step solve)"""
-    M = np.stack([np.ones(3), np.cos(psi), np.sin(psi)], 1)       # [3,3]
-    sol = I3 @ np.linalg.inv(M).T                                   # [n,3]: B, C, S
-    B, C, S = sol.T
-    return np.arctan2(S, C), np.hypot(C, S) / np.where(np.abs(B) > 1e-6, B, np.nan), B
+from simcode.fourpi.insitu import slotZ, refine_k, emitter_phase  # noqa (the estimator lives in the package)
 
 
 def emitter_phase_err(I3, sI3, psi, nsim=1, rng=None):

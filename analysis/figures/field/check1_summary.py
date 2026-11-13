@@ -2,7 +2,7 @@
 import os, json, numpy as np, sys
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2 import config
+from simcode import config
 from check1_offsets import spread, PB
 
 OUT = config.out_dir('field')

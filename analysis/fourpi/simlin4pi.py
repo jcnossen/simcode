@@ -7,21 +7,22 @@ the prior position (linread4pi) -> SIM pattern (true, or estimated from the per-
 positions, refined once at the solved positions) -> 4Pi phase field (true, or in situ: per-candidate phase with z held by
 the prior, tile map + time blocks) -> explicit solve with the exact window model and a residual background per channel:
 on-through vs kinetics, kinetics kept if it lowers chi2 by > 9.21 (the main pipeline's rule; no free fallback).
-Output: locs_SIM_000_<front>_<pattern>lin[_phiO].npz in the simsolve4pi format (+ chi2, dof, good), so simeval4pi.py and
-simoffset4pi.py run on it (--model <front> --pattern <pattern>lin[_phiO]).
+Output: locs_SIM_000_<front>_<pattern>lin[_phiO].npz in the table format of the real pipeline (+ chi2, dof, good), so simeval4pi.py and
+showcase4pi_eval.py run on it (--model <front> --pattern <pattern>lin[_phiO]).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/simlin4pi.py --tag iso --front v3L_det --pattern oracle --phi oracle
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-import solve_real4pi as SR
-from simsolve4pi import repattern_xy
-from simcode2.fourpi.lut4pi import LUT4Pi
-from simcode2.fourpi.solve4pi import kin_starts, best_of
-from simcode2.fourpi.solvek4pi import SolveK
-from simcode2.fourpi.linread4pi import linear_readout, border_bg
+from simcode.fourpi.setup import P4
+from simcode.fourpi import insitu as SR
+from simcode.fourpi.insitu import repattern_xy
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.solve4pi import kin_starts, best_of
+from simcode.fourpi.solvek4pi import SolveK
+from simcode.fourpi.linread4pi import linear_readout, border_bg
 
 WINS = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))
 dev = 'cuda'
@@ -51,11 +52,11 @@ def main():
     p.add_argument('--ksum', type=int, default=1, help='K-summed movie: read variance K x in the read-out covariance')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-simlin')
+    from simcode.util.proctitle import auto; auto('4pi-simlin')
     global SB; SB = 0.2 * math.sqrt(a.ksum)
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'
+    d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
     t0 = time.time()
     F = np.load(f'{d}/front_SIM_000_{a.front}.npz')
@@ -68,12 +69,12 @@ def main():
     bm = border_bg(img).to(dev)
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
-        from simcode2.fourpi.loadhead import load_head
+        from simcode.fourpi.loadhead import load_head
         net, _ = load_head(a.head); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
         net.vread = a.ksum * 1.14 ** 2 + (0.2 * a.ksum) ** 2
         nbr = None
         if getattr(net, 'nbr_in', False):   # pass 0: the head's prior positions -> map of the other candidates of each window
-            from simcode2.fourpi.head4pi_w import candidate_neighbours, nbr_map
+            from simcode.fourpi.head4pi_w import candidate_neighbours, nbr_map
             with torch.no_grad():
                 p0 = torch.cat([net(img[i:i + 1000], D['doff'][i:i + 1000])['dxy'] for i in range(0, n, 1000)]).cpu().numpy()
             ndx, ndy, nval = candidate_neighbours(F['w'], F['cx'] + p0[:, 0], F['cy'] + p0[:, 1])

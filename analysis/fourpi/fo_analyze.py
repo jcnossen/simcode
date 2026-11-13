@@ -1,5 +1,9 @@
 """Analyse frameorder.py output: per file, head (frames 0-239) and tail (last 120 frames) step offset s, match score,
 per-angle phase rotation psi_a vs the reference file head, counter continuity, timing; writes a table + figure."""
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import sys, os
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -7,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from quickloc import slot_coeffs, refine_k
 from frameorder import K0, REF
 
-OUT = '/home/jc/simcode2/out/4pi/smlm/frameorder'
+OUT = f'{P4}/smlm/frameorder'
 
 
 def best_shift(Z, Zr):
@@ -72,7 +76,7 @@ def analyse(cell):
     ax[2].plot(fi, [r['tail']['score'] for r in rows], 's', ms=3, label='tail best'); ax[2].plot(fi, [r['tail']['score2'] for r in rows], '+', ms=3, label='tail 2nd')
     ax[2].set_ylabel('match score'); ax[2].set_xlabel('file index'); ax[2].legend(fontsize=7)
     fig.suptitle(f'{cell}: pattern-step sync per file (head = frames 0-239, tail = last 120)')
-    fig.savefig(f'/home/jc/simcode2/out/4pi/smlm/fig/frameorder_{cell}.png', dpi=80, bbox_inches='tight')
+    fig.savefig(f'{P4}/smlm/fig/frameorder_{cell}.png', dpi=80, bbox_inches='tight')
     print('\n'.join(lines))
     return rows, (k0, k1)
 

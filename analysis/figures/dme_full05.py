@@ -1,4 +1,4 @@
-"""DME (exact, GPU port of the original algorithm; dme.dme_pipeline of the `dme` package, see simcode2/util/drift.py) on the full
+"""DME (exact, GPU port of the original algorithm; dme.dme_pipeline of the `dme` package, see simcode/util/drift.py) on the full
 0.5 nM movie: ours (sc5nb, disjoint windows p>=0.63, time = window centre) vs SIMCODE sfhd-ndi, at several frames-per-bin down
 to 1. Input of recon_full_dme_cross.py.
 usage: CUDA_VISIBLE_DEVICES=1 python dme_full05.py [--run full_0.5nM_sc5nb_bright_real] [--simcode <sfhd-ndi.hdf5>] [--out_dir drift]
@@ -6,13 +6,13 @@ usage: CUDA_VISIBLE_DEVICES=1 python dme_full05.py [--run full_0.5nM_sc5nb_brigh
 import os, sys, argparse, numpy as np, json
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import smoke_metrics as SM
-from simcode2 import config
+from simcode import config
 ap = argparse.ArgumentParser(description=__doc__)
 ap.add_argument('--run', default='full_0.5nM_sc5nb_bright_real', help='relative: under the out root')
 ap.add_argument('--simcode', default=SM.SIMCODE_05, help='relative: under the data root')
 ap.add_argument('--out_dir', default='drift', help='relative: under the out root')
 a = ap.parse_args()
-from simcode2.util import drift as _DR
+from simcode.util import drift as _DR
 _DR.dme_package()
 from dme.dme_pipeline import dme_estimate_gpu
 SIMH5 = config.resolve(a.simcode, 'data'); OD = config.out_dir(a.out_dir)

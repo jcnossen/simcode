@@ -25,7 +25,7 @@ def main():
     ap.add_argument('--maxframes', type=int, default=None)
     ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
-    from simcode2.util.proctitle import auto; auto('psim-decode')
+    from simcode.util.proctitle import auto; auto('psim-decode')
     md = os.path.abspath(a.movie_dir)
     out = a.out or os.path.join(md, 'decode', 'locs.npz')
     D = DP.D

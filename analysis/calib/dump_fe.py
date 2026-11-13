@@ -1,16 +1,16 @@
 """Dump the sc head outputs (I_t, full Cholesky L, prior, detector point, score) + per-FOV patterns (estimate / true) + GT
-on the gate scenes (simcode2/hd/gate.gen, identical seeds / iteration loop as gate.main, no CRLB), so pattern-solve
+on the gate scenes (simcode/hd/gate.gen, identical seeds / iteration loop as gate.main, no CRLB), so pattern-solve
 variants (Sigma models, per-bin calibration, prior offset) can be re-run offline. The CRLB (gt_sf_m) is copied from the
 existing gate npz of the same scene / seed after checking that the GT is identical.
 usage: CUDA_VISIBLE_DEVICES=1 python dump_fe.py --scen iso,rs05q,rs05qm --seeds 301,302,303 [--ref_tag _hd_sc5nbb15pm]"""
 import argparse, os, sys, time
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 import numpy as np, torch
-from simcode2.sim import simtools as ST
-from simcode2.sim.simtools import CD, dev, S
-from simcode2.hd import gate as GA
-from simcode2.hd import sc as SCM
-from simcode2.det.model import select_subpixel
+from simcode.sim import simtools as ST
+from simcode.sim.simtools import CD, dev, S
+from simcode.hd import gate as GA
+from simcode.hd import sc as SCM
+from simcode.det.model import select_subpixel
 
 OUT = os.path.join(_cfg.root('out'), 'bright', 'fe')
 

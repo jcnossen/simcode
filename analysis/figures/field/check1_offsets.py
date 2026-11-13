@@ -19,7 +19,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 PX = 108.33
-from simcode2 import config
+from simcode import config
 H = config.root('out')
 SP = os.path.join(H, 'scratch')
 DS = {'real05': f'{H}/full_0.5nM_sc5nb_bright_real', 'real25': f'{H}/full_2.5nM_m2_sc5nb_bright_real',

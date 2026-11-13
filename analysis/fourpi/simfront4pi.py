@@ -1,7 +1,7 @@
-"""Pass 1 (front end) on a simulated 4Pi movie (analysis/fourpi/simmovie4pi.py): the same steps as front4pi.py on dcimg
+"""Pass 1 (front end) on a simulated 4Pi movie (analysis/fourpi/simmovie4pi.py): the same steps as the real front end (simcode/fourpi/front.py) on dcimg
 (window sums aligned to step 0, registered 4-channel sum with the registration map, DoG detection with the same
 thresholds, unwarped 15 x 15 channel patches at the mapped positions, head4pi), written in the front4pi output format so
-the same solve code runs on it. New file; front4pi.py is unchanged.
+the same solve code runs on it.
 The sensor layout [T, H, 4 W] is cropped and channels 2/3 un-mirrored as in dc.crops; offset 100 ADU, gain 0.23.
 The registration map is the simulator's (the real pipeline uses the in-situ map in the same way).
 Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simfront4pi.py --tag d1 --model v2
@@ -9,15 +9,16 @@ Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simfront4pi.py --tag d1 --m
 import argparse, json, os, sys, time
 import numpy as np, torch
 import torch.nn.functional as F
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from front4pi import blur
+from simcode.fourpi.setup import P4
+from simcode.fourpi.front import blur
 from simmovie4pi import reg_map, GAIN, OFF
-from simcode2.fourpi.head4pi import Head4Pi
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.head4pi import Head4Pi
+from simcode.fourpi.lut4pi import LUT4Pi
 
-P = 15
+from simcode.fourpi.setup import P
 
 
 def detect(E, grid, border, noise='mad', k=8.0, nms=7, s1=1.5):
@@ -49,16 +50,16 @@ def main():
     p.add_argument('--save_img', type=int, default=0, help='1: keep the candidate patches [n,6,4,15,15] (e, float16) in the front file (small simulated movies only; for the linear read-out, simlin4pi.py)')
     p.add_argument('--noise', default='low'); p.add_argument('--k', type=float, default=8.0); p.add_argument('--out', default=''); p.add_argument('--nms', type=int, default=7); p.add_argument('--s1', type=float, default=1.5)
     a = p.parse_args()
-    from simcode2.util.proctitle import auto; auto('4pi-sim')
-    d = f'{REPO}/out/4pi/simmovie/{a.tag}'
+    from simcode.util.proctitle import auto; auto('4pi-sim')
+    d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')
     det = None
     if a.det:
-        from simcode2.det.up2 import load as dload, select as dselect
+        from simcode.det.up2 import load as dload, select as dselect
         det, _ = dload(a.det)
     dev = 'cuda'
-    from simcode2.fourpi.loadhead import load_head     # all head architectures (v2..v8)
+    from simcode.fourpi.loadhead import load_head     # all head architectures (v2..v8)
     net, ck = load_head(a.model)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
     grid = [None]; maps = {}

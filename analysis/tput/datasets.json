@@ -1,5 +1,5 @@
 {
- "_comment": "bench_tput.py datasets (= dev tput/bench_tput.py DATA). movie: relative to the simcode2 data root; calibrations: models dir; pattern: a full run's pattern_est.pt (edit, or pass --pattern). The dev m20qh entry (20 nM-like sim) is omitted: its movie / pattern are scratch files.",
+ "_comment": "bench_tput.py datasets (= dev tput/bench_tput.py DATA). movie: relative to the simcode data root; calibrations: models dir; pattern: a full run's pattern_est.pt (edit, or pass --pattern). The dev m20qh entry (20 nM-like sim) is omitted: its movie / pattern are scratch files.",
  "0.5nM": {"movie": "0.5nM/cover1/1/simflux_5.5ms_500mW.tif", "calib": "insitu/calib_0.5nM.json", "f0": 12000, "f1": 18000,
            "pattern": "<out_05nM>/pattern_est.pt", "sc_cal": "calib/calib_sc_hd_sc5nbb15_pm_bright_real.json", "p2_cal": "calib/calib_p2L_movie_b10.json"},
  "2.5nM": {"movie": "2.5nM/2/cover1_600mW_5.5ms_cf660.tif", "calib": "insitu/calib_2p5nM_m2_sc.json", "f0": 12000, "f1": 18000,

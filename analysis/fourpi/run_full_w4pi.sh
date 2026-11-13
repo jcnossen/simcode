@@ -1,20 +1,12 @@
 #!/bin/bash
-# Full-movie run of the learned-window 4Pi pipeline (real_w4pi.py), resumable; several workers may run on different GPUs
-# (a file is claimed with a marker; finished files are skipped; a crashed worker leaves locs_<cell>_<file>_<head>.claim: delete it).
-# Usage: GPU=1 ORDER=fwd setsid nohup bash analysis/fourpi/run_full_w4pi.sh NPC v10 1.56 > out/4pi/logs/full_NPC_v10_a.log 2>&1 &
+# Full-movie run of the learned-window 4Pi pipeline (simcode/fourpi/run.py), resumable: finished files are skipped, a file
+# is claimed by the worker that processes it, and the claim of a worker that died is taken over at the next start.
+# One worker per GPU (the same command, sharing the files through the claims):
+# Usage: GPUS=1,2 setsid nohup bash analysis/fourpi/run_full_w4pi.sh NPC v10 1.56 > /dev/null 2>&1 &
+#        (logs: <4Pi work dir>/logs/full_<cell>_<head>_gpu<g>.log; ORDER=rev processes the files backwards)
 CELL=${1:-NPC}; HEAD=${2:-v10}; COH=${3:-1.56}
-cd /home/jc/simcode2; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH; export CUDA_VISIBLE_DEVICES=${GPU:-1}
-FILES=$(python -c "
-import sys; sys.path.insert(0, 'analysis/fourpi')
-from dc import movie_files, file_index
-f = sorted(file_index(x) for x in movie_files('$CELL'))
-print(' '.join(str(i) for i in (f[::-1] if '${ORDER:-fwd}' == 'rev' else f)))")
-for f in $FILES; do
-  o=$(printf "out/4pi/net/locs_%s_%03d_%s" $CELL $f $HEAD)
-  [ -f $o.npz ] && continue
-  ( set -o noclobber; echo $$ > $o.claim ) 2>/dev/null || continue
-  if [ $(df --output=avail -BG / | tail -1 | tr -dc 0-9) -lt 12 ]; then echo "disk below 12 GB free: stop"; rm -f $o.claim; exit 1; fi
-  python analysis/fourpi/real_w4pi.py --cell $CELL --files $f --head $HEAD --coh $COH 2>&1 | grep -v -E "Warn|solved"
-  rm -f $o.claim
-done
+cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH; O4=$(python -c "from simcode.fourpi.setup import P4; print(P4)")
+mkdir -p $O4/logs
+python -m simcode.fileio.launch --gpus ${GPUS:-${GPU:-1}} --log $O4/logs/full_${CELL}_${HEAD} -- \
+  python -m simcode.fourpi.run --cell $CELL --all --head $HEAD --coh $COH --claim 1 --order ${ORDER:-fwd}
 echo FULL_DONE $CELL

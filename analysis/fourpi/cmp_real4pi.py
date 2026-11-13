@@ -10,8 +10,10 @@ Usage: python analysis/fourpi/cmp_real4pi.py --cell NPC --files 10 --head v10 [-
 import argparse, json, os, sys
 import numpy as np
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
-PX = 128.0
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
+from simcode.fourpi.setup import PX_NM as PX
 EDGES = (1000, 2000, 4000, 8000, 20000)
 
 
@@ -56,8 +58,8 @@ def main():
     a = p.parse_args()
     res = {}
     for fi in a.files:
-        L = dict(np.load(f'{REPO}/out/4pi/net/locs_{a.cell}_{fi:03d}_{a.head}{a.tag}.npz'))
-        C = dict(np.load(f'{REPO}/out/4pi/classical/real/cl_{a.cell}_{fi:03d}_wv.npz'))
+        L = dict(np.load(f'{P4}/net/locs_{a.cell}_{fi:03d}_{a.head}{a.tag}.npz'))
+        C = dict(np.load(f'{P4}/classical/real/cl_{a.cell}_{fi:03d}_wv.npz'))
         wmax = a.wmax or int(L['w'].max()) + 1
         cs = C['w'] < wmax
         C = {k: (v[cs] if getattr(v, 'shape', ())[:1] == cs.shape else v) for k, v in C.items()}

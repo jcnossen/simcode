@@ -8,7 +8,7 @@ Same json spec as analysis/hd_compare/score.py, plus the optional key
   "box_sim": "<sim dir>"   GT used to pick the zoom boxes (default: the spec's "sim"). The paper figures used the m20qh sim dir
                            for both m20qh and m25qh (same filament geometry, seed 7), so that both movies get the same boxes.
 Methods 'SIMCODE-net' and 'DECODE per-frame' are scored but not rendered; methods whose path does not exist are skipped.
-usage: python analysis/hd_compare/render.py <spec.json> [out.png]   (default <simcode2 out>/plots/hd_compare_<name[:3]>.png)"""
+usage: python analysis/hd_compare/render.py <spec.json> [out.png]   (default <simcode out>/plots/hd_compare_<name[:3]>.png)"""
 import os, sys, json
 import numpy as np, tifffile
 import matplotlib
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(_H, '..', 'figures'))
 import score as S          # analysis/hd_compare/score.py (imports analysis/baselines/compare.py)
 C = S.C
 import zoompick as ZP      # analysis/figures/zoompick.py
-from simcode2 import config
+from simcode import config
 
 nm = S.nm
 PX = S.PX; X0, X1 = S.X0, S.X1

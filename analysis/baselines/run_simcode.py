@@ -25,7 +25,7 @@ SIMCODE convention exc = relint (1 + depth sin(k.r - phase)); requires --coord_o
 usage: CUDA_VISIBLE_DEVICES=1 python run_simcode.py <sim_dir> <out.npz> [--model L48] [--ckpt 3] [--pattern est|gt]
 """
 import argparse, json, os, time, sys
-from simcode2 import config as _cfg
+from simcode import config as _cfg
 SMLMTORCH_MODELS = os.environ.get('SMLMTORCH_MODELS') or _cfg._config().get('smlmtorch_models') or os.path.expanduser('~/smlmtorch/scripts/models')
 os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 import numpy as np, torch

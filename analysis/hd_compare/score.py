@@ -22,7 +22,7 @@ Extra metrics here:
   score_backup_pre_decode.py.  same protocol and code; the movie, the method outputs
 and the output dir come from a json spec instead of hard-coded paths:
   {"name": "m25qh", "sim": "<sim dir with sim_gt.npz>", "gate_scene": "rs25pm" (default rs05pm for m05*, else rs25pm),
-   "out": "<dir>" (default <simcode2 out>/hd_compare),
+   "out": "<dir>" (default <simcode out>/hd_compare),
    "methods": [["SMLM (paper pipeline)", "smlm", "<classic_<m>.npz>"], ["SMLM tuned", "smlmt:2.0", "<smlmt_<m>_r6_m4_dt3.5.npz>"],
                ["SF (paper pipeline)", "sf", "<classic_<m>.npz>"], ["DECODE", "decode_sum6", "<m>_hd_sum6.npz"],
                ["DECODE per-frame", "decode_frame", "<m>_hd_frame.npz"], ["SIMCODE", "sc_mrg", "<m>_L64_5c3_paper_fix.npz"],
@@ -31,7 +31,7 @@ and the output dir come from a json spec instead of hard-coded paths:
   classical inputs from analysis/baselines/run_classic.py <sim> <work> classic_<m>.npz (SMLM + SF), the tuned SMLM from
   analysis/baselines/run_smlm_tuned.py <sim> <work> smlmt_<m>_r6_m4_dt3.5.npz 6 4; DECODE from analysis/baselines/decode;
   SIMCODE from analysis/baselines/run_simcode.py --model L64_5 --cam paper --fix_sign 1. Renders: analysis/hd_compare/render.py
-  <spec>. crlb_ref: see analysis/baselines/compare.py (SIMCODE2_GATE_DIR).
+  <spec>. crlb_ref: see analysis/baselines/compare.py (SIMCODE_GATE_DIR).
 usage: python analysis/hd_compare/score.py <spec.json>   -> <out>/score_<name>.txt / .json
 """
 import os, sys, json, glob
@@ -48,7 +48,7 @@ METHODS = [tuple(m) for m in SPEC['methods']]
 if SPEC.get('out'):
     HC = SPEC['out']; os.makedirs(HC, exist_ok=True)
 else:
-    from simcode2 import config
+    from simcode import config
     HC = config.out_dir('hd_compare')
 LINK_R = 1.0     # DECODE per-frame -> window linking radius (px)
 
@@ -119,19 +119,8 @@ def load(kind, path, NF):
 
 
 def frc_res(x, y, half, pix_nm=5.0):
-    zoom = PX / pix_nm; W = int((X1 - X0) * zoom)
-    yy, xx = np.meshgrid(np.fft.fftfreq(W), np.fft.fftfreq(W), indexing='ij')
-    nbins = 300; rbin = np.minimum((np.sqrt(xx ** 2 + yy ** 2) / 0.5 * nbins).astype(int), nbins)
-    ims = []
-    for m in (half, ~half):
-        h, _, _ = np.histogram2d((y[m] - X0) * zoom, (x[m] - X0) * zoom, bins=(W, W), range=[[0, W], [0, W]])
-        ims.append(np.fft.fft2(h))
-    num = np.bincount(rbin.ravel(), np.real(ims[0] * np.conj(ims[1])).ravel(), nbins + 1)
-    den = np.sqrt(np.bincount(rbin.ravel(), (np.abs(ims[0]) ** 2).ravel(), nbins + 1) * np.bincount(rbin.ravel(), (np.abs(ims[1]) ** 2).ravel(), nbins + 1))
-    c = np.convolve((num / np.maximum(den, 1e-12))[:nbins], np.ones(5) / 5, mode='same')
-    fq = (np.arange(nbins) + 0.5) / nbins * 0.5 / pix_nm
-    below = np.nonzero((c < 1 / 7) & (fq > 1 / 500))[0]
-    return float(1 / fq[below[0]]) if len(below) else np.nan
+    from simcode.evalproto.frc import frc_fov
+    return frc_fov(x, y, half, X0, X1, PX, pix_nm)
 
 
 def main():

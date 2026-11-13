@@ -6,6 +6,10 @@ the step offset s in 0..5 is the cyclic shift that best matches. Also reports th
 (the pattern phase drift relative to the reference file) at the start and at the end of each file.
 usage: python frameorder.py <cell> <out.npz> [nproc]
 """
+import os, sys
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
+from simcode.fourpi.setup import P4
 import os, sys, time
 import numpy as np
 from multiprocessing import Pool
@@ -16,7 +20,7 @@ from quickloc import affine_warp, window_photometry, rows_to_arrays, slot_coeffs
 NH, NT = 240, 120
 K0 = {'MT': (np.array([3.84, -0.026]), np.array([0.0, 3.852])), 'NPC': (np.array([3.84, -0.026]), np.array([0.0, 3.852]))}
 REF = {'MT': 5, 'NPC': 10}
-CAM = '/home/jc/simcode2/out/4pi/smlm/camera'
+CAM = f'{P4}/smlm/camera'
 
 
 def load_off(cell):

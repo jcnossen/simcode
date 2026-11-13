@@ -3,7 +3,7 @@
 Sources (same candidates as the network either way):
   --src patches : out/4pi/patches/<cell>/patches_<file>.npy + meta_<file>.npz (v3 pass-1 candidates; README there),
                   camera offset map out/4pi/patches/camera_<cell>.npz; streamed (mmap), read twice (stage A, stage B).
-  --src dcimg   : a short direct read (--nframes) through analysis/fourpi/front4pi.Front (identical detection and
+  --src dcimg   : a short direct read (--nframes) through simcode/fourpi/front.Front (identical detection and
                   patch cut as the network's pass 1); patches kept in RAM.
 Per file: stage A (summed fit, per-frame counts, moment phase) -> pattern from the data -> SIMFLUX two-step ->
 4Pi phase field (cubic XY polynomial + tile residual + block drift) -> z_4pi -> z_ast scale check (regression of z_ast
@@ -14,18 +14,24 @@ Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/real_cl.py --cell
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode2.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.setup import P4, DELTA, GAIN, P, LAYOUT, movie_file, movie_files, file_index
+from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fileio.movie import DcimgMovie
+from simcode.fileio.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-OUT = f'{REPO}/out/4pi/classical/real'
-PDIR = f'{REPO}/out/4pi/patches'
-DELTA = {'MT': math.radians(-10.4), 'NPC': math.radians(-13.9)}
-GAIN = 0.23
-P = 15
+OUT = f'{P4}/classical/real'
+PDIR = f'{P4}/patches'
+
+
+def units(cell, tag, claim=False, redo=False, min_free_gb=0.0):
+    """the per-file tables cl_<cell>_<file><tag>.npz of a cell as units of the shared work driver"""
+    return Units(OUT, 'cl', pattern='{stage}_{cell}_{key:03d}{tag}.npz', cell=cell, tag=tag, claim=claim, redo=redo, min_free_gb=min_free_gb,
+                 title=f'4pi-cl {cell}')
 
 
 def nn_dist(w, cx, cy):
@@ -69,14 +75,12 @@ class PatchSource:
 
 class DcimgSource:
     def __init__(self, cell, fi, nframes, dev, chunk=600):
-        from dc import Dcimg, movie_files, file_index
-        from front4pi import Front
-        fn = [f for f in movie_files(cell) if file_index(f) == fi][0]
-        fr = Front(cell, dev); d = Dcimg(fn)
+        from simcode.fourpi.front import Front
+        fr = Front(cell, dev); d = DcimgMovie(movie_file(cell, fi), layout=LAYOUT)
         imgs, doffs, ws, cxs, cys = [], [], [], [], []
         for a0 in range(0, nframes, chunk):
             with torch.no_grad():
-                E = fr.to_e(d.raw(a0, min(chunk, nframes - a0)))
+                E = fr.to_e(d.read(a0, min(a0 + chunk, nframes, d.n)))
                 w, cy, cx, dog = fr.detect(E)
                 img, doff, ok = fr.patches(E, w, cy, cx)
             s = torch.nonzero(ok)[:, 0]
@@ -113,7 +117,7 @@ def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=Non
     X, Y = cx + A['x0'], cy + A['y0']
     fitok = A['conv'] & ~A['at_bound'] & (A['chi2px'] < 4) & (A['llr'] < M.FILTERS['llr_max'])
     # pattern
-    ref = json.load(open(f'{REPO}/out/4pi/smlm/diag/pattern_{cell}.json'))
+    ref = json.load(open(f'{P4}/smlm/diag/pattern_{cell}.json'))
     kref = [ref['angle0']['k'], ref['angle1']['k']]
     psel = fitok & (A['Nsum'] > 1500) & (A['R'] < 0.15) & (nn > 5)
     pat = M.estimate_pattern(A, X, Y, kref, psel)
@@ -172,7 +176,7 @@ def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=Non
     if pix_mask is not None: tab['pix_region'] = pix_mask
     if extra: tab.update(extra)
     fn = f'{OUT}/cl_{cell}_{fi:03d}{a.tag}.npz'
-    np.savez(fn, **tab)
+    atomic_savez(fn, **tab)
     g = keep
     summ = dict(cell=cell, file=fi, n=n, kept=float(keep.mean()), kept_pix=float(keep_pix.mean()), filters=rows, flag_names=list(fl.keys()),
                 pattern=pat, field=hist, field_mode=a.field,
@@ -180,7 +184,7 @@ def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=Non
                 med_szp_nm=float(np.nanmedian(tab['szp'][keep_pix]) * 1000) if keep_pix.any() else None,
                 med_N=float(np.median(tab['N'][g])), z_p2_p98=np.percentile(tab['z'][g], [2, 98]).tolist(), C_med=float(np.median(B['C'][fitok])),
                 t_stageA_s=tA, t_stageB_s=tB, t_pix_s=tP)
-    json.dump(summ, open(fn.replace('.npz', '_summary.json'), 'w'), indent=1, default=float)
+    atomic_json(fn.replace('.npz', '_summary.json'), summ, indent=1, default=float)
     print(f"{cell} {fi}: {n} cand, kept {summ['kept']:.3f} (pix {summ['kept_pix']:.3f}); pattern m {pat['m']:.3f} steps "
           f"{np.round(pat['angle0']['steps_deg'], 1)} {np.round(pat['angle1']['steps_deg'], 1)}; field {hist}; "
           f"med sigma {summ['med_sx_nm']:.1f}/{summ['med_sy_nm']:.1f}/{summ['med_sz_nm']:.1f} nm; t A {tA:.0f} B {tB:.0f} pix {tP:.0f} s -> {fn}", flush=True)
@@ -215,44 +219,49 @@ def main():
     ap.add_argument('--tile', type=float, default=12.0); ap.add_argument('--tblk', type=int, default=50)
     ap.add_argument('--pix', type=int, default=1); ap.add_argument('--tag', default='')
     ap.add_argument('--skip_done', type=int, default=1)
+    ap.add_argument('--claim', type=int, default=0, help='1: claim each file (several workers on one output directory)')
+    ap.add_argument('--min_free_gb', type=float, default=2.0)
     ap.add_argument('--follow', type=int, default=0, help='poll out/4pi/patches and process files as they complete')
     ap.add_argument('--cells', nargs='*', default=['NPC', 'MT'])
     ap.add_argument('--order_npc', type=int, default=3); ap.add_argument('--order_mt', type=int, default=1); ap.add_argument('--hours', type=float, default=16)
     a = ap.parse_args()
     if a.follow: return follow(a)
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, DELTA[a.cell]), dev=dev)
+    U = units(a.cell, a.tag, claim=a.claim, redo=not a.skip_done, min_free_gb=a.min_free_gb)
     for fi in (a.files or []):
-        if a.skip_done and os.path.exists(f'{OUT}/cl_{a.cell}_{fi:03d}{a.tag}.npz'):
-            print(f'{a.cell} {fi}: done, skipped'); continue
+        if U.done(fi): print(f'{a.cell} {fi}: done, skipped')
+    for fi in U.todo(a.files or []):
         src = PatchSource(a.cell, fi, dev) if a.src == 'patches' else DcimgSource(a.cell, fi, a.nframes, dev)
         process(c4, src, a.cell, fi, a, dev)
         del src; torch.cuda.empty_cache()
 
 
 def follow(a):
-    from simcode2.util.proctitle import auto; auto('4pi-classic')
-    from dc import movie_files, file_index
+    from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{REPO}/out/4pi/psf4pi/{a.psf}.json'))['psf']
+    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)
+    US = {c: units(c, a.tag, claim=True) for c in a.cells}
     c4s = {c: Classic4Pi(lut, delta=(0.0, DELTA[c]), dev=dev) for c in a.cells}
     expect = {c: sorted(file_index(f) for f in movie_files(c)) for c in a.cells}
     t_end = time.time() + 3600 * a.hours
     while time.time() < t_end:
-        todo = [(c, fi) for c in a.cells for fi in ready_files(c)
-                if not os.path.exists(f'{OUT}/cl_{c}_{fi:03d}{a.tag}.npz') and not os.path.exists(f'{OUT}/cl_{c}_{fi:03d}{a.tag}.failed')]
+        todo = [(c, fi) for c in a.cells for fi in ready_files(c) if not US[c].done(fi) and not US[c].failed(fi)]
         for c, fi in todo:
+            if not US[c].claim(fi): continue
             try:
                 a.order = a.order_mt if c == 'MT' else a.order_npc    # MT: only two 6 um boxes -> linear XY + tiles
                 process(c4s[c], PatchSource(c, fi, dev), c, fi, a, dev)
             except Exception as e:
                 print(f'{c} {fi}: FAILED {e!r}', flush=True)
-                open(f'{OUT}/cl_{c}_{fi:03d}{a.tag}.failed', 'w').write(repr(e))
+                US[c].fail(fi, e)
+            finally:
+                US[c].release(fi)
             torch.cuda.empty_cache()
-        done = {c: [fi for fi in expect[c] if os.path.exists(f'{OUT}/cl_{c}_{fi:03d}{a.tag}.npz')] for c in a.cells}
+        done = {c: [fi for fi in expect[c] if US[c].done(fi)] for c in a.cells}
         if all(len(done[c]) == len(expect[c]) for c in a.cells):
             print('all files done', flush=True); break
         if not todo:

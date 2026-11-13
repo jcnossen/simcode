@@ -12,7 +12,7 @@ Rows per method ('full' = what each method outputs, as the preprint scored it):
   v1      <run>/v1/locs.npz: the preprint's SIMCODE, merged 'sfhd-ndi+smlm' rows (run_simcode_v1.py), its MVU sigma
 Metrics:
   counts   n_all, n_disjoint (window start % 6 == 0, inside the FOV), n_frc
-  FRC      the fair protocol of analysis/paper/frc_fair.py (frc_halves = simcode2.evalproto.lib.frc_std): disjoint windows,
+  FRC      the fair protocol of analysis/paper/frc_fair.py (frc_halves = simcode.evalproto.lib.frc_std): disjoint windows,
            max(sigma_x, sigma_y) < 0.15 px with each method's own sigma, alternating 300-frame halves, 5-nm renders, 1/7.
            Simulation-specific: region = the whole simulated FOV [0, W) (not the sensor crop 5-115 px) and NO drift correction
            (the simulations have no drift, so the DME step of frc_fair is skipped).
@@ -31,7 +31,7 @@ Metrics:
            null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm).
   Moving (S3): per 1000-frame block Jaccard at 10 / 20 / 40 nm, GT = the trajectory points of the block (as
            smlmtorch fig_moving_tubules.py compute_jaccards; frames strictly inside (i bs, (i + 1) bs) as there).
-usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--netset default] [--kind density|moving]
+usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--netset m1809] [--kind density|moving]
 outputs: <run dir>/metrics.json, metrics.png"""
 import os, sys, json, argparse, glob
 import numpy as np
@@ -107,7 +107,7 @@ def u_all(x, y, sig, base, tile=10.0):
     return u
 
 
-def method_paths(run, netset='default'):
+def method_paths(run, netset='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
              decode=f'{run}/decode/locs.npz', v2=f'{run}/v2_{netset}/locs_p2_sim.npz')
     P['v2q45'] = P['v2']                                   # 'SIMCODE v2, u <= 0.45' (main v2 row; 'v2 all' removed 2026-11-12)
@@ -323,7 +323,7 @@ def main():
     ap.add_argument('run')
     ap.add_argument('--movie', default=None)
     ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--netset', default='default')
+    ap.add_argument('--netset', default='m1809')
     ap.add_argument('--kind', default=None)
     ap.add_argument('--timebins', type=int, default=120)
     a = ap.parse_args()

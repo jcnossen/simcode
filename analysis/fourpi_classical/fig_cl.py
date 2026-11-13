@@ -12,25 +12,19 @@ import argparse, json, os, sys
 import numpy as np
 from scipy.ndimage import gaussian_filter, maximum_filter
 from scipy.spatial import cKDTree
-REPO = '/home/jc/simcode2'
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
+from simcode.fourpi.setup import P4
 from dafl4pi import analyse
-PX = 128.0
-OUT = f'{REPO}/out/4pi/classical'
+from simcode.fourpi.setup import PX_NM as PX
+OUT = f'{P4}/classical'
 
 
 def frc(xa, ya, xb, yb, px=4.0):
-    """FRC (nm in, nm out), 1/7 threshold, as analysis/paper/frc_fair.frc_curve"""
-    lo = min(xa.min(), xb.min(), ya.min(), yb.min()); hi = max(xa.max(), xb.max(), ya.max(), yb.max())
-    n = int((hi - lo) / px) + 2; n += n % 2
-    h = lambda x, y: np.histogram2d(y, x, bins=n, range=[[lo, lo + n * px], [lo, lo + n * px]])[0]
-    A, B = np.fft.fftshift(np.fft.fft2(h(xa, ya))), np.fft.fftshift(np.fft.fft2(h(xb, yb)))
-    yy, xx = np.indices(A.shape) - n // 2; rr = np.hypot(xx, yy).astype(int)
-    num = np.bincount(rr.ravel(), (A * B.conj()).real.ravel()); da = np.bincount(rr.ravel(), (np.abs(A) ** 2).ravel())
-    db = np.bincount(rr.ravel(), (np.abs(B) ** 2).ravel())
-    c = np.convolve(num / np.sqrt(da * db + 1e-12), np.ones(5) / 5, 'same')
-    below = np.nonzero(c[3:n // 2] < 1 / 7)[0]
-    return float('nan') if len(below) == 0 else float(n * px / (below[0] + 3))
+    """FRC (nm in, nm out), 1/7 threshold: simcode/evalproto/frc.py"""
+    from simcode.evalproto.frc import frc as _frc
+    return _frc(xa, ya, xb, yb, px=px, units='nm')
 
 
 def render(ax, x, y, z, box, zr, sr, title, vmax=None):
@@ -59,23 +53,7 @@ def render_xz(ax, x, z, xr, zr, sr, title):
     ax.set_title(title, fontsize=8); ax.tick_params(labelsize=6); ax.set_ylabel('z (nm)', fontsize=7)
 
 
-def zdrift_struct(x, y, z, w, bin_nm=60.0, blk_w=500, n_it=8, clip=150.0):
-    """sample axial drift from the structure itself (generalises the NPC per-pore step to any sample): per 500-window
-    block, median of z - (median z of the same 60 nm lateral bin over the whole movie), smoothed over blocks (sd 1 block),
-    iterated; zero mean. Returns drift (nm) per block. Applied to each table from its own localizations."""
-    import pandas as pd
-    ix = np.floor((x - x.min()) / bin_nm).astype(np.int64); iy = np.floor((y - y.min()) / bin_nm).astype(np.int64)
-    pix = np.unique(ix * (iy.max() + 1) + iy, return_inverse=True)[1]
-    blk = (w // blk_w).astype(np.int64); nb = int(blk.max()) + 1; drift = np.zeros(nb)
-    from scipy.ndimage import gaussian_filter1d
-    for _ in range(n_it):
-        zc = z - drift[blk]
-        ref = pd.Series(zc).groupby(pix).median().to_numpy()
-        r = zc - ref[pix]; m = np.abs(r) < clip
-        g = pd.Series(r[m]).groupby(blk[m]); md = g.median().reindex(range(nb)).fillna(0).to_numpy().copy()
-        md[g.size().reindex(range(nb)).fillna(0).to_numpy() < 200] = 0
-        drift = drift + gaussian_filter1d(md, 1.0); drift -= drift.mean()
-    return drift
+from simcode.fourpi.zdrift import zdrift_struct  # noqa (structure-based sample z drift; used by the scripts that import this module)
 
 
 def load(cl_fn, net_fn, files=None, wmax=None, zdrift=False):
@@ -555,7 +533,7 @@ def main():
         zinfo = dict(ptp_net_nm=float(np.ptp(zd['net'])), ptp_cl_nm=float(np.ptp(zd['cl'])),
                      rms_diff_net_cl_nm=float(np.sqrt(np.mean((zd['net'][:n_] - zd['cl'][:n_] - np.mean(zd['net'][:n_] - zd['cl'][:n_])) ** 2))))
         lg(f'z drift {zinfo}')
-        reg = json.load(open(f'{REPO}/out/4pi/patches/regions_MT.json'))
+        reg = json.load(open(f'{P4}/patches/regions_MT.json'))
         boxes = [dict(b, id=i) for i, b in enumerate(reg['boxes']) if b.get('save')]
         D['crossings'] = pick_xings(D); lg(f'crossings {D["crossings"]}')
         fo = mt_overview(D, boxes, a.tag); lg(fo)
