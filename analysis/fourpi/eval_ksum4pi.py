@@ -32,7 +32,8 @@ def load_ref(cell, fi, ref, head='v10'):
     C = np.load(f'{REPO}/out/4pi/classical/real/cl_{cell}_{fi:03d}_wv.npz')
     if ref == 'cl':
         return dict(w=C['w'], x=C['x'], y=C['y'], z=C['z'], N=C['N'], ok=C['keep'], any=np.isfinite(C['x0']) & (C['N'] > 300))
-    return dict(w=C['w'], x=C['xp'], y=C['yp'], z=C['zp'], N=C['N'], ok=C['keep_pix'], any=np.isfinite(C['x0']) & (C['N'] > 300))
+    return dict(w=C['w'], x=np.where(np.isfinite(C['xp']), C['xp'], C['x0']), y=np.where(np.isfinite(C['yp']), C['yp'], C['y0']), z=C['zp'], N=C['N'],
+                ok=C['keep_pix'] & np.isfinite(C['xp']) & np.isfinite(C['zp']), any=np.isfinite(C['x0']) & (C['N'] > 300))
 
 
 def to_sum(R, K, S, nblk):

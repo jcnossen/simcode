@@ -7,7 +7,7 @@ Columns of net_<cell>_<head>_all.npz: x, y (px, raw), xd, yd (drift corrected), 
 sx, sy, sz (reported), sx_cal, sy_cal, sz_cal, N, good, sel (>= 1000 e and |z| <= 0.3 um), kin, chi2, dof, frame, w, fidx, on (all True), drift [F,2], zdrift.
 Usage: python analysis/fourpi/post_w4pi.py --cell NPC --head v10
 """
-import argparse, glob, json, os, subprocess, sys
+import argparse, glob, json, os, re, subprocess, sys
 import numpy as np
 REPO = '/home/jc/simcode2'
 OUT = f'{REPO}/out/4pi/net'
@@ -26,14 +26,13 @@ def main():
     if REPO not in sys.path: sys.path.insert(0, REPO)
     from simcode2.util.proctitle import auto; auto('4pi-post-w')
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
-    if a.files: fs = [f for f in fs if int(f.split('_')[-2]) in a.files]
-    first = min(int(f.split('_')[-2]) for f in fs) if not a.files else None
-    allf = sorted(int(f.split('_')[-2]) for f in glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
-    first = allf[0]
+    fidx = lambda f: int(re.search(rf'locs_{a.cell}_(\d\d\d)_', os.path.basename(f)).group(1))     # the head tag may contain underscores
+    if a.files: fs = [f for f in fs if fidx(f) in a.files]
+    first = min(fidx(f) for f in glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
     keys = ('x', 'y', 'z', 'sx', 'sy', 'sz', 'N', 'good', 'kin', 'chi2', 'dof', 'w', 'nn', 'Tsum', 'Phi0', 'zprior', 'pdet', 'cs')
     R = {k: [] for k in keys + ('fidx', 'frame')}
     for f in fs:
-        D = np.load(f); fi = int(f.split('_')[-2])
+        D = np.load(f); fi = fidx(f)
         for k in keys: R[k].append(D[k])
         wr = D['w'] if a.ksum == 1 else (D['w'] // a.kstride) * (a.ksum * a.kstride) + D['w'] % a.kstride + (a.ksum - 1) * a.kstride // 2
         R['fidx'].append(np.full(len(D['x']), fi)); R['frame'].append((fi - first) * 18000 + 6 * wr)
