@@ -42,6 +42,7 @@ for i, d in enumerate(DENS):
         if i == 0: A.set_title(lab, fontsize=11)
     for A in ax[i]: A.set_xticks([]); A.set_yticks([])
 cond = 'experimental photons and background of 1809/2 (median 817 photons per window, 5.1 photons/px/frame)' if a.prefix == 'Dexp' else "preprint condition (500 photons per window, background 2.5 photons/px/frame)"
-fig.suptitle(f'Simulated microtubules, 60 000 frames, measured 1809/2 PSF; {cond}.\nDensity in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) and rendering in every panel; SIMCODE v2 with the PSF-matched networks.', fontsize=10)
+psfname = 'Gaussian 1.3 px PSF (the preprint simulation)' if a.suffix == '_gauss' else 'measured 1809/2 PSF'
+fig.suptitle(f'Simulated microtubules, 60 000 frames, {psfname}; {cond}.\nDensity in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) and rendering in every panel; SIMCODE v2 with the PSF-matched networks.', fontsize=10)
 fig.text(0.01, 0.005, '   '.join(sorted(notes)), fontsize=8)
 plt.tight_layout(rect=[0, 0.02, 1, 0.95]); fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.netset}.png'); plt.savefig(fn, dpi=130); print(fn)

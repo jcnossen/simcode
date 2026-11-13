@@ -35,5 +35,17 @@
   "p2_cal_sim": "calib/calib_p2L_m1809.json",
   "p2_cal_real": "calib/calib_p2L_m1809_real.json",
   "sig_u": "calib/sigu/sigu_p1_m1809.json,calib/sigu/sigu_p2_m1809.json"
+ },
+ "g13": {
+  "_doc": "PSF-matched set for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; models/insitu/calib_gauss1.3.json; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12)",
+  "det": "det_g13.pt",
+  "head": "hd_g13.pt",
+  "cal_sim": "calib/calib_sc_hd_g13.json",
+  "cal_real": "calib/calib_sc_hd_g13_real.json",
+  "p2_det": "p2det_g13.pt",
+  "p2_head": "p2headL_g13.pt",
+  "p2_cal_sim": "calib/calib_p2L_g13.json",
+  "p2_cal_real": "calib/calib_p2L_g13_real.json",
+  "sig_u": "calib/sigu/sigu_p1_g13.json,calib/sigu/sigu_p2_g13.json"
  }
 }
