@@ -1,5 +1,5 @@
 """Preprint value vs reproduced (Gaussian 1.3 px PSF movies, baselines as the preprint ran them) vs SIMCODE v2 (net set --netset,
-u <= 0.45) for every number the preprint quotes for its simulation figures (out/paper/INVENTORY.md):
+main selection sigma <= 12 nm; u <= 0.45 as the earlier rule) for every number the preprint quotes for its simulation figures (out/paper/INVENTORY.md):
   Fig 2 (density 1): FRC SIMCODE 20.7 / DECODE 28.2 / SIMFLUX 28.4 / SMLM 44.4 nm; Jaccard SIMCODE 0.89 / DECODE 0.68
   SI S2 (density 4): Jaccard SIMCODE 0.76 / DECODE 0.60 / SIMFLUX 0.41 / SMLM 0.37
   SI S8 (moving): mean Jaccard at 10 / 20 / 40 nm (values not transcribed in INVENTORY.md; the reproduced numbers are listed)
@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(C.REPO, 'analysis', 'paper')); import frc_fair
 PRE = {'fig2_frc': dict(v1=20.7, decode_pre=28.2, sf_gtp=28.4, smlm=44.4), 'fig2_jac': dict(v1=0.89, decode_pre=0.68),
        's2_jac_d4': dict(v1=0.76, decode_pre=0.60, sf_gtp=0.41, smlm=0.37)}
 LAB = dict(smlm='SMLM', sf_gtp='SIMFLUX (GT pattern)', sf='SIMFLUX (est. pattern)', decode_pre='DECODE (preprint model)', v1='SIMCODE (preprint, v1)',
-           v2q45='SIMCODE v2, u <= 0.45', v2='SIMCODE v2 strict')
+           v2q45='(SIMCODE v2, u <= 0.45, earlier rule)', v2sig='SIMCODE v2, σ <= 12 nm', v2='SIMCODE v2 strict')
 
 
 def frc_preprint(T, nframes, seed=0):
@@ -33,7 +33,7 @@ def main():
     rows = []; out = {}
     for d, key in ((1, 'fig2'), (4, 's2')):
         run = os.path.join(C.OUT, f'D{d}_gauss', 'full'); R = json.load(open(os.path.join(run, f'metrics_{a.netset}.json')))
-        for k in ('smlm', 'sf_gtp', 'sf', 'decode_pre', 'v1', 'v2q45', 'v2'):
+        for k in ('smlm', 'sf_gtp', 'sf', 'decode_pre', 'v1', 'v2sig', 'v2q45', 'v2'):
             if k not in R['methods']: continue
             r = R['methods'][k]; T = M.load_method(k, r['path'])
             fp = frc_preprint(T, R['nframes'])

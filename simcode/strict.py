@@ -18,12 +18,18 @@ Table (one row per stored localization = a 6-frame window of an emitter; windows
   disjoint    frame % 6 == 0 (non-overlapping windows)
   strict_u    per-tile sigma rank quantile in [0, 1] (rows with good = True inside the crop; nan otherwise), sigma = mean of
               sx, sy
-The paper's main selection "u <= 0.45" has no column of its own: it is strict_u finite and <= u_max, with u_max stored in the
-table file (entry u_max, default U_MAX = 0.45; --u_max) and in the info json. Readers use select(table) for the row mask.
+The paper's main selection (user decision 2026-11-13) is a GLOBAL threshold on the calibrated localization precision: rows with a
+rank (strict_u finite: good = p >= 0.63 and inside the crop, the same base rows as the earlier per-tile rule) and
+max(sx, sy) * px_nm <= sigma_max (nm; default SIGMA_MAX_NM; --sigma_max), i.e. "calibrated precision better than sigma_max in
+both axes", the same kind of rule as the max(sigma) < 0.15 px precision filter used for SMLM / SIMFLUX. sigma = the stored sx, sy
+(after the optional sig_u rescale). It has no column of its own; sigma_max (and px_nm) are stored in the table file and the info
+json. Readers use select(table) for the row mask. The earlier per-tile rule "u <= 0.45" (strict_u finite and <= u_max, u_max
+stored too, default U_MAX = 0.45; --u_max) stays available as rule 'u' (study: analysis/selection_global, out/selection_global).
   strict      the strict product: strict_u <= q (q from the row density, see below)
 Selections by name (select(T, rule); --subset <rule> writes the rows of a rule as a small file locs_<pass>_<name>.npz with
-x, y, frame, sx, sy, photons and sel = True, the format the figure and FRC scripts read): 'main' (file name u045 for
-u_max 0.45), 'strict' (file name strictonly), 'sel', 'good', 'all'.
+x, y, frame, sx, sy, photons and sel = True, the format the figure and FRC scripts read): 'main' (file name sig<X> for
+sigma_max X nm, e.g. sig10; sig12p5 for 12.5), 'u' (file name u045 for u_max 0.45), 'strict' (file name strictonly), 'sel',
+'good', 'all'.
 Strict product (critic 37 "per-tile sigma quantile, matched coverage"): within every 10-px tile of the 5-115 px crop the
 fraction q of the good rows with the smallest calibrated sigma is kept. Per-tile ranking makes the selection neutral to the
 illumination envelope and the depth field (a global sigma threshold selects the bright FOV centre). q:
@@ -46,7 +52,7 @@ illumination envelope and the depth field (a global sigma threshold selects the 
 The crop (x0, y0, size px) of the tiles and of the coverage is the output region of the run: read from the run's pass-1
 files (their 'crop' entry) unless --crop is given; (5, 5, 110) if neither is available.
 usage: python -m simcode.strict <out dir> [--tag est|est2] [--drift drift.npy] [--strict_q q | --strict_sigma_ref nm] [--format npz,csv]
-                                [--u_max 0.45] [--subset main,strict] [--sig_u <json>] [--crop x0,y0,size]
+                                [--sigma_max nm] [--u_max 0.45] [--subset main,u,strict] [--sig_u <json>] [--crop x0,y0,size]
 """
 import argparse, glob, json, os
 import numpy as np
@@ -54,7 +60,8 @@ import numpy as np
 PX_NM_DEFAULT = 108.33
 P_GOOD = 0.63
 CROP = (5.0, 5.0, 110.0)
-U_MAX = 0.45            # the paper's main selection: rows with a rank (good, in the crop) and strict_u <= U_MAX
+U_MAX = 0.45            # the earlier per-tile rule 'u': rows with a rank (good, in the crop) and strict_u <= U_MAX
+SIGMA_MAX_NM = 12.0     # the paper's main selection: rows with a rank and max(sx, sy) * px_nm <= SIGMA_MAX_NM (nm)
 
 
 def load_rows(out, tag):
@@ -176,41 +183,63 @@ def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, y
 SIGMA_REF = {'est': 7.0, 'est2': 7.4}   # the earlier sigma_ref rule's values (fixed-c calibration); opt-in only
 
 
-def select(T, u_max=None, rule='main'):
-    """row mask of a selection -> bool [n]. Default = the paper's main selection: strict_u finite and <= u_max (u_max None:
-    the value stored in the table, else U_MAX). T = a table (dict or loaded npz) with strict_u. Other rules: 'strict',
-    'sel', 'good' (that column), 'all' (every row)."""
-    if rule == 'main':
-        u = np.asarray(T['strict_u'])
-        if u_max is None: u_max = float(T['u_max']) if 'u_max' in T else U_MAX
-        return np.isfinite(u) & (u <= u_max)
+def precision_nm(T, px_nm=None):
+    """calibrated localization precision of each row (nm): max(sx, sy) * px_nm (px_nm None: the table's own, else PX_NM_DEFAULT)"""
+    if px_nm is None: px_nm = float(T['px_nm']) if 'px_nm' in T else PX_NM_DEFAULT
+    return np.maximum(np.asarray(T['sx'], np.float64), np.asarray(T['sy'], np.float64)) * px_nm
+
+
+def _stored(T, key, default):
+    return float(T[key]) if key in T and np.ndim(T[key]) == 0 else default
+
+
+def select(T, rule='main', u_max=None, sigma_max=None, px_nm=None):
+    """row mask of a selection -> bool [n]. T = a table (dict or loaded npz) with strict_u, sx, sy.
+    'main' (default) = the paper's selection: strict_u finite (p >= 0.63, inside the crop) and max(sx, sy) * px_nm <= sigma_max
+    (sigma_max None: the value stored in the table, else SIGMA_MAX_NM).
+    'u' = the earlier per-tile rule: strict_u finite and <= u_max (None: the stored value, else U_MAX).
+    'strict', 'sel', 'good' (that column), 'all' (every row)."""
+    if not isinstance(rule, str): raise TypeError(f'select(T, rule, ...): rule must be a name, got {rule!r} (u_max= / sigma_max= are keywords)')
+    if rule in ('main', 'u'):
+        u = np.asarray(T['strict_u']); base = np.isfinite(u)
+        if rule == 'u':
+            if u_max is None: u_max = _stored(T, 'u_max', U_MAX)
+            return base & (u <= u_max)
+        if sigma_max is None: sigma_max = _stored(T, 'sigma_max', SIGMA_MAX_NM)
+        return base & (precision_nm(T, px_nm) <= sigma_max)
     if rule in ('strict', 'sel', 'good'): return np.asarray(T[rule]).astype(bool)
     if rule == 'all': return np.ones(len(T['x']), bool)
-    raise ValueError(f"unknown selection {rule!r} (main, strict, sel, good, all)")
+    raise ValueError(f"unknown selection {rule!r} (main, u, strict, sel, good, all)")
 
 
-def subset_name(rule, u_max=U_MAX):
-    """file-name part of a subset: main -> 'u045' (u_max 0.45), strict -> 'strictonly', else the rule"""
-    if rule == 'main': return 'u' + f'{u_max:.2f}'.replace('.', '')
+def subset_name(rule, u_max=U_MAX, sigma_max=SIGMA_MAX_NM):
+    """file-name part of a subset: main -> 'sig10' (sigma_max 10 nm; 'sig12p5' for 12.5), u -> 'u045' (u_max 0.45),
+    strict -> 'strictonly', else the rule"""
+    if rule == 'main': return 'sig' + f'{sigma_max:g}'.replace('.', 'p')
+    if rule == 'u': return 'u' + f'{u_max:.2f}'.replace('.', '')
     return 'strictonly' if rule == 'strict' else rule
 
 
-def write_subset(T, path_base, rule='main', u_max=None):
+def write_subset(T, path_base, rule='main', u_max=None, sigma_max=None, px_nm=None):
     """rows of a selection as a small table <path_base>_<name>.npz (sel = True, x, y, frame, sx, sy, photons) -> file name"""
     from simcode.fileio.work import atomic_savez
-    um = (float(T['u_max']) if 'u_max' in T else U_MAX) if u_max is None else u_max
-    k = select(T, um, rule)
-    fn = f'{path_base}_{subset_name(rule, um)}.npz'
+    um = _stored(T, 'u_max', U_MAX) if u_max is None else u_max
+    sm = _stored(T, 'sigma_max', SIGMA_MAX_NM) if sigma_max is None else sigma_max
+    k = select(T, rule, u_max=um, sigma_max=sm, px_nm=px_nm)
+    fn = f'{path_base}_{subset_name(rule, um, sm)}.npz'
+    extra = dict(sigma_max=np.array(sm)) if rule == 'main' else dict(u_max=np.array(um)) if rule == 'u' else {}
     atomic_savez(fn, sel=np.ones(int(k.sum()), bool), x=T['x'][k], y=T['y'][k], frame=T['frame'][k], sx=T['sx'][k], sy=T['sy'][k],
-                 photons=T['photons'][k])
+                 photons=T['photons'][k], **extra)
     return fn
 
 
-def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_ref_nm=None, sig_u=None, crop=None, u_max=U_MAX):
+def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_ref_nm=None, sig_u=None, crop=None, u_max=U_MAX,
+                sigma_max=SIGMA_MAX_NM):
     """pipeline output dir -> (table dict of numpy columns, info dict). sig_u (2026-11-11, opt-in; None = unchanged): json of a
     selection-aware sigma rescale sx, sy x g(strict_u) (analysis/psf3d_nets/sigcal.py; keys u_mid, g), applied to the good rows after
     the strict product is formed (the selection is unchanged). crop = (x0, y0, size) of the tiles / coverage (None: the
-    run's own output region, run_crop(out)). u_max: threshold of the main selection (stored with the table; select(T))."""
+    run's own output region, run_crop(out)). sigma_max (nm): threshold of the main selection, max(sx, sy) * px_nm <= sigma_max on
+    the final (rescaled) sigma; u_max: threshold of the per-tile rule 'u'; both stored with the table (select(T))."""
     crop = run_crop(out) if crop is None else tuple(float(v) for v in crop)
     R = load_rows(out, tag)
     n = len(R['x_hy0'])
@@ -235,13 +264,15 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_
     u, strict, info = strict_product(T['x'], T['y'], sig, T['good'], px_nm, q=strict_q, sigma_ref_nm=sigma_ref_nm, xc=xc, yc=yc,
                                      frame=T['frame'], tag='est2' if tag.startswith('est2') else 'est', crop=crop)
     T['strict_u'] = u.astype(np.float32); T['strict'] = strict
-    info.update(u_max=float(u_max), n_main=int(select(T, u_max).sum()), crop=list(crop))
+    info.update(u_max=float(u_max), n_u=int(select(T, 'u', u_max=u_max).sum()), crop=list(crop))
     if sig_u:
         G_ = json.load(open(sig_u)); fu = np.isfinite(u)
         g_ = np.interp(u[fu], G_['u_mid'], G_['g']).astype(np.float32)
         T['sx'][fu] *= g_; T['sy'][fu] *= g_
         info['sig_u'] = sig_u
     info['median_photons'] = float(np.median(T['photons'][strict])) if strict.any() else float('nan')
+    info.update(main_rule='max(sx, sy) <= sigma_max (rows with a rank)', sigma_max=float(sigma_max),
+                n_main=int(select(T, 'main', sigma_max=sigma_max, px_nm=px_nm).sum()))
     info.update(tag=tag, n_rows=int(n), n_good=int(T['good'].sum()), n_sel=int(T['sel'].sum()), drift=drift or '',
                 columns={k: str(v.dtype) + ('' if v.ndim == 1 else f'[{v.shape[1]}]') for k, v in T.items()})
     return T, info
@@ -251,7 +282,8 @@ def write_table(T, info, path_base, formats=('npz',)):
     out = []
     if 'npz' in formats:
         from simcode.fileio.work import atomic_savez
-        atomic_savez(path_base + '.npz', **T, px_nm=np.array(info['px_nm']), u_max=np.array(info.get('u_max', U_MAX)))
+        atomic_savez(path_base + '.npz', **T, px_nm=np.array(info['px_nm']), u_max=np.array(info.get('u_max', U_MAX)),
+                     sigma_max=np.array(info.get('sigma_max', SIGMA_MAX_NM)))
         out.append(path_base + '.npz')
     if 'csv' in formats:
         cols = [k for k in T if T[k].ndim == 1] + [f'I{t}' for t in range(T['I'].shape[1])]
@@ -278,8 +310,9 @@ def main(argv=None):
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2, valid with the fixed-c calibration --autoc 0 only)')
     ap.add_argument('--format', default='npz')
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json (analysis/psf3d_nets/sigcal.py)')
-    ap.add_argument('--u_max', type=float, default=U_MAX, help='threshold of the main selection (strict_u <= u_max; stored in the table as u_max)')
-    ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,strict' -> <table>_u045.npz, <table>_strictonly.npz")
+    ap.add_argument('--sigma_max', type=float, default=SIGMA_MAX_NM, help='nm; threshold of the main selection (max(sx, sy) <= sigma_max on the rows with a rank; stored in the table)')
+    ap.add_argument('--u_max', type=float, default=U_MAX, help="threshold of the per-tile rule 'u' (strict_u <= u_max; stored in the table as u_max)")
+    ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,u,strict' -> <table>_sig10.npz, <table>_u045.npz, <table>_strictonly.npz")
     ap.add_argument('--crop', default='', help='x0,y0,size (px) of the tiles / coverage; default: the output region of the run')
     ap.add_argument('--dest', default='', help='directory for the table files (default: the run directory)')
     a = ap.parse_args(argv)
@@ -288,11 +321,11 @@ def main(argv=None):
         from simcode import config
         a.sig_u = config.resolve(a.sig_u)                # a path, or a name relative to the models directory
     T, info = build_table(a.out, a.tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref, a.sig_u or None,
-                          crop=[float(v) for v in a.crop.split(',')] if a.crop else None, u_max=a.u_max)
+                          crop=[float(v) for v in a.crop.split(',')] if a.crop else None, u_max=a.u_max, sigma_max=a.sigma_max)
     if a.dest: os.makedirs(a.dest, exist_ok=True)
     base = os.path.join(a.dest or a.out, a.name or ('locs_p1' if a.tag == 'est' else 'locs_p2' if a.tag == 'est2' else f'locs_{a.tag}'))
     files = write_table(T, info, base, a.format.split(','))
-    files += [write_subset(T, base, r, a.u_max) for r in a.subset.split(',') if r]
+    files += [write_subset(T, base, r, a.u_max, a.sigma_max, px) for r in a.subset.split(',') if r]
     from simcode.fileio.work import atomic_json
     atomic_json(base + '_info.json', info, indent=1, default=str)
     print(json.dumps({k: v for k, v in info.items() if k != 'columns'}, default=str))

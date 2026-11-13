@@ -13,7 +13,7 @@ ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.
 ap.add_argument('--suffix', default='', help="movie dir suffix, e.g. '_gauss' (D<d>_gauss: the preprint's Gaussian 1.3 px PSF reproduction)")
 a = ap.parse_args()
 DENS = [0.5, 1, 2, 4]
-COLS = [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), ('v2q45', 'SIMCODE v2\n(u ≤ 0.45)')]
+COLS = [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), ('v2sig', 'SIMCODE v2\n(σ ≤ 12 nm)')]
 (cx, cy), w = CROP
 fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1), 2.95 * len(DENS)), squeeze=False)
 notes = set()

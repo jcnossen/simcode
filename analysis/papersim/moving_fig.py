@@ -11,10 +11,10 @@ sys.path.insert(0, HERE)
 import common as C
 import metrics as M
 
-ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2q45', 'v2']
+ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2q45', 'v2']
 LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE dec_1809_2', decode_sim='DECODE dec_sim1809', decode_pre='DECODE (preprint model)',
-           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2q45='SIMCODE v2, u <= 0.45', v2='(SIMCODE v2 strict)')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2q45='darkred', v2='tab:red')
+           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2q45='(SIMCODE v2, u <= 0.45, earlier rule)', v2sig='SIMCODE v2, σ <= 12 nm', v2='(SIMCODE v2 strict)')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2q45='darkred', v2sig='crimson', v2='tab:red')
 
 
 def hand_check(md, run, netset, R, block=10, thr_nm=20):

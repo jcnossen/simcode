@@ -15,7 +15,8 @@ Stages (each skipped if its outputs exist, unless --redo):
   4  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
   5  pass 2      (--pass2) pattern-aware pass-2 detector + head (p2L) fed the estimated pattern, then the same solve
   6  table       localization table(s) locs_p1.npz (and locs_p2.npz) with the selections (simcode/strict.py): main = the
-                 paper's "u <= 0.45" (--u_max), sel (phase-calibrated), strict (per-10-px-tile sigma quantile, q from the
+                 paper's global precision rule max(sx, sy) <= sigma_max nm (--sigma_max), u = the earlier per-tile
+                 "u <= 0.45" (--u_max), sel (phase-calibrated), strict (per-10-px-tile sigma quantile, q from the
                  row density); --subset writes selections as small files; summary.json
 Networks and calibrations come from a network set (--netset, simcode/netsets.json; default m1809); --det / --head / --cal /
 --p2_det / --p2_head / --p2_cal override single files. Paths are relative to the models directory (simcode/config.py).
@@ -75,7 +76,8 @@ def main(argv=None):
     ap.add_argument('--strict_q', type=float, default=None, help='fixed per-tile quantile (default: from the row density)')
     ap.add_argument('--strict_sigma_ref', type=float, default=None,
                     help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2), valid with the fixed-c calibration (--autoc 0) only')
-    ap.add_argument('--u_max', type=float, default=None, help='threshold of the main selection (strict_u <= u_max, stored in the table; default 0.45)')
+    ap.add_argument('--sigma_max', type=float, default=None, help='nm; threshold of the main selection (max(sx, sy) <= sigma_max on the rows with a rank; stored in the table; default strict.SIGMA_MAX_NM)')
+    ap.add_argument('--u_max', type=float, default=None, help="threshold of the per-tile rule 'u' (strict_u <= u_max, stored in the table; default 0.45)")
     ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,strict' (strict.write_subset)")
     ap.add_argument('--format', default='npz', help='table formats: npz,csv,hdf5')
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table); '
@@ -88,7 +90,7 @@ def main(argv=None):
         if D is None: ap.error(f'unknown dataset {a.dataset!r} ({", ".join(config.production()["datasets"])})')
         if not (a.netset or D['netset']): ap.error(f'dataset {a.dataset}: no network set is defined for it; give --netset')
         a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.netset = a.netset or D['netset']
-        a.pass2 = a.pass2 or PROD['pass2']; a.sig_u = a.sig_u or 'set'; a.subset = a.subset or 'main,strict'
+        a.pass2 = a.pass2 or PROD['pass2']; a.sig_u = a.sig_u or 'set'; a.subset = a.subset or 'main,u,strict'
     if not a.movie or not a.calib: ap.error('--movie and --calib are required (or --dataset)')
     N = config.netset(a.netset or None)
     a.det = a.det or N['det']; a.head = a.head or N['head']; a.p2_det = a.p2_det or N['p2_det']; a.p2_head = a.p2_head or N['p2_head']
@@ -140,6 +142,7 @@ def main(argv=None):
     px = json.load(open(config.resolve(a.calib)))['pixelsize_um'] * 1e3
     crop = tuple(float(v) for v in a.crop.split(','))
     u_max = SP.U_MAX if a.u_max is None else a.u_max
+    sigma_max = SP.SIGMA_MAX_NM if a.sigma_max is None else a.sigma_max
     summ = dict(movie=a.movie, calib=a.calib, netset=N['name'], cal_pass1=cal, pass2=a.pass2, cand_pmin=a.cand_pmin, fast=a.fast, autoc=a.autoc)
     if a.autoc and not a.cal and os.path.exists(os.path.join(a.out, 'autoc_est.json')):
         summ['autoc_theta'] = json.load(open(os.path.join(a.out, 'autoc_est.json')))['theta']
@@ -149,13 +152,13 @@ def main(argv=None):
     for (tag, name), su_ in zip(tags, su):
         for _ in Units(a.out, 'table', pattern=name + '.npz', claim=a.claim, redo=not a.claim, title=False).todo(['']):
             T, info = SP.build_table(a.out, tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref, config.resolve(su_) if su_ else None,
-                                     crop=crop, u_max=u_max)
+                                     crop=crop, u_max=u_max, sigma_max=sigma_max)
             files = SP.write_table(T, info, os.path.join(a.out, name), a.format.split(','))
-            files += [SP.write_subset(T, os.path.join(a.out, name), r, u_max) for r in a.subset.split(',') if r]
+            files += [SP.write_subset(T, os.path.join(a.out, name), r, u_max, sigma_max, px) for r in a.subset.split(',') if r]
             atomic_json(os.path.join(a.out, name + '_info.json'), info, indent=1, default=str)
             summ[name] = {k: v for k, v in info.items() if k != 'columns'}; summ[name]['files'] = files
             summ['columns'] = info['columns']; wrote = True
-            print(f'{name}: {info["n_rows"]} rows, main (u <= {u_max:g}) {info["n_main"]}, {info["n_sel"]} selected, strict {info["n_strict"]} (q {info["q"]:.3f}, '
+            print(f'{name}: {info["n_rows"]} rows, main (max sigma <= {sigma_max:g} nm) {info["n_main"]}, u <= {u_max:g} {info["n_u"]}, {info["n_sel"]} selected, strict {info["n_strict"]} (q {info["q"]:.3f}, '
                   f'{info["coverage_bins"]} / {info["coverage_bins_good"]} occupied 20-nm bins) -> {files}', flush=True)
     ST['total_s'] = time.time() - t00
     summ['timing'] = ST

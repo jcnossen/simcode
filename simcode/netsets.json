@@ -2,9 +2,10 @@
  "_doc": "SIMCODE v2 network sets (the single definition; read through simcode config.netset(name)). File names are relative to the models directory. One set = pass-1 detector + head, pass-2 detector + head (p2L), their solve calibrations and the selection-aware sigma rescale. cal_sim / p2_cal_sim = simulation sigma calibrations (no real-data mismatch multiplier); cal_real / p2_cal_real = the ones used on real movies; sig_u = sigma rescale per pass (strict.build_table sig_u), pass 1 then pass 2. All sets are PSF-matched: trained on one averaged in-situ PSF (psf).",
  "_default": "m1809",
  "_production": {
-  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --netset of the entry, the flags below, --pass2, cal_real calibrations, sig_u rescale, main selection). Movies are relative to the data root.",
+  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --netset of the entry, the flags below, --pass2, cal_real calibrations, sig_u rescale, main selection, sigma_max 12 nm). Movies are relative to the data root.",
   "flags": {"autoc": 0, "cand_pmin": 0.3, "pass2": true, "cal_kind": "real"},
-  "selection": "u045",
+  "selection": "sig12",
+  "_selection_doc": "main selection (user decision 2026-11-13): rows with a per-tile rank (p >= 0.63, inside the crop) and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.strict.select(table), SIGMA_MAX_NM; subset file locs_p2_sig12.npz). Until 2026-11-13 it was the per-tile rule u <= 0.45 ('u045', rule 'u', still written as locs_p2_u045.npz). Study: analysis/selection_global, out/selection_global.",
   "datasets": {
    "1809_2": {"movie": "1809/cover1/2/simflux_5.5ms_500mW.tif", "calib": "insitu/calib_1809_2_psf3d.json", "netset": "m1809"},
    "2.5nM_2": {"movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif", "calib": "insitu/calib_2p5nM_m2_psf3d.json", "netset": "m25"},

@@ -75,12 +75,13 @@ Defaults (= the paper's settings, `simcode/netsets.json`):
   table exists only for the earlier default head
 - stored-candidate cut p ≥ 0.3 (`--cand_pmin`)
 - fast path, with a compiled solve step when available
-- selections: the paper's "u ≤ 0.45" = `strict_u ≤ u_max` (`--u_max`, stored in the table; no column of its own), and the
-  columns `sel`, `strict`
+- selections: the paper's main selection (since 2026-11-13) = a global threshold on the calibrated precision, rows with a
+  rank (p ≥ 0.63, inside the crop) and max(σx, σy) ≤ σ_max, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of
+  its own); the earlier per-tile rule "u ≤ 0.45" = `strict_u ≤ u_max` (`--u_max`, rule `u`); and the columns `sel`, `strict`
 
 `--dataset <name>` takes movie, calibration and network set of a paper dataset from `netsets.json` and adds what the
 production runs did after the pipeline: pass 2, the set's selection-aware sigma rescale (`--sig_u set`) and the subset
-files `locs_p2_u045.npz` / `locs_p2_strictonly.npz` (`--subset main,strict`).
+files `locs_p2_sig12.npz` / `locs_p2_u045.npz` / `locs_p2_strictonly.npz` (`--subset main,u,strict`).
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -105,8 +106,8 @@ Outputs in `--out`:
 | file | content |
 |---|---|
 | `locs_p1.npz` (and `locs_p2.npz` with `--pass2`) | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
-| `locs_p*_info.json` | counts, u_max and the size of the main selection, strict-product q and coverage, column list |
-| `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (with `--subset main,strict`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
+| `locs_p*_info.json` | counts, sigma_max and the size of the main selection, u_max and the size of the u rule, strict-product q and coverage, column list |
+| `locs_p2_sig12.npz`, `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (with `--subset main,u,strict`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
 | `summary.json` | settings, network set, per-stage timing |
 | `pass1_<f0>.npz`, `pattern_est.pt/.json`, `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
 
@@ -118,8 +119,10 @@ Table columns:
 - `p` (detector), `q_dof`, `kin`, `dnll`, `x_prior, y_prior`
 - `good` (p ≥ 0.63), `sel` (phase-calibrated selection: the recommended full output for renders and drift), `disjoint`
   (frame % 6 == 0)
-- `strict_u` (per-tile σ rank quantile among the good rows in the crop), the stored `u_max` (0.45): the paper's selection is
-  `strict_u ≤ u_max`, row mask `simcode.strict.select(table)`, and `strict` (the density-rule strict product)
+- `strict_u` (per-tile σ rank quantile among the good rows in the crop; finite = the rows with a rank), the stored
+  `sigma_max` (12 nm) and `px_nm`: the paper's selection is `strict_u` finite and max(sx, sy) · px_nm ≤ sigma_max, row mask
+  `simcode.strict.select(table)`; the stored `u_max` (0.45) for the earlier rule `select(table, 'u')`; and `strict` (the
+  density-rule strict product)
 
 `strict` is a per-10-px-tile σ quantile among the good rows: in every tile the fraction q with the smallest calibrated σ
 is kept. By default q comes from the GT-free row density ρ (good rows in the crop per window start per µm²), interpolated

@@ -1,6 +1,6 @@
 """Matched-count Jaccard for the moving-microtubule movie (S8): the preprint's Jaccard (GT = all trajectory points of the block)
 rewards how many localizations a method outputs, so here every method is subsampled, per 1000-frame block, to the same number
-of localizations: the smallest count among the reference methods (DECODE, SIMCODE v1, SIMCODE v2 u <= 0.45; methods with fewer
+of localizations: the smallest count among the reference methods (DECODE, SIMCODE v1, SIMCODE v2 sigma <= 12 nm (the main row since 2026-11-13; it was u <= 0.45 before); methods with fewer
 rows than that are used whole and flagged). Also DECODE restricted to window starts every 6 frames (as the preprint's DECODE,
 6-frame sums from frame 0). Random subsampling with a fixed seed; the mean over 3 draws.
 usage: python analysis/papersim/moving_matched.py <movie dir> [--netset m1809]
@@ -21,7 +21,7 @@ def main():
     for dk in [k for k in ('decode', 'decode_pre', 'decode_sim') if k in T]:
         t = T[dk]; s = t['f'] % 6 == 0
         if not s.all(): T[dk + '_w6'] = {kk: v[s] for kk, v in t.items()}
-    refs = [k for k in ('decode_pre', 'decode', 'decode_sim', 'v1', 'v2q45') if k in T]
+    refs = [k for k in ('decode_pre', 'decode', 'decode_sim', 'v1', 'v2sig') if k in T]
     nrow = {k: len(T[k]['x']) for k in refs}
     refs = [k for k in refs if nrow[k] >= 0.2 * max(nrow.values())]     # a failed method (e.g. v1 when its pattern estimate fails) is not a reference
     rng = np.random.default_rng(0)

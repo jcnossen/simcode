@@ -3,7 +3,7 @@
 Per density (<movie>/full, net set --netset): row 1 renders of the same crop (the preprint's Fig 2 zoom: corner (9, 10) px,
 16 px wide) for the ground truth and every method; row 2 FRC curves, localization counts (FRC set), Jaccard (10 nm, end of the
 movie), Jaccard vs frames. Rows rendered = each method's FRC set (disjoint windows, max sigma < 0.15 px; SIMCODE v1 = its merged
-'sfhd-ndi+smlm' rows in that set; v2 = strict / q 0.45 / sel), 5.4 nm pixels (zoom 20), 1-pixel Gaussian blur, 99.5 % clip.
+'sfhd-ndi+smlm' rows in that set; v2 = its main selection sigma <= 12 nm (v2sig)), 5.4 nm pixels (zoom 20), 1-pixel Gaussian blur, 99.5 % clip.
 DECODE = dec_1809_2, OUT of its training range for these movies (flagged in the labels).
 usage: python analysis/papersim/fig_density.py [--netset m1809] [--densities 0.5,1,2,4]
 outputs: out/papersim/fig_density_D<d>_<netset>.png, out/papersim/summary_density_<netset>.json / .md"""
@@ -14,11 +14,11 @@ sys.path.insert(0, HERE)
 import common as C
 import metrics as M
 
-ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2q45', 'v2']      # table order; figures: FIG_ORDER
-FIG_ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v2q45']
+ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2q45', 'v2']      # table order; figures: FIG_ORDER
+FIG_ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v2sig']
 LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE (dec_1809_2, out of range)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model)',
-           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2='(SIMCODE v2 strict, secondary)', v2q45='SIMCODE v2, u <= 0.45', v2sel='SIMCODE v2 all')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2='tab:red', v2q45='darkred', v2sel='salmon')
+           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2='(SIMCODE v2 strict, secondary)', v2q45='(SIMCODE v2, u <= 0.45, earlier rule)', v2sig='SIMCODE v2, σ <= 12 nm', v2sel='SIMCODE v2 all')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2='tab:red', v2q45='darkred', v2sig='crimson', v2sel='salmon')
 CROP = ((9, 10), 16)
 
 

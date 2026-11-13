@@ -32,8 +32,9 @@ the detector / head / pass-2 detector / pass-2 head of the set (`det_<set>.pt`, 
 p2_head_long) are the ancestors of the sets; they are no longer a selectable set.
 
 Production recipe (`python -m simcode.run --dataset <name>`; `_production` in `netsets.json`): `--autoc 0 --cand_pmin 0.3`,
-pass 2, the set's selection-aware sigma rescale, and the main selection **`strict_u ≤ u_max`, u_max 0.45** (`simcode.strict.select(table)`; rows with a rank,
-i.e. p ≥ 0.63 inside the crop, whose per-tile sigma rank quantile is at most 0.45). Stage 3 (automatic c) is therefore
+pass 2, the set's selection-aware sigma rescale, and the main selection **calibrated max(σx, σy) ≤ 12 nm** (`simcode.strict.select(table)`; rows with a rank,
+i.e. p ≥ 0.63 inside the crop, whose calibrated precision is 12 nm or better in both axes; user decision 2026-11-13, study in
+`analysis/selection_global`). The earlier per-tile rule (sigma rank quantile ≤ 0.45 within each 10-px tile) is `select(table, 'u')`. Stage 3 (automatic c) is therefore
 opt-in (`--autoc 1`); its sigma table exists only for hd_sc5nb.
 
 ### Fast path
