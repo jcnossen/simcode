@@ -16,6 +16,7 @@ NR = os.path.join(REPO, 'out', 'nanoruler'); OUT = os.path.join(NR, 'ablation');
 SITES = os.path.join(NR, 'analysis', 'sites.json')
 PICASSO_DRIFT = '/mnt/data/SIMFLUX/Submission Data/80 nm rulers/Sim4_1_MMStack_Pos0.omeMod0.12Gauss10/g2d-nodriftc_190824_132639_drift.txt'
 U_MAX = 0.45
+SIGMA_MAX_NM = 12.0   # the paper's main selection (simcode.strict.select 'main'): strict_u finite and max(sx, sy) * 65 nm <= 12 nm
 
 
 def title(t='nr-abl'):
@@ -27,6 +28,8 @@ def selection(T, sel='u45'):
     """row mask of a pipeline table (locs_p*.npz columns): cycle-aligned AND the named selection"""
     ca = (T['frame'] % 6 == 0) & np.isfinite(T['x']) & np.isfinite(T['y'])
     if sel == 'u45': return ca & (np.nan_to_num(np.asarray(T['strict_u'], np.float64), nan=2.0) <= U_MAX)
+    if sel == 'm12':     # main rule of the paper on the stored (calibrated) sigma, as simcode.strict.select(T, 'main', sigma_max=12, px_nm=65)
+        return ca & np.isfinite(np.asarray(T['strict_u'], np.float64)) & (np.maximum(np.asarray(T['sx'], np.float64), np.asarray(T['sy'], np.float64)) * PX <= SIGMA_MAX_NM)
     if sel in ('sel', 'good', 'strict'): return ca & T[sel].astype(bool)
     if sel == 'all': return ca
     raise ValueError(sel)

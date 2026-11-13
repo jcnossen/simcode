@@ -3,7 +3,7 @@ GT windows: ev_sigcal.gt_windows (exact cycle-aligned windows; the simulated sam
 table rows (frame % 6 == 0). A row is matched to the NEAREST GT window of the same window start within 1.5 px. Its 'companions' are the
 other GT windows of the same start within 1.5 px of the matched one (the other sites of the ruler): f2 = companion photons / all photons.
   single = f2 < 0.05 (one emitter of the ruler ON in the window), mixed = f2 >= 0.05 (simultaneous binding on the same ruler).
-Per selection (good, sel, u <= 0.45, strict): rows, unmatched fraction, mixed fraction (and the mixed fraction of the GT windows themselves: what
+Per selection (good, sel, m12 = main rule max(sx, sy) <= 12 nm, u <= 0.45, strict): rows, unmatched fraction, mixed fraction (and the mixed fraction of the GT windows themselves: what
 the selection removes), RMS error per axis of the single rows (|e| < 50 nm; median error of the movie removed), gross fraction, robust
 z = 1.4826 median |e / sigma| overall and per GT-photon bin, error of the mixed rows against the nearest site and against the photon-weighted
 mean position. Recall = fraction of the fully-on GT target windows with a matched good row. Bootstrap over rulers (95 %).
@@ -32,6 +32,7 @@ def match(run, sim, sig=('sx', 'sy')):
              sx=T[sig[0]][ca] * PX, sy=T[sig[1]][ca] * PX, phot=T['photons'][ca])
     for k in ('good', 'sel', 'strict'): R[k] = T[k][ca].astype(bool)
     R['u45'] = np.nan_to_num(T['strict_u'][ca].astype(float), nan=2.0) <= U_MAX
+    R['m12'] = np.isfinite(T['strict_u'][ca].astype(float)) & (np.maximum(T['sx'][ca], T['sy'][ca]).astype(float) * PX <= 12.0)   # main rule (stored sigma)
     g0 = m & R['good'] & (R['f2'] < 0.05) & (np.hypot(R['ex'], R['ey']) < 50)
     med = (np.median(R['ex'][g0]), np.median(R['ey'][g0]))
     for a, b in (('ex', 0), ('ey', 1), ('cx', 0), ('cy', 1)): R[a] = R[a] - med[b]
@@ -41,7 +42,7 @@ def match(run, sim, sig=('sx', 'sy')):
                    recall_good_single=float(hit[tg & (f2 < 0.05)].mean()), recall_good_mixed=float(hit[tg & (f2 >= 0.05)].mean()) if (tg & (f2 >= 0.05)).any() else float('nan'),
                    P_full_p5_p50_p95=[float(v) for v in np.percentile(GW[tg, 4], [5, 50, 95])])
     hs = np.zeros(len(GW), bool)
-    for k in ('sel', 'u45'):
+    for k in ('sel', 'u45', 'm12'):
         hs[:] = False; hs[j[m & R[k]]] = True; R['gt']['recall_' + k] = float(hs[tg].mean())
     R['nrul'] = int(S['ruler'].max()) + 1
     return R
@@ -76,7 +77,7 @@ def run(run, sim, sig=('sx', 'sy'), nboot=200, bins=5, seed=1, ref=None):
     R = match(run, sim, sig); out = dict(gt=R['gt'], median_error_nm=R['median_error_nm'], sel={}); Q = None
     if ref:
         Q = match(ref, sim); assert len(Q['ca']) == len(R['ca'])
-        for k in ('good', 'sel', 'u45', 'strict'): R[k] = Q[k]
+        for k in ('good', 'sel', 'u45', 'm12', 'strict'): R[k] = Q[k]
         for k in ('m', 'f2', 'gi', 'P', 'full'): R[k] = Q[k]          # same GT assignment and classes as the reference
     g = R['m'] & R['sel'] & (R['f2'] < 0.05); edges = np.quantile(R['P'][g], np.linspace(0, 1, bins + 1)); edges[0] = -np.inf; edges[-1] = np.inf
     rng = np.random.default_rng(seed)
@@ -85,7 +86,7 @@ def run(run, sim, sig=('sx', 'sy'), nboot=200, bins=5, seed=1, ref=None):
         if Q is not None:
             q = stats(Q, sel, edges, w); s['d_rms'] = s['rms'] - q['rms']; s['d_rms_full'] = s['rms_full'] - q['rms_full']
         return s
-    for sel in ('good', 'sel', 'u45', 'strict'):
+    for sel in ('good', 'sel', 'm12', 'u45', 'strict'):
         est = both(sel); acc = {k: [] for k in est}
         for b in range(nboot):
             s = both(sel, np.bincount(rng.integers(0, R['nrul'], R['nrul']), minlength=R['nrul']))
