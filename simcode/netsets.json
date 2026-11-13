@@ -3,14 +3,31 @@
  "_default": "m1809",
  "_production": {
   "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --netset of the entry, the flags below, --pass2, cal_real calibrations, sig_u rescale, main selection, sigma_max 12 nm). Movies are relative to the data root.",
-  "flags": {"autoc": 0, "cand_pmin": 0.3, "pass2": true, "cal_kind": "real"},
+  "flags": {
+   "autoc": 0,
+   "cand_pmin": 0.3,
+   "pass2": true,
+   "cal_kind": "real"
+  },
   "selection": "sig12",
   "_selection_doc": "main selection (user decision 2026-11-13): rows with a per-tile rank (p >= 0.63, inside the crop) and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.strict.select(table), SIGMA_MAX_NM; subset file locs_p2_sig12.npz). Until 2026-11-13 it was the per-tile rule u <= 0.45 ('u045', rule 'u', still written as locs_p2_u045.npz). Study: analysis/selection_global, out/selection_global.",
   "datasets": {
-   "1809_2": {"movie": "1809/cover1/2/simflux_5.5ms_500mW.tif", "calib": "insitu/calib_1809_2_psf3d.json", "netset": "m1809"},
-   "2.5nM_2": {"movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif", "calib": "insitu/calib_2p5nM_m2_psf3d.json", "netset": "m25"},
-   "20nM_2": {"movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif", "calib": "insitu/calib_20nM_m2_psf3d.json", "netset": null,
-              "_doc": "no PSF-matched set was trained for this movie; a set must be chosen if it enters the paper"}
+   "1809_2": {
+    "movie": "1809/cover1/2/simflux_5.5ms_500mW.tif",
+    "calib": "insitu/calib_1809_2_psf3d.json",
+    "netset": "m1809"
+   },
+   "2.5nM_2": {
+    "movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif",
+    "calib": "insitu/calib_2p5nM_m2_psf3d.json",
+    "netset": "m25"
+   },
+   "20nM_2": {
+    "movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif",
+    "calib": "insitu/calib_20nM_m2_psf3d.json",
+    "netset": null,
+    "_doc": "no PSF-matched set was trained for this movie; a set must be chosen if it enters the paper"
+   }
   }
  },
  "m1809": {
@@ -51,5 +68,18 @@
   "p2_cal_sim": "calib/calib_p2L_g13.json",
   "p2_cal_real": "calib/calib_p2L_g13_real.json",
   "sig_u": "calib/sigu/sigu_p1_g13.json,calib/sigu/sigu_p2_g13.json"
+ },
+ "m1809g": {
+  "_doc": "1809_2 PSF with the GENERIC pass 2 (2026-11-13, g2ss: pattern draw with arbitrary pitch / angles / per-frame phases / order / depth / power, standard-draw share 0.5; out/p2generic). Pass 1 = m1809. Within 1-2 % of m1809 pass 2 on SIMCODE patterns; beats pass 1 on other patterns (nanoruler, 4-step, random phases). Use for setups other than the DMD-SIMFLUX one. Real-data multiplier of p2_cal_real copied from m1809, not re-measured.",
+  "psf": "insitu/calib_1809_2_psf3d_avg.json",
+  "det": "det_m1809.pt",
+  "head": "hd_m1809.pt",
+  "cal_sim": "calib/calib_sc_hd_m1809.json",
+  "cal_real": "calib/calib_sc_hd_m1809_real.json",
+  "p2_det": "p2det_g2ss.pt",
+  "p2_head": "p2headL_g2ss.pt",
+  "p2_cal_sim": "calib/calib_p2L_g2ss.json",
+  "p2_cal_real": "calib/calib_p2L_g2ss_real.json",
+  "sig_u": "calib/sigu/sigu_p1_m1809.json,calib/sigu/sigu_p2_g2ss.json"
  }
 }
