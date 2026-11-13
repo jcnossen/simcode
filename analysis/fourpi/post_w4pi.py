@@ -20,6 +20,8 @@ def main():
     p.add_argument('--cell', default='NPC'); p.add_argument('--head', default='v10')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--files', type=int, nargs='*')
+    p.add_argument('--ksum', type=int, default=1, help='K-summed tables: the global frame of a summed window is the centre of its K source windows (stride --kstride)')
+    p.add_argument('--kstride', type=int, default=25)
     a = p.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
     from simcode2.util.proctitle import auto; auto('4pi-post-w')
@@ -33,7 +35,8 @@ def main():
     for f in fs:
         D = np.load(f); fi = int(f.split('_')[-2])
         for k in keys: R[k].append(D[k])
-        R['fidx'].append(np.full(len(D['x']), fi)); R['frame'].append((fi - first) * 18000 + 6 * D['w'])
+        wr = D['w'] if a.ksum == 1 else (D['w'] // a.kstride) * (a.ksum * a.kstride) + D['w'] % a.kstride + (a.ksum - 1) * a.kstride // 2
+        R['fidx'].append(np.full(len(D['x']), fi)); R['frame'].append((fi - first) * 18000 + 6 * wr)
     R = {k: np.concatenate(v) for k, v in R.items()}
     n_all = len(R['x'])
     R['chi2_good'] = R['good'].copy()
