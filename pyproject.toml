@@ -13,7 +13,9 @@ dependencies = [
     "dme @ git+https://github.com/jcnossen/drift-estimation.git@374300f12b893a934067703c34a0097c6659bdc1",
 ]
 # Optional: h5py (hdf5 tables). A local checkout of drift-estimation can still override the installed dme
-# (env DME_PATH or the config key "dme"), see simcode/util/drift.py.
+# (env DME_PATH or the config key "dme"), see simcode/util/drift.py. On qnano1 the simcode-py311 env keeps the older dme 1.0
+# (~/dme, editable) because smlmtorch imports dme.rcc / native_api from it; there simcode uses the checkout external/drift-estimation
+# via the config key "dme" (same commit as pinned here).
 
 [project.scripts]
 simcode-run = "simcode.run:main"
