@@ -56,7 +56,7 @@ def load_calib(path, dev='cuda'):
     cam = c['camera']; maps = np.load(camera_maps_path(path, c))
     from simcode import psf as spsf
     from simcode.psf import spline
-    psf = spsf.load_psf(path, roisize=11, oversample=3, device=dev)   # opt-in calib PSF terms: angle average
+    psf = spsf.PSF.load(path, roisize=11, oversample=3, device=dev)   # opt-in calib PSF terms: angle average
     zmax = 0.2
     lut = spline(psf, zmax)
     return dict(offset=maps['offset_adu'].astype(np.float32), rn2=(maps['readnoise_e'] ** 2).astype(np.float32),

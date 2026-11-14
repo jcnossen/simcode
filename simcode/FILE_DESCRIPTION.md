@@ -26,7 +26,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 |---|---|
 | `run.py` | User entry point: `python -m simcode.run --movie … --calib … --model m1809 --out …` (`--model`: a name of `models.json` or a model folder; required), or `--dataset <name>` for a paper dataset. Runs all stages; finished stages are skipped. |
 | `strict.py` | Builds the localization table from a pipeline output directory (with the model's sigma rescale), and the paper's selection `select(table, max_precision_nm=12, min_score=0.63, in_region=True)`; writes the selection as subset files (`--subset 12`). Also a CLI. |
-| `dataset.py` | `Dataset`: a localization table as an object. Columns as numpy arrays (extra fields: `add_fields`), metadata, drift. Loads a run directory (`from_run(dir, pass_=2)`), v2 tables (`load_npz`), the preprint code's `.npy` (`load_npy`), Picasso hdf5 (`load_hdf5`), ThunderSTORM csv (`load_csv_thunderstorm`), the paper's DECODE tables; `select()` (= `strict.select`), filters, crop, concatenate (copying, and in place with a trailing underscore: `filter_`, `crop_`, `crop_from_edge_`, `select_`, `crlb_filter_`, `autocrop_`), DME v2 drift (`estimate_drift` / `apply_drift` / `undo_drift`), render, FRC; saves npz / Picasso hdf5 / ThunderSTORM csv / `.npy`. `docs/USAGE.md`. |
+| `dataset.py` | `Dataset`: `torch_psf.Dataset` (fields as tensors: pos, crlb, frame, n_frames, photons, ...; indexing, filters, crop, concatenate, DME v2 drift, render, FRC, hdf5 / Picasso / ThunderSTORM files) plus SIMCODE's loaders: run directories (`from_run(dir, pass_=2)`), v2 tables and the earlier SIMCODE npz save (`load_npz`), the paper's DECODE tables (`from_decode`), the preprint code's `.npy` (`load_npy`, `from_smlmtorch`); and the paper's selection `select()` / `mask()` (= `strict.select`). `docs/USAGE.md`, `docs/DATASET_FORMAT.md`. |
 | `models.json` | The shipped models (m1809, m25, g13, m1809g), the default model, and the paper's datasets (`_production`); any other model is a folder with a `model.json` (`config.model_set` takes both). |
 | `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from `SIMCODE_*` environment variables, `simcode.json` or defaults; `model_set(name or model folder)`. No path is hard-coded elsewhere. |
 | `core.py` | Pattern geometry helpers used by the explicit solve (illumination at a position, fringe shifts, kinetics start values). |
@@ -47,7 +47,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | file | what it does |
 |---|---|
 | `run_uncalibrated.py` | Expert entry point with all flags; `run.py` calls its stages. Chunks are the units of `fileio/work.py`. |
-| `common.py` | Read plan of the chunks, the rows of the pass-1 chunk files, camera conversion, PSF model loading (torch_psf.load_psf). |
+| `common.py` | Read plan of the chunks, the rows of the pass-1 chunk files, camera conversion, PSF model loading (torch_psf.PSF.load). |
 | `sc_front.py` | Reference implementation of pass 1 (detector + head per window) and of the pass-2 chunk loop. |
 | `sc_front_fast.py` | Fast versions of the same chunks (queued fixed-size batches); same networks and outputs. The pipeline's code path (`sc_front.py`, `p2/front.py` are the test oracle). |
 | `pattern_est.py` | Estimates the illumination pattern from pass-1 localizations and intensities. |
@@ -102,7 +102,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | file | what it does |
 |---|---|
 | `__init__.py` | The only module that imports torch_psf (PSF models, calibration reader, fits, TIFF reader; re-exported for the rest of SIMCODE) plus the SIMCODE glue: per-pattern-angle PSF terms, `render`, the spline of the solve (`spline`). |
-| `beads.py` | Fits the PSF model to bead z-stacks (torch_psf.estimate_psf_beads). |
+| `beads.py` | Fits the PSF model to bead z-stacks (torch_psf.ZStackEstimator). |
 
 ## `insitu/`: calibration from the movie itself
 
@@ -168,5 +168,5 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
   - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF calibration files).
   - `gate/`, `figures/`, `evalproto/`, `hd_compare/`, `simreal/`, `speed/`, `tput/`, `dme/`, `psfshape/`: benchmarks and development figures; `results/` holds text snapshots of their outputs.
 - `models/`: calibrations (`calib/`, `insitu/`); network weights are not in git (`models/README.md`).
-- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_fileio.py` (CPU: readers, work driver, config names), `test_tables.py` (CPU: table columns, selections, FRC), `test_dataset.py` (CPU: the `Dataset` class: formats, selection, drift, render, FRC against `analysis/paper/frc_fair.py`; one short DME call on the GPU when available), `check_imports.py` (static check of the tree), `check_checkpoints.py`, `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
+- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_fileio.py` (CPU: readers, work driver, config names), `test_tables.py` (CPU: table columns, selections, FRC), `test_dataset.py` (CPU: SIMCODE's layer on `torch_psf.Dataset`: loaders and field layout, hdf5 round trip into plain torch_psf, selection, drift, FRC against `analysis/paper/frc_fair.py`; one short DME call on the GPU when available), `check_imports.py` (static check of the tree), `check_checkpoints.py`, `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
 - `docs/`: method, evaluation, results, the PSF polarization note, the cleanup plan and log.

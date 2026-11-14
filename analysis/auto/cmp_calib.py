@@ -11,7 +11,7 @@ from simcode.insitu import cam_maps
 
 
 def model(path, angle, R=15, dev='cuda'):
-    return spsf.load_psf(path, roisize=R, oversample=3, device=dev, angle=angle)
+    return spsf.PSF.load(path, roisize=R, oversample=3, device=dev, angle=angle)
 
 
 def images(c, angle, z=(0.0, 0.05, 0.1, 0.15)):

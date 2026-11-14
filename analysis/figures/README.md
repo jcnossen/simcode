@@ -27,7 +27,7 @@ The evaluation-only references are generated on GPU with `run_crlb_refs.sh [icrl
 - `simcode.eff.simcode_gate`: SIMCODE, which needs smlmtorch.
 
 `lmref.py` holds the LM and SIMFLUX-MLE references (`LMRef`, `SFRef`). They are not part of the method. It uses
-`simcode.psf.spline` (torch_psf.ConvSplinePSF), which equals the development `hd/solve.make_lut`. The first 175 detector candidates of
+`simcode.psf.spline` (torch_psf.CubicSplinePSF), which equals the development `hd/solve.make_lut`. The first 175 detector candidates of
 `iso` seed 301 FOV-batch 1 reproduce the stored `gate_lm` x_lm, x_sc and SFRef x bit for bit.
 
 The `sc6n` network is not shipped in `models/`. Its `icrlb_sc6n_*` and `_hd_sc6nb15pm` records exist only as development

@@ -40,7 +40,7 @@ def build_psf(R, fit=None, calib=None, dev='cuda', os_=2):
         bl, dw, dM = ex.get('blur_px2'), ex.get('dipole_w'), ex.get('dipole_M')
     else:
         c = json.load(open(config.resolve(calib)))
-        model = spsf.load_psf(config.resolve(calib), roisize=R, oversample=os_, device=dev)   # with the opt-in psf_* terms
+        model = spsf.PSF.load(config.resolve(calib), roisize=R, oversample=os_, device=dev)   # with the opt-in psf_* terms
         focus = float(c['focus_um']); import os as _os
         cam = dict(gain=c['camera']['gain_e_per_adu'], offset=float(_os.environ.get('NR_OFFSET', 100.0)), rn=float(_os.environ.get('NR_RN', 1.6)), zmax=0.2)
         bl = c.get('psf_blur_angle_px2'); dw = c.get('psf_dipole_w_angle'); dM = c.get('psf_dipole_M_angle')

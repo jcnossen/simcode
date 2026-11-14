@@ -29,10 +29,10 @@ class Simulator:
         self.zmax = zmax
         self.tirf = tirf_depth or self.c['tirf_depth_um']
         self.R = psf_roi
-        # calibrated PSF (torch_psf.load_psf of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
+        # calibrated PSF (torch_psf.PSF.load of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
         # average; a GaussianPSF for 'psf_gauss_sigma_um')
         self.calib_path = calib_path
-        self.psf = spsf.load_psf(calib_path, roisize=psf_roi, oversample=3, device=device)
+        self.psf = spsf.PSF.load(calib_path, roisize=psf_roi, oversample=3, device=device)
         self.focus = self.c['focus_um']
         # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
         self.lz, self.ls = psf_lut_z, psf_lut_sub
@@ -45,12 +45,12 @@ class Simulator:
         self.lut = lut.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi)
         # (2026-11-11, opt-in) per-pattern-angle PSF (calib 'psf_dipole_M_angle' / 'psf_blur_angle_px2'): one LUT per angle;
         # self.lut = the exact average of the two angle LUTs (pattern-free consumers: templates, sums); self.psf = the
-        # angle-averaged model of torch_psf.load_psf(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
+        # angle-averaged model of torch_psf.PSF.load(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
         self.lut_angle = None
         if has_angle_psf(self.c):
             self.lut_angle = []
             for k in range(2):
-                pk = spsf.load_psf(calib_path, roisize=psf_roi, oversample=3, device=device, angle=k)
+                pk = spsf.PSF.load(calib_path, roisize=psf_roi, oversample=3, device=device, angle=k)
                 with torch.no_grad():
                     la = torch.cat([render(pk, p) for p in pos.split(1024)])
                 self.lut_angle.append(la.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi))
