@@ -3,8 +3,14 @@ fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
   python -m simcode.auto <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
 
-  from simcode.auto import Acquisition
-  acq = Acquisition('simcode/auto/configs/1809_2.yaml'); acq.run(); acq.stage('psf')
+  python -m simcode.auto <setup.py> [--only name1,name2] [--show]      a Python file that defines `config` or a list `configs`
+
+  from simcode.auto import LocalizationPipeline
+  pipe = LocalizationPipeline(cfg)      # cfg: ConfigDict / dict / yaml / json / Python file (simcode/auto/configs/)
+  pipe.run()                            # every stage, finished ones skipped
+  pipe.estimate_psf()                   # one stage: determine_frame_order, calibrate_camera, find_spots, estimate_camera_maps,
+                                        # extract_tracks, fit_beads, estimate_psf, train_model, process, report
+  ds = pipe.dataset_pass2()             # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1); ds.select('main')
 
 Stages (run order): order, camera, spots, cammaps, tracks, beads, psf, train, process, report. Each writes
 <out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped unless redone (--redo <stage> redoes
@@ -19,7 +25,10 @@ import numpy as np
 from simcode.auto import config as C
 from simcode.fileio.work import atomic_json
 
-STAGES = ['order', 'camera', 'spots', 'cammaps', 'tracks', 'beads', 'psf', 'train', 'process', 'report']
+# stage name (directory under <out>, command line) -> the public method, in run order
+METHODS = dict(order='determine_frame_order', camera='calibrate_camera', spots='find_spots', cammaps='estimate_camera_maps',
+               tracks='extract_tracks', beads='fit_beads', psf='estimate_psf', train='train_model', process='process', report='report')
+STAGES = list(METHODS)
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -27,8 +36,10 @@ class StageFailed(RuntimeError):
     pass
 
 
-class Acquisition:
+class LocalizationPipeline:
     def __init__(self, cfg, gpus=None, log=None, quick=None):
+        """cfg: ConfigDict (simcode/util/cfgdict.py), dict, yaml / json path, or a Python file that defines one `config`;
+        validated against the schema of simcode/auto/config.py in every form. self.c = the resolved plain dict."""
         self.c = C.load(cfg)
         if gpus is not None: self.c['gpus'] = list(gpus)
         if quick is not None: self.c['train']['quick'] = bool(quick)
@@ -39,6 +50,23 @@ class Acquisition:
             os.makedirs(os.path.dirname(link), exist_ok=True); os.symlink(os.path.abspath(self.out), link)
         self._log = log or self._default_log
         C.dump(self.c, os.path.join(self.out, 'config_resolved.json'))
+
+    @classmethod
+    def from_file(cls, cfg, only=None, **kw):
+        """every acquisition of a config (a Python file with a list `configs`, or any single form) -> [LocalizationPipeline,
+        ...]; only = names to keep. All configs are validated before the first object (and output directory) is made."""
+        L = C.load_all(cfg)
+        if only:
+            miss = [n for n in only if n not in [c['name'] for c in L]]
+            if miss: raise KeyError(f'no acquisition named {miss} in {cfg} (has: {[c["name"] for c in L]})')
+            L = [c for c in L if c['name'] in only]
+        return [cls(c, **kw) for c in L]
+
+    @property
+    def cfg(self):
+        """the resolved config as a read-only ConfigDict (pipe.cfg.optics.NA)"""
+        from simcode.util.cfgdict import ConfigDict
+        return ConfigDict({k: v for k, v in self.c.items() if not k.startswith('_')}).freeze()
 
     # ---- helpers
     def _default_log(self, *a):
@@ -112,27 +140,101 @@ class Acquisition:
         return p
 
     # ---- driver
-    def run(self, stages=None, redo=(), force=False):
-        todo = STAGES if stages in (None, 'all', ['all']) else [s for s in STAGES if s in stages]
-        bad = set(stages or []) - set(STAGES) - {'all'}
-        if bad: raise ValueError(f'unknown stages {sorted(bad)} (stages: {STAGES})')
+    @staticmethod
+    def _stage_name(x):
+        """a stage given as one of the stage methods (pipe.estimate_psf), its name, or the stage name -> stage name"""
+        n = getattr(x, '__name__', x)
+        for k, m in METHODS.items():
+            if n in (k, m): return k
+        raise ValueError(f'unknown stage {x!r} (methods: {list(METHODS.values())}; command-line names: {STAGES})')
+
+    def _invalidate(self, first, todo=STAGES):
+        """redo: the done markers of stage `first` and of every later stage in todo are moved to summary.json.old"""
+        for s in STAGES[STAGES.index(first):]:
+            p = os.path.join(self.out, s, 'summary.json')
+            if os.path.exists(p) and s in todo: os.replace(p, p + '.old')
+
+    def run(self, only=None, redo=(), force=False):
+        """Every stage in order, finished ones skipped. only / redo: stage methods (pipe.run(redo=[pipe.estimate_psf])) or
+        their names; redo = run these again and every later stage; force = continue after failed checks.
+        Returns {stage name: summary}."""
+        if isinstance(only, str) or callable(only): only = [only]
+        if isinstance(redo, str) or callable(redo): redo = [redo]
+        sel = None if only is None or list(only) in ([], ['all']) else {self._stage_name(x) for x in only}
+        todo = [s for s in STAGES if sel is None or s in sel]
         if redo:
-            first = min(STAGES.index(r) for r in redo)
-            for s in STAGES[first:]:
-                p = os.path.join(self.out, s, 'summary.json')
-                if os.path.exists(p) and s in todo: os.replace(p, p + '.old')
+            self._invalidate(min((self._stage_name(r) for r in redo), key=STAGES.index), todo)
         for s in todo:
-            self.stage(s, force=force)
+            self._stage(s, force=force)
         return {s: self.summary(s) for s in todo}
 
-    def stage(self, name, force=False):
+    # ---- the stages: each returns its summary (also <out>/<stage>/summary.json = the done marker; a finished stage is
+    # skipped). force = accept failed checks; redo = run it again (the later stages are then redone by the next run()).
+    def determine_frame_order(self, force=False, redo=False):
+        """frame order of the acquisition; writes / verifies the blocked-order movie when the order is not blocked"""
+        return self._stage('order', force, redo)
+
+    def calibrate_camera(self, force=False, redo=False):
+        """gain, offset, read noise from the movie (stage a1)"""
+        return self._stage('camera', force, redo)
+
+    def find_spots(self, force=False, redo=False):
+        """pattern-free Gaussian spot finding on moving 6-frame sums (stage c1)"""
+        return self._stage('spots', force, redo)
+
+    def estimate_camera_maps(self, force=False, redo=False):
+        """per-pixel offset / read-noise maps on the frames without spots (stage a2)"""
+        return self._stage('cammaps', force, redo)
+
+    def extract_tracks(self, force=False, redo=False):
+        """isolated emitter tracks for the PSF fit (stage c2)"""
+        return self._stage('tracks', force, redo)
+
+    def fit_beads(self, force=False, redo=False):
+        """bead z-stack fit (stage b; skipped when the config has no beads)"""
+        return self._stage('beads', force, redo)
+
+    def estimate_psf(self, force=False, redo=False):
+        """in-situ PSF + pattern calibration on the tracks (stage d)"""
+        return self._stage('psf', force, redo)
+
+    def train_model(self, force=False, redo=False):
+        """PSF-matched networks and calibrations (stage e; skipped when train.model names an existing model)"""
+        return self._stage('train', force, redo)
+
+    def process(self, force=False, redo=False):
+        """localize the whole movie with simcode.run (stage f)"""
+        return self._stage('process', force, redo)
+
+    def report(self, force=False, redo=False):
+        """report page (stage g)"""
+        return self._stage('report', force, redo)
+
+    def run_dir(self):
+        """directory of the processing run (simcode.run output: locs_p1 / locs_p2 tables, run_config.json)"""
+        S = self.summary('process')
+        if S is None: raise FileNotFoundError(f'{self.c["name"]}: not processed yet ({self.out}/process/summary.json is missing); call process() or run()')
+        return S['run']
+
+    def dataset_pass1(self, **kw):
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (selection: ds.select('main'))"""
+        from simcode.dataset import Dataset
+        return Dataset.from_run(self.run_dir(), pass_=1, **kw)
+
+    def dataset_pass2(self, **kw):
+        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset"""
+        from simcode.dataset import Dataset
+        return Dataset.from_run(self.run_dir(), pass_=2, **kw)
+
+    def _stage(self, name, force=False, redo=False):
+        if redo: self._invalidate(name)
         if self.done(name):
             self.log(f'[{name}] done (summary.json exists), skipped'); return self.summary(name)
         from simcode.util.proctitle import set_title
         set_title('auto-' + name[:7])
         self.log(f'[{name}] start')
         t0 = time.time()
-        S = getattr(self, 'st_' + name)()
+        S = getattr(self, '_st_' + name)()
         S['stage'] = name; S['time_s'] = time.time() - t0; S['finished'] = time.strftime('%Y-%m-%d %H:%M:%S')
         fails = [k for k in S.get('checks', []) if not k.get('ok') and not k.get('warn_only')]
         warns = [k for k in S.get('checks', []) if not k.get('ok') and k.get('warn_only')]
@@ -145,7 +247,7 @@ class Acquisition:
         return S
 
     # ---- stage: frame order
-    def st_order(self):
+    def _st_order(self):
         c = self.c
         if not C.needs_reorder(c):
             return dict(movie=c['movie'], reordered=False, checks=[])
@@ -158,13 +260,13 @@ class Acquisition:
         return dict(movie=cache, reordered=True, perm_slot_from_frame=inv, **chk['info'], checks=chk['checks'])
 
     # ---- stage a1: camera
-    def st_camera(self):
+    def _st_camera(self):
         from simcode.auto import camera
         r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log)
         return r
 
     # ---- stage c1: spots
-    def st_spots(self):
+    def _st_spots(self):
         import torch
         from simcode.auto import spots
         c, sp = self.c, self.c['spots']; cam = self.summary('camera')
@@ -196,7 +298,7 @@ class Acquisition:
         return dict(stats=stats, sigma0=sig0, files=['spots.hdf5', 'spots_good.hdf5'], checks=chk)
 
     # ---- stage a2: camera maps
-    def st_cammaps(self):
+    def _st_cammaps(self):
         c = self.c; cam = self.summary('camera'); d = self.dir('cammaps')
         args = ['-m', 'simcode.insitu.camera_maps', '--movie', self.movie, '--nframes', c['camera']['map_frames'], '--gain', cam['gain'],
                 '--offset', cam['offset'], '--locs', self.spots_file(), '--out', os.path.join(d, 'camera_maps.npz')]
@@ -209,7 +311,7 @@ class Acquisition:
         return dict(stats=st, file='camera_maps.npz', checks=[dict(name='corr(offset_dev, loc density) < 0.05', value=corr, ok=abs(corr) < 0.05, warn_only=True)])
 
     # ---- stage c2: tracks
-    def st_tracks(self):
+    def _st_tracks(self):
         sp = self.c['spots']; d = self.dir('tracks')
         txt = self.sh(['-m', 'simcode.insitu.extract_tracks', '--movie', self.movie, '--locs', self.spots_file(),
                        '--maxframe', sp['maxframe'], '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
@@ -220,7 +322,7 @@ class Acquisition:
         return dict(stats=st, file='tracks.npz', checks=[dict(name=f'samples >= 2 x psf.nsamples ({need})', value=st['samples'], ok=st['samples'] >= need)])
 
     # ---- stage b: beads
-    def st_beads(self):
+    def _st_beads(self):
         b = self.c['beads']
         if not b:
             return dict(skipped=True, note='no bead z-stacks in the config: stage d starts from zero aberrations', checks=[])
@@ -241,42 +343,54 @@ class Acquisition:
                     checks=[dict(name='|Z| < 0.15 waves', value=float(np.sqrt((Z ** 2).sum())), ok=float(np.sqrt((Z ** 2).sum())) < 0.15)])
 
     # ---- stage d: in-situ PSF
-    def st_psf(self):
+    def _st_psf(self):
         from simcode.auto import stage_psf
         return stage_psf.run(self)
 
     # ---- stage e: model (trained networks + calibrations)
-    def st_train(self):
+    def _st_train(self):
         from simcode.auto import train
         return train.run(self)
 
     # ---- stage f: processing
-    def st_process(self):
+    def _st_process(self):
         from simcode.auto import process
         return process.run(self)
 
     # ---- stage g: report
-    def st_report(self):
+    def _st_report(self):
         from simcode.auto import report
         return report.run(self)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description='SIMCODE v2 automatic per-dataset pipeline (docs/AUTO_PIPELINE.md)')
-    ap.add_argument('config')
+    ap.add_argument('config', help='yaml / json file, or a Python file that defines `config` or a list `configs`')
     ap.add_argument('--stages', default='all', help='comma list of ' + ','.join(STAGES) + ' or all')
     ap.add_argument('--redo', default='', help='comma list: redo these stages and every later one')
     ap.add_argument('--quick', action='store_true', help='stage e: few steps per trainer (plumbing test)')
     ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 1,2')
     ap.add_argument('--force', action='store_true', help='continue after failed checks')
+    ap.add_argument('--only', default='', help='comma list of acquisition names (a Python file with several `configs`)')
+    ap.add_argument('--show', action='store_true', help='print the resolved config(s) and exit (nothing is written)')
     a = ap.parse_args(argv)
-    ds = Acquisition(a.config, gpus=[int(v) for v in a.gpus.split(',')] if a.gpus else None, quick=True if a.quick else None)
-    ds.run(a.stages.split(','), redo=[r for r in a.redo.split(',') if r], force=a.force)
+    if a.show:
+        from simcode.util.cfgdict import ConfigDict
+        only = [n for n in a.only.split(',') if n]
+        for c in C.load_all(a.config):
+            if not only or c['name'] in only: print(ConfigDict(c))
+        return
+    L = LocalizationPipeline.from_file(a.config, only=[n for n in a.only.split(',') if n],
+                              gpus=[int(v) for v in a.gpus.split(',')] if a.gpus else None, quick=True if a.quick else None)
+    failed = []
+    for ds in L:                    # one after the other; a failed acquisition does not stop the next ones
+        try:
+            ds.run(only=a.stages.split(','), redo=[r for r in a.redo.split(',') if r], force=a.force)
+        except StageFailed as e:
+            if len(L) == 1: raise
+            ds.log('FAILED:', e); failed.append(ds.c['name'])
+    if failed: raise SystemExit(f'failed acquisitions: {failed}')
 
 
 if __name__ == '__main__':
     main()
-
-
-# old name (2026-11-14 rename: an Acquisition is one measurement plus how to process it; results are simcode.locs.Localizations)
-Dataset = Acquisition

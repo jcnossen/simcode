@@ -1,6 +1,8 @@
-"""Dataset config of the automatic pipeline (docs/AUTO_PIPELINE.md section 1): defaults = the DMD-SIMFLUX setup.
-load(path) -> nested dict with every default filled in; unknown keys raise. yaml or json."""
+"""Acquisition config of the automatic pipeline (docs/AUTO_PIPELINE.md section 1): defaults = the DMD-SIMFLUX setup.
+load(cfg) -> nested dict with every default filled in; unknown keys raise. cfg: a ConfigDict (simcode/util/cfgdict.py), a
+dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) -> list (a Python file with `configs`)."""
 import copy, json, math, os
+from collections.abc import Mapping
 
 DEFAULTS = {
     'name': None, 'movie': None, 'out': None,
@@ -39,17 +41,47 @@ def _merge(d, u, path=''):
     return d
 
 
-def load(path_or_dict):
-    if isinstance(path_or_dict, dict):
-        u = copy.deepcopy(path_or_dict); src = None
+def _read(cfg):
+    """any accepted form -> [(plain dict, source file or None), ...]"""
+    from simcode.util.cfgdict import ConfigDict, load_python
+    if isinstance(cfg, Mapping):
+        u = ConfigDict(cfg).to_dict()
+        return [(u, u.pop('_file', None))]          # '_file': a config that was already resolved (resolving again is a no-op)
+    if isinstance(cfg, (list, tuple)):
+        return [r for c in cfg for r in _read(c)]
+    src = os.path.abspath(os.fspath(cfg))
+    if src.endswith('.py'):
+        return [(c.to_dict(), src) for c in load_python(src)]
+    txt = open(src).read()
+    if src.endswith(('.yaml', '.yml')):
+        import yaml
+        u = yaml.safe_load(txt)
     else:
-        src = os.path.abspath(path_or_dict)
-        txt = open(src).read()
-        if src.endswith(('.yaml', '.yml')):
-            import yaml
-            u = yaml.safe_load(txt)
-        else:
-            u = json.loads(txt)
+        u = json.loads(txt)
+    if not isinstance(u, dict): raise ValueError(f'{src}: the top level of a config must be a mapping')
+    return [(u, src)]
+
+
+def load_all(cfg):
+    """every acquisition config of cfg (a Python file with a list `configs`, a list of configs, or any single form),
+    each validated and with the defaults filled in"""
+    L = [_resolve(u, src) for u, src in _read(cfg)]
+    names = [c['name'] for c in L]
+    dup = sorted({n for n in names if names.count(n) > 1})
+    if dup: raise ValueError(f'config: acquisition names must be unique, repeated: {dup}')
+    return L
+
+
+def load(cfg):
+    """one acquisition config (ConfigDict, dict, yaml / json path, or a Python file that defines one `config`)"""
+    L = _read(cfg)
+    if len(L) != 1:
+        raise ValueError(f'{cfg}: {len(L)} acquisition configs; LocalizationPipeline takes one (use '
+                         f'LocalizationPipeline.from_file(file) or python -m simcode.auto <file> [--only name])')
+    return _resolve(*L[0])
+
+
+def _resolve(u, src=None):
     c = copy.deepcopy(DEFAULTS)
     for sec in ('train', 'process'):          # names before 2026-11-14: 'netset' (= model); process.pass2 (pass 2 always runs now)
         d = u.get(sec) or {}

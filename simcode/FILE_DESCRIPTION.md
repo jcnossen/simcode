@@ -149,6 +149,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | `util/drift.py` | Lateral drift of a localization table with the external DME v2 package (`drift_of_table`; the row selection is here). |
 | `util/ckpt.py` | Atomic checkpoint save with a disk guard, used by every trainer. |
 | `util/proctitle.py` | Recognizable process names (`simcode:<stage> <unit>`) in `nvidia-smi` / `ps`. |
+| `util/cfgdict.py` | `ConfigDict`: nested settings with attribute access (`cfg.optics.NA`), deep merge (`base.updated(...)`), freeze, yaml / json / Python-file loading; used to define acquisitions of the automatic pipeline in code (`auto/configs/*.py`, docs/AUTO_PIPELINE.md section 1.1). Not `config.py` (the paths). |
 | `util/spatial_hash.py` | GPU/CPU neighbour search used by the pattern estimation and `autoc.py`. |
 | `util/neighbours.py` | Small nearest-neighbour helper. |
 | `evalproto/frc.py` | The one FRC implementation (reference estimator in camera px or nm, block halves; the Hann and fixed-field variants of two scripts). |

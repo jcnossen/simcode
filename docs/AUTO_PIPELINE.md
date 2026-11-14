@@ -14,21 +14,31 @@ Goal: one config file per dataset, then one command that
 7. writes a report page.
 
 ```bash
-python -m simcode.auto <config.yaml> [--stages camera,spots,...|all] [--quick] [--redo <stage>] [--gpus 1,2]
+python -m simcode.auto <config.yaml | config.json | config.py> [--stages camera,spots,...|all] [--quick] [--redo <stage>] [--gpus 1,2]
+python -m simcode.auto <setup.py> [--only name1,name2] [--show]     # a Python file with several acquisitions (section 1.1)
 ```
 
 ```python
-from simcode.auto import Acquisition
-ds = Acquisition('simcode/auto/configs/1809_2.yaml')
-ds.run()                                   # all stages, skipping finished ones
-ds.run(stages=['camera', 'spots'])         # some stages
-ds.stage('psf')                            # one stage, callable on its own
+from simcode.auto import LocalizationPipeline
+pipe = LocalizationPipeline('simcode/auto/configs/1809_2.yaml')   # or a ConfigDict / dict / .json / .py (section 1.1)
+pipe.run()                                 # all stages, skipping finished ones
+pipe.calibrate_camera(); pipe.find_spots() # single stages, each callable on its own
+pipe.estimate_psf(redo=True)               # run a finished stage again (force=True: accept failed checks)
+pipe.run(redo=[pipe.estimate_psf])         # redo a stage and every later one
+ds = pipe.dataset_pass2()                  # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1)
+main = ds.select('main')
+pipe.cfg.optics.NA                         # the resolved config, read-only
 ```
+
+One method per stage, in run order (command-line stage name in brackets): `determine_frame_order()` [order],
+`calibrate_camera()` [camera], `find_spots()` [spots], `estimate_camera_maps()` [cammaps], `extract_tracks()` [tracks],
+`fit_beads()` [beads], `estimate_psf()` [psf], `train_model()` [train], `process()` [process], `report()` [report]. Each
+returns its summary, writes `<out>/<stage>/summary.json` last (the done marker) and is skipped when that file exists.
 
 A console script `simcode-auto = simcode.auto.pipeline:main` is proposed for `pyproject.toml` (section 8); until
 then the entry point is `python -m simcode.auto`.
 
-## 1. Config (yaml or json)
+## 1. Config (yaml, json, or Python)
 
 Only `name`, `movie` and `out` are required; everything else has the DMD-SIMFLUX default (the 1809 / 0.5 nM setup).
 Unknown keys are an error (typos must not pass silently). The full config, with the defaults filled in, is written to
@@ -110,6 +120,58 @@ process:                           # stage f
   extra: []                        # further simcode.run flags
 gpus: [1, 2]
 ```
+
+### 1.1 Config in Python (`ConfigDict`)
+
+A config can also be written as Python code, so that several acquisitions share one description of the setup and values
+are derived instead of copied. `simcode/util/cfgdict.py` has the class (the v2 counterpart of the preprint code's
+`config_dict`):
+
+```python
+from simcode.util.cfgdict import ConfigDict            # also: from simcode.auto import ConfigDict
+DATA = '/mnt/data/dmdsf/bn_dnapaint'
+base = ConfigDict(camera=dict(gain_e_per_adu=0.56, offset_adu=99.3),
+                  optics=dict(pixel_um=0.10833, NA=1.49),
+                  beads=dict(stacks=[f'{DATA}/PSF_calib/raw/zstack{i}-1.tif' for i in range(2, 8)], sign=-1),
+                  gpus=[1, 2]).freeze()
+
+def acquisition(name, movie, model):
+    return base.updated(name=name, movie=f'{DATA}/{movie}', out=f'/mnt/data/dmdsf/simcode2_out/auto/{name}',
+                        process=dict(model=model))
+
+configs = [acquisition('1809_2',  '1809/cover1/2/simflux_5.5ms_500mW.tif', 'm1809'),
+           acquisition('2.5nM_2', 'dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif', 'm25')]
+```
+
+| | |
+|---|---|
+| `cfg.optics.NA`, `cfg['optics']['NA']`, `cfg['optics.NA']` | attribute, item and dotted-path access |
+| `cfg.optics.na` | a missing key raises (`AttributeError` / `KeyError`, naming close matches); `cfg.get('optics.na', default)` does not |
+| `base.updated(name=..., psf=dict(iters=300))` | a new object; nested sections are merged key by key, every other value (lists too) is replaced; `{'psf.iters': 300}` also works. `replaced(psf=...)` swaps a whole section, `merge(...)` is the in-place form |
+| `base.freeze()` | read-only (recursive); `updated()` / `clone()` give editable copies |
+| `cfg.to_dict()` | plain dicts / lists: numpy arrays and scalars, torch tensors, tuples, paths converted |
+| `cfg.save('x.yaml')`, `ConfigDict.load('x.yaml')` | yaml or json by extension; `load` also reads a `.py` file with one `config` |
+| `print(cfg)` | indented listing |
+
+Accepted everywhere a config is: `LocalizationPipeline(cfg)` takes a `ConfigDict`, a dict, a yaml / json path, or the path of
+a Python file that defines `config`. A Python file may instead define a list `configs` (or a dict name -> config):
+
+```bash
+python -m simcode.auto simcode/auto/configs/example_setup.py --show          # print the resolved configs, run nothing
+python -m simcode.auto simcode/auto/configs/example_setup.py                 # all acquisitions, one after the other
+python -m simcode.auto simcode/auto/configs/example_setup.py --only 20nM_2
+```
+
+```python
+pipes = LocalizationPipeline.from_file('simcode/auto/configs/example_setup.py')      # [LocalizationPipeline, ...]
+for p in pipes: p.run()
+```
+
+Every form goes through the same schema (`simcode/auto/config.py`: unknown keys are errors, defaults filled in, names
+must be unique within a file), and `<out>/config_resolved.json` is written as before. The Python file runs as ordinary
+code with `__file__` set (it is not imported as a module). Examples in `simcode/auto/configs/`: `example_setup.py` (base
+config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py`, `nr80.py` = the two yaml files in this style
+(`tests/test_cfgdict.py` checks that they resolve to the same config).
 
 ## 2. Stages
 
