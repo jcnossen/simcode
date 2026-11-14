@@ -28,6 +28,8 @@ def main():
     ap.add_argument('--redo', default='')
     ap.add_argument('--psf', default=None, help="baselines' PSF spec (run_baselines --psf), e.g. gauss:1.3 for the preprint reproduction")
     ap.add_argument('--gt_diag', type=int, default=1, help='v2: also the GT-pattern pass-2 diagnostic (0 = skip, ~40 %% of the v2 time)')
+    ap.add_argument('--tag', default='', help="suffix of the v2 output and of the metrics name, e.g. '_3d': v2 -> <run>/v2_<model>_3d, "
+                    'metrics -> <run>/metrics_<model>_3d.json (a rerun of v2 with new networks next to the earlier one)')
     a = ap.parse_args()
     sys.path.insert(0, REPO)
     from simcode.util.proctitle import auto; auto('psim-all')
@@ -38,7 +40,8 @@ def main():
     nf = a.nframes or g['nframes']
     run = os.path.abspath(a.run or os.path.join(md, 'full' if nf == g['nframes'] else f'cut{nf}'))
     os.makedirs(os.path.join(run, 'logs'), exist_ok=True)
-    v2dir = os.path.join(run, f'v2_{a.model}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}'))
+    v2dir = os.path.join(run, f'v2_{a.model}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}') + a.tag)
+    mname = a.model + a.tag                 # name of the metrics / hollow outputs (metrics.py reads <run>/v2_<mname>)
     py = sys.executable; S = os.path.join(HERE, '{}')
     mf = [] if nf == g['nframes'] else ['--maxframes', str(nf)]
     steps = {
@@ -52,8 +55,8 @@ def main():
         'v1gt': ([py, S.format('run_simcode_v1.py'), md, '--pattern', 'gt', '--out', os.path.join(run, 'v1gt', 'locs.npz')] + mf, os.path.join(run, 'v1gt', 'v1_info.json')),
         'v2': ([py, S.format('run_simcode.py'), md, '--model', a.model, '--cal_kind', a.cal_kind, '--out', v2dir, '--gt_diag', str(a.gt_diag)]
                + ([] if nf == g['nframes'] else ['--nframes', str(nf)]), os.path.join(v2dir, 'papersim_run.json')),
-        'metrics': ([py, S.format('metrics.py'), run, '--movie', md, '--nframes', str(nf), '--model', a.model], None),
-        'hollow': ([py, S.format('hollow_analysis.py'), run, '--movie', md, '--nframes', str(nf), '--model', a.model], None),
+        'metrics': ([py, S.format('metrics.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname], None),
+        'hollow': ([py, S.format('hollow_analysis.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname], None),
     }
     import shutil
     def disk_ok():         # 2026-11-12: the root disk filled up once; stop cleanly instead of writing truncated files
@@ -70,7 +73,7 @@ def main():
         t0 = time.time(); print(f'[{st}] ' + ' '.join(cmd), flush=True)
         with open(os.path.join(run, 'logs', f'{st}.log'), 'a') as lf:
             r = subprocess.run(cmd, cwd=REPO, stdout=lf, stderr=subprocess.STDOUT)
-        TM[st + ('' if st in ('base', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt') else f'_{a.model}')] = dict(s=round(time.time() - t0, 1), rc=r.returncode, nframes=nf, when=time.ctime(),
+        TM[st + ('' if st in ('base', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt') else f'_{mname}')] =dict(s=round(time.time() - t0, 1), rc=r.returncode, nframes=nf, when=time.ctime(),
                                                                             gpu=os.environ.get('CUDA_VISIBLE_DEVICES', ''))
         json.dump(TM, open(tf, 'w'), indent=1)
         print(f'[{st}] rc {r.returncode} {time.time() - t0:.1f} s', flush=True)

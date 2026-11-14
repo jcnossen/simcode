@@ -63,6 +63,10 @@ def main():
         subprocess.run(cmd, check=True, cwd=REPO)
     T = time.time() - t0
     info = strict_tables(out, W, g['px_nm'], N['sig_u'])
+    # the pass-2 table (locs_p2_sim, crop (0, 0, W)) also in the torch-psf Dataset format: final.hdf5 (all rows; the paper's
+    # selection = Dataset.load(...).select())
+    from simcode.dataset import Dataset
+    print('written', Dataset.load_npz(os.path.join(out, 'locs_p2_sim.npz')).save(os.path.join(out, 'final.hdf5')), flush=True)
     if a.gt_diag:
         # diagnostic (not the method): pass 2 with the GROUND-TRUTH pattern fed to the pass-2 networks and the solve
         # (run_uncalibrated --ref_pattern -> pass2_ref2_*.npz); table with the same crop and sigma rescale

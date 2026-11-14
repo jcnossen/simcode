@@ -11,6 +11,9 @@
 #   hollow "<cond:R:scale> ..."      hollow microtubules, 120 000 frames, e.g. "1809_2:25:1 1809_2:25:2 1809_2:25:8"
 #                                    (x1: all methods; other photon levels: v2 + DECODE only, env HOLLOW_STEPS to change)
 #   s10 "m1809 g13"                  isolated-emitter precision vs CRLB table per network set
+#   v2 "D1 Dexp1 D1_gauss ..."       SIMCODE v2 + metrics only, next to the earlier v2 (movies / baselines / v1 unchanged):
+#                                    model m1809 (g13 for *_gauss), output <run>/v2_<model>${V2TAG} (default V2TAG=_3d),
+#                                    metrics_<model>${V2TAG}.json
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
 PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
@@ -46,5 +49,11 @@ case $what in
       else $PY analysis/papersim/s10.py --model $NS --out $O/s10 > $O/logs/s10_$NS.log 2>&1; fi
       echo "$(date) done s10 $NS rc $?"
     done ;;
-  *) sed -n 2,16p "$0"; exit 1 ;;
+  v2)
+    for D in $items; do
+      M=m1809; case $D in *_gauss) M=g13 ;; esac
+      $PY analysis/papersim/run_all.py $O/$D --steps v2,metrics --model $M --gt_diag 0 --tag ${V2TAG:-_3d} >> $O/logs/v2${V2TAG:-_3d}_$D.log 2>&1
+      echo "$(date) done v2${V2TAG:-_3d} $D rc $?"
+    done ;;
+  *) sed -n 2,19p "$0"; exit 1 ;;
 esac
