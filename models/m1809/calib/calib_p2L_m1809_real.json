@@ -1,0 +1,117 @@
+{
+ "kap_p": 0.8945592641830444,
+ "kap_I2": 0.7926290588403049,
+ "sig_a": 1.4126241928985401,
+ "sig_g": 0.41589644697367406,
+ "n": 32239,
+ "sig_fit_with": {
+  "kap_p": 0.8945592641830444,
+  "kap_I2": 0.7926290588403049
+ },
+ "kap_p_raw": 0.8945196270942688,
+ "kap_I2_raw": 0.7926039058284609,
+ "box": 1.5,
+ "mix_T": 1.0,
+ "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/m1809g/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/m1809g/fe:rs05pm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/m1809g/fe); base calib/calib_p2L.json | _real: sig_ph_real_mult copied from calib/calib_p2L_b10_real.json (not re-measured for the new networks)",
+ "cmult": 0.1,
+ "cmult_ang": 0.1,
+ "fit_scenes": [
+  "/home/jc/simcode2/out/z3d/eval/m1809g/fe:rs05qm",
+  "/home/jc/simcode2/out/z3d/eval/m1809g/fe:rs05pm"
+ ],
+ "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+ "sig_ph": {
+  "ph": [
+   267.7001953125,
+   404.6883544921875,
+   632.7176513671875,
+   973.5174560546875,
+   1483.786865234375,
+   2320.131103515625,
+   3448.33740234375
+  ],
+  "f": [
+   1.2361230850219727,
+   1.3484915706636489,
+   1.2274311646651253,
+   1.137620588459086,
+   1.0317744529887054,
+   0.9879673731377101,
+   0.9843609627764036
+  ]
+ },
+ "prior_off": [
+  0.0021794477943331003,
+  -0.0017062134575098753
+ ],
+ "kap_bins": {
+  "ph": [
+   267.7001953125,
+   404.6883544921875,
+   632.7176513671875,
+   973.5174560546875,
+   1483.786865234375,
+   2320.131103515625,
+   3448.33740234375
+  ],
+  "kap_p": [
+   0.836880087852478,
+   0.8579086065292358,
+   0.8155583143234253,
+   0.8275003433227539,
+   0.826194703578949,
+   0.8626409769058228,
+   0.8484461903572083
+  ],
+  "kap_I2": [
+   0.5960710859790517,
+   0.6680362255750403,
+   0.7297115177604816,
+   0.7630650229408822,
+   0.759410051392706,
+   0.8124792468401587,
+   0.6876661035724716
+  ]
+ },
+ "sig_ph_real_mult": {
+  "ph": [
+   270.20751953125,
+   398.19000244140625,
+   642.7083129882812,
+   989.0340576171875,
+   1530.003662109375,
+   2360.155029296875,
+   3490.47216796875
+  ],
+  "mult": [
+   1.0,
+   1.0,
+   0.9684171039386121,
+   0.9364949650816337,
+   0.9045236828877847,
+   0.9000237553290862,
+   0.9000237553290862
+  ],
+  "note": "2026-11-10 real-data sigma recalibration of pass 2 (p2L), same procedure as the pass-1 bright_real calib: real 0.5 nM M4 zcal (pass-2 run with calib_p2L_movie_b10, disjoint p >= 0.63, full movie) x the sim (true / M4 zcal) ratio of the same pass-2 pipeline on m05q (p2real/sim_m4ref.json) = predicted real true zcal; sigma factor x that"
+ },
+ "sig_ph_sim": {
+  "ph": [
+   267.7001953125,
+   404.6883544921875,
+   632.7176513671875,
+   973.5174560546875,
+   1483.786865234375,
+   2320.131103515625,
+   3448.33740234375
+  ],
+  "f": [
+   1.2361230850219727,
+   1.34993314743042,
+   1.2661100625991821,
+   1.2132470607757568,
+   1.1378551721572876,
+   1.0974960327148438,
+   1.0937055349349976
+  ]
+ }
+}

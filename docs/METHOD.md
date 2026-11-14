@@ -32,7 +32,7 @@ warns about every input or code difference; on the same code and GPU the outputs
 
 ### Models (2026-11)
 
-The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; `--model`,
+The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`; `--model`,
 required; or the path of a model folder with a `model.json`). A model has the same four architectures and training recipes as described below; the simulator's PSF is the
 averaged in-situ PSF of the target movie (`--calib` of the trainers), and the pass-1 head is fine-tuned from `hd_sc5nb`
 (`models/README.md` has the recipe and the file list). In the table above, read det_n1 / sc5nb / p2_det / p2_head_long as

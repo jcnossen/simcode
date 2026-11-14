@@ -17,7 +17,7 @@ Stages (each skipped if its outputs exist, unless --redo):
                  sigma rescale (--sig_u); the paper's selection max(sx, sy) <= sigma_max nm on the rows with p >= 0.63
                  inside the crop (--sigma_max; simcode.strict.select / simcode.dataset.Dataset.select) as small files
                  locs_p*_sig<X>.npz (--subset); summary.json
-Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13, m1809g;
+Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13;
 file names relative to the models directory, simcode/config.py), or the path of a model folder with a model.json (as written
 by the automatic pipeline's training stage / simcode.auto.train.export_model). There are no single-file overrides: a model
 with other files is a model folder. --dataset <name> takes movie, calibration and model of a paper dataset from the
@@ -54,7 +54,7 @@ def build_parser():
     ap.add_argument('--calib', default='', help='in-situ PSF / camera calibration json (e.g. insitu/calib_1809_2_psf3d.json)')
     ap.add_argument('--out', required=True)
     ap.add_argument('--model', default='', help='the model (required, or from --dataset / --config): a name of simcode/models.json '
-                    '(m1809, m25, g13, m1809g) or the path of a model folder with a model.json')
+                    '(m1809, m25, g13) or the path of a model folder with a model.json')
     ap.add_argument('--cal_kind', default=PROD['cal_kind'], choices=['real', 'sim'], help="solve calibrations of the model: 'real' (real movies; default) or 'sim' (simulated movies)")
     ap.add_argument('--prefetch', type=int, default=1, help='read the next chunk in a background thread (identical data); 0 = off')
     ap.add_argument('--claim', type=int, default=0, help='1: several copies of this command share the chunks (one copy per GPU)')

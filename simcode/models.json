@@ -26,7 +26,7 @@
   }
  },
  "m1809": {
-  "_doc": "PSF-matched model for the 1809/2 movie (averaged 1809/2 in-situ PSF; adopted 2026-11-11; production out/paper2/1809_2/v2_matched); also the model of the realistic-PSF paper simulations | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m1809/; the previous 2D model is the folder archive_2d/m1809/ (not referenced by any config)",
+  "_doc": "PSF-matched model for the 1809/2 movie (averaged 1809/2 in-situ PSF; adopted 2026-11-11; production out/paper2/1809_2/v2_matched); also the model of the realistic-PSF paper simulations | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m1809/; the previous 2D model is the folder archive_2d/m1809/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/m1809/ (not referenced by any config)",
   "psf": "m1809/calib_1809_2_psf3d_avg.json",
   "det": "m1809/det_m1809.pt",
   "head": "m1809/hd_m1809.pt",
@@ -63,18 +63,5 @@
   "p2_cal_sim": "g13/calib/calib_p2L_g13.json",
   "p2_cal_real": "g13/calib/calib_p2L_g13_real.json",
   "sig_u": "g13/calib/sigu_p1_g13.json,g13/calib/sigu_p2_g13.json"
- },
- "m1809g": {
-  "_doc": "1809_2 PSF with the GENERIC pass 2 (2026-11-13, g2ss: pattern draw with arbitrary pitch / angles / per-frame phases / order / depth / power, standard-draw share 0.5; out/p2generic). Pass 1 = m1809. Within 1-2 % of m1809 pass 2 on SIMCODE patterns; beats pass 1 on other patterns (nanoruler, 4-step, random phases). Use for setups other than the DMD-SIMFLUX one. Real-data multiplier of p2_cal_real copied from m1809, not re-measured.",
-  "psf": "insitu/calib_1809_2_psf3d_avg.json",
-  "det": "det_m1809.pt",
-  "head": "hd_m1809.pt",
-  "cal_sim": "calib/calib_sc_hd_m1809.json",
-  "cal_real": "calib/calib_sc_hd_m1809_real.json",
-  "p2_det": "p2det_g2ss.pt",
-  "p2_head": "p2headL_g2ss.pt",
-  "p2_cal_sim": "calib/calib_p2L_g2ss.json",
-  "p2_cal_real": "calib/calib_p2L_g2ss_real.json",
-  "sig_u": "calib/sigu/sigu_p1_m1809.json,calib/sigu/sigu_p2_g2ss.json"
  }
 }

@@ -70,7 +70,7 @@ python -m simcode.run --dataset 1809_2 --out out_1809_2      # the same: movie, 
 What every run does (= the paper's settings; the options that switched these were removed on 2026-11-14):
 
 - the model (`--model`, required unless `--dataset` / `--config` gives it): a name of `simcode/models.json` (`m1809`,
-  `m25`, `g13`, `m1809g`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
+  `m25`, `g13`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
   stage / `simcode.auto.train.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
   calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
 - pass 1, pattern estimation, the pattern solve, and pass 2
