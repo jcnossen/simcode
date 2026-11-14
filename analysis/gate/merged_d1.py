@@ -36,7 +36,7 @@ class BD:
     def Pf(xyz):
         if BD._psf is None:
             from simcode import psf as spsf
-            psf = spsf.load_psf(config.model('insitu/calib_0.5nM.json'), roisize=21, oversample=3, device=dev)   # opt-in calib PSF terms
+            psf = spsf.PSF.load(config.model('insitu/calib_0.5nM.json'), roisize=21, oversample=3, device=dev)   # opt-in calib PSF terms
             BD._psf, BD._focus = psf, psf.focus_um
         return torch.cat([BD._psf(p, torch.full((len(p),), BD._focus, device=dev)) for p in xyz.split(2048)])
 

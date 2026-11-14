@@ -13,7 +13,7 @@ The defaults are the ones used for the shipped 0.5 nM calibration (`calib_0.5nM.
 ## Recipe (0.5 nM, as shipped)
 
 ```bash
-# 0. (once per setup) bead z-stacks -> starting Zernikes (torch_psf.estimate_psf_beads). Output: <out>/insitu/psf_fit_sign-1.{json,pt}
+# 0. (once per setup) bead z-stacks -> starting Zernikes (torch_psf.ZStackEstimator). Output: <out>/insitu/psf_fit_sign-1.{json,pt}
 #    NA 1.49, lambda 0.70 um, n_med 1.33 fixed; per-stack xy drift; stack 7 held out. The shipped models/insitu/beads/
 #    psf_fit_sign-1_na149_ball_drift.* was made by the earlier SIMCODE bead fit (32-point ball bead, fitted z step / height).
 python -m simcode.psf.beads --sign -1

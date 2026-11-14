@@ -8,7 +8,7 @@ conversion, the pattern-angle groups (frame % 6 // 3) and the photoselection hoo
 blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base (frozen = learning rate 0), checkerboard split.
 Writes <out>_psf.pt / _psf.json in the fit_insitu2 format.
 
-lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.ConvSplinePSF)
+lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.ConvCubicSplinePSF)
 of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
 (x, y, z gradients, varpro I / bg) run on the spline; the PSF parameters get the exact gradient of the spline loss over all
 samples by one backward pass through the table construction. Same optimizer, learning rates and iteration count as the
@@ -130,16 +130,16 @@ class Fit:
 
     # ---- spline table of the current model (section 4), differentiable in the PSF parameters
     def lut_init(self, sub=4, hz=0.01, xmax=2.0):
-        """spline geometry (one torch_psf.ConvSplinePSF per pattern angle) and the knot-building model (roisize Pl), whose
+        """spline geometry (one torch_psf.ConvCubicSplinePSF per pattern angle) and the knot-building model (roisize Pl), whose
         parameters are those of self.model"""
         m = self.model
-        self.luts = [spsf.ConvSplinePSF(self.R, (0.0, self.zmax), oversample=sub, dz_um=hz, zpad=3, xy_limit=xmax, device=self.dev)
+        self.luts = [spsf.ConvCubicSplinePSF(self.R, (0.0, self.zmax), oversample=sub, dz_um=hz, zpad=3, xy_limit=xmax, device=self.dev)
                      for _ in range(self.n_angles())]
         self.big = m.resized(self.luts[0].Pl)
         self.big.zcoef = m.zcoef; self.big.NA = m.NA; self.big.apod = m.apod; self.big.saf = m.saf   # shared parameters
 
     def lut_knots(self, k):
-        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvSplinePSF.knots_from_vectorial"""
+        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvCubicSplinePSF.knots_from_vectorial"""
         L, big = self.luts[k], self.big
         kw = self.kwargs(k)
         big.blur, big.dipM = kw.get('blur'), kw.get('dipM')
@@ -236,16 +236,15 @@ def _fit_direct(F, S, gain, iters, log):
         f'{it:5d} nll/px {tot:.4f}  |Z| {zc.norm().item():.3f}')
     est = fit_tracks(tr, m, readnoise_e=float(torch.exp(G['logrn'])), zmax_um=zmax, iters=iters, warmup=100,
                      focus_um=float(G['focus'].detach()), blur=F.blur_mode, groups=groups, ngroups=2, group_psf_kwargs=hook,
-                     extra_params=extra, lr_zernike=0.002 if m.zcoef.requires_grad else 0.0,
-                     lr_focus=0.005 if G['focus'].requires_grad else 0.0, log=logf)
+                     extra_params=extra, fix_zernike=not m.zcoef.requires_grad, fix_focus=not G['focus'].requires_grad, log=logf)
     with torch.no_grad():
-        m.zcoef.copy_(est.psf.zcoef); G['focus'].fill_(est.report['focus_um'])
-        S['xy'].copy_(est.data['xy']); S['z'].copy_(torch.logit(est.data['z'] / zmax))
+        m.zcoef.copy_(est['psf'].zcoef); G['focus'].fill_(est['report']['focus_um'])
+        S['xy'].copy_(est['xy']); S['z'].copy_(torch.logit(est['z'] / zmax))
     if F.BL is not None:                                                    # fitted line blur -> fixed covariance
-        F.BL, F.BL0 = None, est.psf.blur
+        F.BL, F.BL0 = None, est['psf'].blur
         F.EXTRA = extra
     m.blur = None
-    return est.history[-1]['nll_per_px'] if est.history else float('nan')
+    return est['history'][-1]['nll_per_px'] if est['history'] else float('nan')
 
 
 def _fit_lut(F, S, gain, npx, chunks, iters, lut_sub, lut_inner, lut_polish, log):

@@ -210,7 +210,7 @@ Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run 
 | `spots` (c1) | pattern-free Gaussian SMLM on `sum`-frame moving sums (window start every frame; as the SIMCODE-pipeline smlm table): smoothed difference to the per-pixel temporal median, local maxima > thr x noise, Poisson LM fit of x, y, I, bg, sigma (`analysis/nanoruler/quick_smlm.py` as a function); good-fit filter (chi2, snr, sigma range from the optics) | `spots.hdf5` (Picasso-style `locs`), `spots_good.hdf5` | spots per frame; median sigma vs the diffraction estimate 0.21 lambda / NA (+-25 %); median photons |
 | `cammaps` (a2) | per-pixel offset deviation and read-noise maps (`python -m simcode.insitu.camera_maps`, masked by `spots_good.hdf5`) | `camera_maps.npz` | corr(offset_dev, loc density) < 0.05; read-noise median |
 | `tracks` (c2) | isolated emitter tracks from `spots_good.hdf5` (`python -m simcode.insitu.extract_tracks`: link <= 0.8 px with 1-frame gaps, >= 6 frames, isolation radius, cut into T = 12 frame samples) | `tracks.npz` | number of samples >= 2 x psf.nsamples |
-| `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.beads` = torch_psf.estimate_psf_beads with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
+| `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.beads` = torch_psf.ZStackEstimator with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
 | `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
 | `psfrefine` (d2, slot, not implemented) | refined PSF (free pupil map through the spline-gradient route, then the pattern term; section 5) | refined PSF file + `calib_refined.json` | held-out acceptance |
 | `train` (e) | model with the PSF-matched recipe (section 6); registers it in `<out>/train/model.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
@@ -239,7 +239,7 @@ photoselection), with gradients to x, y, z and to the PSF parameters.
 
 Alternating fit: per outer iteration
 
-1. the knots of a Catmull-Rom 3D spline table of the CURRENT vectorial model are built (torch_psf.ConvSplinePSF geometry:
+1. the knots of a Catmull-Rom 3D spline table of the CURRENT vectorial model are built (torch_psf.ConvCubicSplinePSF geometry:
    the pixel-integrated PSF sampled at S x S sub-pixel shifts and z steps hz over the fitted z range, per pattern angle
    when the model has per-angle terms), with autograd kept to the PSF parameters;
 2. the per-sample x, y, z steps (and the varpro I / bg) run on the spline (conv2d evaluation, value and gradients), which
@@ -250,7 +250,7 @@ Alternating fit: per outer iteration
 
 Implementation (`simcode/auto/psffit.py`, `fit(..., lut=True)`): knots S = 8 per pixel, hz = 10 nm (spline error 4e-5
 of the peak, rms 5e-6), |x|, |y| <= 2 px; the spline is evaluated separably (only the 4 x 4P x 4P knots the P x P pixels use
-are gathered, then contracted along z, y, x: equal to `ConvSplinePSF.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
+are gathered, then contracted along z, y, x: equal to `ConvCubicSplinePSF.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
 iterations (positions only) use one table; then one table per iteration with the graph to the PSF parameters; the last
 `lut_polish` = 50 iterations are direct vectorial steps (the focus / z direction is nearly flat and the spline optimum is
 offset along it by a few nm). Final residuals and intensities always use the vectorial model.

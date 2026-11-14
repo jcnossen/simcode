@@ -35,7 +35,7 @@ dev = 'cpu'
 
 def load(m, dipM=None):
     c = json.load(open(f'{ROOT}/calib_{m}.json'))
-    p = spsf.load_psf(f'{ROOT}/calib_{m}.json', roisize=R, oversample=3, device=dev)
+    p = spsf.PSF.load(f'{ROOT}/calib_{m}.json', roisize=R, oversample=3, device=dev)
     if dipM is not None: p.dipM = torch.tensor(dipM, dtype=torch.float32)
     return c, p
 

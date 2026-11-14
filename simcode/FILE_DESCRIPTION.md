@@ -47,7 +47,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | file | what it does |
 |---|---|
 | `run_uncalibrated.py` | Expert entry point with all flags; `run.py` calls its stages. Chunks are the units of `fileio/work.py`. |
-| `common.py` | Read plan of the chunks, the rows of the pass-1 chunk files, camera conversion, PSF model loading (torch_psf.load_psf). |
+| `common.py` | Read plan of the chunks, the rows of the pass-1 chunk files, camera conversion, PSF model loading (torch_psf.PSF.load). |
 | `sc_front.py` | Reference implementation of pass 1 (detector + head per window) and of the pass-2 chunk loop. |
 | `sc_front_fast.py` | Fast versions of the same chunks (queued fixed-size batches); same networks and outputs. The pipeline's code path (`sc_front.py`, `p2/front.py` are the test oracle). |
 | `pattern_est.py` | Estimates the illumination pattern from pass-1 localizations and intensities. |
@@ -102,7 +102,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | file | what it does |
 |---|---|
 | `__init__.py` | The only module that imports torch_psf (PSF models, calibration reader, fits, TIFF reader; re-exported for the rest of SIMCODE) plus the SIMCODE glue: per-pattern-angle PSF terms, `render`, the spline of the solve (`spline`). |
-| `beads.py` | Fits the PSF model to bead z-stacks (torch_psf.estimate_psf_beads). |
+| `beads.py` | Fits the PSF model to bead z-stacks (torch_psf.ZStackEstimator). |
 
 ## `insitu/`: calibration from the movie itself
 
