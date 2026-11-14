@@ -26,7 +26,8 @@ the wall time) + wall.
 import json, time
 import numpy as np, torch
 import torch.nn.functional as F
-from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
+from simcode.psf import TiffMovie
+from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 PP = 21
@@ -233,7 +234,7 @@ class Pass1SCFast:
         self.front = QueuedFront(self.det, False, {'h': (self.head, 'sc')}, self.col, dev)
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
                   timing=None, keep_gpu=False):
         dev = self.dev
         timing = timing if timing is not None else {}
@@ -336,7 +337,7 @@ class Pass2P2Fast:
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024,
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024,
                   streams=True, solve_batch=16384, timing=None, return_head=False):
         from simcode.hd import msolve_fast as MF
         dev = self.dev

@@ -1,4 +1,4 @@
-"""S0 CRLB check for ZIMFLUX (DESIGN.md section 6), isolated emitter, vectorial astigmatic PSF (simcode.psf.vectorial).
+"""S0 CRLB check for ZIMFLUX (DESIGN.md section 6), isolated emitter, vectorial astigmatic PSF (torch_psf.VectorialPSF).
 
 Bounds per emitter (x, y, z, N, b; b = background per pixel per frame, shared):
  (a) astig  : astigmatic SMLM on the summed K-frame image, mu_j = N H_j + K b                       (paper eq. 28)
@@ -16,7 +16,8 @@ z (paper) = z_e - z_d. CRLB values are averaged over the pattern phase (uniform 
 usage: python crlb_s0.py [gpu]  -> out/zimflux/crlb/crlb_s0.json + crlb_s0.txt"""
 import sys, json, math, os, numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode.psf.vectorial import VectorialPSF, noll_to_nm
+from simcode.psf import VectorialPSF
+from simcode.psf import noll_to_nm
 dev = torch.device(f'cuda:{sys.argv[1]}' if len(sys.argv) > 1 and sys.argv[1].isdigit() else 'cpu')
 OUT = '/home/jc/simcode2/out/zimflux/crlb/'; os.makedirs(OUT, exist_ok=True)
 PX, LAM, ROI = 0.065, 0.715, 16
@@ -28,7 +29,7 @@ NORM = os.environ.get('ZF_NORM', 'roi')   # 'roi': H sums to 1 over the ROI; 'na
 def make_psf(zern):
     """zern: dict noll -> waves rms."""
     idx = sorted(zern) if zern else [6]
-    p = VectorialPSF(ROI, pixelsize=PX, NA=1.49, n_imm=1.52, n_med=1.33, wavelength=LAM, zernike_indices=idx,
+    p = VectorialPSF(ROI, pixel_um=PX, NA=1.49, n_imm=1.52, n_med=1.33, wavelength_um=LAM, zernike_indices=idx,
                      npupil=64, oversample=3, device=dev)
     with torch.no_grad():
         p.zcoef[:] = torch.tensor([zern.get(j, 0.0) for j in idx], device=dev)

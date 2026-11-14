@@ -67,7 +67,7 @@ class Head4Pi(nn.Module):
         else:   # (2026-11-12, opt-in, v7) 4Pi channel PSF template (phase-averaged LUT component) at the head's own prior
             ip = q[:, 144:150].detach()
             px_, py_ = 1.5 * torch.tanh(ip[:, 0]), 1.5 * torch.tanh(ip[:, 1]); pz_ = 0.6 * torch.tanh(ip[:, 2])
-            g = torch.stack([tl.luts[0][c].evaluate(torch.stack([px_ + doff[:, c, 0], py_ + doff[:, c, 1], pz_], 1))
+            g = torch.stack([tl.luts[0][c].render(torch.stack([px_ + doff[:, c, 0], py_ + doff[:, c, 1], pz_], 1))
                              for c in range(4)], 1).clamp(min=0)
             g = g / g.sum((-1, -2), keepdim=True).clamp(min=1e-6)
             r2c = (o[None, None, None, :] - (px_[:, None, None, None] + doff[:, :, 0, None, None])) ** 2 \

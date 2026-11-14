@@ -136,7 +136,7 @@ def save_pattern_files(P, nframes, d):
 
 
 # ------------------------------------------------------------------------------------------------ camera / calibration
-GAUSS_CALIB = os.path.join(REPO, 'models', 'insitu', 'calib_gauss1.3.json')   # opt-in key psf_gauss_sigma_um (simcode/psf/vectorial.py)
+GAUSS_CALIB = os.path.join(REPO, 'models', 'insitu', 'calib_gauss1.3.json')   # opt-in key psf_gauss_sigma_um (torch_psf.load_psf -> GaussianPSF)
 
 
 def write_sim_calib(d, H, W, P, psf='vectorial'):

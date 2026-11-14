@@ -6,15 +6,15 @@ information (near-zero = near-degenerate combination), and the eigenvector of th
 usage: python analysis/psf3d/fisher.py <fit_psf.pt> <tracks.npz> <heldout.npz> [n=1500] > out.txt"""
 import sys, json, math
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
-from simcode.insitu.varpro import solve_linear
+from simcode.psf import VectorialPSF
+from simcode.psf import solve_linear
 
 dev = 'cuda'
 fit, tracks, ho = sys.argv[1:4]; n = int(sys.argv[4]) if len(sys.argv) > 4 else 1500
 S = torch.load(fit, weights_only=False); ex = S.get('extras', {})
 D = np.load(tracks); H = np.load(ho)
 R = D['rois'].shape[-1]; c = (R - 1) / 2
-model = VectorialPSF(R, oversample=2, NA=float(S['NA']), wavelength=0.70, n_med=1.33, device=dev)
+model = VectorialPSF(R, oversample=2, NA=float(S['NA']), wavelength_um=0.70, n_med=1.33, device=dev)
 with torch.no_grad(): model.zcoef.copy_(S['zcoef'].to(dev)); model.apod.copy_(S['apod'].to(dev))
 for p_ in model.parameters(): p_.requires_grad_(False)
 g, off, rn2, zmax = float(S['gain']), float(S['offset']), float(torch.exp(2 * S['logrn'])), float(S['zmax'])

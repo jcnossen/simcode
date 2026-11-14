@@ -6,7 +6,7 @@ from simcode import config
 MOVIE_05 = 'dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif'                     # 0.5 nM movie (data root)
 SMLM_05 = 'dnapaint/0.5nM/cover1/1/results/simflux_5.5ms_500mW/smlm.hdf5'        # its SIMCODE-pipeline 'smlm' locs (Picasso hdf5)
 SFCFG_05 = 'dnapaint/0.5nM/cover1/1/cache/simflux_5.5ms_500mW/sf_fits_cfg.pickle'  # its SIMCODE-pipeline pattern (init of fit_pattern)
-BEAD_PSF = 'insitu/beads/psf_fit_sign-1_na149_ball_drift.pt'                      # bead z-stack fit (psf/fit_beads.py), models dir
+BEAD_PSF = 'insitu/beads/psf_fit_sign-1_na149_ball_drift.pt'                      # bead z-stack fit (earlier SIMCODE bead fit; now simcode.psf.beads), models dir
 
 
 def data(p):

@@ -13,9 +13,9 @@ config = ConfigDict(
     name='1809_2',
     movie=f'{DATA}/1809/cover1/2/simflux_5.5ms_500mW.tif',
     out='/mnt/data/dmdsf/simcode2_out/auto/1809_2',
-    beads=dict(                            # the setup's bead z-stacks (models/insitu/beads = this fit, shipped)
+    beads=dict(                            # the setup's bead z-stacks (fitted by simcode.psf.beads)
         stacks=[f'{DATA}/PSF_calib/raw/zstack{i}-1.tif' for i in range(2, 8)],
-        sign=-1, nball=32, holdout=7, offset_adu=106.34, gain_e_per_adu=GAIN),
+        sign=-1, holdout=7, offset_adu=106.34, gain_e_per_adu=GAIN),
     camera=dict(
         gain_e_per_adu=GAIN, offset_adu=99.3,
         readnoise_from='/home/jc/simcode2/models/insitu/camera_maps_0.5nM.npz',     # same sensor (as the reference calibration)

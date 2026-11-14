@@ -14,7 +14,7 @@ class _Src:
             parts = [path] + sorted(glob.glob(base + '_*.ome.tif'), key=lambda p: int(re.search(r'_(\d+)\.ome\.tif$', p).group(1)))
             self.tifs = [tifffile.TiffFile(p, is_ome=False) for p in parts]
         else:
-            from simcode.fileio.movie import TiffMovie
+            from simcode.psf import TiffMovie
             parts = TiffMovie(path).parts
             self.tifs = [tifffile.TiffFile(p) for p in parts]
         self.parts = parts

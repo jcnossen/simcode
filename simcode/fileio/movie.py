@@ -1,5 +1,7 @@
 """
-One movie-reader interface for both pipelines (2D SIMCODE and 4Pi), three back ends.
+One movie-reader interface for both pipelines (2D SIMCODE and 4Pi). The interface and the TIFF / array readers are
+torch_psf.movie (TiffMovie, ArrayMovie, open_movie); this module adds the Hamamatsu dcimg reader of the 4Pi data and the
+prefetching wrapper.
 
   reader.n          number of frames
   reader.shape      shape of one frame as returned by read() without a crop: (H, W), or (4, H, W) for a dcimg with a layout
@@ -7,14 +9,14 @@ One movie-reader interface for both pipelines (2D SIMCODE and 4Pi), three back e
   reader.read(f0, f1, y0=0, x0=0, S=None) -> float32 [f1 - f0, ...], camera ADU, absolute frame index;
                     (y0, x0, S) = a square crop of the last two axes (S None = the whole frame)
 
-  TiffMovie(path)               multi-part Andor SOLIS TIFF: movie.tif + movie_X1.tif + ... (frame index runs over the parts)
+  torch_psf.movie.TiffMovie     multi-part Andor SOLIS TIFF: movie.tif + movie_X1.tif + ... (frame index runs over the parts)
   DcimgMovie(path, layout=None) Hamamatsu dcimg (memory-mapped header, large sequential reads). layout = dict(x0, cw, ch,
                                 mirror): the frame is cut into len(x0) channel crops of ch x cw px at the raw columns x0,
                                 mirrored channels flipped left-right -> read() returns [n, C, ch, cw]. Without a layout the
                                 raw frames. raw(f0, n) returns the uint16 raw frames; footer(i) / time_s(i) the per-frame
                                 footer (camera frame counter, time stamp).
-  ArrayMovie(array | .npy path) an in-memory or memory-mapped stack (tests, simulated movies)
-  open_movie(path, **kw)        by extension (.tif / .tiff, .dcimg, .npy)
+  torch_psf.movie.ArrayMovie    an in-memory or memory-mapped stack (tests, simulated movies)
+  open_movie(path, **kw)        by extension (.dcimg here; .tif / .tiff, .npy: torch_psf.open_movie)
   Prefetch(reader, plan)        wraps a reader: the next expected read() runs in a background thread while the caller works
                                 on the current one. plan = the expected read() argument tuples in order; a read that is
                                 not the expected one is done synchronously (same data, only slower).
@@ -25,27 +27,7 @@ data start = session0 offset + offset_to_data, each frame = nrow x ncol uint16 p
 """
 import os, threading, time
 import numpy as np
-
-
-class TiffMovie:
-    """Absolute-frame access to movie.tif + movie_X1.tif + ... (pattern step = absolute frame % 6)."""
-    def __init__(self, path):
-        import tifffile
-        self.parts = [path] + [path.replace('.tif', f'_X{i}.tif') for i in range(1, 10)
-                               if os.path.exists(path.replace('.tif', f'_X{i}.tif'))]
-        self.tifs = [tifffile.TiffFile(p) for p in self.parts]
-        self.bounds = np.cumsum([0] + [len(t.pages) for t in self.tifs])
-        self.n = int(self.bounds[-1])
-        self.shape = self.tifs[0].pages[0].shape
-
-    def read(self, f0, f1, y0=0, x0=0, S=None):
-        H, W = self.shape
-        out = np.empty((f1 - f0, S, S) if S is not None else (f1 - f0, H - y0, W - x0), np.float32)
-        ys, xs = (slice(y0, y0 + S), slice(x0, x0 + S)) if S is not None else (slice(y0, None), slice(x0, None))
-        for i, fi in enumerate(range(f0, f1)):
-            j = int(np.searchsorted(self.bounds, fi, side='right') - 1)
-            out[i] = self.tifs[j].pages[int(fi - self.bounds[j])].asarray()[ys, xs]
-        return out
+from simcode.psf import open_movie as psf_open_movie
 
 
 class DcimgMovie:
@@ -106,28 +88,11 @@ def crops(a, layout):
     return np.stack(out, -3).astype(np.float32)
 
 
-class ArrayMovie:
-    """Movie-like stack [n, H, W] (or [n, C, H, W]): a numpy array, or the path of a .npy file (memory-mapped)."""
-    def __init__(self, a):
-        if isinstance(a, (str, os.PathLike)):
-            self.parts = [str(a)]; a = np.load(a, mmap_mode='r')
-        else:
-            self.parts = ['<array>']
-        self.a = a; self.n = len(a); self.shape = a.shape[1:]
-
-    def read(self, f0, f1, y0=0, x0=0, S=None):
-        a = self.a[f0:f1]
-        a = a[..., y0:y0 + S, x0:x0 + S] if S is not None else (a[..., y0:, x0:] if (y0 or x0) else a)
-        return np.asarray(a).astype(np.float32)
-
-
 def open_movie(path, **kw):
-    """reader by file extension: .tif / .tiff -> TiffMovie, .dcimg -> DcimgMovie(layout=...), .npy -> ArrayMovie"""
-    ext = os.path.splitext(str(path))[1].lower()
-    if ext in ('.tif', '.tiff'): return TiffMovie(path)
-    if ext == '.dcimg': return DcimgMovie(path, **kw)
-    if ext == '.npy': return ArrayMovie(path)
-    raise ValueError(f'no movie reader for {path!r} (known: .tif, .dcimg, .npy)')
+    """reader by file extension: .dcimg -> DcimgMovie(layout=...), else torch_psf.open_movie (.tif / .tiff -> TiffMovie,
+    .npy -> ArrayMovie)"""
+    if os.path.splitext(str(path))[1].lower() == '.dcimg': return DcimgMovie(path, **kw)
+    return psf_open_movie(path)
 
 
 class Prefetch:

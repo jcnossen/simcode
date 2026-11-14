@@ -13,9 +13,10 @@ The defaults are the ones used for the shipped 0.5 nM calibration (`calib_0.5nM.
 ## Recipe (0.5 nM, as shipped)
 
 ```bash
-# 0. (once per setup) bead z-stacks -> starting Zernikes. Output: <out>/insitu/psf_fit_sign-1_na149_ball_drift.{json,pt}
-#    (shipped as models/insitu/beads/). NA 1.49, lambda 0.70 um, n_med 1.33 fixed; bead = 32-point ball; per-stack xy drift; stack 7 held out.
-python -m simcode.psf.fit_beads --sign -1 --nball 32 --tag _na149_ball_drift
+# 0. (once per setup) bead z-stacks -> starting Zernikes (torch_psf.estimate_psf_beads). Output: <out>/insitu/psf_fit_sign-1.{json,pt}
+#    NA 1.49, lambda 0.70 um, n_med 1.33 fixed; per-stack xy drift; stack 7 held out. The shipped models/insitu/beads/
+#    psf_fit_sign-1_na149_ball_drift.* was made by the earlier SIMCODE bead fit (32-point ball bead, fitted z step / height).
+python -m simcode.psf.beads --sign -1
 
 # 1a. gain / read noise: robust variance-vs-level fit of same-step frame differences (0.5 nM, 12000 frames:
 #     gain 0.552 e/ADU -> 0.56 used; rn 0.88 e at offset 99.3)
@@ -37,7 +38,7 @@ python -m simcode.insitu.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
 #    used below). They are fixed inputs of step 4.
 
 # 4. stage A, PSF (variable projection; this is what calib_0.5nM.json holds): per-frame I and per-(sample, angle) bg
-#    solved exactly (varpro.py) each iteration, x, y, z per sample + Zernike 5..21 + focus by Adam (600 iterations,
+#    solved exactly (torch_psf.varpro) each iteration, x, y, z per sample + Zernike 5..21 + focus by Adam (600 iterations,
 #    8000 samples), gain 0.56 / offset 99.3 / rn 1.9 fixed, z in [0, 0.2] um. Writes <tag>_psf.json/.pt and the
 #    per-frame intensities of all samples (<tag>_intensities.pt, PSF frozen) for stage B.
 python -m simcode.insitu.fit_insitu2 --gain 0.56 --zmax 0.2 --out <out>/insitu/insitu2_0.5nM
@@ -114,7 +115,7 @@ Consumers of the new keys:
   angle's PSF.
 - So do `hd.realsim.RealSim` (LUT-bank entries are (angle 0, angle 1) tuples), `analysis/simreal/sim_movie_r.py` and
   `sim.crlb` (`psf_stack` returns 8 channels and `crlb_all` uses the per-frame PSF).
-- The pattern-free consumers (`pipeline.common.load_calib`, `psf.conv_spline.make_lut`, the DECODE LUT with `DEC_CALIB=...`) use the
+- The pattern-free consumers (`pipeline.common.load_calib`, `psf.spline`, the DECODE LUT with `DEC_CALIB=...`) use the
   angle average.
 
 The recipe for the paper movies is in `out/psf3d/run_final.sh` and `out/psf3d/run_final_ps.sh`:

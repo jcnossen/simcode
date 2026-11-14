@@ -52,7 +52,7 @@ class Solve4Pi:
             row = []
             for c in range(4):
                 for comp in self.lut.luts:
-                    v = comp[c].evaluate(p)
+                    v = comp[c].render(p)
                     row += [s(v), s(w * v)]
             vals.append(torch.stack(row, 1))
         V = torch.cat(vals).T.reshape(24, len(zs), len(xs), len(xs))                 # [24, z, y, x]
@@ -95,7 +95,7 @@ class Solve4Pi:
             wx = w * ex / self.wsd ** 2; wy = w * ey / self.wsd ** 2
             KT, KC = [], []
             for row in self.lut.luts:
-                v, gx, gy, gz = row[c].evaluate(pc, True)
+                v, gx, gy, gz = row[c].render(pc, True)
                 KT.append(torch.stack([s(v), s(gx), s(gy), s(gz)], -1))
                 KC.append(torch.stack([s(w * v), s(w * gx + wx * v), s(w * gy + wy * v), s(w * gz)], -1))
             for a in range(2):

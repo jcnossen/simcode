@@ -17,8 +17,8 @@ is the held-out set of psf_heldout.py. --intensities 1 adds the all-sample inten
 """
 import argparse, json, math
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
-from simcode.insitu.varpro import solve_linear
+from simcode.psf import VectorialPSF
+from simcode.psf import solve_linear
 from simcode import config
 from simcode.insitu import out
 
@@ -44,7 +44,7 @@ torch.manual_seed(0); np.random.seed(0)
 D = np.load(a.tracks)
 Ball = len(D['rois'])
 R = D['rois'].shape[-1]; c = (R - 1) / 2
-model = VectorialPSF(R, oversample=2, NA=1.49, wavelength=0.70, n_med=1.33, device=dev)
+model = VectorialPSF(R, oversample=2, NA=1.49, wavelength_um=0.70, n_med=1.33, device=dev)
 model.zcoef.requires_grad_(True); model.apod.requires_grad_(False); model.NA.requires_grad_(False)
 G = dict(focus=torch.tensor(0.0, device=dev), logrn=torch.tensor(math.log(1.9), device=dev), offset=torch.tensor(99.3, device=dev))
 G['focus'].requires_grad_(True)  # camera (offset, read noise) fixed from fit_insitu (degenerate with bg here)

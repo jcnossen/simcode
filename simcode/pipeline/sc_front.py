@@ -21,7 +21,8 @@ Coordinates: movie (camera) pixels.
 """
 import json, time
 import numpy as np, torch
-from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
+from simcode.psf import TiffMovie
+from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
@@ -44,7 +45,7 @@ class Pass1SC:
         self.dev = dev
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
         from simcode.det.model import select_subpixel
         dev = self.dev; SCM = self.SCM
         timing = timing if timing is not None else {}

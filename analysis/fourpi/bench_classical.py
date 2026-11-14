@@ -75,7 +75,7 @@ def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
     def inc_sum(x, y, z):
         tot = 0
         for c in range(4):
-            tot = tot + lut.luts[0][c].evaluate(torch.stack([x + doff[:len(x), c, 0], y + doff[:len(x), c, 1], z], 1))
+            tot = tot + lut.luts[0][c].render(torch.stack([x + doff[:len(x), c, 0], y + doff[:len(x), c, 1], z], 1))
         return tot
 
     dsum = img.sum((1, 2)).reshape(n, -1)

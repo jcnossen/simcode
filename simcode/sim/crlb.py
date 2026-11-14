@@ -16,7 +16,8 @@ import math, types
 import numpy as np, torch
 from scipy.optimize import linear_sum_assignment
 from simcode.sim.simulator import Simulator
-from simcode.psf.conv_spline import ConvSplinePSF
+from simcode import psf as spsf
+from simcode.psf import spline, angle_kwargs
 from simcode.nn.blocks import extract_patches
 from simcode import config as _cfg
 
@@ -184,10 +185,11 @@ def psf_stack(rpsf, x, y, z, focus, chunk=1024):
     for p in pos.split(chunk):
         f = torch.full((len(p),), focus, device=dev); im = []
         for kw in kws:
-            im.append(rpsf(p, f, **kw))
+            ev = (lambda q: rpsf(q, f, **kw)) if isinstance(rpsf, spsf.VectorialPSF) else rpsf.render   # Gaussian: no focus / kw
+            im.append(ev(p))
             for i, hh in ((0, 1e-3), (1, 1e-3), (2, 1e-3)):
                 dd = torch.zeros_like(p); dd[:, i] = hh
-                im.append((rpsf(p + dd, f, **kw) - rpsf(p - dd, f, **kw)) / (2 * hh))
+                im.append((ev(p + dd) - ev(p - dd)) / (2 * hh))
         out.append(torch.stack(im, 1))
     return torch.cat(out) if out else torch.zeros(0, 4 * len(kws), R, R, device=dev)
 
@@ -379,12 +381,6 @@ def models(T):
     """calibrated simulator (64 x 64), exact 15 x 15 vectorial PSF for the CRLB, 11 x 11 PSF LUT"""
     sim = Simulator(a.calib, H=S, W=S, T=T, device=dev)
     p0 = sim.psf
-    mk = lambda Pp: type(p0)(Pp, pixelsize=p0.pixelsize, NA=float(p0.NA), n_imm=p0.n_imm, n_med=float(p0.n_med),
-                             wavelength=p0.wavelength, oversample=3, device=dev)
-    rpsf = mk(R); rp11 = mk(P)
-    with torch.no_grad():
-        for q in (rpsf, rp11): q.zcoef.copy_(p0.zcoef); q.apod.copy_(p0.apod)
-    from simcode.psf.vectorial import copy_psf_extras, angle_kwargs
-    for q in (rpsf, rp11): copy_psf_extras(q, p0)       # opt-in calib terms (angle average); absent = unchanged
+    rpsf = p0.resized(R) if isinstance(p0, spsf.VectorialPSF) else spsf.GaussianPSF(R, sigma_px=p0.sigma, device=dev)
     rpsf.angle_kw = angle_kwargs(sim.c, dev)             # per-angle PSF for psf_stack / crlb_all (None = off)
-    return sim, rpsf, ConvSplinePSF(rp11, sim.focus, sim.zmax)
+    return sim, rpsf, spline(p0, sim.zmax, roisize=P)
