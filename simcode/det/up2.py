@@ -163,10 +163,6 @@ def _cfg_resolve(c):
     return resolve(c)
 
 
-# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
-RETIRED = {'--up': '1', '--em_photons': '40,2500', '--gen': '', '--psum': '0', '--band': '0', '--pair_sub': ''}
-
-
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -184,8 +180,6 @@ def train(argv):
     ap.add_argument('--calib', required=True)
     # (2026-11-12 g13 retrain; '' = the default range) ON-emitter density range 'lo,hi' (/px^2) of the batches
     ap.add_argument('--dens', default='')
-    from simcode.util import retired
-    argv = retired.strip(argv, RETIRED, 'det.up2 train')
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
     from simcode.hd import data as HD

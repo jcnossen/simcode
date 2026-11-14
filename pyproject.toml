@@ -25,4 +25,4 @@ simcode-strict = "simcode.strict:main"
 include = ["simcode*"]
 
 [tool.setuptools.package-data]
-simcode = ["netsets.json", "fourpi/datasets.json"]
+simcode = ["models.json", "fourpi/datasets.json"]

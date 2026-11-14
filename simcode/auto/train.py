@@ -95,7 +95,7 @@ def run(ds):
     seeds = '202,301' if quick else '202,301,302,303'
     scen = 'iso,' + SCEN_FIT if quick else 'iso,pair1,pair2,' + SCEN_FIT
     nt = '400' if quick else '3500'
-    env = dict(SIMCODE2_GATE_CALIB=cal, SIMCODE2_GATE_DIR=G, SIMCODE_OUT=D)
+    env = dict(SIMCODE_GATE_CALIB=cal, SIMCODE_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
         sh('gate', ['-m', 'simcode.auto.runwrap', 'simcode.hd.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
                'calib/calib_sc_hd_sc5nbb15_pm_bright.json', '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],

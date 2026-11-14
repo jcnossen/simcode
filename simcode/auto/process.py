@@ -17,7 +17,6 @@ def model_of(ds):
         except KeyError:
             pass
     f = name if name and os.path.exists(str(name)) else os.path.join(ds.out, 'train', 'model.json')
-    if not os.path.exists(f) and f.endswith('model.json') and os.path.exists(f[:-10] + 'netset.json'): f = f[:-10] + 'netset.json'   # stage e before 2026-11-14
     S = json.load(open(f))
     (n, s), = [(k, v) for k, v in S.items() if not k.startswith('_')]
     return n, s

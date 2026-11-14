@@ -193,10 +193,6 @@ def _load_pgen(v):
     return _j.load(open(v)) if _o.path.exists(v) else _j.loads(v)
 
 
-# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
-RETIRED = {'--gen': '', '--pair_sub': ''}
-
-
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -222,8 +218,7 @@ def train(argv):
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
     ap.add_argument('--pgen', default='')   # (2026-11-13 generic p2, opt-in; '' = unchanged) json file or inline json: realsim pgen dict
-    from simcode.util import retired
-    a = ap.parse_args(retired.strip(argv, RETIRED, 'p2.head2 train'))
+    a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-p2head')     # recognizable name in nvidia-smi / ps
     from simcode.p2.data import Gen2
     from simcode.hd.sc4 import match_gt, targets

@@ -13,13 +13,12 @@ One optional path, set the same way: dme = a checkout of the DME drift-estimatio
 package; see simcode/util/drift.py).
 Config file: $SIMCODE_CONFIG, else <repo>/simcode.json, else ~/.config/simcode.json; keys "models", "data", "out", "fourpi",
 "data4pi", "dme" (see simcode.example.json). Relative paths in the config file are relative to the file's directory.
-The names used before the package was renamed (simcode2 -> simcode, 2026-11) are still accepted: SIMCODE2_* environment
-variables, <repo>/simcode2.json, ~/.config/simcode2.json (the new name wins when both exist).
 
 resolve(p, kind) turns a user path into an absolute one: absolute paths and paths that exist relative to the current directory
 are kept; otherwise the path is looked up under the given root (models: also under models/calib and models/insitu).
-model_set(name) returns one model of simcode/models.json (the single definition of the models; netset() / netsets() are the
-names used before 2026-11-14, kept as aliases).
+model_set(name) returns one model: a name of simcode/models.json (the definition of the shipped models), or the path of a
+model folder (model.json + the network and calibration files, as written by the automatic pipeline's training stage /
+simcode.auto.train.export_model), or of such a model.json.
 """
 import json, os
 from pathlib import Path
@@ -30,16 +29,15 @@ _cfg = None
 
 
 def env(name, default=None):
-    """environment variable SIMCODE_<name>, else the pre-rename SIMCODE2_<name>, else default"""
-    return os.environ.get('SIMCODE_' + name) or os.environ.get('SIMCODE2_' + name) or default
+    """environment variable SIMCODE_<name>, else default"""
+    return os.environ.get('SIMCODE_' + name) or default
 
 
 def _config():
     global _cfg
     if _cfg is None:
         _cfg = {}
-        for p in (env('CONFIG'), REPO / 'simcode.json', REPO / 'simcode2.json', Path.home() / '.config' / 'simcode.json',
-                  Path.home() / '.config' / 'simcode2.json'):
+        for p in (env('CONFIG'), REPO / 'simcode.json', Path.home() / '.config' / 'simcode.json'):
             if p and Path(p).is_file():
                 c = json.load(open(p)); base = Path(p).resolve().parent
                 ex = lambda v: os.path.expanduser(v) if isinstance(v, str) else v
@@ -56,7 +54,7 @@ def root(kind):
     v = env(_ENV[kind]) or _config().get(kind)
     if v: return v
     if kind == 'models': return str(REPO / 'models')
-    if kind == 'out': return 'simcode2_out' if os.path.isdir('simcode2_out') and not os.path.isdir('simcode_out') else 'simcode_out'
+    if kind == 'out': return 'simcode_out'
     if kind == 'fourpi': return os.path.join(root('out'), '4pi')
     if kind == 'data4pi': return json.load(open(Path(__file__).with_name('fourpi') / 'datasets.json'))['root']
     return ''
@@ -94,10 +92,9 @@ def model(name):
     return resolve(name, 'models')
 
 
-# ---- models: the single definition is simcode/models.json (next to this file); called "network sets" (netsets.json) until
-# 2026-11-14
+# ---- models: the shipped ones are defined in simcode/models.json (next to this file); any other model is a folder
 MODELS_FILE = Path(__file__).with_name('models.json')
-NETSETS_FILE = MODELS_FILE
+MODEL_JSON = 'model.json'
 _nets = None
 
 
@@ -108,21 +105,45 @@ def model_sets():
     return _nets
 
 
-def model_set(name=None):
-    """model by name (default: env SIMCODE_MODEL (or the older SIMCODE_NETSET), else '_default' of models.json) -> dict with the
-    file names relative to the models directory: det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u
-    ('<pass 1 json>,<pass 2 json>'), psf, name"""
-    S = model_sets()
-    name = name or env('MODEL') or env('NETSET') or S['_default']
-    if name.startswith('_') or name not in S:
-        raise KeyError(f'model {name!r} is not defined in {MODELS_FILE} (models: {[k for k in S if not k.startswith("_")]})')
-    d = {k: v for k, v in S[name].items() if not k.startswith('_')}
-    d['name'] = name
+def model_folder(path):
+    """a model folder (or its model.json) -> model dict with absolute file paths, 'name' and 'folder'. model.json holds one
+    entry {name: {det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u, psf}} with paths relative to
+    the folder (absolute paths are kept), plus '_recipe' / '_files' (training record, hashes)."""
+    f = os.path.join(path, MODEL_JSON) if os.path.isdir(path) else path
+    S = json.load(open(f)); base = os.path.dirname(os.path.abspath(f))
+    ent = [(k, v) for k, v in S.items() if not k.startswith('_')]
+    if len(ent) != 1: raise ValueError(f'{f}: a model.json defines exactly one model, found {[k for k, _ in ent]}')
+    name, M = ent[0]
+    ab = lambda v: v if os.path.isabs(v) else os.path.join(base, v)
+    d = {}
+    for k, v in M.items():
+        if k.startswith('_'): continue
+        if k == 'sig_u' and isinstance(v, str): d[k] = ','.join(ab(s) if s else '' for s in v.split(','))
+        else: d[k] = ab(v) if isinstance(v, str) and v else v
+    d['name'] = name; d['folder'] = base
     return d
 
 
-netsets = model_sets          # names before 2026-11-14
-netset = model_set
+def is_model_folder(p):
+    """True for a directory with a model.json, or a model.json file"""
+    p = os.path.expanduser(str(p))
+    return os.path.isfile(os.path.join(p, MODEL_JSON)) or (os.path.isfile(p) and p.endswith('.json'))
+
+
+def model_set(name=None):
+    """model -> dict with the files det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u
+    ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
+    directory), or the path of a model folder / model.json (absolute file names; also 'folder'). None: env SIMCODE_MODEL,
+    else '_default' of models.json (the default is for the package's own gate scenes and trainers; simcode.run and the
+    pipeline require an explicit model)."""
+    S = model_sets()
+    name = name or env('MODEL') or S['_default']
+    if not name.startswith('_') and name in S:
+        d = {k: v for k, v in S[name].items() if not k.startswith('_')}
+        d['name'] = name
+        return d
+    if is_model_folder(name): return model_folder(os.path.expanduser(name))
+    raise KeyError(f'model {name!r} is neither a model of {MODELS_FILE} ({[k for k in S if not k.startswith("_")]}) nor a folder with a {MODEL_JSON}')
 
 
 def production():

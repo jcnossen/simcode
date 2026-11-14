@@ -385,9 +385,6 @@ def eval_hold(head, H, chunk=4096, band=(500, 5000), extra=False):
 
 
 # ------------------------------------------------------------------------------------------------ training
-# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
-RETIRED = {'--arch': 'sc4n', '--paper': '1', '--bright_tail': '0.1,2000,20000', '--paper_med': '', '--paper_sd': '0', '--psfdiv': '',
-           '--gen': '', '--pair_sub': ''}
 BRIGHT_TAIL = (0.1, 2000.0, 20000.0)    # (frac, lo, hi) window photons of the bright-tail draw (hd/data.Gen.batch)
 
 
@@ -416,8 +413,7 @@ def train(argv):
     # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib; the PSF-template column
     # follows the batch's calib)
     ap.add_argument('--calib', required=True)
-    from simcode.util import retired
-    a = ap.parse_args(retired.strip(argv, RETIRED, 'hd.sc4 train'))
+    a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-head')     # recognizable name in nvidia-smi / ps
     from simcode.sim import crlb as crlb_dense  # noqa
     # the fixed recipe (paper-matched photons with the bright tail, neighbour-aware sc4n head) is stored in args as before

@@ -36,11 +36,6 @@ def md5(p):
     return hashlib.md5(open(p, 'rb').read()).hexdigest()[:10]
 
 
-# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
-RETIRED = {'--fast': '1', '--compile': 'auto', '--cand_pmin': '0.3', '--p1_solve': '0', '--compile_head': 'off', '--solve_opts': '{}',
-           '--pattern_field': '', '--p2_pf_head': ''}
-
-
 COMPILE = 'auto'          # torch.compile of the solve's LM step when available (simcode/fastutil.py)
 
 
@@ -79,8 +74,7 @@ def build_parser():
 
 
 def main(argv=None):
-    from simcode.util import retired
-    a = build_parser().parse_args(retired.strip(argv, RETIRED, 'run_uncalibrated'))
+    a = build_parser().parse_args(argv)
     from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'ref_pattern'):
         setattr(a, k, config.resolve(getattr(a, k)))

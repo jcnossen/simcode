@@ -83,11 +83,6 @@ def load(cfg):
 
 def _resolve(u, src=None):
     c = copy.deepcopy(DEFAULTS)
-    for sec in ('train', 'process'):          # names before 2026-11-14: 'netset' (= model); process.pass2 (pass 2 always runs now)
-        d = u.get(sec) or {}
-        if 'netset' in d: d['model'] = d.pop('netset')
-    if 'pass2' in (u.get('process') or {}):
-        if not u['process'].pop('pass2'): raise ValueError('config: process.pass2 false is no longer supported (pass 2 always runs, 2026-11-14)')
     if u.get('beads'):
         b = dict(BEAD_DEFAULTS); bu = u.pop('beads')
         for k in bu:

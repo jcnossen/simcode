@@ -83,11 +83,11 @@ def run(ds):
         parts.append('<h3>Pattern (track intensities)</h3>' + _tab([[k, pt[k]] for k in ('k', 'pitch_px', 'phase', 'mod', 'relint', 'n', 'sectors')]))
     tn = R['stages'].get('train')
     if tn and tn.get('accept'):
-        parts.append('<h2>Model</h2>' + _tab([['model', tn.get('model', tn.get('netset'))], ['quick', tn['quick']], ['gates', tn['gates']]] + [[k, v] for k, v in tn['accept'].items()]))
+        parts.append('<h2>Model</h2>' + _tab([['model', tn.get('model')], ['quick', tn['quick']], ['gates', tn['gates']]] + [[k, v] for k, v in tn['accept'].items()]))
     pr = R['stages'].get('process')
     if pr:
         S = pr['summary']; px = c['optics']['pixel_um'] * 1e3
-        rows = [['model', pr.get('model', pr.get('netset'))], ['estimated pitch px', pr.get('pattern_pitch_px')], ['timing', S.get('timing')]]
+        rows = [['model', pr.get('model')], ['estimated pitch px', pr.get('pattern_pitch_px')], ['timing', S.get('timing')]]
         for n in ('locs_p1', 'locs_p2'):
             if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_u', 'n_sel', 'n_strict', 'median_sigma_nm', 'median_photons')}])
         parts.append('<h2>Processing</h2>' + _tab(rows))
