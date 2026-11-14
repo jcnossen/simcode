@@ -1,15 +1,15 @@
 """Rendered overview of the density simulations: rows = densities, columns = ground truth and the methods, same crop
 (the preprint's Fig 2 zoom) and the same rendering for every panel (fig_density.render: FRC-set rows, 5.4 nm pixels,
 1-pixel blur, 99.5 % clip). Each panel is labelled with its FRC and Jaccard (10 nm, full movie).
-usage: python analysis/papersim/fig_overview.py [--prefix Dexp|D] [--netset m1809]
-output: out/papersim/overview_<prefix>_<netset>.png"""
+usage: python analysis/papersim/fig_overview.py [--prefix Dexp|D] [--model m1809]
+output: out/papersim/overview_<prefix>_<model>.png"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C, metrics as M
 from fig_density import render, CROP
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--netset', default='m1809')
+ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--model', default='m1809')
 ap.add_argument('--suffix', default='', help="movie dir suffix, e.g. '_gauss' (D<d>_gauss: the preprint's Gaussian 1.3 px PSF reproduction)")
 a = ap.parse_args()
 DENS = [0.5, 1, 2, 4]
@@ -18,7 +18,7 @@ COLS = [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DE
 fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1), 2.95 * len(DENS)), squeeze=False)
 notes = set()
 for i, d in enumerate(DENS):
-    md = os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}'); R = json.load(open(os.path.join(md, 'full', f'metrics_{a.netset}.json')))
+    md = os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}'); R = json.load(open(os.path.join(md, 'full', f'metrics_{a.model}.json')))
     gt = np.load(os.path.join(md, 'gt.npz'))
     ax[i, 0].imshow(render(gt['pts'][:, 0], gt['pts'][:, 1], (cx, cy), w), cmap='inferno')
     ax[i, 0].set_ylabel(f'density {d:g}', fontsize=12); ax[i, 0].plot([8, 8 + 500 / (C.PX_NM / 20)], [w * 20 - 10] * 2, 'w-', lw=3)
@@ -45,4 +45,4 @@ cond = 'experimental photons and background of 1809/2 (median 817 photons per wi
 psfname = 'Gaussian 1.3 px PSF (the preprint simulation)' if a.suffix == '_gauss' else 'measured 1809/2 PSF'
 fig.suptitle(f'Simulated microtubules, 60 000 frames, {psfname}; {cond}.\nDensity in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) and rendering in every panel; SIMCODE v2 with the PSF-matched networks.', fontsize=10)
 fig.text(0.01, 0.005, '   '.join(sorted(notes)), fontsize=8)
-plt.tight_layout(rect=[0, 0.02, 1, 0.95]); fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.netset}.png'); plt.savefig(fn, dpi=130); print(fn)
+plt.tight_layout(rect=[0, 0.02, 1, 0.95]); fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}.png'); plt.savefig(fn, dpi=130); print(fn)

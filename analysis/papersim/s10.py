@@ -26,9 +26,9 @@ CRLB from the ground truth (Poisson, zpsf PSF at z_fit, 16 x 16 ROI): SMLM (x, y
 (x, y, I, bg) and SIMFLUX with a bg per frame (x, y, I, bg_1..6; the bound that applies under the U(1, 6) condition).
 Per bin the stored numbers are: RMSD per axis (trim 2 %, trim 5 %, none), mean and RMS of the predicted sigma, mean CRLBs
 (the old script's .mean(0)), recall (networks), n.
-usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/s10.py [--netset m1809] [--bins all|i,j] [--cond const1,unif16]
+usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/s10.py [--model m1809] [--bins all|i,j] [--cond const1,unif16]
           [--n 1000] [--out out/papersim/s10]
-outputs: <out>/s10_<netset>.json (+ per-emitter npz), s10_<netset>.png"""
+outputs: <out>/s10_<model>.json (+ per-emitter npz), s10_<model>.png"""
 import os, sys, json, time, math, argparse, importlib.util
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -190,7 +190,7 @@ def summarize(err, sig):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='m1809')
+    ap.add_argument('--model', default='m1809')
     ap.add_argument('--bins', default='all')
     ap.add_argument('--cond', default='const1,unif16')
     ap.add_argument('--n', type=int, default=1000)
@@ -200,19 +200,19 @@ def main():
     ap.add_argument('--nets', type=int, default=1, help='0: classical methods only (network rows nan)')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-s10')
-    from simcode.config import netset
+    from simcode.config import model_set
     os.makedirs(a.out, exist_ok=True)
-    ns = netset(a.netset)
+    ns = model_set(a.model)
     gauss = a.psf.startswith('gauss')
     psf = PP.zpsf.load(f'gauss:{a.psf[5:]}' if gauss else C.PSF_CALIB)
     R = C.Renderer(FOV, FOV, psf=a.psf)
     if gauss: ns = dict(ns, psf_calib=C.GAUSS_CALIB)        # the head's PSF template = the movie's Gaussian (calib key psf_gauss_sigma_um)
     nets = Nets(ns) if a.nets else None
-    tag = a.netset + ('_' + a.psf if gauss else '')
+    tag = a.model + ('_' + a.psf if gauss else '')
     bins = range(len(PHOTONS)) if a.bins == 'all' else [int(v) for v in a.bins.split(',')]
     nfov = int(math.ceil(a.n / (NC * NC)))
     res = dict(protocol=dict(photons=PHOTONS.tolist(), n_per_bin=nfov * NC * NC, trim_keep=TRIM_KEEP, roi=CELL, edge=EDGE, fov=FOV,
-                             pitch_nm=C.PITCH_NM, depth=C.DEPTH, psf=a.psf if gauss else C.PSF_CALIB, z_um=R.z, netset=a.netset, nets=ns, units='px'), cond={})
+                             pitch_nm=C.PITCH_NM, depth=C.DEPTH, psf=a.psf if gauss else C.PSF_CALIB, z_um=R.z, model=a.model, nets=ns, units='px'), cond={})
     fn = os.path.join(a.out, f's10_{tag}.json')
     if os.path.exists(fn):
         old = json.load(open(fn)); res['cond'] = old.get('cond', {})

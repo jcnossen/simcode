@@ -1,4 +1,4 @@
-"""Print the metrics table of a papersim run: python analysis/papersim/table.py <run dir> [netset]"""
+"""Print the metrics table of a papersim run: python analysis/papersim/table.py <run dir> [model]"""
 import json, sys, os
 run = sys.argv[1]; ns = sys.argv[2] if len(sys.argv) > 2 else 'm1809'
 R = json.load(open(os.path.join(run, f'metrics_{ns}.json')))

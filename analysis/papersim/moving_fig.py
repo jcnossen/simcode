@@ -2,8 +2,8 @@
 their means (grouped bars, as the preprint's figure), per-block FRC, and renders of three blocks (start, middle, end) for the
 ground truth (trajectory points of the block) and every method. Also a hand-count check of the Jaccard on one block (brute-force
 distances instead of KD-trees) written to the json.
-usage: python analysis/papersim/moving_fig.py <movie dir> [--netset m1809]
-outputs: <movie dir>/full/moving_fig_<netset>.png, moving_table_<netset>.md, moving_check_<netset>.json"""
+usage: python analysis/papersim/moving_fig.py <movie dir> [--model m1809]
+outputs: <movie dir>/full/moving_fig_<model>.png, moving_table_<model>.md, moving_check_<model>.json"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -11,16 +11,16 @@ sys.path.insert(0, HERE)
 import common as C
 import metrics as M
 
-ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2q45', 'v2']
+ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig']
 LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE dec_1809_2', decode_sim='DECODE dec_sim1809', decode_pre='DECODE (preprint model)',
-           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2q45='(SIMCODE v2, u <= 0.45, earlier rule)', v2sig='SIMCODE v2, σ <= 12 nm', v2='(SIMCODE v2 strict)')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2q45='darkred', v2sig='crimson', v2='tab:red')
+           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2sig='SIMCODE v2, σ <= 12 nm')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2sig='crimson')
 
 
-def hand_check(md, run, netset, R, block=10, thr_nm=20):
-    """Jaccard of one block recomputed by brute force (all pairwise distances) for v2q45 and compared with metrics.py"""
+def hand_check(md, run, model, R, block=10, thr_nm=20):
+    """Jaccard of one block recomputed by brute force (all pairwise distances) for v2sig and compared with metrics.py"""
     g = json.load(open(os.path.join(md, 'gen.json'))); traj = np.load(os.path.join(md, 'traj.npy'), mmap_mode='r'); ts = int(g['traj_step'])
-    T = M.load_method('v2q45', M.method_paths(run, netset)['v2q45']); bs = R['block']
+    T = M.load_method('v2sig', M.method_paths(run, model)['v2sig']); bs = R['block']
     s = (T['f'] > block * bs) & (T['f'] < (block + 1) * bs)
     A = np.c_[T['x'][s], T['y'][s]]; B = np.asarray(traj[block * bs // ts:(block + 1) * bs // ts]).reshape(-1, 2)
     t = thr_nm / C.PX_NM
@@ -30,13 +30,13 @@ def hand_check(md, run, netset, R, block=10, thr_nm=20):
     jac = (a_hit.sum() + b_hit.sum()) / (len(A) + len(B))
     k = R['thresholds_nm'].index(thr_nm)
     return dict(block=block, threshold_nm=thr_nm, n_locs=int(len(A)), n_gt_points=int(len(B)), locs_within=int(a_hit.sum()), gt_within=int(b_hit.sum()),
-                jaccard_bruteforce=float(jac), jaccard_metrics=float(R['methods']['v2q45']['jaccard'][k][block]))
+                jaccard_bruteforce=float(jac), jaccard_metrics=float(R['methods']['v2sig']['jaccard'][k][block]))
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('movie'); ap.add_argument('--netset', default='m1809'); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('movie'); ap.add_argument('--model', default='m1809'); a = ap.parse_args()
     md = os.path.abspath(a.movie); run = os.path.join(md, 'full')
-    R = json.load(open(os.path.join(run, f'metrics_{a.netset}.json')))
+    R = json.load(open(os.path.join(run, f'metrics_{a.model}.json')))
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     ks = [k for k in ORDER if k in R['methods']]
     g = json.load(open(os.path.join(md, 'gen.json'))); traj = np.load(os.path.join(md, 'traj.npy'), mmap_mode='r'); ts = int(g['traj_step']); W = g['W']
@@ -67,15 +67,15 @@ def main():
     for j, (t, c) in enumerate(zip(R['thresholds_nm'], ('r', 'g', 'b'))):
         ax.bar(x + (j - 1) * w, [R['methods'][k]['jaccard_mean'][j] for k in ks], w, color=c, alpha=0.7, label=f'{t} nm')
     ax.set_xticks(x); ax.set_xticklabels([LAB[k] for k in ks], fontsize=7, rotation=15); ax.set_ylabel('mean Jaccard over blocks'); ax.legend(fontsize=7); ax.set_ylim(0, 1)
-    fig.suptitle(f"moving microtubules ({g.get('cond', 'preprint')} photons / bg), {g['nframes']} frames, {nb} blocks of {bs}; v2 net set {a.netset}", fontsize=9)
-    plt.tight_layout(); plt.savefig(os.path.join(run, f'moving_fig_{a.netset}.png'), dpi=100); plt.close(fig)
+    fig.suptitle(f"moving microtubules ({g.get('cond', 'preprint')} photons / bg), {g['nframes']} frames, {nb} blocks of {bs}; v2 net set {a.model}", fontsize=9)
+    plt.tight_layout(); plt.savefig(os.path.join(run, f'moving_fig_{a.model}.png'), dpi=100); plt.close(fig)
     L = ['| method | rows | Jaccard 10 / 20 / 40 nm (mean over blocks) | FRC per block, median (nm) |', '|---|---|---|---|']
     for k in ks:
         r = R['methods'][k]
         L.append(f"| {LAB[k]} | {r['n_all']} | {' / '.join(f'{v:.3f}' for v in r['jaccard_mean'])} | {r['frc_block_median_nm'] if r['frc_block_median_nm'] is None else round(r['frc_block_median_nm'], 1)} |")
-    open(os.path.join(run, f'moving_table_{a.netset}.md'), 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
-    chk = hand_check(md, run, a.netset, R)
-    json.dump(chk, open(os.path.join(run, f'moving_check_{a.netset}.json'), 'w'), indent=1); print('hand check', chk)
+    open(os.path.join(run, f'moving_table_{a.model}.md'), 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
+    chk = hand_check(md, run, a.model, R)
+    json.dump(chk, open(os.path.join(run, f'moving_check_{a.model}.json'), 'w'), indent=1); print('hand check', chk)
 
 
 if __name__ == '__main__':

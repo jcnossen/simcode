@@ -1,12 +1,12 @@
 """SIMCODE v2 on a papersim movie: `python -m simcode.run` unchanged (production stages: pass 1, pattern estimate, solve,
 pass 2), with the movie's calib_sim.json (averaged 1809/2 PSF + simulated camera), the whole 40 x 40 (or 50 x 50) FOV as the
-output region, and a model of simcode/models.json (--model, older name --netset; default m1809 = the model of the realistic-PSF
-simulations). Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the model, fixed c) or real (the
-real-movie calibrations the production runs used). (--cal_kind autoc and --no_pass2 were removed on 2026-11-14.)
+output region, and a model (--model: a name of simcode/models.json or a model folder; default m1809 = the model of the
+realistic-PSF simulations). Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the model, fixed c)
+or real (the real-movie calibrations the production runs used).
 
-After the run, the localization tables are rebuilt with the selections of simcode/strict.py on the simulation's FOV
-(build_table crop = (0, 0, W): its 10-px tiles, 20-nm coverage bins and the density rule's area). Output:
-<out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py (strict_u, sel, strict, ...), and <out>/locs_sim_info.json.
+After the run, the localization tables are rebuilt by simcode/strict.py on the simulation's FOV (build_table crop = (0, 0, W):
+the selection region and the sigma-rescale tiles). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py
+(p, sel, ...; the selection = simcode.strict.select(T, crop=(0, 0, W))), and <out>/locs_sim_info.json (with the crop).
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--model m1809] [--cal_kind sim|real]
           [--nframes N] [--out <movie dir>/v2_<model>] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess
@@ -16,7 +16,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE); sys.path.insert(0, REPO)
 
 
-def netset(name):
+def model(name):
     from simcode import config
     return config.model_set(name)
 
@@ -39,7 +39,7 @@ def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('movie_dir')
-    ap.add_argument('--model', '--netset', dest='netset', default='m1809')
+    ap.add_argument('--model', default='m1809')
     ap.add_argument('--cal_kind', default='sim', choices=['sim', 'real'])
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--out', default=None)
@@ -51,13 +51,11 @@ def main():
     md = os.path.abspath(a.movie_dir)
     g = json.load(open(os.path.join(md, 'gen.json')))
     W = int(g['W'])
-    N = netset(a.netset)
-    out = os.path.abspath(a.out or os.path.join(md, f'v2_{a.netset}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}')))
+    N = model(a.model)
+    out = os.path.abspath(a.out or os.path.join(md, f'v2_{a.model}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}')))
     os.makedirs(out, exist_ok=True)
     cmd = [sys.executable, '-m', 'simcode.run', '--movie', os.path.join(md, 'movie.tif'), '--calib', os.path.join(md, 'calib_sim.json'),
-           '--out', out, '--crop', f'0,0,{W}', '--det', N['det'], '--head', N['head'],
-           '--p2_det', N['p2_det'], '--p2_head', N['p2_head'], '--redo', str(a.redo), '--sig_u', N['sig_u'],
-           '--cal', N[f'cal_{a.cal_kind}'], '--p2_cal', N[f'p2_cal_{a.cal_kind}']]
+           '--out', out, '--crop', f'0,0,{W}', '--model', a.model, '--cal_kind', a.cal_kind, '--redo', str(a.redo)]
     if a.nframes: cmd += ['--nframes', str(a.nframes)]
     t0 = time.time()
     if not a.tables_only:
@@ -67,7 +65,7 @@ def main():
     info = strict_tables(out, W, g['px_nm'], N['sig_u'])
     if a.gt_diag:
         # diagnostic (not the method): pass 2 with the GROUND-TRUTH pattern fed to the pass-2 networks and the solve
-        # (run_uncalibrated --ref_pattern -> pass2_ref2_*.npz); strict product with the same q as the estimated-pattern run
+        # (run_uncalibrated --ref_pattern -> pass2_ref2_*.npz); table with the same crop and sigma rescale
         t1 = time.time()
         ucmd = [sys.executable, '-m', 'simcode.pipeline.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
                 '--calib', os.path.join(md, 'calib_sim.json'), '--out', out, '--crop', f'0,0,{W}',
@@ -78,13 +76,12 @@ def main():
         subprocess.run(ucmd, check=True, cwd=REPO)
         import simcode.strict as SP
         from simcode import config
-        q = info['locs_p2_sim']['q']
         su = (N['sig_u'].split(',') + [''])[:2][1]
-        Tg, ig = SP.build_table(out, 'ref2', g['px_nm'], None, q, sig_u=config.resolve(su) if su else None)
+        Tg, ig = SP.build_table(out, 'ref2', g['px_nm'], None, sig_u=config.resolve(su) if su else None, crop=(0.0, 0.0, float(W)))
         SP.write_table(Tg, ig, os.path.join(out, 'locs_p2gt_sim'), ('npz',))
         print('locs_p2gt_sim (GT pattern, diagnostic)', json.dumps({k: v for k, v in ig.items() if k != 'columns'}, default=str), flush=True)
         print('gt_diag s', round(time.time() - t1, 1), flush=True)
-    json.dump(dict(netset=a.netset, nets=N, cal_kind=a.cal_kind, nframes=a.nframes, run_s=T, cmd=cmd), open(os.path.join(out, 'papersim_run.json'), 'w'), indent=1)
+    json.dump(dict(model=a.model, nets=N, cal_kind=a.cal_kind, nframes=a.nframes, run_s=T, cmd=cmd), open(os.path.join(out, 'papersim_run.json'), 'w'), indent=1)
     print('done', round(T, 1), 's', flush=True)
 
 

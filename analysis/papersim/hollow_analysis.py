@@ -1,7 +1,7 @@
 """Is the hollow tube visible? Cross-section profiles of a hollow-microtubule run (gen_hollow.py movie) per method.
 
-Rows per method: the FRC set of metrics.py (disjoint windows, max(sigma) < 0.15 px, inside the FOV; SIMCODE v2 = its strict
-subset, v2sel = the sel rows), so no photon is counted twice.
+Rows per method: the FRC set of metrics.py (disjoint windows, max(sigma) < 0.15 px, inside the FOV; SIMCODE v2 = its
+sigma <= 12 nm selection v2sig, v2sel = the sel rows), so no photon is counted twice.
 Profile: every localization is assigned to the nearest GT centreline point (within 150 nm); u = signed distance across the
 tubule (along the local normal of the centreline, nm). Only 'clean' centreline points are used: no centreline of another tubule
 within 200 nm and > 150 nm from the tubule's ends (no crossings, no neighbours, no caps). Histogram 2 nm bins, |u| <= 80 nm.
@@ -14,8 +14,8 @@ Measures:
               R' = 0 on the boundary), dAIC = 2 dNLL - 2.
   'resolved'  (a dip a viewer sees) the dip ratio's upper 95 % bound < 1 AND p < 0.001.
   'detected'  (wall structure in the profile shape, no visible dip needed) p < 0.001 and the R' CI excludes 0.5 R.
-usage: python analysis/papersim/hollow_analysis.py <run dir> [--movie <movie dir>] [--nframes N] [--netset m1809]
-outputs: <run>/hollow_<netset>.json, hollow_<netset>.png (profiles with fits)"""
+usage: python analysis/papersim/hollow_analysis.py <run dir> [--movie <movie dir>] [--nframes N] [--model m1809]
+outputs: <run>/hollow_<model>.json, hollow_<model>.png (profiles with fits)"""
 import os, sys, json, argparse
 import numpy as np
 from scipy.spatial import cKDTree
@@ -121,7 +121,7 @@ def analyse(u, blk, Rt, nboot=400, nboot_fit=40, rng=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('run'); ap.add_argument('--movie', default=None); ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--netset', default='m1809')
+    ap.add_argument('--model', default='m1809')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-hollow')
     run = os.path.abspath(a.run); md = os.path.abspath(a.movie or a.run)
@@ -129,15 +129,15 @@ def main():
     gt = dict(np.load(os.path.join(md, 'gt.npz')))
     Rt = g['radius_nm']
     CL = centreline(gt)
-    MJ = os.path.join(run, f'metrics_{a.netset}.json')
+    MJ = os.path.join(run, f'metrics_{a.model}.json')
     met = json.load(open(MJ))['methods'] if os.path.exists(MJ) else {}
-    R = dict(run=run, movie=md, radius_nm=Rt, phot_scale=g['phot_scale'], cond=g['cond'], netset=a.netset, nframes=nf,
+    R = dict(run=run, movie=md, radius_nm=Rt, phot_scale=g['phot_scale'], cond=g['cond'], model=a.model, nframes=nf,
              window_photons_ge300=g['window_photons_ge300'], clean_centreline_frac=float(CL['clean'].mean()), methods={})
     # GT reference: the tube points themselves (no localization error), as a check of the profile machinery
     gu, gb = profile_coords(dict(x=gt['pts'][:, 0], y=gt['pts'][:, 1]), np.ones(len(gt['pts']), bool), CL)
     R['gt_points'] = dict(n=int(len(gu)), dip=dip_ratio(np.histogram(gu, EDGES)[0].astype(float), Rt))
-    for name, path in M.method_paths(run, a.netset).items():
-        if name == 'v2gt': continue
+    for name, path in M.method_paths(run, a.model).items():
+        if name == 'v2siggt': continue
         T = M.load_method(name, path)
         _, _, filt = M.frc_set(T, g['W'], nf)
         u, blk = profile_coords(T, filt, CL)
@@ -148,7 +148,7 @@ def main():
         R['methods'][name] = r
         print(name, json.dumps({k: v for k, v in r.items() if k not in ('hist', 'fit_two', 'fit_one')}),
               'R_fit %.1f sigma_fit %.1f' % (r['fit_two']['R'], r['fit_two']['sigma']), flush=True)
-    json.dump(R, open(os.path.join(run, f'hollow_{a.netset}.json'), 'w'), indent=1)
+    json.dump(R, open(os.path.join(run, f'hollow_{a.model}.json'), 'w'), indent=1)
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     ks = [k for k in R['methods'] if 'hist' in R['methods'][k]]
     fig, axs = plt.subplots(1, max(len(ks), 1), figsize=(3.6 * max(len(ks), 1), 3.2), squeeze=False)
@@ -161,7 +161,7 @@ def main():
         ax.set_title(f"{k}: dip {r['dip']:.2f} [{r['dip_ci95'][0]:.2f}, {r['dip_ci95'][1]:.2f}]", fontsize=8)
         ax.set_xlabel('u (nm)'); ax.legend(fontsize=6); ax.set_xlim(-80, 80)
     fig.suptitle(f"{g['cond']} R {Rt:g} nm, photons x{g['phot_scale']:g}", fontsize=9)
-    plt.tight_layout(); plt.savefig(os.path.join(run, f'hollow_{a.netset}.png'), dpi=90); plt.close(fig)
+    plt.tight_layout(); plt.savefig(os.path.join(run, f'hollow_{a.model}.png'), dpi=90); plt.close(fig)
 
 
 if __name__ == '__main__':

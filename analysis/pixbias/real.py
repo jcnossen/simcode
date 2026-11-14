@@ -24,7 +24,7 @@ def v2_sets(ds):
             E['x_det'], E['y_det'] = B.join_p1_det(P1, E)
             print(ds, 'P1 det join: matched', np.isfinite(E['x_det']).mean(), flush=True)
             del P1
-        sel = dict(p30=np.ones(len(T['x']), bool), p63=T['good'].astype(bool), sig12=SP.select(T, 'main'))
+        sel = dict(p30=np.ones(len(T['x']), bool), p63=T['good'].astype(bool), sig12=SP.select(T, crop=SP.run_crop(d)))
         sx = np.asarray(T['sx'], np.float64)
         for est, (kx, ky) in dict(det=('x_det', 'y_det'), prior=('x_prior', 'y_prior'), solve=('x_hy0', 'y_hy0')).items():
             S[f'{ps}_{est}'] = dict(x=E[kx].astype(np.float64), y=E[ky].astype(np.float64), ph=E['phot'].astype(np.float64), sel=sel, s=sx)

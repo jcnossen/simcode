@@ -19,13 +19,13 @@ what=$1; items=${2:-}
 case $what in
   density)
     for D in $items; do
-      $PY analysis/papersim/run_all.py $O/$D --steps base,decode,v1,v2,metrics --netset m1809 --gt_diag 0 >> $O/logs/full_$D.log 2>&1
+      $PY analysis/papersim/run_all.py $O/$D --steps base,decode,v1,v2,metrics --model m1809 --gt_diag 0 >> $O/logs/full_$D.log 2>&1
       echo "$(date) done $D rc $?"
     done ;;
   gauss)
     for D in $items; do
-      $PY analysis/papersim/run_all.py $O/$D --steps base,decode_pre,v1,metrics --psf gauss:1.3 --netset g13 >> $O/logs/full_$D.log 2>&1
-      $PY analysis/papersim/run_all.py $O/$D --steps v2,metrics --netset g13 --gt_diag 0 --redo metrics >> $O/logs/full_$D.log 2>&1
+      $PY analysis/papersim/run_all.py $O/$D --steps base,decode_pre,v1,metrics --psf gauss:1.3 --model g13 >> $O/logs/full_$D.log 2>&1
+      $PY analysis/papersim/run_all.py $O/$D --steps v2,metrics --model g13 --gt_diag 0 --redo metrics >> $O/logs/full_$D.log 2>&1
       rm -rf $O/$D/full/base/work
       echo "$(date) done $D rc $?"
     done ;;
@@ -36,14 +36,14 @@ case $what in
       d=$O/hollow120k/${cond}_R${R}_x${s}
       [ -f $d/movie.tif ] || $PY analysis/papersim/gen_hollow.py --cond $cond --radius_nm $R --phot_scale $s --nframes 120000 --out $d > $O/logs/gen120k_${cond}_R${R}_x${s}.log 2>&1
       steps=${HOLLOW_STEPS:-$([ "$s" = 1 ] && echo base,decode,v2,metrics,hollow || echo decode,v2,metrics,hollow)}
-      $PY analysis/papersim/run_all.py $d --netset m1809 --gt_diag 0 --steps $steps >> $O/logs/full_h120k_${cond}_R${R}_x${s}.log 2>&1
+      $PY analysis/papersim/run_all.py $d --model m1809 --gt_diag 0 --steps $steps >> $O/logs/full_h120k_${cond}_R${R}_x${s}.log 2>&1
       rc=$?; rm -rf $d/full/base/work
       echo "$(date) done hollow120k $spec rc $rc"
     done ;;
   s10)
     for NS in $items; do
-      if [ "$NS" = g13 ]; then $PY analysis/papersim/s10.py --netset g13 --psf gauss1.3 --out $O/s10 > $O/logs/s10_$NS.log 2>&1
-      else $PY analysis/papersim/s10.py --netset $NS --out $O/s10 > $O/logs/s10_$NS.log 2>&1; fi
+      if [ "$NS" = g13 ]; then $PY analysis/papersim/s10.py --model g13 --psf gauss1.3 --out $O/s10 > $O/logs/s10_$NS.log 2>&1
+      else $PY analysis/papersim/s10.py --model $NS --out $O/s10 > $O/logs/s10_$NS.log 2>&1; fi
       echo "$(date) done s10 $NS rc $?"
     done ;;
   *) sed -n 2,16p "$0"; exit 1 ;;

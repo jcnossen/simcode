@@ -7,8 +7,8 @@ localization error sigma its dip ratio (hollow_analysis.dip_ratio on the continu
 (no dip) at sigma / R = S1 = 0.29; a clear dip (ratio 0.9; sigma -> 0 gives 0.77) needs sigma / R <= S08 = 0.23. The SIMFLUX CRLB (and the SMLM CRLB) of the
 averaged 1809/2 PSF on a 16 x 16 ROI at the condition's mean background then gives the photon count at which the bound
 reaches those sigmas (sigma = mean of the x and y CRLB over random sub-pixel positions and pattern phases).
-usage: python analysis/papersim/hollow_summary.py [--netset m1809] [--cond 1809_2]
-outputs: out/papersim/hollow/summary_<netset>.json / .png, renders_<netset>_R<r>.png"""
+usage: python analysis/papersim/hollow_summary.py [--model m1809] [--cond 1809_2]
+outputs: out/papersim/hollow/summary_<model>.json / .png, renders_<model>_R<r>.png"""
 import os, sys, json, glob, argparse, importlib.util
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,8 +19,8 @@ import metrics as M
 from scipy.special import ndtr
 
 OUTD = os.path.join(C.OUT, 'hollow')
-LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2='SIMCODE v2 strict', v2q45='SIMCODE v2, u <= 0.45')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2='tab:red', v2q45='darkred')
+LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2sig='SIMCODE v2, sigma <= 12 nm')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2sig='crimson')
 
 
 def dip_curve(ratios=np.linspace(0.05, 1.2, 116)):
@@ -59,16 +59,16 @@ def crlb_vs_photons(bg_frame, photons, n=2000, seed=0):
     return res
 
 
-def runs(netset, cond):
+def runs(model, cond):
     out = {}
     for d in sorted(glob.glob(os.path.join(OUTD, f'{cond}_R*_x*'))):
-        f = os.path.join(d, 'full', f'hollow_{netset}.json')
+        f = os.path.join(d, 'full', f'hollow_{model}.json')
         if os.path.exists(f):
             j = json.load(open(f)); out[(j['radius_nm'], j['phot_scale'])] = j
     return out
 
 
-def render_zooms(netset, cond, R, scales, methods=('smlm', 'sf_gtp', 'decode', 'v2q45'), box_nm=600, pix_nm=2.0):
+def render_zooms(model, cond, R, scales, methods=('smlm', 'sf_gtp', 'decode', 'v2sig'), box_nm=600, pix_nm=2.0):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     from scipy.ndimage import gaussian_filter
     d0 = os.path.join(OUTD, f'{cond}_R{R:g}_x{scales[0]:g}')
@@ -93,7 +93,7 @@ def render_zooms(netset, cond, R, scales, methods=('smlm', 'sf_gtp', 'decode', '
                 if s is None:
                     x, y = gt['pts'][:, 0], gt['pts'][:, 1]
                 else:
-                    p = M.method_paths(os.path.join(OUTD, f'{cond}_R{R:g}_x{s:g}', 'full'), netset).get(m)
+                    p = M.method_paths(os.path.join(OUTD, f'{cond}_R{R:g}_x{s:g}', 'full'), model).get(m)
                     if p is None:
                         ax.set_xticks([]); ax.set_yticks([]); [sp.set_visible(False) for sp in ax.spines.values()]
                         if zi == 0 and mi == 0: ax.set_ylabel(lab, fontsize=8)
@@ -105,14 +105,14 @@ def render_zooms(netset, cond, R, scales, methods=('smlm', 'sf_gtp', 'decode', '
                 ax.imshow(img, cmap='inferno', vmax=np.percentile(img, 99.5) + 1e-9)
                 if ri == 0: ax.set_title(('GT ' if s is None else '') + LAB.get(m, m) + f' (zoom {zi + 1})', fontsize=6)
                 if zi == 0: ax.set_ylabel(lab, fontsize=8)
-    fig.suptitle(f'{cond}, R {R:g} nm, {box_nm} nm boxes, FRC-set rows (v2: u <= 0.45), 2 nm pixels, 2 nm blur; rows = photon level', fontsize=8)
-    plt.tight_layout(); fn = os.path.join(OUTD, f'renders_{netset}_{cond}_R{R:g}.png'); plt.savefig(fn, dpi=110); plt.close(fig)
+    fig.suptitle(f'{cond}, R {R:g} nm, {box_nm} nm boxes, FRC-set rows (v2: sigma <= 12 nm), 2 nm pixels, 2 nm blur; rows = photon level', fontsize=8)
+    plt.tight_layout(); fn = os.path.join(OUTD, f'renders_{model}_{cond}_R{R:g}.png'); plt.savefig(fn, dpi=110); plt.close(fig)
     return fn
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='m1809'); ap.add_argument('--cond', default='1809_2')
+    ap.add_argument('--model', default='m1809'); ap.add_argument('--cond', default='1809_2')
     ap.add_argument('--root', default='hollow', help="out/papersim/<root>: 'hollow' (30 000 frames) or 'hollow120k' (final, 120 000 frames)")
     a = ap.parse_args()
     global OUTD; OUTD = os.path.join(C.OUT, a.root)
@@ -128,7 +128,7 @@ def main():
             for kind in ('sf_nm', 'smlm_nm'):
                 v = np.array([CR[float(p)][kind] for p in ph])
                 AN[f'photons_{kind[:-3]}_crlb_R{Rn:g}_{key}'] = float(np.exp(np.interp(-np.log(sig), -np.log(v), np.log(ph)))) if v.min() < sig else float('inf')
-    RUN = runs(a.netset, a.cond)
+    RUN = runs(a.model, a.cond)
     tab = []
     for (Rn, s), j in sorted(RUN.items()):
         for m, r in j['methods'].items():
@@ -136,7 +136,7 @@ def main():
             tab.append(dict(R=Rn, scale=s, photons_median=j['window_photons_ge300']['p50'], method=m, n=r['n'], dip=r['dip'], dip_ci95=r['dip_ci95'],
                             R_fit=r['fit_two']['R'], R_ci95=r['R_ci95'], sigma_fit=r['fit_two']['sigma'], p_lrt=r['p_lrt'], dAIC=r['dAIC'],
                             resolved=r['resolved'], rms_gt_nm=r.get('rms_gt_nm'), frc_nm=r.get('frc_nm')))
-    json.dump(dict(netset=a.netset, cond=a.cond, analytic=AN, table=tab), open(os.path.join(OUTD, f'summary_{a.netset}_{a.cond}.json'), 'w'), indent=1)
+    json.dump(dict(model=a.model, cond=a.cond, analytic=AN, table=tab), open(os.path.join(OUTD, f'summary_{a.model}_{a.cond}.json'), 'w'), indent=1)
     print(json.dumps(AN, indent=1))
     for t in tab:
         print(f"R {t['R']:5.1f} x{t['scale']:<4g} ph {t['photons_median']:7.0f} {t['method']:7s} n {t['n']:6d} dip {t['dip']:.2f} [{t['dip_ci95'][0]:.2f},{t['dip_ci95'][1]:.2f}] "
@@ -159,11 +159,11 @@ def main():
         axs[i, 2].set_ylabel('RMS error vs GT (nm)'); axs[i, 2].set_yscale('log')
         for ax in axs[i]: ax.set_xscale('log'); ax.grid(True, which='both', alpha=0.3); ax.set_xlabel('median window photons')
         axs[i, 0].legend(fontsize=6); axs[i, 2].legend(fontsize=6)
-    fig.suptitle(f'hollow microtubules, {a.cond} background ({bg:.2f} ph/px/frame), net set {a.netset}', fontsize=10)
-    plt.tight_layout(); plt.savefig(os.path.join(OUTD, f'summary_{a.netset}_{a.cond}.png'), dpi=90); plt.close(fig)
+    fig.suptitle(f'hollow microtubules, {a.cond} background ({bg:.2f} ph/px/frame), net set {a.model}', fontsize=10)
+    plt.tight_layout(); plt.savefig(os.path.join(OUTD, f'summary_{a.model}_{a.cond}.png'), dpi=90); plt.close(fig)
     for Rn in (12.5, 25.0):
         sc = sorted(s for (r_, s) in RUN if r_ == Rn)
-        if sc: print('renders', render_zooms(a.netset, a.cond, Rn, sc))
+        if sc: print('renders', render_zooms(a.model, a.cond, Rn, sc))
 
 
 if __name__ == '__main__':

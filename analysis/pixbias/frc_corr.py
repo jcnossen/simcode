@@ -13,7 +13,7 @@ RES = {}
 for ds in sys.argv[1:]:
     run = {'1809_2': 'v2_matched', '2.5nM_2': 'v2_matched', '20nM_2': 'v2_m25'}[ds]
     T = np.load(os.path.join(B.REPO, 'out', 'paper2', ds, run, 'locs_p2.npz'))
-    m = SP.select(T, 'main')
+    m = SP.select(T, crop=SP.run_crop(os.path.join(B.REPO, 'out', 'paper2', ds, run)))
     x, y, ph = T['x'][m], T['y'][m], T['photons'][m].astype(np.float64)
     groups = [b for _, b in B.ph_bin_masks(ph)]
     xc, yc = B.cdf_equalise(x, groups), B.cdf_equalise(y, groups)

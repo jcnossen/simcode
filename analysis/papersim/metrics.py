@@ -4,14 +4,11 @@ Rows per method ('full' = what each method outputs, as the preprint scored it):
   smlm    <run>/base/smlm/smlm.npy (chi^2-filtered, a window at every frame)
   sf      <run>/base/sf/sf.hdf5 (pattern estimated from SMLM)      sf_gtp  <run>/base/sf_gtp/sf.hdf5 (ground-truth pattern)
   decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6)
-  v2      <run>/v2_<netset>/locs_p2_sim.npz rows `strict` (the user's choice: SIMCODE v2 is scored on its STRICT subset);
-          v2sel = 'SIMCODE v2 all' = rows `sel`; v2gt = strict rows of the diagnostic pass 2 on
-          the ground-truth pattern (run_simcode.py --gt_diag; not the method); v2q45 = 'SIMCODE v2, u <= 0.45' = the main v2 row
-          (user 2026-11-12): rows with a rank (p >= 0.63, inside the field) and strict_u <= 0.45, not intersected with sel;
-          'v2sel' ('SIMCODE v2 all') is no longer reported (loader kept);
-          v2sig = 'SIMCODE v2, sigma <= 12 nm' = the MAIN v2 row since 2026-11-13 (user decision): the same base rows (p >= 0.63,
-          inside the field) with calibrated max(sx, sy) <= simcode.strict.SIGMA_MAX_NM (simcode.strict.select(T)); v2q45 is kept
-          as the earlier rule (secondary row)
+  v2sig   <run>/v2_<model>/locs_p2_sim.npz, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
+          p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.strict.SIGMA_MAX_NM
+          (simcode.strict.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
+          (run_simcode.py --gt_diag, locs_p2gt_sim.npz; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
+          (Removed 2026-11-14: the strict-subset row v2, the u <= 0.45 row v2q45 and the strict GT diagnostic v2gt.)
   v1      <run>/v1/locs.npz: the preprint's SIMCODE, merged 'sfhd-ndi+smlm' rows (run_simcode_v1.py), its MVU sigma
 Metrics:
   counts   n_all, n_disjoint (window start % 6 == 0, inside the FOV), n_frc
@@ -34,7 +31,7 @@ Metrics:
            null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm).
   Moving (S3): per 1000-frame block Jaccard at 10 / 20 / 40 nm, GT = the trajectory points of the block (as
            smlmtorch fig_moving_tubules.py compute_jaccards; frames strictly inside (i bs, (i + 1) bs) as there).
-usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--netset m1809] [--kind density|moving]
+usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--model m1809] [--kind density|moving]
 outputs: <run dir>/metrics.json, metrics.png"""
 import os, sys, json, argparse, glob
 import numpy as np
@@ -84,25 +81,31 @@ def load_method(kind, path):
         z = np.load(path); i = z['ndi_idx']
         return dict(x=z['mrg_x'].astype(np.float64), y=z['mrg_y'].astype(np.float64), f=z['frame'][i].astype(np.int64),
                     sx=z['mrg_sx'].astype(np.float64), sy=z['mrg_sy'].astype(np.float64), photons=z['ndi_photons'].astype(np.float64))
-    if kind in ('v2', 'v2sel', 'v2gt', 'v2q45', 'v2sig'):
+    if kind in ('v2sel', 'v2sig', 'v2siggt'):
         z = np.load(path)
         if kind == 'v2sel': m = z['sel'].astype(bool)
-        elif kind == 'v2sig':     # user decision 2026-11-13: global calibrated-precision threshold on the ranked rows
+        else:                     # user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the field
             from simcode import strict as SP
-            m = SP.select(z, 'main', sigma_max=SP.SIGMA_MAX_NM)
-        elif kind == 'v2q45':     # user decision 2026-11-12 01:20: ranked rows (p >= 0.63, inside the crop) with strict_u <= 0.45; no `sel`
-            m = np.nan_to_num(z['strict_u'].astype(np.float64), nan=2.0) <= 0.45
-        else: m = z['strict'].astype(bool)
+            m = SP.select(z, SP.SIGMA_MAX_NM, crop=v2_crop(path))
         return dict(x=z['x'][m].astype(np.float64), y=z['y'][m].astype(np.float64), f=z['frame'][m].astype(np.int64),
                     sx=z['sx'][m].astype(np.float64), sy=z['sy'][m].astype(np.float64), photons=z['photons'][m].astype(np.float64))
     import frc_fair
     return frc_fair.load({'sf_gtp': 'sf', 'decode_sim': 'decode', 'decode_pre': 'decode'}.get(kind, kind), path)
 
 
+def v2_crop(path):
+    """output region (x0, y0, size) of a papersim v2 table: the crop of its run (run_simcode.py: (0, 0, W)), from
+    locs_sim_info.json next to it, else the run's pass-1 files"""
+    from simcode import strict as SP
+    d = os.path.dirname(os.path.abspath(path)); f = os.path.join(d, 'locs_sim_info.json')
+    if os.path.exists(f) and json.load(open(f)).get('crop'): return tuple(float(v) for v in json.load(open(f))['crop'])
+    return SP.run_crop(d)
+
+
 def u_all(x, y, sig, base, tile=10.0):
-    """rank of the 'v2, u <= q' selections (2026-11-12): within every 10 x 10 px tile (tiles from (0, 0)), the quantile
-    (rank + 0.5) / n of the mean calibrated sigma among ALL base rows (`sel`) of the tile, so u = 1 is exactly the base set.
-    = strict.py's strict_u extended from the p >= 0.63 rows to every `sel` row (nan outside the base)"""
+    """per-tile sigma rank (a selection score of selection.py): within every 10 x 10 px tile (tiles from (0, 0)), the
+    quantile (rank + 0.5) / n of the mean calibrated sigma among ALL base rows of the tile, so u = 1 is exactly the base set
+    (nan outside the base)"""
     u = np.full(len(x), np.nan)
     i = np.nonzero(base)[0]
     t = (np.floor(x[i] / tile).astype(np.int64) * 100003 + np.floor(y[i] / tile).astype(np.int64))
@@ -113,16 +116,15 @@ def u_all(x, y, sig, base, tile=10.0):
     return u
 
 
-def method_paths(run, netset='m1809'):
+def method_paths(run, model='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
-             decode=f'{run}/decode/locs.npz', v2=f'{run}/v2_{netset}/locs_p2_sim.npz')
-    P['v2q45'] = P['v2']                                   # 'SIMCODE v2, u <= 0.45' (main v2 row 2026-11-12 .. 11-13; now secondary)
-    P['v2sig'] = P['v2']                                   # 'SIMCODE v2, sigma <= 12 nm' (main v2 row since 2026-11-13)
+             decode=f'{run}/decode/locs.npz')
+    P['v2sig'] = f'{run}/v2_{model}/locs_p2_sim.npz'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
     P['v1'] = f'{run}/v1/locs.npz'
     P['decode_sim'] = f'{run}/decode_sim/locs.npz'
     P['decode_pre'] = f'{run}/decode_pre/locs.npz'      # the preprint's own DECODE model (decode-3f-g1.3), Gaussian-PSF reproduction      # DECODE retrained for the simulation ranges (dec_sim1809)
     P['v1gt'] = f'{run}/v1gt/locs.npz'           # diagnostic: preprint SIMCODE given the GT pattern
-    P['v2gt'] = f'{run}/v2_{netset}/locs_p2gt_sim.npz'        # diagnostic: pass 2 on the ground-truth pattern
+    P['v2siggt'] = f'{run}/v2_{model}/locs_p2gt_sim.npz'      # diagnostic: pass 2 on the ground-truth pattern
     return {k: v for k, v in P.items() if os.path.exists(v)}
 
 
@@ -246,17 +248,17 @@ def gt_match(T, m, GW, W, rmax=100 / C.PX_NM, ph_min=150.0, edge=2.0):
                 frac_matched_of_set=float(len(e) / max(m.sum(), 1)), frac_err_gt30=float(np.mean(np.hypot(*e.T) > 30)))
 
 
-def density_metrics(run, md, nframes, netset, timebins=120, only=None):
+def density_metrics(run, md, nframes, model, timebins=120, only=None):
     import frc_fair
     g = json.load(open(os.path.join(md, 'gen.json'))); W = g['W']
     gt = dict(np.load(os.path.join(md, 'gt.npz')))
     pts = gt['pts']
     starts = np.arange(0, nframes - 5, 6)
     GW = gt_windows(gt, nframes, starts)
-    R = dict(run=run, movie=md, nframes=nframes, netset=netset, W=W, frc_floor=frc_floor(gt, nframes), protocol=dict(
+    R = dict(run=run, movie=md, nframes=nframes, model=model, W=W, frc_floor=frc_floor(gt, nframes), protocol=dict(
         frc='disjoint windows (start % 6 == 0), max(sx, sy) < 0.15 px, alternating 300-frame halves, whole FOV, no drift',
         jaccard='5a4fda9 compute_jaccard_points, 10 nm, %d bins, all GT points' % timebins), methods={})
-    for name, path in method_paths(run, netset).items():
+    for name, path in method_paths(run, model).items():
         if only and name not in only: continue
         T = load_method(name, path)
         full, disj, filt = frc_set(T, W, nframes)
@@ -279,12 +281,12 @@ def density_metrics(run, md, nframes, netset, timebins=120, only=None):
     return R
 
 
-def moving_metrics(run, md, nframes, netset, bs=1000, thr_nm=(10, 20, 40), only=None):
+def moving_metrics(run, md, nframes, model, bs=1000, thr_nm=(10, 20, 40), only=None):
     g = json.load(open(os.path.join(md, 'gen.json'))); W = g['W']
     traj = np.load(os.path.join(md, 'traj.npy'), mmap_mode='r'); tstep = int(g['traj_step'])
     nb = nframes // bs
     R = dict(run=run, movie=md, nframes=nframes, blocks=nb, block=bs, traj_step=tstep, thresholds_nm=list(thr_nm), methods={})
-    for name, path in method_paths(run, netset).items():
+    for name, path in method_paths(run, model).items():
         if only and name not in only: continue
         T = load_method(name, path)
         J = np.full((len(thr_nm), nb), np.nan)
@@ -310,8 +312,8 @@ def moving_metrics(run, md, nframes, netset, bs=1000, thr_nm=(10, 20, 40), only=
 
 def plot(R, fn):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    col = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2='tab:red', v2sel='salmon', v2gt='purple', v2q45='darkred', v2sig='crimson', v1='tab:brown', v1gt='peru', decode_sim='darkorange', decode_pre='orangered')
-    lab = dict(smlm='SMLM', sf='SIMFLUX', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2='SIMCODE v2 (strict)', v2sel='SIMCODE v2 all', v2gt='v2 strict, GT pattern (diag.)', v2q45='SIMCODE v2, u <= 0.45 (earlier rule)', v2sig='SIMCODE v2, sigma <= 12 nm', v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model decode-3f-g1.3)')
+    col = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2sel='salmon', v2siggt='purple', v2sig='crimson', v1='tab:brown', v1gt='peru', decode_sim='darkorange', decode_pre='orangered')
+    lab = dict(smlm='SMLM', sf='SIMFLUX', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2sel='SIMCODE v2 all', v2siggt='v2 sigma <= 12 nm, GT pattern (diag.)', v2sig='SIMCODE v2, sigma <= 12 nm', v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model decode-3f-g1.3)')
     fig, ax = plt.subplots(1, 3, figsize=(17, 4.8))
     for k, r in R['methods'].items():
         if 'frc_curve' in r:
@@ -332,7 +334,7 @@ def main():
     ap.add_argument('run')
     ap.add_argument('--movie', default=None)
     ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--netset', default='m1809')
+    ap.add_argument('--model', default='m1809')
     ap.add_argument('--kind', default=None)
     ap.add_argument('--timebins', type=int, default=120)
     ap.add_argument('--only', default='', help='comma-separated method kinds: compute only these and merge them into the existing metrics json')
@@ -342,19 +344,19 @@ def main():
     g = json.load(open(os.path.join(md, 'gen.json')))
     nf = a.nframes or g['nframes']
     kind = a.kind or g['kind']
-    fn = os.path.join(run, f'metrics_{a.netset}.json')
+    fn = os.path.join(run, f'metrics_{a.model}.json')
     def merge(R):
         if only and os.path.exists(fn):
             old = json.load(open(fn)); old['methods'].update(R['methods']); return old
         return R
     if kind == 'moving':
-        R = merge(moving_metrics(run, md, nf, a.netset, only=only))
+        R = merge(moving_metrics(run, md, nf, a.model, only=only))
         json.dump(R, open(fn, 'w'), indent=1)
         return
-    R = merge(density_metrics(run, md, nf, a.netset, a.timebins, only=only))
-    json.dump(R, open(os.path.join(run, f'metrics_{a.netset}.json'), 'w'), indent=1)
-    plot(R, os.path.join(run, f'metrics_{a.netset}.png'))
-    print('written', os.path.join(run, f'metrics_{a.netset}.json'))
+    R = merge(density_metrics(run, md, nf, a.model, a.timebins, only=only))
+    json.dump(R, open(os.path.join(run, f'metrics_{a.model}.json'), 'w'), indent=1)
+    plot(R, os.path.join(run, f'metrics_{a.model}.png'))
+    print('written', os.path.join(run, f'metrics_{a.model}.json'))
 
 
 if __name__ == '__main__':

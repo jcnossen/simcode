@@ -1,12 +1,12 @@
 """Per-density figure in the preprint's Fig 2 / SI S1 style + the summary table over densities + old-vs-new SIMCODE.
 
-Per density (<movie>/full, net set --netset): row 1 renders of the same crop (the preprint's Fig 2 zoom: corner (9, 10) px,
+Per density (<movie>/full, net set --model): row 1 renders of the same crop (the preprint's Fig 2 zoom: corner (9, 10) px,
 16 px wide) for the ground truth and every method; row 2 FRC curves, localization counts (FRC set), Jaccard (10 nm, end of the
 movie), Jaccard vs frames. Rows rendered = each method's FRC set (disjoint windows, max sigma < 0.15 px; SIMCODE v1 = its merged
 'sfhd-ndi+smlm' rows in that set; v2 = its main selection sigma <= 12 nm (v2sig)), 5.4 nm pixels (zoom 20), 1-pixel Gaussian blur, 99.5 % clip.
 DECODE = dec_1809_2, OUT of its training range for these movies (flagged in the labels).
-usage: python analysis/papersim/fig_density.py [--netset m1809] [--densities 0.5,1,2,4]
-outputs: out/papersim/fig_density_D<d>_<netset>.png, out/papersim/summary_density_<netset>.json / .md"""
+usage: python analysis/papersim/fig_density.py [--model m1809] [--densities 0.5,1,2,4]
+outputs: out/papersim/fig_density_D<d>_<model>.png, out/papersim/summary_density_<model>.json / .md"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -14,11 +14,11 @@ sys.path.insert(0, HERE)
 import common as C
 import metrics as M
 
-ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2q45', 'v2']      # table order; figures: FIG_ORDER
+ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig']      # table order; figures: FIG_ORDER
 FIG_ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v2sig']
 LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE (dec_1809_2, out of range)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model)',
-           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2='(SIMCODE v2 strict, secondary)', v2q45='(SIMCODE v2, u <= 0.45, earlier rule)', v2sig='SIMCODE v2, σ <= 12 nm', v2sel='SIMCODE v2 all')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2='tab:red', v2q45='darkred', v2sig='crimson', v2sel='salmon')
+           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2sig='SIMCODE v2, σ <= 12 nm', v2sel='SIMCODE v2 all')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2sig='crimson', v2sel='salmon')
 CROP = ((9, 10), 16)
 
 
@@ -30,10 +30,10 @@ def render(x, y, corner, w, zoom=20):
     return np.clip(img / (np.percentile(img, 99.5) + 1e-9), 0, 1)
 
 
-def fig(d, netset, sub='full', prefix='D', suffix=''):
+def fig(d, model, sub='full', prefix='D', suffix=''):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     md = os.path.join(C.OUT, f'{prefix}{d:g}{suffix}'); run = os.path.join(md, sub)
-    R = json.load(open(os.path.join(run, f'metrics_{netset}.json')))
+    R = json.load(open(os.path.join(run, f'metrics_{model}.json')))
     gt = np.load(os.path.join(md, 'gt.npz'))
     ks = [k for k in FIG_ORDER if k in R['methods']]
     fig = plt.figure(figsize=(2.3 * (len(ks) + 1), 7.5))
@@ -57,19 +57,19 @@ def fig(d, netset, sub='full', prefix='D', suffix=''):
     a3.bar(range(len(ks)), [R['methods'][k]['jaccard_end'] for k in ks], color=[COL[k] for k in ks]); a3.set_title(f'Jaccard 10 nm ({R["nframes"] // 1000}k frames)', fontsize=8); a3.set_ylim(0, 1)
     for a in (a2, a3): a.set_xticks(range(len(ks))); a.set_xticklabels([LAB[k].split(' (')[0].replace('SIMCODE ', 'SC ') + (' GTp' if k == 'sf_gtp' else '') for k in ks], rotation=60, fontsize=6)
     a4.set_ylim(0, 1); a4.set_xlabel('frames (x1000)'); a4.set_title('Jaccard vs frames (10 nm, 120 bins)', fontsize=8)
-    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, averaged 1809/2 PSF; v2 net set {netset}; crop corner {CROP[0]} px, {w} px', fontsize=9)
-    plt.tight_layout(); fn = os.path.join(C.OUT, f'fig_density_{prefix}{d:g}{suffix}_{netset}' + ('' if sub == 'full' else f'_{sub}') + '.png'); plt.savefig(fn, dpi=110); plt.close(fig)
+    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, averaged 1809/2 PSF; v2 net set {model}; crop corner {CROP[0]} px, {w} px', fontsize=9)
+    plt.tight_layout(); fn = os.path.join(C.OUT, f'fig_density_{prefix}{d:g}{suffix}_{model}' + ('' if sub == 'full' else f'_{sub}') + '.png'); plt.savefig(fn, dpi=110); plt.close(fig)
     return R
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
+    ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
     a = ap.parse_args()
-    rows = []; md_lines = [f'# Density sweep, v2 net set {a.netset} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
+    rows = []; md_lines = [f'# Density sweep, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
                            '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm |', '|---|---|---|---|---|---|---|---|---|---|---|---|']
     for d in [float(v) for v in a.densities.split(',')]:
         try:
-            R = fig(d, a.netset, a.sub, a.prefix, a.suffix)
+            R = fig(d, a.model, a.sub, a.prefix, a.suffix)
         except FileNotFoundError as e:
             print('skip', d, e); continue
         fl = R.get('frc_floor', {})
@@ -80,8 +80,8 @@ def main():
                              rms_nm=g.get('rms_nm'), recall=g.get('recall_gt_ph150'), med_sigma_nm=g.get('median_sigma_nm')))
             md_lines.append(f"| {d:g} | {LAB[k]} | {r['n_all']} | {r['n_frc']} | {r.get('frc_nm', float('nan')):.1f} | {r.get('frc_ideal_nm', float('nan')):.1f} / {r.get('frc_ideal_shuffled_nm', float('nan')):.1f} | {r.get('sigma_robust_nm', float('nan')):.1f} | {g.get('frc_err_gt30', g.get('frac_err_gt30', float('nan'))):.3f} | {r['jaccard_end']:.3f} | "
                             f"{','.join(f'{v:.1f}' for v in g.get('rms_nm', []))} | {g.get('recall_gt_ph150', float('nan')):.3f} | {','.join(f'{v:.1f}' for v in g.get('median_sigma_nm', []))} |")
-    json.dump(rows, open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.netset}.json'), 'w'), indent=1)
-    open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.netset}.md'), 'w').write('\n'.join(md_lines) + '\n')
+    json.dump(rows, open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.json'), 'w'), indent=1)
+    open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.md'), 'w').write('\n'.join(md_lines) + '\n')
     print('\n'.join(md_lines))
 
 

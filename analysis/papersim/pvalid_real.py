@@ -1,5 +1,5 @@
 """Apply the p_valid model (pvalid.py, net set m1809) to a real movie's pass-2 table and compare the selections p_valid >= t
-with u <= 0.45 (strict_u, the current paper rule): fraction kept, FRC (analysis/paper/frc_fair.py protocol incl. each
+with the paper's rule sigma <= 12 nm (simcode.strict.select; it replaced u <= 0.45, removed 2026-11-14): fraction kept, FRC (analysis/paper/frc_fair.py protocol incl. each
 selection's own DME drift, crop 5-115 px, disjoint windows, sigma < 0.15 px) and the GT-free revisit consistency per p_valid bin
 (add_pvalid.revisit). The same revisit statistic on a simulated held-out movie, next to its GT validity, shows what the
 statistic means. On real data the calibration of p_valid itself cannot be verified (no ground truth).
@@ -27,7 +27,8 @@ def main():
     T = dict(x=z['x'].astype(np.float64), y=z['y'].astype(np.float64), f=z['frame'].astype(np.int64), sx=z['sx'].astype(np.float64),
              sy=z['sy'].astype(np.float64), photons=z['photons'].astype(np.float64))
     sels = {f'p_valid>={t}': pv >= t for t in (0.9, 0.95, 0.99)}
-    sels['u<=0.45'] = np.nan_to_num(z['strict_u'].astype(np.float64), nan=2) <= 0.45
+    from simcode import strict as SP
+    sels['sigma<=12nm'] = SP.select(z, SP.SIGMA_MAX_NM, crop=SP.run_crop(os.path.dirname(os.path.abspath(a.locs))))
     sels['sel (v2 all, reference)'] = z['sel'].astype(bool)
     for k, m in sels.items():
         Ts = {kk: v[m] for kk, v in T.items()}

@@ -5,7 +5,7 @@
   C  per-frame bg ~ U(1, 6): SIMCODE v2 RMSD and its predicted (calibrated) sigma vs the SIMFLUX CRLB with a bg per frame, + both
      SIMFLUX fits
 Network rows are on the detected emitters (detector p >= 0.5 within 1 px; recall printed below 99 %).
-usage: python analysis/papersim/s10_figure.py [--netset m1809] -> out/papersim/s10/s10_fig_<netset>.png / .svg / _table.md"""
+usage: python analysis/papersim/s10_figure.py [--model m1809] -> out/papersim/s10/s10_fig_<model>.png / .svg / _table.md"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -14,8 +14,8 @@ import common as C
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); a = ap.parse_args()
-    D = os.path.join(C.OUT, 's10'); R = json.load(open(os.path.join(D, f's10_{a.netset}.json')))
+    ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); a = ap.parse_args()
+    D = os.path.join(C.OUT, 's10'); R = json.load(open(os.path.join(D, f's10_{a.model}.json')))
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     def col(cond, key, f='rmsd_trim2'):
         B = sorted(R['cond'][cond], key=int); r = [R['cond'][cond][b] for b in B]
@@ -46,9 +46,9 @@ def main():
     for x in ax:
         x.set_xlabel('total signal photons (6 frames)'); x.set_ylabel('x precision (nm)'); x.grid(True, which='both', alpha=0.3); x.legend(fontsize=7)
     fig.suptitle(f"precision vs CRLB, averaged 1809/2 PSF, 16 x 16 px ROIs (in 80 x 80 px fields), {R['protocol']['n_per_bin']} emitters per bin, "
-                 f"RMSD with the 2 % largest errors trimmed; SIMCODE v2 net set {a.netset}", fontsize=9)
+                 f"RMSD with the 2 % largest errors trimmed; SIMCODE v2 net set {a.model}", fontsize=9)
     plt.tight_layout()
-    for ext in ('png', 'svg'): plt.savefig(os.path.join(D, f's10_fig_{a.netset}.{ext}'), dpi=110)
+    for ext in ('png', 'svg'): plt.savefig(os.path.join(D, f's10_fig_{a.model}.{ext}'), dpi=110)
     L = ['| cond | photons | CRLB SMLM / SF / SF(bg per frame) | SMLM | SF (1 bg) | SF (bg per frame) | NN p1 (pred) | v2 (pred) | v2 RMSD / CRLB SF | v2 pred / RMSD | recall v2 |',
          '|---|---|---|---|---|---|---|---|---|---|---|']
     for cond in R['cond']:
@@ -58,7 +58,7 @@ def main():
             L.append(f"| {cond} | {q['photons']:.0f} | {q['crlb_smlm'][0] * C.PX_NM:.2f} / {q['crlb_sf'][0] * C.PX_NM:.2f} / {q['crlb_sf_pfbg'][0] * C.PX_NM:.2f} | "
                      f"{f('smlm'):.2f} | {f('sf'):.2f} | {f('sf_pfbg'):.2f} | {f('nn_p1'):.2f} ({f('nn_p1', 'pred_mean'):.2f}) | {f('v2_p2'):.2f} ({f('v2_p2', 'pred_mean'):.2f}) | "
                      f"{f('v2_p2') / cr:.2f} | {f('v2_p2', 'pred_mean') / f('v2_p2'):.2f} | {q['v2_p2']['recall']:.3f} |")
-    open(os.path.join(D, f's10_table_{a.netset}.md'), 'w').write('\n'.join(L) + '\n')
+    open(os.path.join(D, f's10_table_{a.model}.md'), 'w').write('\n'.join(L) + '\n')
     print('\n'.join(L))
 
 

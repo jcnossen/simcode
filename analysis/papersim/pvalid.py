@@ -15,10 +15,10 @@ Model: sklearn HistGradientBoostingClassifier (monotone: sig -, p +, nearest-nei
 training movie counts equally, then isotonic calibration fitted on the out-of-fold predictions of the training movies (4 folds of
 whole movies). Baselines: constant (the training rate) and sigma only (isotonic on sig).
 Evaluation per held-out movie: reliability (10 bins), Brier (model / constant / sigma only), ROC AUC; selections p_valid >= t
-(t 0.9 / 0.95 / 0.99) and u <= 0.45 (strict_u, the current paper rule): fraction of rows kept, observed fraction valid, FRC
+(t 0.9 / 0.95 / 0.99) and the paper's rule sigma <= 12 nm (simcode.strict.select; it replaced u <= 0.45, removed 2026-11-14): fraction of rows kept, observed fraction valid, FRC
 (frc_fair halves, disjoint windows) and Jaccard (10 nm, papersim movies).
 Also: sigma check (item 5): robust z-scale of e / sigma and the fraction |z| > 3 per axis, on valid rows, single and all.
-usage: python analysis/papersim/pvalid.py [--netset m1809] [--test m05r3,D2,...] -> out/papersim/selection/pvalid_<netset>.{json,png,joblib}"""
+usage: python analysis/papersim/pvalid.py [--model m1809] [--test m05r3,D2,...] -> out/papersim/selection/pvalid_<model>.{json,png,joblib}"""
 import os, sys, json, glob, argparse, time
 import numpy as np
 from scipy.spatial import cKDTree
@@ -60,17 +60,17 @@ def features(z, k):
     return np.stack([F[c] for c in FEATS], 1)
 
 
-def datasets(netset):
-    D = {d['name']: d for d in S.datasets(netset)}
+def datasets(model):
+    D = {d['name']: d for d in S.datasets(model)}
     for name in list(D):
         D[name]['nframes'] = json.load(open(D[name]['gen']))['nframes'] if D[name].get('gen') else 4800
     for e in sorted(glob.glob(os.path.join(C.OUT, 'Dexp*'))):          # experimental-photon density movies (when processed)
-        L = os.path.join(e, 'full', f'v2_{netset}', 'locs_p2_sim.npz')
+        L = os.path.join(e, 'full', f'v2_{model}', 'locs_p2_sim.npz')
         if os.path.exists(L):
             n = os.path.basename(e); D[n] = dict(name=n, kind='papersim', locs=L, gt=os.path.join(e, 'gt.npz'), gen=os.path.join(e, 'gen.json'),
                                                  nframes=json.load(open(os.path.join(e, 'gen.json')))['nframes'])
     for h in sorted(glob.glob(os.path.join(C.OUT, 'hollow', '1809_2_R*_x*'))):     # all hollow photon levels
-        n = 'hollow_' + os.path.basename(h); L = os.path.join(h, 'full', f'v2_{netset}', 'locs_p2_sim.npz')
+        n = 'hollow_' + os.path.basename(h); L = os.path.join(h, 'full', f'v2_{model}', 'locs_p2_sim.npz')
         if n not in D and os.path.exists(L):
             D[n] = dict(name=n, kind='papersim', locs=L, gt=os.path.join(h, 'gt.npz'), gen=os.path.join(h, 'gen.json'), nframes=30000)
     return D
@@ -146,13 +146,13 @@ def sigma_check(z, L):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--netset', default='m1809')
+    ap.add_argument('--model', default='m1809')
     ap.add_argument('--test', default='m05r3,D2,D0.5,hollow_1809_2_R12.5_x1,hollow_1809_2_R25_x8,hollow_2.5nM_2_R25_x1,Dexp2')
     ap.add_argument('--max_train_rows', type=int, default=150000)
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-pvalid')
     os.makedirs(OUTD, exist_ok=True); cache = os.path.join(OUTD, 'cache'); os.makedirs(cache, exist_ok=True)
-    D = datasets(a.netset); test = [t for t in a.test.split(',') if t in D]; train = [n for n in D if n not in test]
+    D = datasets(a.model); test = [t for t in a.test.split(',') if t in D]; train = [n for n in D if n not in test]
     print('train', train, '\ntest', test, flush=True)
     rng = np.random.default_rng(0)
     data = {}
@@ -162,10 +162,10 @@ def main():
     idx = {n: sub(n) for n in train}
     MV = fit([data[n][1][idx[n]] for n in train], [data[n][2]['valid'][idx[n]] for n in train], None)
     M30 = fit([data[n][1][idx[n]] for n in train], [data[n][2]['c30'][idx[n]] for n in train], None)
-    import joblib; joblib.dump(dict(valid=MV, c30=M30, feats=FEATS, netset=a.netset, train=train), os.path.join(OUTD, f'pvalid_{a.netset}.joblib'))
+    import joblib; joblib.dump(dict(valid=MV, c30=M30, feats=FEATS, model=a.model, train=train), os.path.join(OUTD, f'pvalid_{a.model}.joblib'))
     from sklearn.metrics import roc_auc_score, brier_score_loss
     from sklearn.inspection import permutation_importance
-    R = dict(netset=a.netset, train=train, test=test, features=FEATS, movies={})
+    R = dict(model=a.model, train=train, test=test, features=FEATS, movies={})
     for n in test + train:
         z, X, L = data[n]
         r = dict(role='test' if n in test else 'train', n=int(len(X)))
@@ -185,8 +185,10 @@ def main():
             k = pvv >= t
             sel[f'p_valid>={t}'] = dict(kept=float(k.mean()), n=int(k.sum()), obs_valid=float(L['valid'][k].mean()) if k.any() else None,
                                        obs_c30=float(L['c30'][k].mean()) if k.any() else None, **(frc_jac(D[n], z, k) if k.sum() > 200 else {}))
-        k = np.nan_to_num(z['strict_u'].astype(np.float64), nan=2) <= 0.45
-        sel['u<=0.45'] = dict(kept=float(k.mean()), n=int(k.sum()), obs_valid=float(L['valid'][k].mean()), obs_c30=float(L['c30'][k].mean()),
+        from simcode import strict as SP
+        import metrics as MT
+        k = SP.select(z, SP.SIGMA_MAX_NM, crop=MT.v2_crop(D[n]['locs']) if D[n]['kind'] == 'papersim' else SP.run_crop(os.path.dirname(D[n]['locs'])))
+        sel['sigma<=12nm'] = dict(kept=float(k.mean()), n=int(k.sum()), obs_valid=float(L['valid'][k].mean()), obs_c30=float(L['c30'][k].mean()),
                               mean_p_valid=float(pvv[k].mean()), **frc_jac(D[n], z, k))
         r['selections'] = sel
         r['sigma_check'] = sigma_check(z, L)
@@ -198,8 +200,8 @@ def main():
         print(n, r['role'], 'valid rate %.3f pred %.3f brier %.4f const %.4f sigma %.4f auc %.3f (sigma %.3f)' % (
             r['valid']['rate'], r['valid']['mean_pred'], r['valid']['brier'], r['valid']['brier_const'], r['valid']['brier_sigma'], r['valid']['auc'] or 0, r['valid']['auc_sigma'] or 0),
             {k: (round(v['kept'], 3), v['obs_valid'] and round(v['obs_valid'], 4), v.get('frc_nm') and round(v['frc_nm'], 1)) for k, v in sel.items()}, flush=True)
-    json.dump(R, open(os.path.join(OUTD, f'pvalid_{a.netset}.json'), 'w'), indent=1, default=float)
-    plot(R, os.path.join(OUTD, f'pvalid_{a.netset}.png'))
+    json.dump(R, open(os.path.join(OUTD, f'pvalid_{a.model}.json'), 'w'), indent=1, default=float)
+    plot(R, os.path.join(OUTD, f'pvalid_{a.model}.png'))
 
 
 def plot(R, fn):
@@ -212,11 +214,11 @@ def plot(R, fn):
             ax.plot([b['pred'] for b in rel], [b['obs'] for b in rel], 'o-', color=cm(i % 10), label=n, ms=3)
         s = R['movies'][n]['selections']
         axs[2].plot([s[f'p_valid>={t}']['kept'] for t in (0.9, 0.95, 0.99)], [s[f'p_valid>={t}']['obs_valid'] or np.nan for t in (0.9, 0.95, 0.99)], 'o-', color=cm(i % 10))
-        axs[2].plot(s['u<=0.45']['kept'], s['u<=0.45']['obs_valid'], 'x', color=cm(i % 10), ms=9)
+        axs[2].plot(s['sigma<=12nm']['kept'], s['sigma<=12nm']['obs_valid'], 'x', color=cm(i % 10), ms=9)
     for ax, t in zip(axs[:2], ('P_valid (class-based)', 'P(|e| < 30 nm)')):
         ax.plot([0, 1], [0, 1], 'k--', lw=0.8); ax.set_xlabel('predicted'); ax.set_ylabel('observed'); ax.set_title(f'reliability, held-out movies: {t}', fontsize=9)
     axs[0].legend(fontsize=6)
-    axs[2].set_xlabel('fraction of rows kept'); axs[2].set_ylabel('observed fraction valid'); axs[2].set_title('p_valid >= 0.9 / 0.95 / 0.99 (o), u <= 0.45 (x)', fontsize=9)
+    axs[2].set_xlabel('fraction of rows kept'); axs[2].set_ylabel('observed fraction valid'); axs[2].set_title('p_valid >= 0.9 / 0.95 / 0.99 (o), sigma <= 12 nm (x)', fontsize=9)
     for t in (0.9, 0.95, 0.99): axs[2].axhline(t, color='grey', lw=0.5, ls=':')
     plt.tight_layout(); plt.savefig(fn, dpi=90); plt.close(fig)
 

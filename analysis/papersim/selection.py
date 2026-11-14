@@ -16,16 +16,16 @@ with >= 30 window photons ('ON'):
     false      no ON emitter within 150 nm
     gross      single emitter, 50 <= |e| < 150 nm
     imprecise  single emitter, 30 <= |e| < 50 nm
-Base set (user decision 2026-11-12 01:20) = the ranked rows (p >= 0.63, inside the field), u = strict_u; the selection used
-for SIMCODE v2 is u <= 0.45. (Earlier variant: base = `sel`, kept as u_all below.) Scores ('better' first): u_all (the per-10-px-tile quantile of the mean calibrated
-sigma among ALL sel rows: strict.py's strict_u extended to every sel row, so u = 1 is exactly 'all'; metrics.u_all), strict_u
-(strict.py's rank, defined only for p >= 0.63 rows; the others last),
+Base set = the rows with p >= 0.63 inside the field (simcode.strict.select(T, max_precision_nm=None), the field = the run's
+crop); the selection used for SIMCODE v2 is max(sx, sy) <= 12 nm on them (simcode.strict.select; operating point 'sig12').
+Scores ('better' first): u_all (the per-10-px-tile quantile of the mean calibrated sigma among the base rows; metrics.u_all),
 sigma (mean of sx, sy), p (detector probability, high first), q_dof (low first), photons (high first).
-Curves: precision (fraction correct of the kept rows) vs fraction of sel rows kept; per-class fractions; precision per strict_u
+(Removed 2026-11-14: the strict_u score, the u <= 0.45 and strict-product operating points.)
+Curves: precision (fraction correct of the kept rows) vs fraction of base rows kept; per-class fractions; precision per u_all
 decile (monotone?); ROC AUC per score. Operating point per target: the loosest threshold with the kept set's precision >= target
 (at least 300 rows kept), its absolute score value, kept fraction, and (papersim) the FRC (fair protocol, disjoint windows) and
 Jaccard (10 nm) of the kept rows.
-usage: python analysis/papersim/selection.py [--netset m1809] [--datasets all] -> out/papersim/selection/selection_<netset>.json / .png"""
+usage: python analysis/papersim/selection.py [--model m1809] [--datasets all] -> out/papersim/selection/selection_<model>.json / .png"""
 import os, sys, json, glob, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -37,16 +37,16 @@ TARGETS = (0.95, 0.99, 0.995)
 CLASSES = ('fringe', 'blend', 'false', 'gross', 'imprecise')
 
 
-def datasets(netset):
+def datasets(model):
     D = []
     for d in (0.5, 1, 2, 4):
         md = os.path.join(C.OUT, f'D{d:g}')
-        D.append(dict(name=f'D{d:g}', kind='papersim', locs=os.path.join(md, 'full', f'v2_{netset}', 'locs_p2_sim.npz'), gt=os.path.join(md, 'gt.npz'),
+        D.append(dict(name=f'D{d:g}', kind='papersim', locs=os.path.join(md, 'full', f'v2_{model}', 'locs_p2_sim.npz'), gt=os.path.join(md, 'gt.npz'),
                       gen=os.path.join(md, 'gen.json')))
     for h in sorted(glob.glob(os.path.join(C.OUT, 'hollow', '*_x1'))):
-        D.append(dict(name='hollow_' + os.path.basename(h), kind='papersim', locs=os.path.join(h, 'full', f'v2_{netset}', 'locs_p2_sim.npz'),
+        D.append(dict(name='hollow_' + os.path.basename(h), kind='papersim', locs=os.path.join(h, 'full', f'v2_{model}', 'locs_p2_sim.npz'),
                       gt=os.path.join(h, 'gt.npz'), gen=os.path.join(h, 'gen.json')))
-    run = {'m1809': ('psfmatch', 'run_m1809')}.get(netset)
+    run = {'m1809': ('psfmatch', 'run_m1809')}.get(model)
     if run:
         for s in ('m05r3', 'm25rc3'):
             D.append(dict(name=s, kind='simreal', locs=os.path.join(C.REPO, 'out', run[0], 'sims', s, run[1], 'locs_p2.npz'),
@@ -93,9 +93,13 @@ def classify(T, G):
 
 
 def evaluate(ds):
+    from simcode import strict as SP
+    import metrics as M
     z = np.load(ds['locs'])
-    sel = np.isfinite(z['strict_u'])          # 2026-11-12 01:20: base = the ranked rows (p >= 0.63, inside the field); u = strict_u
-    T = {k: z[k][sel] for k in ('x', 'y', 'frame', 'sx', 'sy', 'p', 'q_dof', 'photons', 'strict_u')}
+    crop = M.v2_crop(ds['locs']) if ds['kind'] == 'papersim' else SP.run_crop(os.path.dirname(ds['locs']))
+    sel = SP.select(z, None, crop=crop)       # base = the rows with p >= 0.63 inside the field
+    T = {k: z[k][sel] for k in ('x', 'y', 'frame', 'sx', 'sy', 'p', 'q_dof', 'photons')}
+    T['sig12'] = SP.select(z, SP.SIGMA_MAX_NM, crop=crop)[sel]
     T['x'] = T['x'].astype(np.float64); T['y'] = T['y'].astype(np.float64)
     G = load_gt(ds)
     err, n150, fringe = classify(T, G)
@@ -112,10 +116,8 @@ def evaluate(ds):
     cls[bad & (cls == 'correct')] = 'gross'
     corr = dict(c20=has & (e < 20), c30=has & (e < 30),
                 c3s=has & single & (np.abs(err[:, 0]) < 3 * T['sx'] * C.PX_NM) & (np.abs(err[:, 1]) < 3 * T['sy'] * C.PX_NM))
-    su = np.nan_to_num(T['strict_u'].astype(np.float64), nan=2.0)
-    import metrics as M
     ua = M.u_all(T['x'], T['y'], 0.5 * (T['sx'] + T['sy']).astype(np.float64), np.ones(len(T['x']), bool))
-    scores = dict(u_all=ua, strict_u=su, sigma=sig, p=-T['p'].astype(np.float64), q_dof=T['q_dof'].astype(np.float64), photons=-T['photons'].astype(np.float64))
+    scores = dict(u_all=ua, sigma=sig, p=-T['p'].astype(np.float64), q_dof=T['q_dof'].astype(np.float64), photons=-T['photons'].astype(np.float64))
     R = dict(name=ds['name'], n_sel=int(len(e)), offset_nm=off.round(2).tolist(), frac_correct=dict((k, float(v.mean())) for k, v in corr.items()),
              class_frac={c: float((cls == c).mean()) for c in ('correct',) + CLASSES}, scores={}, deciles={})
     from sklearn.metrics import roc_auc_score
@@ -145,14 +147,6 @@ def evaluate(ds):
     R['deciles_u_all'] = {f'{i / 10:.1f}-{(i + 1) / 10:.1f}': dict(n=int((b == i).sum()), c20=float(corr['c20'][b == i].mean()), c30=float(corr['c30'][b == i].mean()),
                                                                   c3s=float(corr['c3s'][b == i].mean()), **{c: float((cls[b == i] == c).mean()) for c in CLASSES})
                           for i in range(10) if (b == i).any()}
-    # strict_u deciles (good rows only)
-    g = T['strict_u'] == T['strict_u']
-    if g.any():
-        b = np.minimum((T['strict_u'][g] * 10).astype(int), 9)
-        R['deciles'] = {f'{i / 10:.1f}-{(i + 1) / 10:.1f}': dict(n=int((b == i).sum()), c20=float(corr['c20'][g][b == i].mean()),
-                                                                  c30=float(corr['c30'][g][b == i].mean()), c3s=float(corr['c3s'][g][b == i].mean()))
-                        for i in range(10) if (b == i).any()}
-        R['frac_sel_with_strict_u'] = float(g.mean())
     R['_cache'] = dict(order={k: np.argsort(v, kind='stable') for k, v in scores.items()}, T=T, corr=corr, u_all=ua)
     return R
 
@@ -169,19 +163,19 @@ def frc_jaccard(ds, T, keep, nframes):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--netset', default='m1809'); ap.add_argument('--datasets', default='all')
+    ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); ap.add_argument('--datasets', default='all')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-select')
     os.makedirs(OUTD, exist_ok=True)
-    DS = datasets(a.netset)
+    DS = datasets(a.model)
     if a.datasets != 'all': DS = [d for d in DS if d['name'] in a.datasets.split(',')]
     res = {}
     for ds in DS:
         R = evaluate(ds); cache = R.pop('_cache'); T = cache['T']
         nframes = json.load(open(ds['gen']))['nframes'] if ds.get('gen') else int(T['frame'].max() + 6)
-        # FRC / Jaccard at the strict_u operating points and of all sel rows, and of the current strict rule (z['strict'])
+        # FRC / Jaccard at the sigma / u_all operating points, of all base rows and of the paper's rule (sigma <= 12 nm)
         R['at_ops'] = {}
-        for sn in ('strict_u', 'sigma'):
+        for sn in ('u_all', 'sigma'):
             for cn in ('c20', 'c30', 'c3s'):
                 for t in TARGETS:
                     op = R['scores'][sn][cn]['ops'][str(t)]
@@ -189,23 +183,19 @@ def main():
                         keep = np.zeros(len(T['x']), bool); keep[cache['order'][sn][:op['n']]] = True
                         R['at_ops'][f'{sn}_{cn}_{t}'] = dict(kept=op['kept'], threshold=op['threshold'], **frc_jaccard(ds, T, keep, nframes))
         R['at_ops']['all_sel'] = dict(kept=1.0, **frc_jaccard(ds, T, np.ones(len(T['x']), bool), nframes))
-        z = np.load(ds['locs']); st = z['strict'][np.isfinite(z['strict_u'])].astype(bool)
-        R['at_ops']['strict_rule'] = dict(kept=float(st.mean()), precision_c20=float(cache['corr']['c20'][st].mean()),
-                                          precision_c30=float(cache['corr']['c30'][st].mean()), precision_c3s=float(cache['corr']['c3s'][st].mean()),
-                                          **frc_jaccard(ds, T, st, nframes))
-        q45 = T['strict_u'] <= 0.45
-        R['at_ops']['q045'] = dict(kept=float(q45.mean()), precision_c20=float(cache['corr']['c20'][q45].mean()),
-                                   precision_c30=float(cache['corr']['c30'][q45].mean()), precision_c3s=float(cache['corr']['c3s'][q45].mean()),
-                                   **frc_jaccard(ds, T, q45, nframes))
+        k12 = T['sig12']
+        R['at_ops']['sig12'] = dict(kept=float(k12.mean()), precision_c20=float(cache['corr']['c20'][k12].mean()),
+                                    precision_c30=float(cache['corr']['c30'][k12].mean()), precision_c3s=float(cache['corr']['c3s'][k12].mean()),
+                                    **frc_jaccard(ds, T, k12, nframes))
         R['nframes'] = nframes
         res[ds['name']] = R
         s = R['scores']
         print(ds['name'], 'n', R['n_sel'], 'offset', R['offset_nm'], 'correct', {k: round(v, 3) for k, v in R['frac_correct'].items()},
               'classes', {k: round(v, 4) for k, v in R['class_frac'].items()},
               'AUC c30', {k: (round(v['c30']['auc'], 3) if v['c30']['auc'] else None) for k, v in s.items()},
-              '99% c30 strict_u', s['strict_u']['c30']['ops']['0.99'], 'u<=0.45', {k: round(v, 4) for k, v in R['at_ops']['q045'].items() if k != 'kept'} if 'at_ops' in R else '', 'sigma', s['sigma']['c30']['ops']['0.99'], flush=True)
-    json.dump(res, open(os.path.join(OUTD, f'selection_{a.netset}.json'), 'w'), indent=1, default=float)
-    plot(res, os.path.join(OUTD, f'selection_{a.netset}.png'))
+              '99% c30 u_all', s['u_all']['c30']['ops']['0.99'], 'sigma <= 12 nm', {k: round(v, 4) for k, v in R['at_ops']['sig12'].items() if k != 'kept'}, 'sigma', s['sigma']['c30']['ops']['0.99'], flush=True)
+    json.dump(res, open(os.path.join(OUTD, f'selection_{a.model}.json'), 'w'), indent=1, default=float)
+    plot(res, os.path.join(OUTD, f'selection_{a.model}.png'))
 
 
 def plot(res, fn):
@@ -214,22 +204,21 @@ def plot(res, fn):
     fig, axs = plt.subplots(2, 3, figsize=(17, 9.5))
     for i, n in enumerate(names):
         c = cm(i / max(len(names) - 1, 1)); R = res[n]['scores']
-        for ax, (sn, cn) in zip(axs[0], (('strict_u', 'c30'), ('strict_u', 'c20'), ('strict_u', 'c3s'))):
+        for ax, (sn, cn) in zip(axs[0], (('sigma', 'c30'), ('sigma', 'c20'), ('sigma', 'c3s'))):
             cv = R[sn][cn]['curve']; ax.plot(cv['kept'], cv['precision'], color=c, label=n)
-        cc = R['strict_u']['class_curves']; kept = R['strict_u']['c30']['curve']['kept']
+        cc = R['sigma']['class_curves']; kept = R['sigma']['c30']['curve']['kept']
         axs[1, 0].plot(kept, np.sum([cc[k] for k in CLASSES], 0), color=c, label=n)
-        for sn, ls in (('strict_u', '-'), ('sigma', '--'), ('p', ':'), ('photons', '-.')):
+        for sn, ls in (('u_all', '-'), ('sigma', '--'), ('p', ':'), ('photons', '-.')):
             cv = R[sn]['c30']['curve']; axs[1, 1].plot(cv['kept'], cv['precision'], ls=ls, color=c, lw=1)
         if res[n].get('deciles_u_all'):
             dd = res[n]['deciles_u_all']; axs[1, 2].plot([float(k[:3]) + 0.05 for k in dd], [v['c30'] for v in dd.values()], 'o-', color=c, ms=3)
     for ax, t in zip(axs[0], ('correct = |e| < 30 nm', 'correct = |e| < 20 nm', 'correct = single emitter, |e| < 3 sigma')):
         for tt in TARGETS: ax.axhline(tt, color='grey', lw=0.6, ls=':')
-        ax.set_xlabel('fraction of ranked rows kept (u = strict_u)'); ax.set_ylabel('precision of the kept set'); ax.set_title(t, fontsize=9); ax.set_ylim(0.6, 1.0)
-        ax.axvline(0.45, color='k', lw=0.5)
+        ax.set_xlabel('fraction of base rows kept (sigma ranking)'); ax.set_ylabel('precision of the kept set'); ax.set_title(t, fontsize=9); ax.set_ylim(0.6, 1.0)
     axs[0, 0].legend(fontsize=6)
-    axs[1, 0].set_title('incorrect fraction of the kept set (all classes), u ranking', fontsize=9); axs[1, 0].set_xlabel('fraction kept')
-    axs[1, 1].set_title('precision (|e| < 30 nm) by score: u -, sigma --, p :, photons -.', fontsize=9); axs[1, 1].set_xlabel('fraction kept'); axs[1, 1].set_ylim(0.6, 1)
-    axs[1, 2].set_title('precision (|e| < 30 nm) per u decile', fontsize=9); axs[1, 2].set_xlabel('u'); axs[1, 2].set_ylim(0.6, 1)
+    axs[1, 0].set_title('incorrect fraction of the kept set (all classes), sigma ranking', fontsize=9); axs[1, 0].set_xlabel('fraction kept')
+    axs[1, 1].set_title('precision (|e| < 30 nm) by score: u_all -, sigma --, p :, photons -.', fontsize=9); axs[1, 1].set_xlabel('fraction kept'); axs[1, 1].set_ylim(0.6, 1)
+    axs[1, 2].set_title('precision (|e| < 30 nm) per u_all decile', fontsize=9); axs[1, 2].set_xlabel('u_all'); axs[1, 2].set_ylim(0.6, 1)
     plt.tight_layout(); plt.savefig(fn, dpi=90); plt.close(fig)
 
 

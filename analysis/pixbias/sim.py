@@ -68,7 +68,7 @@ def papersim(D):
         xr = np.where(np.isfinite(E['x_det']), E['x_det'], E['x_prior']); yr = np.where(np.isfinite(E['y_det']), E['y_det'], E['y_prior'])
         tx, ty, tph = gt_rows(gt, nframes, w, xr, yr)
         est = dict(det=(E['x_det'], E['y_det']), prior=(E['x_prior'], E['y_prior']), solve=(E['x_hy0'], E['y_hy0']))
-        sel = dict(p63=T['good'].astype(bool), sig12=SP.select(T, 'main'))
+        sel = dict(p63=T['good'].astype(bool), sig12=SP.select(T, crop=SP.run_crop(d)))
         out[ps] = dict(est={k: (np.asarray(a, np.float64), np.asarray(b, np.float64)) for k, (a, b) in est.items()},
                        tx=tx, ty=ty, ph=E['phot'].astype(np.float64), sel=sel)
     # baselines (rows inside the FOV with sigma < 0.15 px), 6-frame windows at their own starts
