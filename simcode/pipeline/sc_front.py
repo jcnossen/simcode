@@ -84,7 +84,7 @@ class Pass1SC:
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
                 oh = SCM.apply_head(self.head, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
-                outs.append({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')})
+                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **SCM.head_z(self.head, oh)))
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
             I = oh['I']; Ip = I.clamp(min=0)
@@ -100,13 +100,23 @@ class Pass1SC:
             out = central & inside & (fabs >= own0) & (fabs < own1)
             sp = oh['lsxy'].exp()
             sI = (oh['L'] ** 2).sum(-1).sqrt()
-            r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=torch.full_like(gx, 0.05), p=torch.sigmoid(lg.float()),
+            r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=oh['z'], sz=oh['lsz'].exp(), bzx=oh['bz'][:, 0], bzy=oh['bz'][:, 1],
+                     p=torch.sigmoid(lg.float()),
                      phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], out=out, tc=tc, frame=fabs,
                      x_det=xs + X0, y_det=ys + Y0)
             rows.append({k_: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for k_, v in r.items()})
         R = {k_: np.concatenate([r_[k_] for r_ in rows]) for k_ in rows[0]}
         R['wstart'] = R['wstart'].astype(np.int64)
         return R, dict(X0=X0, Y0=Y0, S=S, own=(own0, own1), loaded=(l0, l1))
+
+
+def z_inputs(R, idx, tt):
+    """the head's z outputs of stored pass-1 rows (columns z, sz, bzx, bzy) -> z, lsz, bz of the solve input; rows of a run made
+    before 2026-11-14 (no sz column: 2D heads): NaN"""
+    if 'sz' not in R:
+        nan = tt(np.full(len(idx), np.nan))
+        return dict(z=nan, lsz=nan, bz=torch.stack([nan, nan], 1))
+    return dict(z=tt(R['z'][idx]), lsz=torch.log(tt(R['sz'][idx])), bz=torch.stack([tt(R['bzx'][idx]), tt(R['bzy'][idx])], 1))
 
 
 @torch.no_grad()
@@ -123,16 +133,18 @@ def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=Non
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     out = {c: np.full(n, np.nan, np.float32) for c in ('x_hy0', 'y_hy0', 'sig_hy0', 'kin_hy', 'fringe_hy', 'pf_hy', 'chi2_hy', 'B_hy',
                                                     'Klin_hy', 'sx_cal', 'sy_cal', 'q_dof', 'phot', 'x_prior', 'y_prior', 'dnll',
-                                                    'x_map', 'y_map')}
+                                                    'x_map', 'y_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
     uw, inv = np.unique(ws, return_inverse=True)
     PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
     for c0 in range(0, n, chunk):
         sl = slice(c0, c0 + chunk)
         idx = np.nonzero(keep)[0][sl]
         o = dict(I=tt(R['I'][idx]), L=tt(R['L'][idx]), x=tt(R['x'][idx] - X0), y=tt(R['y'][idx] - Y0),
-                 lsxy=torch.log(tt(np.c_[R['sx'][idx], R['sy'][idx]])), x_det=tt(R['x_det'][idx] - X0), y_det=tt(R['y_det'][idx] - Y0))
+                 lsxy=torch.log(tt(np.c_[R['sx'][idx], R['sy'][idx]])), x_det=tt(R['x_det'][idx] - X0), y_det=tt(R['y_det'][idx] - Y0),
+                 **z_inputs(R, idx, tt))
         b = torch.tensor(inv[sl], device=dev)
         so = SCM.sc_solve(o, PW, b, cal)
+        for k_, v in SCM.z_columns(o, so).items(): out[k_][sl] = v.cpu().numpy()
         r = so['r'].cpu().numpy(); sc_ = so['s_cal'].cpu().numpy()
         out['x_hy0'][sl] = r[:, 0] + X0; out['y_hy0'][sl] = r[:, 1] + Y0
         out['sx_cal'][sl] = sc_[:, 0]; out['sy_cal'][sl] = sc_[:, 1]; out['sig_hy0'][sl] = sc_.mean(1)

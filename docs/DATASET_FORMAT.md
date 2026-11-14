@@ -17,8 +17,10 @@ A v2 table (SIMCODE v2, `simcode/strict.py`) in this layout:
 
 | field | dtype | shape | meaning |
 |---|---|---|---|
-| `pos` | float64 | [n, 2] | final position (x, y) of the explicit pattern solve, px, sensor coordinates, not drift corrected |
-| `crlb` | float32 | [n, 2] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB |
+| `pos` | float64 | [n, 2] or [n, 3] | final position (x, y) of the explicit pattern solve, px, sensor coordinates, not drift corrected; 3D heads (2026-11-14): + z = the head's z prior conditioned on the solved x, y (px of the lateral pixel size, relative to the focal plane of the model's PSF calibration: z = (height above the coverslip - focus_um) / pixel size) |
+| `crlb` | float32 | [n, 2] or [n, 3] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB; z: sd of z after the conditioning (network sd, not recalibrated) |
+| `cov` | float32 | [n, 3] | 3D heads: covariances (xy, xz, yz) px^2 of the position (xy = 0: the solve's x, y are uncorrelated) |
+| `z_prior` | float64 | [n] | 3D heads: the head's pattern-free z (px) before the conditioning |
 | `frame` | int32 | [n] | window start (absolute movie frame); windows start every 3 frames |
 | `n_frames` | int32 | [n] | 6: the window length (drift time = window centre, frame + 3) |
 | `photons` | float32 | [n] | sum of the 6 network per-frame intensities (label units) |

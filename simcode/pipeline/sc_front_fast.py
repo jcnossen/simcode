@@ -118,7 +118,7 @@ class QueuedFront:
         return h(pt, None, off, psf)
 
     @torch.no_grad()
-    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy'),
+    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
             ev=None):
         """frames [F,S,S] (photons, chunk), starts: window starts (relative frame index), PWall [nW,T,5] (pass 2) ->
         dict of per-candidate GPU tensors (queue order = window order, top-k order within a window, as the originals):
@@ -252,14 +252,15 @@ class Pass1SCFast:
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
         q = self.front.run(frames, starts, k_cand, det_batch=det_batch, head_batch=head_batch, streams=streams, ev=ev)
-        oh = q['heads']['h']
+        oh = dict(q['heads']['h']); oh.update(self.SCM.head_z(self.head, oh))
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         gx, gy = oh['x'] + X0, oh['y'] + Y0
         tc, fabs, out = _flags(I, ws, gx, gy, l0, starts[-1], crop, own0, own1, dev)
         sp = oh['lsxy'].exp()
         sI = (oh['L'] ** 2).sum(-1).sqrt()
-        r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=torch.full_like(gx, 0.05), p=torch.sigmoid(q['lg'].float()),
+        r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=oh['z'], sz=oh['lsz'].exp(), bzx=oh['bz'][:, 0], bzy=oh['bz'][:, 1],
+                 p=torch.sigmoid(q['lg'].float()),
                  phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], out=out, tc=tc, frame=fabs,
                  x_det=q['x'] + X0, y_det=q['y'] + Y0)
         R = r if keep_gpu else _np(r)
@@ -289,13 +290,17 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
     uw, inv = np.unique(ws, return_inverse=True)
     PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
     G = {k: tt(R[k][idx_all]) for k in ('I', 'L', 'x', 'y', 'sx', 'sy', 'x_det', 'y_det')}
+    from simcode.pipeline.sc_front import z_inputs
+    from simcode.hd import sc as SCM
+    G.update(z_inputs(R, idx_all, tt))
     binv = torch.tensor(inv, device=dev)
-    acc = {k: [] for k in ('r', 's_cal', 'kin', 'p', 'q', 'dnll', 'r_map')}
+    acc = {k: [] for k in ('r', 's_cal', 'kin', 'p', 'q', 'dnll', 'r_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
     for c0 in range(0, n, solve_batch):
         sl = slice(c0, c0 + solve_batch)
         o = dict(I=G['I'][sl], L=G['L'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
-                 x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0)
+                 x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0, z=G['z'][sl], lsz=G['lsz'][sl], bz=G['bz'][sl])
         so = MF.sc_solve_fast(o, PW, binv[sl], cal, compile=compile)
+        so.update(SCM.z_columns(o, so))
         for k in acc: acc[k].append(so.get(k, so['r']) if k != 'dnll' else so.get('dnll', torch.full_like(so['q'], float('nan'))))
     A = {k: torch.cat(v).float().cpu().numpy() if v else np.zeros((0, 2) if k in ('r', 's_cal', 'r_map') else 0, np.float32) for k, v in acc.items()}
     out = {}
@@ -312,6 +317,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
     out['x_prior'] = R['x'][idx_all].astype(np.float32); out['y_prior'] = R['y'][idx_all].astype(np.float32)
     out['dnll'] = A['dnll'].astype(np.float32)
     out['x_map'] = A['r_map'][:, 0] + X0; out['y_map'] = A['r_map'][:, 1] + Y0
+    for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior'): out[k] = A[k]
     out = {k: np.asarray(v, np.float32) for k, v in out.items()}
     torch.cuda.synchronize(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
     out.update(wstart=ws, frame=R['frame'][keep], p=R['p'][keep], I_net=R['I'][keep])
@@ -359,9 +365,9 @@ class Pass2P2Fast:
         PWall = torch.stack([PF[s0:s0 + T] for s0 in starts])                   # [nW,T,5]
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
-        outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy')
+        outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz')
         q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, head_batch=head_batch, streams=streams, outs=outs, ev=ev)
-        oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
+        oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']; oh.update(self.SCM.head_z(self.head, oh))
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         tc, fabs, keep = _flags(I, ws, oh['x'] + X0, oh['y'] + Y0, l0, starts[-1], crop, own0, own1, dev)
@@ -369,10 +375,12 @@ class Pass2P2Fast:
         o = {kk: v[k_] for kk, v in oh.items()}
         bw = q['w'][k_]
         done = ev.rec('solve')
-        acc = {k: [] for k in ('r', 's_cal', 'q', 'kin')}
+        acc = {k: [] for k in ('r', 's_cal', 'q', 'kin', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
         for c0 in range(0, len(k_), solve_batch):
             sl = slice(c0, c0 + solve_batch)
-            so = MF.sc_solve_fast({kk: v[sl] for kk, v in o.items()}, PWall, bw[sl], scal, compile=self.compile)
+            oc = {kk: v[sl] for kk, v in o.items()}
+            so = MF.sc_solve_fast(oc, PWall, bw[sl], scal, compile=self.compile)
+            so.update(self.SCM.z_columns(oc, so))
             for k in acc: acc[k].append(so[k])
         done()
         so = {k: torch.cat(v) if v else torch.zeros((0, 2) if k in ('r', 's_cal') else 0, device=dev) for k, v in acc.items()}
@@ -383,7 +391,7 @@ class Pass2P2Fast:
                  sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                  x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
                  x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
-                 frame=fabs[k_], I_net=I[k_])
+                 frame=fabs[k_], I_net=I[k_], **{k: so[k] for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')})
         R = _np(r); R['wstart'] = R['wstart'].astype(np.int64)
         for k, v in ev.totals().items(): timing[k] = timing.get(k, 0) + v
         timing['wall'] = timing.get('wall', 0) + time.time() - tw

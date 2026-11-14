@@ -28,8 +28,9 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
     sel.save('run1_sel.hdf5')                         # torch-psf format; sel.save_picasso(...), sel.save('x.csv')
 
 Fields of a v2 table (simcode/strict.py) in this layout (docs/DATASET_FORMAT.md of SIMCODE lists them):
-  pos [n, 2] = (x, y) px, crlb [n, 2] = (sx, sy) px (calibrated sigma), frame = window start, n_frames = 6 (window
-  length), photons, score = p (detector probability), intensities [n, 6] = I (network per-frame intensities), and the other
+  pos [n, 2] = (x, y) px, crlb [n, 2] = (sx, sy) px (calibrated sigma); tables of 3D heads (columns z, sz, cov_xz, cov_yz):
+  pos [n, 3] = (x, y, z) with z in px of the lateral pixel relative to the PSF calibration's focal plane, crlb [n, 3], cov
+  [n, 3] = (xy, xz, yz) px^2; frame = window start, n_frames = 6 (window length), photons, score = p (detector probability), intensities [n, 6] = I (network per-frame intensities), and the other
   columns under their names (t, q_dof, kin, dnll, x_prior, y_prior, good, sel, disjoint, x_dc, y_dc, strict_u, strict).
   Metadata: pixel_nm (px_nm of the table), crop, sigma_max, info (the table's info json), run_config, model, n_frames,
   image_size, pass, source, format.
@@ -67,6 +68,12 @@ class Dataset(_TorchPSFDataset):
                  frame=np.asarray(C.pop('frame')))
         if 'sx' in C and 'sy' in C:
             F['crlb'] = np.stack([C.pop('sx'), C.pop('sy')], 1).astype(np.float32)
+        if 'cov_xz' in C and 'z' in C and 'sz' in C and np.isfinite(np.asarray(C['z'])).any():
+            # v2 table of a 3D head: z (px, relative to the PSF's focal plane) in pos, its sd in crlb, cov = (xy, xz, yz)
+            F['pos'] = np.concatenate([F['pos'], np.asarray(C.pop('z'), np.float64)[:, None]], 1)
+            F['crlb'] = np.concatenate([F['crlb'], np.asarray(C.pop('sz'), np.float32)[:, None]], 1)
+            xz, yz = np.asarray(C.pop('cov_xz'), np.float32), np.asarray(C.pop('cov_yz'), np.float32)
+            F['cov'] = np.stack([np.zeros_like(xz), xz, yz], 1)
         if 'sz' in C: F['crlb_z'] = C.pop('sz')
         F['n_frames'] = np.full(len(F['frame']), int(window), np.int32)
         for k, v in C.items():

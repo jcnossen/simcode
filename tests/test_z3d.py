@@ -95,6 +95,30 @@ def test_z_target():
     assert abs(float(z_target_px(torch.tensor(0.05), S)) + 1.0) < 1e-6
 
 
+def test_table_3d(tmp_path=None):
+    """a v2 table with the z columns loads as a 3D Dataset (pos / crlb [n, 3], cov (xy, xz, yz)); the selection uses x, y only;
+    hdf5 round trip; a table without them (2D heads) stays 2D"""
+    import tempfile, numpy as np
+    from simcode.dataset import Dataset
+    d = tmp_path or tempfile.mkdtemp()
+    rng = np.random.default_rng(0); n = 200
+    T = dict(frame=(rng.integers(0, 100, n) * 3).astype(np.int64), x=rng.uniform(10, 100, n), y=rng.uniform(10, 100, n),
+             sx=rng.uniform(0.02, 0.2, n).astype(np.float32), sy=rng.uniform(0.02, 0.2, n).astype(np.float32),
+             photons=rng.uniform(100, 3000, n).astype(np.float32), p=rng.uniform(0, 1, n).astype(np.float32))
+    np.savez(os.path.join(str(d), 't2.npz'), **T, px_nm=np.array(108.33))
+    T3 = dict(T, z=rng.normal(-0.5, 0.3, n), sz=np.full(n, 0.3, np.float32), cov_xz=np.full(n, 0.001, np.float32),
+              cov_yz=np.full(n, -0.002, np.float32), z_prior=rng.normal(-0.5, 0.3, n))
+    np.savez(os.path.join(str(d), 't3.npz'), **T3, px_nm=np.array(108.33))
+    a = Dataset.load_npz(os.path.join(str(d), 't2.npz'), info=False); b = Dataset.load_npz(os.path.join(str(d), 't3.npz'), info=False)
+    assert a['pos'].shape == (n, 2) and b['pos'].shape == (n, 3) and b['crlb'].shape == (n, 3) and b['cov'].shape == (n, 3)
+    assert np.allclose(b['pos'][:, 2].numpy(), T3['z']) and np.allclose(b['cov'][:, 1].numpy(), 0.001)
+    assert torch.equal(a.mask(12, 0.63, False), b.mask(12, 0.63, False))
+    f = os.path.join(str(d), 't3.hdf5'); b.save(f); c = Dataset.load(f)
+    assert torch.allclose(c['pos'], b['pos']) and torch.allclose(c['cov'], b['cov'])
+    img = b.select(12, 0.63, False).render(pixel_nm=20)
+    assert np.isfinite(np.asarray(img)).all()
+
+
 if __name__ == '__main__':
     for k, f in list(globals().items()):
         if k.startswith('test_'):

@@ -75,7 +75,7 @@ class Pass2P2:
                 sl = slice(c0, c0 + 4096)
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
                 oh = H2.head_apply(self.head, self.col, *args)
-                r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
+                r = dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}, **SCM.head_z(self.head, oh))
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
@@ -96,6 +96,7 @@ class Pass2P2:
             o = {kk: v[k_] for kk, v in oh.items()}
             bw = b[k_]
             so = SCM.sc_solve(o, PW, bw, scal)
+            so.update(SCM.z_columns(o, so))
             sync(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
             sp = oh['lsxy'][k_].exp()
             ph = I[k_].sum(1)
@@ -103,7 +104,7 @@ class Pass2P2:
                      sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                      x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
                      x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
-                     frame=fabs[k_], I_net=I[k_])
+                     frame=fabs[k_], I_net=I[k_], **{k: so[k] for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')})
             rows.append({kk: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for kk, v in r.items()})
         R = {kk: np.concatenate([r_[kk] for r_ in rows]) for kk in rows[0]}
         R['wstart'] = R['wstart'].astype(np.int64)

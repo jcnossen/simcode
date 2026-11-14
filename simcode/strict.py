@@ -164,6 +164,10 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
              q_dof=R['q_dof'].astype(np.float32), kin=R['kin_hy'].astype(bool),
              dnll=R['dnll'].astype(np.float32) if 'dnll' in R else np.full(n, np.nan, np.float32),
              x_prior=R['x_prior'].astype(np.float64), y_prior=R['y_prior'].astype(np.float64))
+    if 'z_hy0' in R:    # 3D heads (2026-11-14): z (px of the lateral pixel, relative to the PSF calibration's focal plane) after the
+        # solve (the head's z conditioned on the solved x, y), its sd and covariances with x, y (px^2); NaN for 2D heads
+        T.update(z=R['z_hy0'].astype(np.float64), sz=R['sz_cal'].astype(np.float32), cov_xz=R['cov_xz'].astype(np.float32),
+                 cov_yz=R['cov_yz'].astype(np.float32), z_prior=R['z_prior'].astype(np.float64))
     T['good'] = T['p'] >= P_GOOD
     T['sel'] = phase_thr(T['p'], T['x'], T['y'], T['photons'])
     T['disjoint'] = T['frame'] % 6 == 0

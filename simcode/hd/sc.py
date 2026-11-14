@@ -111,6 +111,24 @@ def z_given_xy(o, r, r0, s):
     return z, var.sqrt(), cov
 
 
+HEAD_Z = ('z', 'lsz', 'bz')       # the head's z outputs carried by the pipeline (SCHead4)
+
+
+def head_z(head, o):
+    """the head's z outputs (z, lsz, bz) of o; NaN for a 2D checkpoint (head.z3d False: zero z rows, not an estimate)"""
+    r = {k: o[k].float() for k in HEAD_Z}
+    if not getattr(head, 'z3d', True):
+        r = {k: torch.full_like(v, float('nan')) for k, v in r.items()}
+    return r
+
+
+def z_columns(o, so):
+    """table columns of z after the solve (z_given_xy on the solve's r, s_cal and prior r_prior): z_hy0 (px, relative to the
+    calibration's focal plane), sz_cal (sd px), cov_xz, cov_yz (px^2), z_prior (the head's z, px)"""
+    z, sz, cov = z_given_xy(o, so['r'], so['r_prior'], so['s_cal'])
+    return dict(z_hy0=z, sz_cal=sz, cov_xz=cov[:, 1], cov_yz=cov[:, 2], z_prior=o['z'].float())
+
+
 def solve_inputs(o, cal, mm=torch.matmul):
     """head outputs + calibration -> (I [n,T], Sig [n,T,T] = L L^T kap_I2 + 1e-3, prior position r0 [n,2] (prior_off removed),
     prior sigma sp [n,2] = exp(lsxy) kap_p, window photons ph [n]); shared by sc_solve and msolve_fast.sc_solve_fast"""
