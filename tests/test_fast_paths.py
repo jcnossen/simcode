@@ -36,7 +36,7 @@ def sim_movie():
     """deterministic 2.5 nM-like 120 x 120 chunk (RealSim windows laid end to end, 240 frames) in ADU"""
     if 'mov' in _C: return _C['mov']
     from simcode.pipeline.common import load_calib
-    from simcode.fileio.movie import ArrayMovie       # in-memory ADU stack with the reader interface
+    from simcode.psf import ArrayMovie            # in-memory ADU stack with the reader interface
     from simcode.hd.realsim import RealSim
     cal = load_calib(CALIB)
     with torch.random.fork_rng(devices=[torch.cuda.current_device()]):

@@ -14,6 +14,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode.fileio import movie as MV, work as WK
+from simcode.psf import ArrayMovie
 
 
 def _tif(path, a):
@@ -74,7 +75,7 @@ def test_array_movie_and_prefetch():
     a = np.arange(40 * 9 * 9, dtype=np.float64).reshape(40, 9, 9)
     with tempfile.TemporaryDirectory() as d:
         np.save(f'{d}/a.npy', a)
-        for m in (MV.ArrayMovie(a), MV.open_movie(f'{d}/a.npy')):
+        for m in (ArrayMovie(a), MV.open_movie(f'{d}/a.npy')):
             assert m.n == 40 and m.shape == (9, 9)
             assert np.array_equal(m.read(3, 9, 1, 2, 5), a[3:9, 1:6, 2:7].astype(np.float32))
             plan = [(0, 10, 0, 0, 9), (10, 20, 0, 0, 9), (20, 30, 0, 0, 9), (30, 40, 0, 0, 9)]
