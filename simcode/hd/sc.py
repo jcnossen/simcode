@@ -98,6 +98,19 @@ def sc_solve(o, pt_win, b, cal, nf=1, thr=9.21):
                 mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
 
 
+def z_given_xy(o, r, r0, s):
+    """z after the pattern solve: the head's 3D Gaussian prior (SCHead4: z, s_z|xy = exp(lsz), b = bz) conditioned on the
+    solved x, y. The pattern informs x, y only, so with the solve's x, y posterior (mean r [n,2], sd s [n,2], uncorrelated):
+        z = z_prior + b . (r - r0)              var z = s_z|xy^2 + sum_i b_i^2 s_i^2       cov(x, z) = b_x s_x^2, cov(y, z) = b_y s_y^2
+    r0 = the prior x, y the solve used (prior_off removed). -> z [n] px (relative to the calibration's focal plane), sd [n],
+    cov [n,3] = (xy, xz, yz) px^2 (torch_psf Dataset 'cov'; xy = 0: the solve's x, y are uncorrelated)."""
+    bz = o['bz'].float(); s2 = s.float() ** 2
+    z = o['z'].float() + (bz * (r.float() - r0.float())).sum(1)
+    var = o['lsz'].float().exp() ** 2 + (bz ** 2 * s2).sum(1)
+    cov = torch.stack([torch.zeros_like(z), bz[:, 0] * s2[:, 0], bz[:, 1] * s2[:, 1]], 1)
+    return z, var.sqrt(), cov
+
+
 def solve_inputs(o, cal, mm=torch.matmul):
     """head outputs + calibration -> (I [n,T], Sig [n,T,T] = L L^T kap_I2 + 1e-3, prior position r0 [n,2] (prior_off removed),
     prior sigma sp [n,2] = exp(lsxy) kap_p, window photons ph [n]); shared by sc_solve and msolve_fast.sc_solve_fast"""
@@ -135,6 +148,8 @@ def load(ck):
         raise ValueError(f"{ck}: head arch {c['args'].get('arch')!r} is not supported (only the neighbour-aware 'sc4n' head, simcode/hd/sc4.py)")
     from simcode.hd.sc4 import SCHead4
     h = SCHead4(6, c['args'].get('ch', 96), P=PP, bf16=bool(c['args'].get('bf16', 1))).to(dev)
-    h.load_state_dict(c['model']); h.eval()
+    from simcode.hd.sc4 import pad_out, is_3d
+    h.z3d = is_3d(c['model'])     # a 2D checkpoint (before 2026-11-14) loads with zero z rows: its z output is not an estimate
+    h.load_state_dict(pad_out(c['model'], h)); h.eval()
     return h
 

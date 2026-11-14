@@ -149,10 +149,12 @@ def smooth_field(n, H, W, sig):
 
 
 class RealSim:
-    def __init__(self, preset='0.5nM', H=64, W=64, T=6, npsf=4, psf_jitter=True, seed=0, psf_roi=41, **over):
+    def __init__(self, preset='0.5nM', H=64, W=64, T=6, npsf=4, psf_jitter=True, seed=0, psf_roi=41, zmax=0.2, **over):
         self.p = dict(PRESETS[preset], **over); self.preset = preset
         # PSF rendered on a 41 x 41 ROI (critic review 26 #3: 19 % of the real PSF energy lies outside 11 x 11, 8 % beyond 21 x 21)
-        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi)
+        # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (hd/data.Gen) uses Z_RANGE_UM
+        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax,
+                             psf_lut_z=int(round(zmax / 0.01)) + 1)
         self.H, self.W, self.T = H, W, T
         self.zmax = self.sim.zmax; self.focus = self.sim.focus
         self.rn_map = torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float()
@@ -250,7 +252,7 @@ class RealSim:
         site = None
         if use_sites and p.get('site_ev', 0) > 0 and N:
             x, y, site, z_site, site_info = self._sites(nb, fov, t0, x, y, fil_pts, fil_struct, margin)
-        z = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(N, device=dev))).clamp(0.0, self.zmax)
+        z = self.draw_z(N)
         if site is not None:
             z = z_site[site]
         Bm = p['bright'] if bright is None else bright
@@ -261,6 +263,17 @@ class RealSim:
         if site is not None:
             out['site'] = site; out.update(site_info)
         return out
+
+    def draw_z(self, n):
+        """emitter heights (um) [n]: lognormal (median z_med, log-sd z_sd) clipped to [0, zmax]; with the key z_unif (the 3D
+        training generator hd/data.Gen) that fraction of the emitters is uniform over [0, zmax] instead, so the z output of
+        the head is trained over the whole height range of the TIRF data. The brightness follows from z (TIRF factor)."""
+        p = self.p
+        z = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(n, device=dev))).clamp(0.0, self.zmax)
+        fu = float(p.get('z_unif', 0.0))
+        if fu > 0:
+            z = torch.where(torch.rand(n, device=dev) < fu, self.zmax * torch.rand(n, device=dev), z)
+        return z
 
     def _sites(self, nb, fov, t0, x, y, fil_pts, fil_struct, margin):
         """(2026-11-10/11 evaluation protocol, opt-in via preset key site_ev > 0; never called otherwise) discrete DNA-PAINT
@@ -316,7 +329,7 @@ class RealSim:
             j = torch.randint(0, M, (int(miss.sum()),), device=dev); site[miss] = j
         jit = p.get('site_jit', 0.0) / PX_NM
         x = sx[site] + jit * torch.randn(N, device=dev); y = sy[site] + jit * torch.randn(N, device=dev)
-        z_site = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(M, device=dev))).clamp(0.0, self.zmax)
+        z_site = self.draw_z(M)
         return x, y, site, z_site, dict(site_x=sx, site_y=sy, site_z=z_site, site_fov=sfov, site_a=sa, site_b=sb, site_w=w)
 
     # ----------------------------------------------------------------------------------------------- pattern

@@ -7,6 +7,9 @@ Training batches for HDNet from the experiment-matched simulator (simcode/hd/rea
   close pairs: pair_frac of the events get a partner at 0.5-3 px
   bg level log-uniform 1-30 ph/px/frame; mode per FOV group: flat / struct (sd up to 40 %) / fluct (scale 0-1.5)
   depth randomised in [0.5, 1.0]
+  emitter height z (3D head, 2026-11-14): Z_UNIF of the emitters uniform over Z_RANGE_UM, the rest the presets' lognormal
+  (median 50-55 nm), both with the TIRF brightness factor; z of the GT in px relative to the calibration's focal plane:
+  z_target_px
 GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons.
 """
 import math
@@ -14,6 +17,18 @@ import torch
 from simcode.hd.realsim import RealSim, lu
 
 dev = 'cuda'
+# emitter heights of the training data (um above the coverslip). From the calibrations of the paper data (TIRF depth 82 nm,
+# emitter median 55 nm): at 0.3 um the excitation is exp(-(0.3 - 0.055) / 0.082) = 5 % of the median emitter's and the
+# collected PSF fraction 0.58 of the one at the coverslip (analysis/z3d/psf_zscan.py), i.e. < 40 photons per window for the
+# paper's photon distribution: no detectable emitter lies above, so the network's z range is [0, 0.3] um.
+Z_RANGE_UM = (0.0, 0.3)
+Z_UNIF = 0.5
+
+
+def z_target_px(z_um, sim):
+    """emitter height (um above the coverslip) -> the network's z: px of the lateral pixel size relative to the focal plane of
+    the PSF calibration (torch_psf DATASET_FORMAT; z_px = (z - focus_um) / pixelsize_um)"""
+    return (z_um - sim.focus) / sim.c['pixelsize_um']
 
 
 class Gen:
@@ -25,13 +40,13 @@ class Gen:
         if calib:
             self.calibs = list(calib); self.rsm = []
             for c in self.calibs:
-                d_ = {p: RealSim(p, H, W, T, seed=seed, calib=c) for p in ('0.5nM', '2.5nM')}
+                d_ = {p: RealSim(p, H, W, T, seed=seed, calib=c, zmax=Z_RANGE_UM[1], z_unif=Z_UNIF) for p in ('0.5nM', '2.5nM')}
                 d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].luts = d_['0.5nM'].luts
                 self.rsm.append(d_)
             torch.cuda.empty_cache()
             self.rs = self.rsm[0]; self.ci = 0
         else:
-            self.rs = {p: RealSim(p, H, W, T, seed=seed) for p in ('0.5nM', '2.5nM')}
+            self.rs = {p: RealSim(p, H, W, T, seed=seed, zmax=Z_RANGE_UM[1], z_unif=Z_UNIF) for p in ('0.5nM', '2.5nM')}
         self.H, self.W, self.T = H, W, T
 
     def all_rs(self):

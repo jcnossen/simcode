@@ -2,7 +2,7 @@
 SCHeadP2: pattern-aware pass-2 head = SCHead4 (sc5nb: neighbour splat + detector-probability channels, signed per-frame
 readout, full T x T intensity covariance, bg_t, position prior +- sigma) + the 2T illumination patch channels
 (illum.illum_maps of the estimated pattern, cropped with the frame patch; zero-initialised input weights, so it starts
-exactly at sc5nb). Outputs as SCHead4.
+exactly at sc5nb). Outputs as SCHead4 (3D position prior: x, y, z + 3 x 3 covariance; z | x, y loss nll_z as in the pass-1 trainer).
 NOTE the position prior of this head is pattern-INFORMED (it sees the illumination); see front.py for how
 the explicit solve uses it (variants a / b).
 Training (train): init sc5nb, candidates from a given detector (the pass-2 detector DetP2 with the same estimated pattern,
@@ -16,7 +16,7 @@ import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
-from simcode.hd.sc4 import SCHead4, nbr_map, nbr_patches, nn_weights, nll_full, NBR_PMIN
+from simcode.hd.sc4 import SCHead4, nbr_map, nbr_patches, nn_weights, nll_full, NBR_PMIN, pad_out, nll_z
 from simcode.hd.sc import PSFCol, patches, mod_slope, PP, norm_photons
 
 dev = 'cuda'
@@ -33,47 +33,7 @@ class SCHeadP2(SCHead4):
         self.cin_il = nn.Conv2d(2 * T, ch, 3, padding=1, bias=False)
         nn.init.zeros_(self.cin_il.weight)
 
-    def forward(self, pt, rn2p, off, psf=None, nbrp=None, illp=None, trunk_fn=None):
-        n, T, P, _ = pt.shape
-        flat = pt.reshape(n, T, -1)
-        border = torch.cat([pt[:, :, 0], pt[:, :, -1], pt[:, :, 1:-1, 0], pt[:, :, 1:-1, -1]], -1)
-        b0 = border.median(-1).values
-        lvl = b0.mean(1)[:, None, None, None]
-        o = torch.arange(P, device=pt.device, dtype=torch.float32) - P // 2
-        dx = o[None, None, :] - off[:, 0, None, None]; dy = o[None, :, None] - off[:, 1, None, None]
-        cx = dx.expand(n, P, P) / (P // 2); cy = dy.expand(n, P, P) / (P // 2)
-        lin = (pt - lvl) / 100.0
-        x = torch.cat([norm_photons(pt), norm_photons(pt.mean(1, keepdim=True)), lin, lin.mean(1, keepdim=True),
-                       cx[:, None], cy[:, None], nbrp], 1)
-        m1, d1, hm = (trunk_fn or self.trunk)(x, b0, off, illp)
-        m = self.wmap[2](m1.float())[:, 0]; d = self.dmap[2](d1.float())
-        q = self.out(hm.float())
-        if psf is not None:
-            g = psf
-        else:
-            g = torch.exp(-0.5 * (dx ** 2 + dy ** 2) / 1.3 ** 2).expand(n, P, P)
-            g = 0.7 * g / g.sum((1, 2), keepdim=True)
-        gg = (g * g).sum((1, 2), keepdim=True)
-        w0 = g / gg
-        w = w0 * torch.exp(m.clamp(-5, 5))
-        w = w / (w * g).sum((1, 2), keepdim=True)
-        D = d * w0.amax((1, 2), keepdim=True)[:, None]
-        D = D - ((D * g[:, None]).sum((2, 3), keepdim=True) / gg[:, None]) * g[:, None]
-        wt = w[:, None] + D
-        nt = T * (T + 1) // 2
-        bg = b0 + q[:, T + nt + 4:] * (b0.abs() + 1).sqrt()
-        Ilin = (wt.reshape(n, T, -1) * (flat - bg[..., None])).sum(-1)
-        c = (Ilin.clamp(min=0).sum(1, keepdim=True) / T + bg.clamp(min=0).mean(1, keepdim=True) * 9).sqrt().clamp(min=3.0)
-        dI = q[:, :T]
-        ld = q[:, T:2 * T]; od = q[:, 2 * T:T + nt]
-        L = torch.zeros(n, T, T, device=pt.device)
-        ar, t0, t1 = self._diag_idx(pt.device)
-        L[:, ar, ar] = c * torch.exp(ld.clamp(-4, 4)) * 1.5
-        L[:, t0, t1] = c * od
-        I = Ilin + c * dI
-        dxy = 0.5 * torch.tanh(q[:, T + nt:T + nt + 2])
-        lsxy = -4.5 + 5.0 * torch.sigmoid(q[:, T + nt + 2:T + nt + 4])
-        return dict(I=I, L=L, dxy=dxy, lsxy=lsxy, bg=bg, I_lin=Ilin, w=w, wt=wt, dI=dI)
+    # forward = SCHead4.forward with the illumination patches illp (added to the input layer inside SCHead4.trunk)
 
 
 def is_p2_head(ck):
@@ -87,7 +47,9 @@ def load(ck):
     from simcode.config import resolve
     c = torch.load(resolve(ck), map_location=dev, weights_only=False)
     h = SCHeadP2(6, 96, P=PP, bf16=True).to(dev)
-    h.load_state_dict(c['model']); h.eval()
+    from simcode.hd.sc4 import is_3d
+    h.z3d = is_3d(c['model'])     # 2D checkpoints (before 2026-11-14): zero z rows, the z output is not an estimate
+    h.load_state_dict(pad_out(c['model'], h)); h.eval()
     return h
 
 
@@ -95,7 +57,7 @@ def load_init(ck=SC5NB):
     """init from sc5nb (illumination weights zeroed) or, if the checkpoint already has them (a pass-2 head), continue from it"""
     h = SCHeadP2(6, 96, P=PP, bf16=True).to(dev)
     from simcode.config import resolve
-    sd = torch.load(resolve(ck), map_location=dev, weights_only=False)['model']
+    sd = pad_out(torch.load(resolve(ck), map_location=dev, weights_only=False)['model'], h)   # a 2D init gets the zero z rows
     own = h.state_dict(); own.update(sd); h.load_state_dict(own)
     if 'cin_il.weight' not in sd:
         nn.init.zeros_(h.cin_il.weight)
@@ -221,7 +183,8 @@ def train(argv):
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-p2head')     # recognizable name in nvidia-smi / ps
     from simcode.p2.data import Gen2
-    from simcode.hd.sc4 import match_gt, targets
+    from simcode.hd.sc4 import match_gt, targets, z_metrics
+    from simcode.hd.data import z_target_px
     from simcode.hd import sc as SCM
     os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
@@ -271,6 +234,9 @@ def train(argv):
         nll_I = (wt * nll_i).mean()
         ex = tx - out['x']; ey = ty - out['y']; ls = out['lsxy']
         nll_p = (wt * (0.5 * (ex / ls[:, 0].exp()) ** 2 + ls[:, 0] + 0.5 * (ey / ls[:, 1].exp()) ** 2 + ls[:, 1])).mean()
+        tz = z_target_px(o['gt']['z'][m['g']], gen.rsm[o['calib_i']]['0.5nM'].sim if getattr(gen, 'calibs', None) else gen.rs['0.5nM'].sim)
+        nll_zi = nll_z(out, tx, ty, tz)
+        l_z = (wt * nll_zi).mean()
         cn = (Ig.clamp(min=0).sum(1, keepdim=True) / 6 + 30).sqrt()
         mr = ((out['I'] - out['I'].mean(1, keepdim=True)) - (Ig - Ig.mean(1, keepdim=True))) / cn
         l_mr = (wt[:, None] * F.huber_loss(mr, torch.zeros_like(mr), delta=3.0, reduction='none')).mean()
@@ -279,7 +245,7 @@ def train(argv):
         l_sl = (1 - slope_b) ** 2
         bgt = t['bgt_px']
         l_bg = (wt[:, None] * ((out['bg'] - bgt) ** 2) / (bgt + 1.0)).mean()
-        loss = nll_I / 6 + nll_p + 0.1 * l_bg + a.w_mr * l_mr + a.w_slope * l_sl
+        loss = nll_I / 6 + nll_p + l_z + 0.1 * l_bg + a.w_mr * l_mr + a.w_slope * l_sl
         opt.zero_grad(set_to_none=True)
         if torch.isfinite(loss):
             loss.backward(); torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0); opt.step()
@@ -289,7 +255,8 @@ def train(argv):
         with torch.no_grad():
             IS.append(out['I'].detach()); GS.append(Ig)
             for k, v in dict(slope_iso=slope_b.item(), mr=l_mr.item(), nll_I=nll_I.item(), nll_p=nll_p.item(), bg=l_bg.item(), n=len(Ig),
-                             zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2))).items():
+                             zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2)),
+                             **z_metrics(out, tx, ty, tz, Ig.sum(1))).items():
                 acc[k] = acc.get(k, 0) + v
             acc['_n'] = acc.get('_n', 0) + 1
         if step % 200 == 0:

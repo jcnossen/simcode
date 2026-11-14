@@ -14,6 +14,9 @@ sc4d / sc4n (critic review 29 #1, #3, #6, #7). Same generator, detector matching
             the g-component projected out, so w_t . g = 1 for every frame;
         bg per frame as sc2 (not detached), sc2 losses; no scale term, no dI L2. bf16 autocast for the CNN trunk, fp32
         for the output layers, the readout and the Cholesky / NLL.
+3D (2026-11-14): the position prior is x, y, z with a 3 x 3 covariance (SCHead4 doc); loss + nll_z (z | x, y; the x, y prior
+loss is unchanged); training emitters over the TIRF height range (hd/data.Z_RANGE_UM); 2D checkpoints load with zero z rows
+(pad_out), so --init hd_sc5nb.pt starts at exactly its 2D outputs.
 Held-out (critic 29 #6): gate-type scenes with their own seeds (iso / pair2 / rs25x, seed 401), multi-emitter cov_or
 (crlb_all) per target -> projected efficiency (median of (w.e)^2 / w C_or w over chi2_1 median) and Sigma_net
 calibration along the B-profiled phase-gradient directions, nll_I, slope, I_lin / I_gt and |I - I_lin| / I_gt, prior z,
@@ -82,8 +85,16 @@ def nbr_patches(nbr, b, iy, ix, x, y, p):
 
 # ------------------------------------------------------------------------------------------------ head
 class SCHead4(nn.Module):
-    """SCHead + neighbour channels + signed per-frame readout residual (see module doc)."""
+    """SCHead + neighbour channels + signed per-frame readout residual (see module doc).
+    3D position prior (2026-11-14): x, y, z with a 3 x 3 covariance. Output layer q = [dI T | log diag L_I T | off-diag L_I |
+    dx, dy | log sx, log sy | bg T | z, log s_z|xy, b_x, b_y] (the last 4 rows appended: a 2D checkpoint loads with zero rows,
+    pad_out, and gives exactly its 2D outputs). Covariance in Cholesky form with the order (x, y, z):
+        L_p = [[sx, 0, 0], [0, sy, 0], [b_x sx, b_y sy, s_z|xy]]      Sigma_p = L_p L_p^T
+    i.e. x and y uncorrelated (as the 2D prior and the solve's prior), z | x, y = z + b_x (x' - x) + b_y (y' - y) with sd
+    s_z|xy. z in px of the lateral pixel size relative to the focal plane of the PSF calibration (hd/data.z_target_px).
+    The NLL of the 3D Gaussian factorizes into the 2D x, y prior NLL (unchanged) + the NLL of z | x, y (nll_z)."""
     nbr = True
+    NZ = 4      # appended z outputs
 
     def __init__(self, T=6, ch=96, nblk=4, P=21, bf16=True):
         super().__init__()
@@ -100,7 +111,7 @@ class SCHead4(nn.Module):
         nsc = 2 * T + 2
         self.mlp = nn.Sequential(nn.Linear(ch * 16 + nsc, 256), nn.GELU(), nn.Linear(256, 256), nn.GELU())
         nt = T * (T + 1) // 2
-        self.out = nn.Linear(256, T + nt + 4 + T)
+        self.out = nn.Linear(256, T + nt + 4 + T + self.NZ)
         nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)
         self.tril = torch.tril_indices(T, T, -1)
 
@@ -124,7 +135,8 @@ class SCHead4(nn.Module):
             c = (dev, torch.arange(self.T, device=dev), self.tril[0].to(dev), self.tril[1].to(dev)); self._idx_cache = c
         return c[1:]
 
-    def forward(self, pt, rn2p, off, psf=None, nbrp=None, trunk_fn=None):
+    def forward(self, pt, rn2p, off, psf=None, nbrp=None, illp=None, trunk_fn=None):
+        """illp: the pass-2 illumination patches (SCHeadP2; None for pass 1)"""
         n, T, P, _ = pt.shape
         flat = pt.reshape(n, T, -1)
         border = torch.cat([pt[:, :, 0], pt[:, :, -1], pt[:, :, 1:-1, 0], pt[:, :, 1:-1, -1]], -1)
@@ -136,7 +148,7 @@ class SCHead4(nn.Module):
         lin = (pt - lvl) / 100.0
         x = torch.cat([norm_photons(pt), norm_photons(pt.mean(1, keepdim=True)), lin, lin.mean(1, keepdim=True),
                        cx[:, None], cy[:, None], nbrp], 1)
-        m1, d1, hm = (trunk_fn or self.trunk)(x, b0, off)
+        m1, d1, hm = (trunk_fn or self.trunk)(x, b0, off, illp)
         m = self.wmap[2](m1.float())[:, 0]; d = self.dmap[2](d1.float())
         q = self.out(hm.float())
         if psf is not None:
@@ -153,7 +165,8 @@ class SCHead4(nn.Module):
         D = D - ((D * g[:, None]).sum((2, 3), keepdim=True) / gg[:, None]) * g[:, None]
         wt = w[:, None] + D
         nt = T * (T + 1) // 2
-        bg = b0 + q[:, T + nt + 4:] * (b0.abs() + 1).sqrt()
+        k = T + nt + 4
+        bg = b0 + q[:, k:k + T] * (b0.abs() + 1).sqrt()
         Ilin = (wt.reshape(n, T, -1) * (flat - bg[..., None])).sum(-1)
         c = (Ilin.clamp(min=0).sum(1, keepdim=True) / T + bg.clamp(min=0).mean(1, keepdim=True) * 9).sqrt().clamp(min=3.0)
         dI = q[:, :T]
@@ -165,7 +178,45 @@ class SCHead4(nn.Module):
         I = Ilin + c * dI
         dxy = 0.5 * torch.tanh(q[:, T + nt:T + nt + 2])
         lsxy = -4.5 + 5.0 * torch.sigmoid(q[:, T + nt + 2:T + nt + 4])
-        return dict(I=I, L=L, dxy=dxy, lsxy=lsxy, bg=bg, I_lin=Ilin, w=w, wt=wt, dI=dI)
+        qz = q[:, k + T:k + T + self.NZ]
+        z = qz[:, 0]                                                    # px, relative to the calibration's focal plane
+        lsz = -4.0 + 5.5 * torch.sigmoid(qz[:, 1])                      # log sd of z | x, y (px): 0.018 .. 4.5 px
+        bz = qz[:, 2:4].clamp(-5.0, 5.0)                                # dz / dx, dz / dy of z | x, y
+        return dict(I=I, L=L, dxy=dxy, lsxy=lsxy, bg=bg, I_lin=Ilin, w=w, wt=wt, dI=dI, z=z, lsz=lsz, bz=bz)
+
+
+def pad_out(sd, head):
+    """state dict of a 2D head (out layer without the z rows) -> the 3D layout: zero rows appended (exactly the 2D outputs,
+    z = 0 at the focal plane, s_z|xy = exp(-1.25) px, b = 0); a 3D state dict is returned unchanged"""
+    n = head.out.weight.shape[0]
+    if sd['out.weight'].shape[0] == n: return sd
+    sd = dict(sd); k = n - sd['out.weight'].shape[0]
+    assert k == head.NZ, f"out layer {sd['out.weight'].shape[0]} rows, expected {n} or {n - head.NZ}"
+    sd['out.weight'] = torch.cat([sd['out.weight'], sd['out.weight'].new_zeros(k, sd['out.weight'].shape[1])])
+    sd['out.bias'] = torch.cat([sd['out.bias'], sd['out.bias'].new_zeros(k)])
+    return sd
+
+
+def is_3d(sd):
+    """True for a state dict of a 3D head (the z rows of the out layer exist)"""
+    T = 6; nt = T * (T + 1) // 2
+    return sd['out.weight'].shape[0] == T + nt + 4 + T + SCHead4.NZ
+
+
+def nll_z(out, tx, ty, tz):
+    """NLL of the true z given the true x, y under the head's 3D prior (the z | x, y factor of the 3D Gaussian NLL; the x, y
+    factor is the 2D prior NLL). x, y of the prior are detached here: the x, y loss stays the 2D one. -> per target [n]"""
+    zc = out['z'] + out['bz'][:, 0] * (tx - out['x'].detach()) + out['bz'][:, 1] * (ty - out['y'].detach())
+    return 0.5 * ((tz - zc) / out['lsz'].exp()) ** 2 + out['lsz']
+
+
+def prior_cov(out):
+    """3 x 3 covariance of the head's position prior (x, y, z; px^2) [n,3,3] = L_p L_p^T (see SCHead4)"""
+    sx, sy, sz = out['lsxy'][:, 0].exp(), out['lsxy'][:, 1].exp(), out['lsz'].exp()
+    L = torch.zeros(len(sx), 3, 3, device=sx.device)
+    L[:, 0, 0] = sx; L[:, 1, 1] = sy; L[:, 2, 2] = sz
+    L[:, 2, 0] = out['bz'][:, 0] * sx; L[:, 2, 1] = out['bz'][:, 1] * sy
+    return L @ L.transpose(1, 2)
 
 
 def head_call(head, pt, off, psf, nbrp=None):
@@ -384,6 +435,22 @@ def eval_hold(head, H, chunk=4096, band=(500, 5000), extra=False):
     return R
 
 
+@torch.no_grad()
+def z_metrics(out, tx, ty, tz, ph):
+    """running z metrics of a training batch (fresh simulated data): z RMSE (px) of the prior z and of z | true x, y, their
+    z-score RMS, the median predicted sd; the same for window photons >= 500"""
+    zc = out['z'] + out['bz'][:, 0] * (tx - out['x']) + out['bz'][:, 1] * (ty - out['y'])
+    sz = out['lsz'].exp()
+    var_m = sz ** 2 + (out['bz'][:, 0] * out['lsxy'][:, 0].exp()) ** 2 + (out['bz'][:, 1] * out['lsxy'][:, 1].exp()) ** 2
+    r = dict(z_rmse=float((out['z'] - tz).pow(2).mean().sqrt()), zc_rmse=float((zc - tz).pow(2).mean().sqrt()),
+             z_zrms=float(((out['z'] - tz) ** 2 / var_m).mean().sqrt()), zc_zrms=float(((zc - tz) / sz).pow(2).mean().sqrt()),
+             z_sd_med=float(var_m.sqrt().median()), z_sd_true=float(tz.std()))
+    b = ph >= 500
+    if b.sum() > 10:
+        r.update(z_rmse_500=float((out['z'][b] - tz[b]).pow(2).mean().sqrt()), z_zrms_500=float(((out['z'] - tz)[b] ** 2 / var_m[b]).mean().sqrt()))
+    return r
+
+
 # ------------------------------------------------------------------------------------------------ training
 BRIGHT_TAIL = (0.1, 2000.0, 20000.0)    # (frac, lo, hi) window photons of the bright-tail draw (hd/data.Gen.batch)
 
@@ -418,6 +485,8 @@ def train(argv):
     from simcode.sim import crlb as crlb_dense  # noqa
     # the fixed recipe (paper-matched photons with the bright tail, neighbour-aware sc4n head) is stored in args as before
     args = dict(vars(a), arch='sc4n', paper=1, bright_tail=','.join(f'{v:g}' for v in BRIGHT_TAIL))
+    from simcode.hd.data import Z_RANGE_UM, Z_UNIF
+    args.update(z3d=1, z_range_um=list(Z_RANGE_UM), z_unif=Z_UNIF)
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     from simcode.hd import data as D
@@ -426,8 +495,8 @@ def train(argv):
     det, _ = load_det_front(a.det)
     gen = D.Gen(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
     head = SCHead4(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
-    if a.init:
-        head.load_state_dict(torch.load(__import__('simcode.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
+    if a.init:      # a 2D init (e.g. hd_sc5nb.pt) gets the zero z rows (pad_out): it starts at exactly its 2D outputs
+        head.load_state_dict(pad_out(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'], head))
     col = PSFCol(gen.rs['0.5nM'].sim)
     cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
     Hd = torch.load(a.hold, weights_only=False)
@@ -472,6 +541,8 @@ def train(argv):
         nll_I = (wt * nll_i).mean()
         ex = tx - out['x']; ey = ty - out['y']; ls = out['lsxy']
         nll_p = (wt * (0.5 * (ex / ls[:, 0].exp()) ** 2 + ls[:, 0] + 0.5 * (ey / ls[:, 1].exp()) ** 2 + ls[:, 1])).mean()
+        tz = D.z_target_px(o['gt']['z'][m['g']], gen.rsm[o['calib_i']]['0.5nM'].sim if cols is not None else gen.rs['0.5nM'].sim)
+        l_z = (wt * nll_z(out, tx, ty, tz)).mean()
         cn = (Ig.clamp(min=0).sum(1, keepdim=True) / 6 + 30).sqrt()
         mr = ((out['I'] - out['I'].mean(1, keepdim=True)) - (Ig - Ig.mean(1, keepdim=True))) / cn
         l_mr = (wt[:, None] * F.huber_loss(mr, torch.zeros_like(mr), delta=3.0, reduction='none')).mean()
@@ -480,7 +551,7 @@ def train(argv):
         l_sl = (1 - slope_b) ** 2
         bgt = t['bgt_px']
         l_bg = (wt[:, None] * ((out['bg'] - bgt) ** 2) / (bgt + 1.0)).mean()
-        loss = nll_I / 6 + nll_p + 0.1 * l_bg + a.w_mr * l_mr + a.w_slope * l_sl
+        loss = nll_I / 6 + nll_p + l_z + 0.1 * l_bg + a.w_mr * l_mr + a.w_slope * l_sl
         opt.zero_grad(set_to_none=True)
         if torch.isfinite(loss):
             loss.backward(); torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0); opt.step()
@@ -490,7 +561,8 @@ def train(argv):
         with torch.no_grad():
             IS.append(out['I'].detach()); GS.append(Ig)
             for k, v in dict(slope_iso=slope_b.item(), mr=l_mr.item(), nll_I=nll_I.item(), nll_p=nll_p.item(), bg=l_bg.item(), n=len(Ig),
-                             zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2))).items():
+                             zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2)),
+                             **z_metrics(out, tx, ty, tz, Ig.sum(1))).items():
                 acc[k] = acc.get(k, 0) + v
             acc['_n'] = acc.get('_n', 0) + 1
         if step % 200 == 0:
