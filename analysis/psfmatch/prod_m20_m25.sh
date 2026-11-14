@@ -17,12 +17,12 @@ CFG=$(cat runs/psf3d/frozen_config.txt)
 NETS="--det det_$S.pt --head hd_$S.pt --cal calib/calib_sc_hd_${S}_real.json --p2_det p2det_$S.pt --p2_head p2headL_$S.pt --p2_cal calib/calib_p2L_${S}_real.json --pass2"
 G=$(pickgpu ${NEED_GB:-8} "${PREF:-1 2 0}")
 if [ ! -f $OD/locs_p2.npz ]; then
-  echo "$(date) $ds GPU $G: python -m simcode2.run --movie $MOV --calib $CAL --out $OD $CFG $NETS" | tee -a $OD/command.txt
-  CUDA_VISIBLE_DEVICES=$G python -u -m simcode2.run --movie $MOV --calib $CAL --out $OD $CFG $NETS > $OD/run.log 2>&1 || { echo "FAIL $ds"; exit 1; }
+  echo "$(date) $ds GPU $G: python -m simcode.run --movie $MOV --calib $CAL --out $OD $CFG $NETS" | tee -a $OD/command.txt
+  CUDA_VISIBLE_DEVICES=$G python -u -m simcode.run --movie $MOV --calib $CAL --out $OD $CFG $NETS > $OD/run.log 2>&1 || { echo "FAIL $ds"; exit 1; }
 fi
 for p in 1 2; do tg=est; [ $p = 2 ] && tg=est2
-  echo "$(date) python -m simcode2.strict $OD --tag $tg --sig_u models/calib/sigu/sigu_p${p}_$S.json" | tee -a $OD/command.txt
-  python -m simcode2.strict $OD --tag $tg --sig_u models/calib/sigu/sigu_p${p}_$S.json || { echo "FAIL strict $p"; exit 1; }
+  echo "$(date) python -m simcode.strict $OD --tag $tg --sig_u models/calib/sigu/sigu_p${p}_$S.json" | tee -a $OD/command.txt
+  python -m simcode.strict $OD --tag $tg --sig_u models/calib/sigu/sigu_p${p}_$S.json || { echo "FAIL strict $p"; exit 1; }
 done
 python - $OD <<'PY'
 import sys, numpy as np
