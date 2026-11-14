@@ -41,7 +41,7 @@ def main():
         t0 = time.time(); tm = {}
         for attempt in range(40):       # the GPUs are shared: another process filling the card gives an OOM here although this one needs < 5 GB; wait and redo the chunk
             try:
-                R, H = p2.run_chunk(movie, cal, f0, min(f0 + step, movie.n), Pt, scal, crop=crop, margin=5, timing=tm, det_batch=det_batch, solve_opts=dict(compile='auto'), return_head=True)
+                R, H = p2.run_chunk(movie, cal, f0, min(f0 + step, movie.n), Pt, scal, crop=crop, margin=5, timing=tm, det_batch=det_batch, return_head=True)
                 break
             except torch.OutOfMemoryError:
                 torch.cuda.empty_cache(); print(f'chunk {f0}: CUDA out of memory (attempt {attempt + 1}, own peak {torch.cuda.max_memory_allocated() / 2 ** 30:.1f} GB); waiting 60 s', flush=True); time.sleep(60)

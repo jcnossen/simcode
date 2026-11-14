@@ -14,7 +14,7 @@ $D rs05qm 301 $O _mis - "emitter_var=0,psf_var=1,cam_err=1,exact_est=0" s1 6000
 $D rs05qm 301 $O _full - - s1 6000
 # dense scene: CRLB (gate.py, tag _hd_cur) then the dump
 G=out/ablation_cov/gate_m1809a; mkdir -p $G
-export SIMCODE2_GATE_CALIB=insitu/calib_1809_2_psf3d_avg.json SC_DET=det_m1809.pt GATE_PSF_CHUNK=2000
+export SIMCODE2_GATE_CALIB=insitu/calib_1809_2_psf3d_avg.json
 for s in 301 302; do
 python -c "
 from simcode2.util import proctitle; proctitle.set_title('covabl')

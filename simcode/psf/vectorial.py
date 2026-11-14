@@ -98,8 +98,8 @@ def has_angle_psf(c):
 
 def set_psf_extras(psf, c, angle=None):
     """Opt-in PSF terms of a calib json dict c -> attributes of a VectorialPSF (absent keys: unchanged). Returns psf.
-    Global keys: 'psf_blur_px2' [sxx, syy, sxy] px^2 (image-plane blur), 'psf_dipole_M' (3 x 3, trace 1) / 'psf_dipole_w' [wx, wy, wz]
-    (emission-dipole tensor), 'saf' [tx, ty, ax, ay] (supercritical-annulus tilts).
+    Global keys: 'psf_blur_px2' [sxx, syy, sxy] px^2 (image-plane blur), 'psf_dipole_M' (3 x 3, trace 1; emission-dipole tensor).
+    (The keys 'psf_dipole_w' and 'saf' were dropped on 2026-11-14: no calibration uses them.)
     Per pattern angle: 'psf_dipole_M_angle' [2][3][3], 'psf_blur_angle_px2' [2][3] (total blur of that angle, replaces the
     global blur). angle = 0 / 1 selects that angle's PSF; angle None = the angle-averaged PSF: the mean dipole tensor (exact for
     equal light per angle, the image is linear in M) and the mean blur covariance (an approximation)."""
@@ -109,10 +109,6 @@ def set_psf_extras(psf, c, angle=None):
         psf.blur = t([float(v) for v in c['psf_blur_px2']])
     if c.get('psf_dipole_M') is not None:
         psf.dipM = t(c['psf_dipole_M'])
-    if c.get('psf_dipole_w') is not None:
-        psf.dipw = t([float(v) for v in c['psf_dipole_w']])
-    if c.get('saf') is not None:
-        with torch.no_grad(): psf.saf.copy_(t([float(v) for v in c['saf']]))
     if c.get('psf_dipole_M_angle') is not None:
         M = t(c['psf_dipole_M_angle'])
         psf.dipM = M.mean(0) if angle is None else M[angle]

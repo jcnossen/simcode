@@ -40,7 +40,7 @@ def main():
         fn = f'{a.out}/head_{f0}.npz'
         if os.path.exists(fn): continue
         t0 = time.time(); tm = {}
-        R, H = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, scal, crop=crop, margin=5, timing=tm, solve_opts=dict(compile='auto'),
+        R, H = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, scal, crop=crop, margin=5, timing=tm,
                             return_head=True)
         o = {k: v.float().cpu().numpy() for k, v in H['o'].items() if k in ('I', 'L', 'x', 'y', 'lsxy', 'x_det', 'y_det', 'bg')}
         bw = H['bw'].cpu().numpy(); uw, inv = np.unique(bw, return_inverse=True)

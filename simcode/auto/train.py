@@ -14,16 +14,16 @@ analysis/psf3d_nets/sigcal.py) and the sim-movie GT sanity gate of runs/psfmatch
 import json, os, shutil
 import numpy as np
 
-T_BASE = dict(det=['-m', 'simcode.det.up2', 'train', '--up', '1', '--batch', '16', '--size', '64', '--lr', '1e-3', '--w_off', '1.0', '--nnw', '1',
-                   '--em_photons', '40,2500', '--seed', '0'],
-              hd=['-m', 'simcode.hd.sc4', 'train', '--arch', 'sc4n', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--paper', '1', '--tau', '15,80',
+T_BASE = dict(det=['-m', 'simcode.det.up2', 'train', '--batch', '16', '--size', '64', '--lr', '1e-3', '--w_off', '1.0', '--nnw', '1',
+                   '--seed', '0'],
+              hd=['-m', 'simcode.hd.sc4', 'train', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--tau', '15,80',
                   '--pair_frac', '0.25', '--dens', '0.0005,0.04', '--med', '40,2500', '--nnw', '1', '--seed', '1', '--w_mr', '2.0', '--w_slope', '50.0',
-                  '--bf16', '1', '--pct', '0.1', '--bright_tail', '0.1,2000,20000'],
+                  '--bf16', '1', '--pct', '0.1'],
               p2det=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11'],
               p2head=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1.5e-4', '--pct', '0.1', '--w_mr', '2.0', '--w_slope', '50.0',
-                      '--seed', '21', '--no_illum', '0'],
+                      '--seed', '21', '--no_illum', '0', '--pert_model', 'v1'],
               p2headL=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
-                       '--seed', '31', '--no_illum', '0', '--pert_model', 'real', '--hold_v1', '15'])
+                       '--seed', '31', '--no_illum', '0', '--hold_v1', '15'])
 EVERY = dict(det=None, hd=('2000', '6000'), p2det=('2500', '5000'), p2head=('4000', '8000'), p2headL=('2000', '10000'))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCEN_FIT = 'rs05qm'

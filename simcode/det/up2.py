@@ -86,7 +86,6 @@ def select(out, up, k=640, p_min=0.2, radius=None, win=3, H=None, W=None):
 
 def build(args):
     net = DetUp(args.get('up', 2), 6, tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16), args.get('fch', 32))
-    net.psum = float(args.get('psum', 0.0) or 0.0)      # (2026-11-10, opt-in) summed-p output (det/model.psum_logit), up = 1 only
     return net
 
 
@@ -98,16 +97,19 @@ def load(ck, dev='cuda'):
 
 
 # ------------------------------------------------------------------------------------------------ data
+EM_PHOTONS = (40.0, 2500.0)     # per-emitter photons of the per-emitter half of the windows (the trainer's flag value of every model)
+
+
 def batch(gen, nb, dens=(0.0005, 0.04), photons=(40.0, 6000.0), med_photons=(40.0, 2500.0), em_photons=None,
-          pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0), pair_sub=None):
-    """copy of simcode/hd/data.Gen.batch with a pair_sep argument (critic-29 mix); pair_sub / gen calib mixture: opt-in (2026-11-11)"""
+          pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0)):
+    """copy of simcode/hd/data.Gen.batch with a pair_sep argument (critic-29 mix)"""
     from simcode.hd.realsim import lu
     pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
     rs = gen.pick(pre)
     g = lambda *s: torch.rand(*s, device=dev)
     d = lu(*dens, nb); tau = lu(2.0, 80.0, nb)
     med = lu(*med_photons, nb)
-    em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep, pair_sub=pair_sub)
+    em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep)
     N = len(em['fov'])
     per_em = (g(nb) < 0.5)[em['fov']]
     b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
@@ -148,39 +150,6 @@ def targets(o, up, H, W):
     return label, ign, tid, off / up                                    # offsets in native px
 
 
-def band_extra(gt, label, ign, tid, band):
-    """(2026-11-10, opt-in) sub-pixel-invariant detection target: for every positive whose GT lies within `band` px of a pixel
-    edge (|x - ix| > 0.5 - band, per axis), the neighbouring pixel(s) across that edge (x, y and the diagonal) become
-    'don't care' for the detection loss (unless they are positives themselves) and get an offset target to the same emitter.
-    The nearest-pixel label then no longer forces the probability to split at the edge, so p_max (the NMS / threshold
-    statistic) does not depend on frac(x). Native grid (up = 1). -> ign (new), extra dict(b, iy, ix, tx, ty, g) or None"""
-    if band <= 0: return ign, None
-    B, H, W = label.shape
-    b, iy, ix = torch.nonzero(label > 0, as_tuple=True)
-    if len(b) == 0: return ign, None
-    gi = tid[b, iy, ix]
-    dx = gt['x'][gi] - ix.float(); dy = gt['y'][gi] - iy.float()
-    sx = torch.sign(dx).long() * (dx.abs() > 0.5 - band).long(); sy = torch.sign(dy).long() * (dy.abs() > 0.5 - band).long()
-    E = []
-    for ox, oy in ((sx, torch.zeros_like(sy)), (torch.zeros_like(sx), sy), (sx, sy)):
-        nz = (ox != 0) | (oy != 0)
-        if ox is sx and oy is sy: nz = (sx != 0) & (sy != 0)
-        nx, ny = ix + ox, iy + oy
-        ok = nz & (nx >= 0) & (nx < W) & (ny >= 0) & (ny < H)
-        ok = ok & (label[b, ny.clamp(0, H - 1), nx.clamp(0, W - 1)] == 0)
-        E.append((b[ok], ny[ok], nx[ok], gi[ok]))
-    eb, ey, ex, eg = (torch.cat([e[k] for e in E]) for k in range(4))
-    ign = ign.clone(); ign[eb, ey, ex] = True
-    return ign, dict(b=eb, iy=ey, ix=ex, tx=gt['x'][eg] - ex.float(), ty=gt['y'][eg] - ey.float(), g=eg)
-
-
-def band_off_loss(dxy, ls, ex, wg):
-    """offset Gaussian NLL at the band pixels (weights wg [n])"""
-    e = torch.stack([dxy[ex['b'], 0, ex['iy'], ex['ix']] - ex['tx'], dxy[ex['b'], 1, ex['iy'], ex['ix']] - ex['ty']], 1)
-    s = ls[ex['b'], ex['iy'], ex['ix']][:, None]
-    return ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * wg).sum(), wg.sum()
-
-
 def focal_w(logits, label, ign, wpos, gamma=2.0, alpha=0.75):
     p = torch.sigmoid(logits)
     ce = F.binary_cross_entropy_with_logits(logits, label, reduction='none')
@@ -194,61 +163,49 @@ def _cfg_resolve(c):
     return resolve(c)
 
 
+# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
+RETIRED = {'--up': '1', '--em_photons': '40,2500', '--gen': '', '--psum': '0', '--band': '0', '--pair_sub': ''}
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
-    ap.add_argument('--up', type=int, default=2)
     ap.add_argument('--steps', type=int, default=40000)
     ap.add_argument('--batch', type=int, default=16)
     ap.add_argument('--size', type=int, default=64)
     ap.add_argument('--lr', type=float, default=1e-3)
     ap.add_argument('--w_off', type=float, default=1.0)
     ap.add_argument('--nnw', type=int, default=1)
-    ap.add_argument('--em_photons', default='40,6000')
     ap.add_argument('--seed', type=int, default=0)
-    # (2026-11-10 retrain on realistic sims; defaults = det_n1) realistic generator, fine-tune init, OneCycle pct, summed-p output
-    ap.add_argument('--gen', default='')            # 'r1' = simcode/hd/realgen.RGen (half 'paper', half 'det' photon mix)
     ap.add_argument('--init', default='')
     ap.add_argument('--pct', type=float, default=0.05)
-    ap.add_argument('--psum', type=float, default=0.0)  # stored in args: det/model.psum_logit radius at inference (0 = off)
     ap.add_argument('--ckpt_every', type=int, default=5000)
-    ap.add_argument('--band', type=float, default=0.0)  # sub-pixel-invariant target band (px; band_extra), 0 = off
-    # (2026-11-11 psf3d retrain, opt-in; defaults = det_n1) PSF calib mixture (comma list of calib jsons, hd/data.Gen calib),
-    # close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
-    ap.add_argument('--calib', default='')
-    ap.add_argument('--pair_sub', default='')
-    # (2026-11-12 g13 retrain, opt-in; '' = unchanged) ON-emitter density range 'lo,hi' (/px^2) of the batches
+    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib)
+    ap.add_argument('--calib', required=True)
+    # (2026-11-12 g13 retrain; '' = the default range) ON-emitter density range 'lo,hi' (/px^2) of the batches
     ap.add_argument('--dens', default='')
+    from simcode.util import retired
+    argv = retired.strip(argv, RETIRED, 'det.up2 train')
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
     from simcode.hd import data as HD
     from simcode.hd.sc4 import nn_weights
     os.makedirs(a.out, exist_ok=True)
-    args = vars(a); args.update(ch=[48, 96, 160], stem_ch=16, fch=32)
+    args = vars(a); args.update(up=1, ch=[48, 96, 160], stem_ch=16, fch=32)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    if a.gen == 'r1':
-        from simcode.hd.realgen import RGen
-        gen = RGen(a.size, a.size, 6, seed=a.seed)
-    else:
-        gen = HD.Gen(a.size, a.size, 6, seed=a.seed, calib=[_cfg_resolve(c) for c in a.calib.split(',')] if a.calib else None)
-    psub = tuple(float(v) for v in a.pair_sub.split(',')) if a.pair_sub else None
+    gen = HD.Gen(a.size, a.size, 6, seed=a.seed, calib=[_cfg_resolve(c) for c in a.calib.split(',')])
     net = build(args).to(dev)
     if a.init:
         net.load_state_dict(torch.load(__import__('simcode.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
     print('params', n_params(net), flush=True)
-    emp = tuple(float(v) for v in a.em_photons.split(','))
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)
     log = open(a.out + '/log.jsonl', 'a')
-    t0 = time.time(); S = a.size; up = a.up
+    t0 = time.time(); S = a.size; up = 1
     for step in range(a.steps + 1):
         with torch.no_grad():
-            if a.gen == 'r1':
-                o = gen.rbatch(a.batch, mix='paper' if step % 2 == 0 else 'det', tau_r=(2.0, 80.0), pair_frac=0.25, pair_sep=(0.3, 3.0))
-            else:
-                o = batch(gen, a.batch, em_photons=emp, **({'pair_sub': psub} if psub else {}),
-                          **({'dens': tuple(float(v) for v in a.dens.split(','))} if a.dens else {}))
+            o = batch(gen, a.batch, em_photons=EM_PHOTONS, **({'dens': tuple(float(v) for v in a.dens.split(','))} if a.dens else {}))
             label, ign, tid, off = targets(o, up, S, S)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)
@@ -257,9 +214,6 @@ def train(argv):
                 nnd = gt_nn(o['gt'])[gi]
                 w = nn_weights(o['gt']['fov'][gi], nnd)
             wmap = torch.zeros_like(label); wmap[pm] = w
-            ign, ex = band_extra(o['gt'], label, ign, tid, a.band) if up == 1 else (ign, None)
-            if ex is not None:
-                wg = torch.zeros(len(o['gt']['x']), device=dev); wg[tid[pm]] = w; wg = wg[ex['g']]
         with torch.autocast('cuda', dtype=torch.bfloat16):
             out = net(o['frames'])
         lg = out['logit'].float(); dxy = out['dxy'].float(); ls = out['log_sig'].float()
@@ -267,11 +221,7 @@ def train(argv):
         if pm.any():
             e = (dxy - off).permute(0, 2, 3, 1)[pm]
             s = ls[pm][:, None]
-            if ex is not None and len(ex['b']):
-                lb, wb = band_off_loss(dxy, ls, ex, wg)
-                l_off = (((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() + lb) / (w.sum() + wb).clamp(min=1e-6)
-            else:
-                l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
+            l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
         else:
             l_off = torch.zeros((), device=dev)
         loss = l_det + a.w_off * l_off

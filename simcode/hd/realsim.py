@@ -77,7 +77,7 @@ def psf_blur(P_, sx, sy):
 
 
 def psf_div_luts(rs, dv, seed=0):
-    """(2026-11-11 PSF-shape mismatch, opt-in RealSim key psfdiv = dict) PSF-diversity bank: n LUTs, each = calib + Gaussian
+    """(2026-11-11 PSF-shape mismatch; used by analysis/simreal/sim_movie_r.py SIM_PSFDIV) PSF-diversity bank: n LUTs, each = calib + Gaussian
     Zernike jitter (sd zsd waves on the Noll indices `noll`) + base_dz {noll: waves} + focus shift base_df + U(+-fr/2) um, width x
     1 + wr (U - 0.5), then an anisotropic Gaussian image blur sx = max(0, base_blur[0] + blur_r (2U - 1)), sy likewise.
     keep_old: prepend the existing (calib + weak jitter) LUTs, unblurred.  Own generator (seed 4321 + seed): no global draws."""
@@ -171,13 +171,10 @@ class RealSim:
                 zd = (torch.randn(nz, generator=g) * self.p.get('psf_zs', 0.008)).to(dev)
                 self.luts.append(tuple(build_lut(self.sim, w, zd, fs, self.zmax, angle=k)[0] for k in range(2)) if ang
                                  else build_lut(self.sim, w, zd, fs, self.zmax)[0])
-        if self.p.get('psfdiv'):
-            assert not ang, 'psfdiv bank: no per-angle PSF support'    # (2026-11-11 PSF-shape mismatch, opt-in) PSF-diversity LUT bank, see psf_div_luts
-            self.luts = psf_div_luts(self, self.p['psfdiv'], seed)
 
     # ----------------------------------------------------------------------------------------------- emitters
     def emitters(self, nb, dens=None, tau=None, struct_frac=None, bright=None, margin=6, pair_frac=0.0,
-                 pair_sep=(0.5, 3.0), pair_curr=False, fil_pts_in=None, use_sites=True, pair_sub=None):
+                 pair_sep=(0.5, 3.0), pair_curr=False, fil_pts_in=None, use_sites=True):
         # (2026-11-10 simreal2, opt-in; defaults unchanged) fil_pts_in: reuse these filament curves [nb, nfil, ns, 2] (e.g. a dim-binder
         # population on the same microtubules); preset keys fil_on (fraction of events on a filament, 0.85), fil_w (filament
         # width sd nm, 12), fil_resample (redraw the filament point up to 12 times when it falls outside the canvas instead of
@@ -244,8 +241,6 @@ class RealSim:
                     sep = torch.where(g(M) < 0.5, 1.5 + g(M), sep)
                     along = g(M) < 0.3
                     th = torch.where(along, torch.randint(0, 4, (M,), device=dev).float() * (math.pi / 2) + 0.021 + 0.05 * torch.randn(M, device=dev), th)
-                if pair_sub is not None and pair_sub[0] > 0:   # (2026-11-11 item 4, opt-in; None = unchanged draws) close-pair enrichment:
-                    sep = torch.where(g(M) < pair_sub[0], pair_sub[1] + (pair_sub[2] - pair_sub[1]) * g(M), sep)   # (frac, lo, hi) px
                 tp = tau[fov[pi]]
                 pt0 = -tp + (T - 0.5 + tp) * g(M); pt1 = pt0 + 0.5 - torch.log(g(M).clamp(min=1e-9)) * tp
                 fov = torch.cat([fov, fov[pi]]); t0 = torch.cat([t0, pt0]); t1 = torch.cat([t1, pt1])
@@ -488,26 +483,7 @@ class RealSim:
         P = self.pattern(nb, exact_est)
         patt, steps = P['patt'], P['steps']
         pt_e = patt[fov]
-        pfr, pfd = p.get('pf_rad', 0.0), p.get('pf_dep', 0.0)
-        if (pfr > 0 or pfd > 0) and N:
-            # (2026-11-10 realgen, opt-in; absent keys = unchanged, no extra draws) static per-FOV pattern phase / depth
-            # field (the instrument's measured phase field, critic 35: random field of similar amplitude / scale, not the
-            # measured map): per FOV and angle phase phi_a(r) = U(0, pf_rad) x unit smooth field (sigma U(pf_sig) px) and
-            # depth factor f_a(r) = 1 + U(0, pf_dep) x unit smooth field (sigma pf_dsig px); il = rel (1 + m f cos(. - phi));
-            # the estimate (patt_est) stays the global pattern
-            m_ = 6; Hc, Wc = H + 2 * m_, W + 2 * m_
-            sg = p.get('pf_sig', (5.0, 12.0)); sg = sg[0] + (sg[1] - sg[0]) * torch.rand(1).item()
-            phF = torch.stack([smooth_field(nb, Hc, Wc, sg) for _ in range(2)], 1) * (pfr * torch.rand(nb, 2, 1, 1, device=dev))
-            dfF = 1 + torch.stack([smooth_field(nb, Hc, Wc, p.get('pf_dsig', 25.0)) for _ in range(2)], 1) * (pfd * torch.rand(nb, 2, 1, 1, device=dev))
-            gx = (x + m_).clamp(0, Wc - 1.001); gy = (y + m_).clamp(0, Hc - 1.001)
-            x0, y0 = gx.floor().long(), gy.floor().long(); fx, fy = (gx - x0)[:, None], (gy - y0)[:, None]
-            bil = lambda F_: (F_[fov, :, y0, x0] * (1 - fx) * (1 - fy) + F_[fov, :, y0, x0 + 1] * fx * (1 - fy)
-                              + F_[fov, :, y0 + 1, x0] * (1 - fx) * fy + F_[fov, :, y0 + 1, x0 + 1] * fx * fy)       # [N,2]
-            ang_e = (steps // 3)[fov]
-            dph = bil(phF).gather(1, ang_e); dmf = bil(dfF).clamp(0.3, 1.5).gather(1, ang_e)
-            il = pt_e[..., 4] * (1 + (pt_e[..., 3] * dmf).clamp(max=1.0) * torch.cos(pt_e[..., 0] * x[:, None] + pt_e[..., 1] * y[:, None] - pt_e[..., 2] - dph))
-        else:
-            il = pt_e[..., 4] * (1 + pt_e[..., 3] * torch.cos(pt_e[..., 0] * x[:, None] + pt_e[..., 1] * y[:, None] - pt_e[..., 2]))
+        il = pt_e[..., 4] * (1 + pt_e[..., 3] * torch.cos(pt_e[..., 0] * x[:, None] + pt_e[..., 1] * y[:, None] - pt_e[..., 2]))
         mult = torch.ones(N, T, device=dev)
         if emitter_var and N:
             ang = (steps // 3)[fov]
@@ -521,8 +497,6 @@ class RealSim:
         sim = self.sim; R = sim.R; hr = R // 2; margin = 6
         img = torch.zeros(nb, T, H + 2 * (margin + hr) + 2, W + 2 * (margin + hr) + 2, device=dev)
         xr_, yr_ = x, y
-        if N > 0 and p.get('ev_shift', 0.0) > 0:   # (2026-11-11, opt-in) per-event emission offset: PSF rendered at r + d, d ~ N(0, ev_shift nm)
-            xr_ = x + p['ev_shift'] / PX_NM * torch.randn(N, device=dev); yr_ = y + p['ev_shift'] / PX_NM * torch.randn(N, device=dev)   # per axis; illumination / GT stay at r
         if N > 0:
             grp = torch.randint(0, len(self.luts) if psf_var else 1, (N,), device=dev)
             ang = isinstance(self.luts[0], tuple)
@@ -545,9 +519,6 @@ class RealSim:
                 hh = hmax * torch.rand(N, 1, 1, device=dev)
                 psf = (1 - hh) * psf + hh * gb
                 if ang: psf1 = (1 - hh) * psf1 + hh * gb
-            if p.get('halo2', 0.0) > 0:    # broad halo (default off; see add_halo2)
-                psf = add_halo2(psf, xr_, yr_, p['halo2'], p.get('halo2_sig', 4.0))
-                if ang: psf1 = add_halo2(psf1, xr_, yr_, p['halo2'], p.get('halo2_sig', 4.0))
             cx = torch.round(xr_).long() + margin + 1; cy = torch.round(yr_).long() + margin + 1
             oy, ox = torch.meshgrid(torch.arange(R, device=dev), torch.arange(R, device=dev), indexing='ij')
             iy = (cy[:, None, None] + oy).reshape(N, -1); ix = (cx[:, None, None] + ox).reshape(N, -1)

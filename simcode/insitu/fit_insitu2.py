@@ -2,21 +2,18 @@
 In-situ stage A with variable projection: per-frame intensity + per-(sample, pattern angle) background are solved
 exactly (weighted LSQ) at every iteration; per-sample x,y,z and global PSF/camera parameters by Adam.
 Afterwards computes per-frame intensities for all samples with the final PSF (input for fit_pattern.py).
-(2026-11-11 in-situ 3D PSF, opt-in; defaults = unchanged) extra PSF freedom:
-  --blur global | line | angle | angle_line: image-plane Gaussian blur (VectorialPSF.blur, covariance sxx, syy, sxy px^2):
-    global = free covariance (3), line = rank-1 v v^T (2: a strictly anisotropic, PSD line blur), angle* = one per pattern
-    angle (frame % 6 // 3);
-  --dipole global | angle: dipole-orientation weights (wx, wy, wz) = 3 softmax (photoselection; 2 per set);
-  --photosel 1 | 2: excitation photoselection, M_a = (1 - gamma) I / 3 + gamma K_a per pattern angle a (vectorial.photosel_tensor),
-    K_a = e_a e_a^T with e_a the in-plane unit vector perpendicular to k_a (s-polarised excitation; k from --pol-calib's
-    pattern block); one shared gamma (1) | + a p-polarised fraction eps_a per angle (2) | (3) one shared gamma and a shared
-    z-fraction zeta of the unselected part: M_a = (1 - gamma) diag((1 - zeta) / 2, (1 - zeta) / 2, zeta) + gamma e_a e_a^T
-    (decouples the angle contrast from the radial / z-dipole weight; zeta = 1/3 is mode 1);
+(2026-11-11 in-situ 3D PSF) extra PSF terms, used in the stages of the paper's PSF calibration (out/psf3d/run_final*.sh: base,
+then --blur line, then --init-fit <bl> --freeze-base 1 with --blur angle_delta or --photosel 3):
+  --blur line: image-plane line blur v v^T (VectorialPSF.blur, covariance sxx, syy, sxy px^2; a strictly anisotropic, PSD blur);
   --blur angle_delta (with --init-fit): the init fit's blur +- a traceless per-angle part (d, -d, e) (angle 0: -, angle 1: +);
-  --init-fit <_psf.pt> [--freeze-base 1]: start from (and optionally freeze) a previous fit, to test one added term cleanly;
-  --fit-saf 1 | 2: supercritical-annulus amplitude tilt (saf[2:4]) | + phase tilt (saf[0:2]);
+  --photosel 3: excitation photoselection per pattern angle a, M_a = (1 - gamma) diag((1 - zeta) / 2, (1 - zeta) / 2, zeta) +
+    gamma e_a e_a^T, e_a the in-plane unit vector perpendicular to k_a (s-polarised excitation; k from --pol-calib's pattern
+    block), one shared gamma and z-fraction zeta;
+  --init-fit <_psf.pt> [--freeze-base 1]: start from (and optionally freeze) a previous fit, to test one added term cleanly.
 --split cb0 | cb1: train only on the samples of one checkerboard parity of --tile px tiles (emitter position), the other parity
-is the held-out set of psf_heldout.py; --intensities 0 skips the all-sample intensity stage.
+is the held-out set of psf_heldout.py. --intensities 1 adds the all-sample intensity stage (input of fit_pattern.py).
+(2026-11-14) Removed options no run used: --psf, --fit-zernike, --fit-apod, --fit-na, --dipole, --fit-saf, --gamma-init,
+--photosel 1 / 2, --blur global / angle / angle_line; --intensities defaults to 0 (every run passed it).
 """
 import argparse, json, math
 import numpy as np, torch
@@ -27,28 +24,20 @@ from simcode.insitu import out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--tracks', default=out('tracks_0.5nM.npz'))
-ap.add_argument('--psf', default='')                  # optional init (zcoef) from a previous fit
 ap.add_argument('--nsamples', type=int, default=8000)
 ap.add_argument('--iters', type=int, default=600)
 ap.add_argument('--gain', type=float, default=0.56)
 ap.add_argument('--zmax', type=float, default=0.2)
-ap.add_argument('--fit-zernike', type=int, default=1)
-ap.add_argument('--fit-apod', type=int, default=0)
-ap.add_argument('--fit-na', type=int, default=0)
 ap.add_argument('--out', default=out('insitu2_0.5nM'))
-ap.add_argument('--blur', default='none', choices=['none', 'global', 'line', 'angle', 'angle_line', 'angle_delta'])
+ap.add_argument('--blur', default='none', choices=['none', 'line', 'angle_delta'])
 ap.add_argument('--init-fit', default='')     # start from a previous fit_insitu2 _psf.pt (Zernikes, focus, its global blur as fixed base)
 ap.add_argument('--freeze-base', type=int, default=0)   # with --init-fit: train only the new extra terms
-ap.add_argument('--dipole', default='none', choices=['none', 'global', 'angle'])
-ap.add_argument('--fit-saf', type=int, default=0)
-ap.add_argument('--photosel', type=int, default=0)
+ap.add_argument('--photosel', type=int, default=0, choices=[0, 3])
 ap.add_argument('--pol-calib', default='insitu/calib_0.5nM.json')
-ap.add_argument('--gamma-init', type=float, default=0.05)
 ap.add_argument('--split', default='', choices=['', 'cb0', 'cb1'])
 ap.add_argument('--tile', type=int, default=16)
-ap.add_argument('--intensities', type=int, default=1)
+ap.add_argument('--intensities', type=int, default=0)
 a = ap.parse_args()
-if a.psf: a.psf = config.resolve(a.psf)
 dev = 'cuda'
 torch.manual_seed(0); np.random.seed(0)
 
@@ -56,9 +45,7 @@ D = np.load(a.tracks)
 Ball = len(D['rois'])
 R = D['rois'].shape[-1]; c = (R - 1) / 2
 model = VectorialPSF(R, oversample=2, NA=1.49, wavelength=0.70, n_med=1.33, device=dev)
-if a.psf:
-    with torch.no_grad(): model.zcoef.copy_(torch.load(a.psf)['zcoef'].to(dev))
-model.zcoef.requires_grad_(bool(a.fit_zernike)); model.apod.requires_grad_(bool(a.fit_apod)); model.NA.requires_grad_(bool(a.fit_na))
+model.zcoef.requires_grad_(True); model.apod.requires_grad_(False); model.NA.requires_grad_(False)
 G = dict(focus=torch.tensor(0.0, device=dev), logrn=torch.tensor(math.log(1.9), device=dev), offset=torch.tensor(99.3, device=dev))
 G['focus'].requires_grad_(True)  # camera (offset, read noise) fixed from fit_insitu (degenerate with bg here)
 g = a.gain
@@ -70,36 +57,28 @@ if a.init_fit:
     if 'blur_px2' in S0_.get('extras', {}): BL0 = torch.tensor(S0_['extras']['blur_px2'][0], device=dev)
     if a.freeze_base:
         model.zcoef.requires_grad_(False); G['focus'].requires_grad_(False)
-BL = DW = BLD = None   # (opt-in) blur parameters [1 or 2 angles, 3 (cov) or 2 (line vector)]; dipole logits [1 or 2, 3]
+BL = BLD = None   # blur parameters: line vector [1, 2]; per-angle traceless delta [2]
 if a.blur == 'angle_delta':
     assert BL0 is not None, '--blur angle_delta needs --init-fit with a global blur'
     BLD = torch.zeros(2, device=dev, requires_grad=True)
-elif a.blur != 'none':
-    BL = torch.zeros(2 if a.blur.startswith('angle') else 1, 2 if a.blur.endswith('line') else 3, device=dev)
-    if BL.shape[1] == 2: BL[:, 0] = 0.05      # line blur v = (vx, vy): start off zero (the gradient of v v^T vanishes at 0)
+elif a.blur == 'line':
+    BL = torch.zeros(1, 2, device=dev)
+    BL[:, 0] = 0.05      # line blur v = (vx, vy): start off zero (the gradient of v v^T vanishes at 0)
     BL.requires_grad_(True)
-if a.dipole != 'none':
-    DW = torch.zeros(2 if a.dipole == 'angle' else 1, 3, device=dev, requires_grad=True)
-if a.fit_saf:
-    model.saf.requires_grad_(True)
-GAM = EPS = None
+GAM = None
 if a.photosel:
-    from simcode.psf.vectorial import photosel_tensor
     kc = torch.tensor(json.load(open(config.resolve(a.pol_calib)))['pattern']['k_rad_per_px'], device=dev)
     KDIR = kc / kc.norm(dim=1, keepdim=True)                                    # [2 angles, (x, y)]
     EDIR = torch.stack([-KDIR[:, 1], KDIR[:, 0]], 1)                            # s-pol: in-plane, perpendicular to k
-    GAM = torch.tensor(a.gamma_init, device=dev, requires_grad=True)
-    if a.photosel == 2: EPS = torch.full((2,), -3.0, device=dev, requires_grad=True)   # eps = sigmoid
+    GAM = torch.tensor(0.05, device=dev, requires_grad=True)
 ZETA = torch.tensor(1 / 3, device=dev, requires_grad=True) if a.photosel == 3 else None
-EXTRA = [v for v in (BL, DW, GAM, EPS, ZETA, BLD) if v is not None] + ([model.saf] if a.fit_saf else [])
+EXTRA = [v for v in (BL, GAM, ZETA, BLD) if v is not None]
 
 
 def dip_tensor(k):
-    if ZETA is not None:
-        e = torch.zeros(3, device=dev); e[:2] = EDIR[k]
-        base = torch.diag(torch.stack([(1 - ZETA) / 2, (1 - ZETA) / 2, ZETA]))
-        return (1 - GAM) * base + GAM * e[:, None] * e[None, :]
-    return photosel_tensor(GAM, EDIR[k], torch.sigmoid(EPS[k]) if EPS is not None else 0.0, KDIR[k] if EPS is not None else None)
+    e = torch.zeros(3, device=dev); e[:2] = EDIR[k]
+    base = torch.diag(torch.stack([(1 - ZETA) / 2, (1 - ZETA) / 2, ZETA]))
+    return (1 - GAM) * base + GAM * e[:, None] * e[None, :]
 
 
 def blur_cov(k):
@@ -113,16 +92,15 @@ def blur_cov(k):
 
 
 def psf_of(xyz, focus):
-    """[b,R,R] (no per-angle term) or [b,2,R,R] (per-angle blur / dipole weights)"""
-    if BL is None and DW is None and GAM is None and BL0 is None:
+    """[b,R,R] (no per-angle term) or [b,2,R,R] (per-angle blur / photoselection)"""
+    if BL is None and GAM is None and BL0 is None:
         return model(xyz, focus)
-    na = max(BL.shape[0] if BL is not None else 1, DW.shape[0] if DW is not None else 1, 2 if (GAM is not None or BLD is not None) else 1)
+    na = max(BL.shape[0] if BL is not None else 1, 2 if (GAM is not None or BLD is not None) else 1)
     out = []
     for k in range(na):
         kw = {}
         if BL is not None: kw['blur'] = blur_cov(min(k, BL.shape[0] - 1))
         elif BL0 is not None: kw['blur'] = blur_cov(k)
-        if DW is not None: kw['dipw'] = 3 * torch.softmax(DW[min(k, DW.shape[0] - 1)], 0)
         if GAM is not None: kw['dipM'] = dip_tensor(k)
         out.append(model(xyz, focus, **kw))
     return out[0] if na == 1 else torch.stack(out, 1)
@@ -133,12 +111,9 @@ def extras_json():
     if BL is not None: r['blur_px2'] = [blur_cov(k).detach().cpu().tolist() for k in range(BL.shape[0])]
     elif BLD is not None: r['blur_px2'] = [blur_cov(k).detach().cpu().tolist() for k in range(2)]
     elif BL0 is not None: r['blur_px2'] = [BL0.cpu().tolist()]
-    if DW is not None: r['dipole_w'] = [(3 * torch.softmax(DW[k], 0)).detach().cpu().tolist() for k in range(DW.shape[0])]
-    if a.fit_saf: r['saf'] = model.saf.detach().cpu().tolist()
     if GAM is not None:
         r['gamma'] = GAM.item(); r['dipole_M'] = [dip_tensor(k).detach().cpu().tolist() for k in range(2)]
         r['e_dir'] = EDIR.cpu().tolist()
-        if EPS is not None: r['eps_p'] = torch.sigmoid(EPS).detach().cpu().tolist()
         if ZETA is not None: r['zeta'] = ZETA.item()
     return r
 
@@ -185,10 +160,7 @@ opt = torch.optim.Adam([{'params': [S['xy'], S['z']], 'lr': 0.03},
                         {'params': [G['focus']], 'lr': 0.005},
                         {'params': [model.zcoef], 'lr': 0.002}, {'params': [model.apod, model.NA], 'lr': 0.003}]
                        + ([{'params': [BL], 'lr': 0.003}] if BL is not None else [])
-                       + ([{'params': [DW], 'lr': 0.01}] if DW is not None else [])
-                       + ([{'params': [model.saf], 'lr': 0.003}] if a.fit_saf else [])
                        + ([{'params': [GAM], 'lr': 0.003}] if GAM is not None else [])
-                       + ([{'params': [EPS], 'lr': 0.02}] if EPS is not None else [])
                        + ([{'params': [ZETA], 'lr': 0.003}] if ZETA is not None else [])
                        + ([{'params': [BLD], 'lr': 0.002}] if BLD is not None else []))
 chunks = torch.arange(len(sel), device=dev).split(2000)
@@ -198,7 +170,6 @@ for it in range(a.iters):
         l = loss_and_linear(S, ch)[0] / npx; l.backward(); tot += l.item()
     if it < 100:
         for v in list(G.values()) + [model.zcoef, model.apod, model.NA] + EXTRA: v.grad = None
-    if a.fit_saf == 1 and model.saf.grad is not None: model.saf.grad[:2] = 0
     opt.step()
     with torch.no_grad(): model.NA.clamp_(1.0, 1.515)
     if it % 100 == 0 or it == a.iters - 1:
@@ -217,7 +188,7 @@ print(f'normalized residual var {rs.var().item():.3f}')
 res = dict(gain=g, readnoise_e=torch.exp(G['logrn']).item(), offset=G['offset'].item(), focus=G['focus'].item(),
            NA=model.NA.item(), apod=model.apod.tolist(), zernike=model.zcoef.tolist(), resid_var=rs.var().item(), zmax=a.zmax)
 if EXTRA or a.split or BL0 is not None:   # (opt-in fields; absent in the default run's json)
-    res.update(blur_mode=a.blur, dipole_mode=a.dipole, fit_saf=a.fit_saf, split=a.split, tile=a.tile, nll_per_px=tot,
+    res.update(blur_mode=a.blur, split=a.split, tile=a.tile, nll_per_px=tot,
                n_train=int(len(sel)), **extras_json())
 json.dump(res, open(a.out + '_psf.json', 'w'), indent=1)
 torch.save(dict(zcoef=model.zcoef.detach().cpu(), NA=model.NA.detach().cpu(), apod=model.apod.detach().cpu(),

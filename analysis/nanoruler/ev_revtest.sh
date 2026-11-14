@@ -6,7 +6,7 @@
 source /home/jc/simcode2/runs/psfmatch/env.sh; set -o pipefail
 t=${1:-rev}; A=analysis/nanoruler; EV=out/nanoruler/eval; MD=$PWD/out/nanoruler/models; C=$PWD/out/nanoruler/calib_nr80.json
 SC=${EV_SCENES:-iso,rs05qm}; SEEDS=301,302,303; G=$EV/gate_nr80$t; FE=$EV/fe_nr80$t
-export NR_PRESET=$PWD/$EV/nr80_preset_$t.json NR_TITLE=nr-eval SIMCODE2_GATE_CALIB=$C GATE_PSF_CHUNK=1500
+export NR_PRESET=$PWD/$EV/nr80_preset_$t.json NR_TITLE=nr-eval SIMCODE2_GATE_CALIB=$C
 export CUDA_VISIBLE_DEVICES=$(NEED_GB=4 pickgpu 4 "2 0 1"); mkdir -p $G $FE
 say() { echo "$(date +%F_%T) $*"; }
 say "revtest $t preset $NR_PRESET GPU $CUDA_VISIBLE_DEVICES"

@@ -517,3 +517,65 @@ columns of the same names `good` / `sel` with their own meaning, those readers a
 | `sel` (phase-calibrated) | `analysis/paper/frc_fair.py` (loader of v2 tables and subset files), `analysis/papersim/metrics.py`, `analysis/papersim/pvalid_real.py` |
 | `strict` (density-rule product) | `analysis/papersim/metrics.py`, `analysis/papersim/selection.py`, `analysis/psf3d_nets/sigcal.py`, `analysis/evalproto/strictq.py`; `--subset strict` (the `_strictonly` file) |
 | `disjoint` (frame % 6 == 0) | `simcode/util/drift.py` |
+
+## 2026-11-14: options clean-up (user principle: an option is either better and always on, or worse and removed)
+
+Branch `optclean` (worktree `.claude/worktrees/optclean`, base 42f36ba), done while the generic pass-2 chain (gnr80) ran on
+the main tree; merged after it ended. Audit: the detband worker's list (out/detband), decisions of the user / main session
+of 2026-11-14. Verification scripts and outputs: `out/optclean/` (`verify.sh`, `run_ref.sh`, `train_smoke.sh`,
+`fitcheck.sh`, `cmp_trainlog.py`; baselines from a second, unmodified worktree of 42f36ba).
+
+Checks (all on GPU 2):
+- P (as above): two chunks of 1809_2, pass 1 + pattern solve + pass 2, m1809, now run **without any flag** (`--autoc 0
+  --cand_pmin 0.3 --pass2` are the only behaviour): 8 of 8 chunk files bit-identical to `out/paper2/1809_2/v2_matched`
+  (also after the trainer / PSF step).
+- Tr: 20 steps of the five production trainers (det, hd, p2det, p2head, p2headL; m1809 recipe, batch 4): the new command
+  lines (flags that became defaults dropped; p2head with `--pert_model v1`) vs the old explicit flags on 42f36ba: step-0 lines
+  of det / hd / p2det / p2headL equal (max rel. diff 0 / 0 / 0 / 4e-7), p2head equal except `w_il` (2e-5, the known
+  run-to-run range of that field, see above). The old command lines (`TRV=old`) give the same.
+- G: gate scenes iso + rs05qm, seed 301, 400 targets: new code without env (default PSF = the model's) vs 42f36ba with
+  `SIMCODE_GATE_CALIB=insitu/calib_1809_2_psf3d_avg.json`: iso identical; rs05qm identical except CRLB entries (26 of 7956
+  `gt_fr_m` differ by <= 6e-5), the same as two runs of the old code (30 of 7956, <= 3e-5).
+- PSF fit: `fit_insitu2` stages bl / blps3 / blad (300 samples, 8 iterations), old vs new: bl, blad json identical; blps3
+  identical except `resid_var` (1e-8 relative; nll, gamma, zeta identical).
+- T `ALL OK`, F `ALL OK`, TT `ALL OK`; S: only the known `analysis/psfmatch/prod_m20_m25.sh` lines (`python -m simcode2.run /
+  strict`, present before this step).
+
+Older scripts may pass removed options: `simcode/util/retired.py` drops an option given with its fixed value (one stderr
+line) and stops with an error for any other value (tables `RETIRED` in run.py, run_uncalibrated.py, det/up2.py, hd/sc4.py,
+p2/det2.py, p2/head2.py). No run changes meaning silently.
+
+| file | change | evidence | check |
+|---|---|---|---|
+| run.py | `--pass2` removed (pass 2 always), `--autoc` / `--autoc_fast` removed (autoc no longer a stage), `--cand_pmin`, `--fast`, `--compile`, `--compile_head`, `--pattern_field`, `--strict_sigma_ref` removed; `--sig_u` default `set`, `--subset` default `main,u,strict` (the `--dataset` recipe is now every run's); `--model` (alias `--netset`); summary key `model` | production = `--autoc 0 --cand_pmin 0.3 --pass2 --sig_u set --subset main,u,strict` (models.json `_production`, the paper runs) | P |
+| pipeline/run_uncalibrated.py | `--fast` (reference path only in tests), `--compile` (always `auto`), `--cand_pmin`, `--compile_head`, `--solve_opts`, `--pattern_field` (est / est_depth: no refit exists), `--p2_pf_head`, `--p1_solve` (sc2p never runs the pass-1 solve; run.py runs it with `--frontend sc`) removed | run.py passed `--fast 1 --compile auto --compile_head off --p1_solve 0`; no kept script used the others with a non-default value | P |
+| pipeline/common.py, sc_front.py, sc_front_fast.py, p2/front.py | one `CAND_PMIN = 0.3` (was 0.5 in three modules, overridden by run.py); QueuedFront without compile_head (blk / trunk) / channels_last; pass 2 without the `pf` head prior and the `_dir` calibration keys (`kap_bins_dir`, `sig_ph_dir`, `prior_off_dir`: only in the b10 calibrations, removed there; est2b of the b10 calibrations changes, no kept model uses them); `run_chunk_pattern_solve_fast` without `field` / `solve_opts` | grep: `p2_prior` was `own` in every calibration | P, T |
+| hd/sc.py, hd/msolve_fast.py, hd/msolve.py | solve keys required: kap_bins, prior_off, cmult, cmult_ang, box, mix_T, sig_a, sig_g, sig_ph (all shipped calibrations have them); `mix` hard-wired to the posterior mean (`pm` in every calibration; key removed), `ms_xdet` (false in all 35) + its branch, the non-mix `solve_ms` path (unreachable), `kap_mult` / `kap_mult_src`, `cmult_logdet` (no calibration sets them), `sig_scale` (1.0 in the 5 autoc calibrations; key removed) removed; msolve_fast without the approximate options (tol, freeze_cov, prune, prune_k, cov_mode, stats; only reachable through `--solve_opts`) and the Student-t prior `nu` of msolve | calibration key census of models/calib | P, T |
+| autoc.py | kept as an analysis estimator; its covariance scale s now scales L (sqrt(s) L) instead of the calibration key sig_scale; analysis/nanoruler/abl_gate.py the same | -- | S |
+| strict.py | `sigma_ref` rule and `--strict_sigma_ref` removed (and `n_for_cov`); `build_table(..., strict_q, *, sig_u=...)` keyword-only after strict_q (callers updated) | opt-in earlier rule, valid only with the fixed c | TT |
+| fastutil.py | env `SIMCODE_COMPILE` (the duplicate of `--compile`) removed | -- | T |
+| models/calib/*.json (tracked) | keys `ms_xdet`, `mix`, `sig_scale`, `p2_prior` and the b10 `_dir` keys removed | the code no longer reads them | P |
+| hd/gate.py, hd/sc.py, sim/crlb.py | `--det` replaces env `SC_DET`; the scene PSF defaults to the default model's PSF (models.json `psf`; was insitu/calib_0.5nM.json; env SIMCODE_GATE_CALIB still overrides); PSF stack chunk size automatic (halved on out-of-memory; env GATE_PSF_CHUNK removed), `GATE_PSF_INNER` / `GATE_CRLB_DIV` envs removed (constants 1024 / 3, the defaults); rs05r / rs25r(b) scenes removed (no kept figure / paper script uses them; only listed in analysis/gate/run_gate.sh's comment); `--pover` / `--sover` flags removed (no script passed them; the POVER / SOVER dicts stay: analysis/ablation_cov/gate_dump.py sets them for the paper's covariance ablation). hd/sc4.py prep() keeps the 0.5 nM PSF for its scenes | grep of SC_DET / GATE_* users: all at the default values | G |
+| det/up2.py | `--up` (1), `--em_photons` (40,2500) fixed; `--band` (band_extra, band_off_loss; user: do not change the detector), `--psum`, `--gen r1`, `--pair_sub` removed; `--calib` required | every model's recipe | Tr det |
+| det/model.py, p2/det2.py | psum (summed-p output) removed; det2 `--band`, `--psum`, `--gen`, `--pair_sub` removed, `--calib` required, `--init_n1` default = the default model's detector | -- | Tr p2det |
+| hd/sc4.py, hd/data.py | `--arch` (sc4n), `--paper` (1), `--bright_tail` (0.1,2000,20000) fixed (stored in args.json / checkpoints as before), `--tau` default 15,80, `--paper_med` / `--paper_sd`, `--psfdiv` (+ data.Gen psfdiv / ev_shift), `--gen r1`, `--pair_sub` removed; `--calib` required | every model's recipe | Tr hd |
+| p2/head2.py, p2/data.py | `--pert_model` default `real` (p2headL); the p2head stage passes `--pert_model v1` explicitly (chain2.sh, auto/train.py, models/README.md); `--gen`, `--pair_sub` removed; `--calib` required; `--hold_v1` kept (the v1 model is used by p2head) | -- | Tr p2head, p2headL |
+| hd/realgen.py | removed (RGen; networks p1r / p2r not adopted), with the realsim `pf_*` per-FOV pattern-field keys (used only by RGen and the rs05r / rs25r scenes) | -- | Tr, G |
+| hd/realsim.py | `pf_*`, `ev_shift`, the `psfdiv` preset key, `pair_sub`, the scene key `halo2` removed; `add_halo2`, `filament_static_map`, `psf_div_luts`, `smooth_field` kept (used by analysis/simreal / nanoruler simulators). The pattern draw (pattern(), _pgen) untouched | -- | Tr, G |
+| insitu/fit_insitu2.py | kept: `--blur line / angle_delta`, `--photosel 3`, `--init-fit`, `--freeze-base`, `--split` / `--tile`, `--pol-calib`, numeric settings; `--intensities` default 0 (passed by all 20 calls); removed: `--psf`, `--fit-zernike`, `--fit-apod`, `--fit-na`, `--dipole`, `--fit-saf`, `--gamma-init`, `--photosel 1 / 2`, `--blur global / angle / angle_line` | flags of every fit_insitu2 call in out/, runs/, analysis/ (out/psf3d/run_final*.sh: tracks, out, intensities, init-fit, freeze-base, blur, photosel, split) | PSF fit |
+| psf/vectorial.py, analysis/psf3d/make_calib.py | calibration keys `psf_dipole_w`, `saf` no longer read (no json in models/insitu or out/nanoruler has them); make_calib writes a single dipole weight as `psf_dipole_M` and refuses `saf` | key census of 28 PSF calibrations | P |
+| config.py, netsets.json -> models.json, auto/* | "network set" -> "model": `simcode/models.json`, `config.model_set()` / `model_sets()` (`netset` / `netsets` aliases), env SIMCODE_MODEL (SIMCODE_NETSET accepted), dataset key `model`, `_production` keeps `cal_kind` only (the other flags are the only behaviour); auto config keys `train.model`, `process.model` (`netset` accepted; `process.pass2` removed), stage e writes `<out>/train/model.json` (netset.json still read), runwrap key `model` | user, 2026-11-14 | F, P |
+| tests/test_fast_paths.py | compiled-head tests removed (option gone); the compiled solve's median tolerance 5e-5 px: with the stored-candidate cut 0.3 the test rows include dimmer candidates (median 2.3e-5 px; 8.6e-6 px on the p >= 0.5 rows, as before; eager unchanged < 1e-5); the pass-2 comparison builds Pass2P2Fast with `compile='off'` (its default became `auto`; the test compares the eager solve, as before: median 7.6e-6 px) | -- | T |
+| docs | README, docs/METHOD.md, docs/AUTO_PIPELINE.md, simcode/FILE_DESCRIPTION.md, models/README.md: model wording, removed options, the training recipe without the flags that became defaults | -- | S |
+
+Kept (real parameters, user decision): `--calib` (now required by the trainers), `--dens` / `--tau` (per-model recipe),
+`--strict_q`, `--ref_pattern`, `--no_illum` (paper ablation), the rule `u` / `--u_max`, the RealSim realism keys (not folded
+into presets: they are already the presets' keys), the generic pass-2 options (`--pgen`, illum model `realw`: another
+worker). Not changed: simcode/fourpi, the pattern-draw code of realsim, p2/illum.py, the pgen parts of det2 / head2.
+Callers updated: analysis/papersim/run_simcode.py (`--model`, no `--cal_kind autoc` / `--no_pass2`), the build_table callers,
+analysis/ablation_cov/capture.py and analysis/nanoruler/abl_capture.py (no solve_opts), analysis/speed/prof_stages.py,
+bench_head.py and analysis/tput/bench_tput.py (`compile=` instead of solve_opts), analysis/evalproto/strictq.py (no sigma_ref
+runs), analysis/figures/lmref.py (constant-1 kap_bins / sig_ph), the SC_DET / GATE_PSF_CHUNK settings of the analysis shell
+scripts (all at the default values; analysis/p2generic left as it is, another worker's running scripts). Scripts that
+measured a removed option now stop with an error: analysis/detband/train_ab.sh (`--band`), the compile_head / channels_last
+variants of analysis/speed/bench_head.py, bench_p2.py and analysis/tput/bench_tput.py; they are records of finished studies.

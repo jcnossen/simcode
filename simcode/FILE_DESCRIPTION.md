@@ -72,7 +72,6 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | `msolve.py` | Multi-start explicit pattern solve on the network intensities (reference implementation). |
 | `msolve_fast.py` | Faster drop-in for the same solve (production). |
 | `realsim.py` | Experiment-matched simulator: measured PSF with jitter, camera maps, structured and fluctuating background, filaments. |
-| `realgen.py` | One realistic training-batch generator for all four networks (optional). |
 | `data.py` | Training batches for the head from `realsim.py` with widened parameter ranges. |
 | `gate.py` | The gate benchmark: fixed simulated scenes (isolated emitters, close pairs, realistic scenes) run through a front end. |
 | `gate_report.py` | Detection, precision and intensity metrics for gate outputs. |

@@ -33,7 +33,7 @@ dump() {  # fronts (name=det:head,...): p2.dump on the gate scenes; every dump m
   for f in $names; do for sc in ${SC//,/ }; do for sd in ${SEEDS//,/ }; do [ -f $FE/${sc}__s${sd}_$f.npz ] || need=1; done; done; done
   [ $need = 0 ] && { say "dump $names: exists, skip"; return 0; }
   g=$(gpu 4); say "dump $names on GPU $g"
-  CUDA_VISIBLE_DEVICES=$g SIMCODE2_GATE_CALIB=$C SIMCODE2_GATE_DIR=$G GATE_PSF_CHUNK=1500 $W simcode2.p2.dump --scen $SC --seeds $SEEDS --fronts $1 --out $FE \
+  CUDA_VISIBLE_DEVICES=$g SIMCODE2_GATE_CALIB=$C SIMCODE2_GATE_DIR=$G $W simcode2.p2.dump --scen $SC --seeds $SEEDS --fronts $1 --out $FE \
     >> $LG/dump_${names// /_}.log 2>&1 || die "dump $names (see $LG/dump_${names// /_}.log)"
   grep -q "CRLB from None" $LG/dump_${names// /_}.log && die "dump $names: CRLB reference not found (GT differs from the gate scenes)"
   for f in $names; do for sc in ${SC//,/ }; do for sd in ${SEEDS//,/ }; do [ -f $FE/${sc}__s${sd}_$f.npz ] || die "dump $f $sc $sd missing"; done; done; done
@@ -74,7 +74,7 @@ say "ev_chain $S start (pid $$)"
 # 1. gate scenes (CRLB + the current production front as the gate's reference), reference dumps, their calibs on these scenes
 if [ ! -f $G/rs05qm__s303_hd_cur.npz ]; then
   g=$(gpu 4); say "gate scenes on GPU $g"
-  CUDA_VISIBLE_DEVICES=$g SIMCODE2_GATE_CALIB=$C GATE_PSF_CHUNK=1500 $W simcode2.hd.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
+  CUDA_VISIBLE_DEVICES=$g SIMCODE2_GATE_CALIB=$C $W simcode2.hd.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
     --tag _hd_cur --out $G --ntarget 3500 --seeds $SEEDS >> $LG/gate.log 2>&1 || die "gate (see $LG/gate.log)"
 fi
 [ -f $EV/scenecheck_$S.txt ] || { CUDA_VISIBLE_DEVICES=$(gpu 4) SIMCODE2_GATE_CALIB=$C $W $A/ev_scenecheck.py > $EV/scenecheck_$S.txt.tmp 2>> $LG/scenecheck.err \

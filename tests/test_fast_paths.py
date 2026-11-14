@@ -169,7 +169,7 @@ def test_pass2_p2_fp32():
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
     A = Pass2P2(CALIB, head=P2H, det=P2D)
-    B = Pass2P2Fast(CALIB, head=P2H, det=P2D)
+    B = Pass2P2Fast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
     B.det = A.det; B.head = A.head
     A.head.bf16 = False
     with fp32_mode():

@@ -62,11 +62,16 @@ All networks are trained only on the experiment-matched simulator (`hd/realsim.p
 
 | network | trainer | notes |
 |---|---|---|
-| det_n1 | `python -m simcode.det.up2 train --up 1` | focal loss on the nearest-pixel targets, offset NLL |
-| sc5nb | `python -m simcode.hd.sc4 prep5`, then `train --arch sc4n --init <sc5n> --bright_tail ...` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
-| p2_det / p2_head_long | `python -m simcode.p2.det2 train`, `python -m simcode.p2.head2 train --pert real` | illumination channels zero-initialised from det_n1 / sc5nb |
+| det_n1 | `python -m simcode.det.up2 train` | focal loss on the nearest-pixel targets, offset NLL |
+| sc5nb | `python -m simcode.hd.sc4 prep5`, then `train --init <sc5n>` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
+| p2_det / p2_head_long | `python -m simcode.p2.det2 train`, `python -m simcode.p2.head2 train` (error model `--pert_model real`, the default; v1 for the intermediate p2head stage) | illumination channels zero-initialised from det_n1 / sc5nb |
 
 ### Exact training commands of the earlier default networks (the ancestors of the models)
+
+(As run at the time. Since 2026-11-14 `--up 1`, `--em_photons 40,2500`, `--arch sc4n`, `--paper 1`, `--bright_tail
+0.1,2000,20000` and `--pert_model real` are the trainers' fixed behaviour or defaults; the removed flags are accepted with
+these values. Two differences when re-running them: `--calib` is required (the earlier networks used the 0.5 nM in-situ PSF,
+`insitu/calib_0.5nM.json`), and a `p2.head2` command without `--pert_model` now means `real` (add `--pert_model v1`).)
 
 The recipe of a PSF-matched set (the same commands with `--calib <averaged PSF>` and the fine-tune from `hd_sc5nb.pt`) is in
 `models/README.md`.
@@ -105,8 +110,8 @@ All four entry points were run for 3 steps with these arguments (2026-11-11, `--
 server, put the env's `bin/` on PATH (`conda activate`): otherwise triton cannot find `ptxas` in the head trainers'
 backward pass.
 
-`hd/realgen.py` (`--gen r1`) is an optional realistic training generator. The networks retrained with it (p1r / p2r) were
-**not** adopted: the pre-registered rules failed.
+The realistic training generator `hd/realgen.py` (`--gen r1`; networks p1r / p2r) was **not** adopted (the pre-registered
+rules failed) and was removed on 2026-11-14.
 
 ## Calibrations (`models/`)
 

@@ -52,7 +52,7 @@ for r in range(reps):
 comp = 'on' if fastutil.compile_available() else 'off'
 Rb, info = Rs['base']
 Lw = dict(Rb); Lw['out'] = Rb['out'] & (np.cumsum(Rb['out']) <= 20000)
-SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, sc_cal, solve_opts=dict(compile=comp))
+SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, sc_cal, compile=comp)
 REP['acc'] = {}
 for v in vs:
     if v == 'base': continue
@@ -64,8 +64,8 @@ for v in vs:
         a['out_equal'] = float((Rv['out'] == Rb['out']).mean())
         if True:     # solve on the rows that are 'out' in both (the time-centroid flag flips on ~1e-4 of the rows)
             com = Rv['out'] & Rb['out']
-            Ob = SFF.run_chunk_pattern_solve_fast(dict(Rb, out=com), info, Pt, sc_cal, solve_opts=dict(compile=comp))
-            Ov = SFF.run_chunk_pattern_solve_fast(dict(Rv, out=com), info, Pt, sc_cal, solve_opts=dict(compile=comp))
+            Ob = SFF.run_chunk_pattern_solve_fast(dict(Rb, out=com), info, Pt, sc_cal, compile=comp)
+            Ov = SFF.run_chunk_pattern_solve_fast(dict(Rv, out=com), info, Pt, sc_cal, compile=comp)
             a['solve_dr'] = qstats(np.abs(np.c_[Ov['x_hy0'] - Ob['x_hy0'], Ov['y_hy0'] - Ob['y_hy0']]).max(1))
             a['solve_dsig'] = qstats(Ov['sig_hy0'] - Ob['sig_hy0'])
             a['kin_equal'] = float((Ov['kin_hy'] == Ob['kin_hy']).mean())

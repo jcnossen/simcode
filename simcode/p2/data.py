@@ -32,13 +32,13 @@ class Gen2(Gen):
 
     def batch2(self, nb, mix='paper', dens=(0.0005, 0.04), pair_frac=0.25, pair_sep=(0.5, 3.0), pair_curr=False,
                tau_r=(15.0, 80.0), bright_tail=(0.1, 2000.0, 20000.0), pert_scale=1.0, bgr=(1.0, 30.0),
-               photons=(40.0, 6000.0), det_em=(40.0, 2500.0), step_sd=(0.07, 0.25), pert_model='v1', pair_sub=None):
+               photons=(40.0, 6000.0), det_em=(40.0, 2500.0), step_sd=(0.07, 0.25), pert_model='v1'):
         pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
         rs = self.pick(pre)
         g = lambda *s: torch.rand(*s, device=dev)
         d = lu(*dens, nb); tau = lu(*tau_r, nb)
         med = lu(*det_em, nb)
-        em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep, pair_curr=pair_curr, pair_sub=pair_sub)
+        em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep, pair_curr=pair_curr)
         N = len(em['fov'])
         if mix == 'paper':
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, med0=QMED[pre], sd=0.45)
