@@ -581,3 +581,71 @@ runs), analysis/figures/lmref.py (constant-1 kap_bins / sig_ph), the SC_DET / GA
 scripts (all at the default values; analysis/p2generic left as it is, another worker's running scripts). Scripts that
 measured a removed option now stop with an error: analysis/detband/train_ab.sh (`--band`), the compile_head / channels_last
 variants of analysis/speed/bench_head.py, bench_p2.py and analysis/tput/bench_tput.py; they are records of finished studies.
+
+## 2026-11-14: renaming pass (aliases out; user-approved queue of out/HANDOFF_SESSION.md)
+
+Scope: renames and the removal of every compatibility alias. Table formats and output locations are unchanged (the HDF5
+dataset format, converter and `runs/` layout of `docs/DATASET_FORMAT.md` are the next pass). The 52 delete candidates of
+`out/cleanpass/DELETE_CANDIDATES.md` are not deleted (not approved); only the mechanical `simcode2` -> `simcode` import
+rename was applied to the 7 of them that imported `simcode2` (so that `tests/check_imports.py` is clean).
+
+| what | change |
+|---|---|
+| `simcode2/` | the import alias package deleted; every `import simcode2` / `python -m simcode2.*` / `simcode2/<file>` mention in the tree is `simcode` now (docs/CLEANUP_LOG.md and CLEANUP_PLAN.md keep the historical names) |
+| `simcode/config.py` | no `SIMCODE2_*` variables, no `simcode2.json` (the repository config is `simcode.json`; there was no `simcode2.json` on this machine), no `netset()` / `netsets()` / `NETSETS_FILE`, no `SIMCODE_NETSET`; `model_set(name)` takes a name of `simcode/models.json` or the path of a model folder / `model.json` (one model; paths relative to the folder) |
+| `simcode/util/retired.py` | deleted; `run.py`, `run_uncalibrated.py` and the trainers (`det.up2`, `hd.sc4`, `p2.det2`, `p2.head2`) parse their options directly, so a removed option is an argparse error |
+| `simcode/locs.py`, `Localizations` | deleted |
+| `simcode.run` | `--model` required (or from `--dataset` / `--config`); `--netset`, `--det`, `--head`, `--cal`, `--p2_det`, `--p2_head`, `--p2_cal`, `--u_max`, `--strict_q` removed; `--subset` = thresholds in nm (default `--sigma_max`, i.e. `locs_p*_sig12.npz`); a re-run (`--config`) of a record made with single files registers them as model `<name>@record`; `runconfig.backfill` reads old command lines itself |
+| `simcode/strict.py` | `select(T, max_precision_nm=12, min_score=0.63, in_region=True, crop=None, px_nm=None)` from x, y (x_dc, y_dc with `--drift`), sx, sy, p and the crop; the rule names (`main`, `u`, `strict`, `sel`, `good`, `all`), the u rule (`strict_u`, `U_MAX`, `u_max`), the strict product (`strict` column, `strict_product`, `Q_DENSITY`, `q_from_density`, `bin20`, coverage / q info) removed. The per-10-px-tile rank (`tile_rank`) stays internal: the model's selection-aware sigma rescale (`sig_u`) is a function of it. New tables keep every other column, including `good` and `sel` (until the format pass); the info json has `n_main` (rows of the selection), `n_good_crop`, `crop`, `sigma_max`, `median_photons` (of the selection) |
+| `simcode/dataset.py` | snake_case only: `load_npz` / `save_npz` (v2 table; was `from_table` / `loadNumpy`), `load_npy` / `save_npy` (preprint layout; was `from_smlmtorch_npy` / `saveNumpy`), `load_hdf5` / `save_hdf5` (Picasso; was `from_picasso` / `save_picasso` / `saveHDF5` / `loadHDF5`), `load_csv_thunderstorm` / `save_csv_thunderstorm`, `from_estimates` (was `from_arrays` / `fromEstimates`), `add_fields`, `num_frames` (property; was `nframes` / `numFrames`), `indices_per_frame`, `crop_from_edge`, `apply_drift` / `undo_drift` / `estimate_drift` / `is_drift_corrected`; `merge`, `fields`, `background` aliases removed. `select(max_precision_nm=12, min_score=0.63, in_region=True)` / `mask(...)`; in-place variants `filter_`, `crop_`, `crop_from_edge_`, `select_`, `crlb_filter_`, `autocrop_` (return the object itself) |
+| `simcode/auto` | no `netset` config key / `netset.json` / `process.pass2`; the training stage's gate scenes get `SIMCODE_GATE_CALIB` / `SIMCODE_GATE_DIR` (the `SIMCODE2_` names it used are no longer read); runwrap's crop override patches `tile_of` / `tile_rank` / `in_crop`; the report's FRC uses `Dataset.select()` |
+| 4Pi | `simcode.fourpi.insitu.slotZ` -> `slot_z` (and its analysis callers) |
+| `PSFLUT` | no leftovers (renamed to `ConvSplinePSF`, `simcode/psf/conv_spline.py`, in 2804e7a) |
+| pyproject | package data `models.json` |
+
+Checks:
+- T: `pytest tests` all pass (44); `tests/test_tables.py`, `test_dataset.py`, `test_runconfig.py`, `test_fileio.py`
+  updated for the new APIs (the old names must be absent; model folders; the selection from x, y, sx, sy, p).
+- S: `tests/check_imports.py`: no `simcode2` left.
+- P: `python -m simcode.run --movie <1809/2> --calib insitu/calib_1809_2_psf3d.json --model m1809 --nframes 12000` with the
+  reference run's pattern: 8 of 8 chunk files (`pass1_{0,6000}`, `pass2_est_*`, `pass2_est2_*`, `pass2_est2b_*`)
+  bit-identical to `out/paper2/1809_2/v2_matched` (out/cleanpass/bitid).
+- Table: `strict.build_table` on the whole `out/paper2/1809_2/v2_matched` (pass 2, m1809 sigma rescale): every column of the
+  new table bit-identical to the existing `locs_p2.npz`; `select(table)` = the stored-rank rule (2 141 721 rows);
+  `Dataset.select()` rows = `locs_p2_sig12.npz` (also for 2.5nM_2).
+- Fig. 3 / 4 (fig_exp_new.py / frc_fair.py, 12 nm rule): the SIMCODE entry recomputed from `Dataset.select()` of the full
+  table with the cached drift: FRC 17.529 nm (1809_2) / 22.257 nm (2.5nM_2), n_frc, no-filter and 30-frame FRC identical
+  to the stored `*_fig3_matched_sig12_values.json` / `*_fig4_matched_sig12_values.json`; the SMLM / SIMFLUX / DECODE
+  loaders give the stored row counts.
+- PS: `analysis/papersim/metrics.py` density metrics on `out/papersim/Dexp0.5` (60k frames, m1809) recomputed: every number
+  of the remaining methods (smlm, sf, sf_gtp, decode, v1, v2sig) identical to the stored `metrics_m1809.json`; the methods
+  `v2` (strict product) and `v2q45` (u <= 0.45) are gone, the key `netset` is `model` (out/cleanpass/papersim_check.json).
+- R: `python tests/test_runconfig.py --gpu` (2 chunks, re-run from the record, bit-identical); the file count of a run is 12
+  npz now (subsets: sig12 only).
+
+Analysis scripts (kept ones; commits 603f9cb, dcfd268, 1cbdaa1):
+- `simcode.run` callers use `--model` (a name, or a one-model json: `out/nanoruler/models/netset_nr80.json`, or one written
+  by the new `analysis/nanoruler/mkmodel.py` from the single files a script used to pass); the nanoruler sim / evaluation
+  runs pass `--sig_u ''` (unrescaled tables for the sigma-rescale fits, as when they were made); the removed trainer and
+  `run_uncalibrated` options are dropped from the calls.
+- The u rule / strict product rows of the paper-simulation tables and figures are removed (papersim/metrics.py keeps v2sig
+  = the 12 nm rule on the simulation FOV); the nanoruler ablation's main selection u45 is now m12 (12 nm, `strict.select`;
+  new outputs are named `*_m12*`; the existing u45 files stay as history). `--netset` -> `--model` everywhere; output file
+  names unchanged (`metrics_<model>.json` ...), new json outputs write `model`.
+- `psf3d_nets/sigcal.py`, `nanoruler/ev_sigcal.py` recompute the rank u with `strict.tile_rank` (= the stored strict_u to
+  float32 rounding); the fit tables must be built without `--sig_u`.
+- untracked `runs/psfmatch/*.sh` (not in git): prod.sh = `simcode.run --model $S`; eval*.sh write a model json; FRC inputs
+  `locs_p2_sig12.npz` instead of strictonly.
+
+Left as they are (their subject is the removed u rule / strict product; they no longer run on new tables; proposed for the
+deletion list): `analysis/evalproto/strictq.py`, `analysis/ablation_cov/movie_abl.py`,
+`analysis/selection_global/{sweep_real,sweep_sim,extract,fig_sweep,render_compare}.py` (+ `run_figs.sh` still works: it only
+copies cached drifts and calls fig_exp_new with the sig12 files), untracked `runs/psfmatch/u045.sh`.
+Delete candidates that would need changes (not touched): detband/movie.py, hdunbias/movie.py (`RS.netset`, `--netset`),
+detband/train_ab.sh, detband/ft_head.sh, hdunbias/ft.sh (removed trainer options), speed/e2e_prefetch.sh, speed/prof_stages.py
+(removed options / strict product), psfmatch/m20ghost_real.py, m20ghost_run.py, m20check_ghost_sim.py (strict_u, single files),
+papersim/run_g13b.sh (`--netset`), nanoruler/nr_p2gen.sh, ev_flipreal.sh (single files, `--pass2 --autoc 0`).
+Not renamed (on-disk names; layout pass): `out/nanoruler/models/netset_nr80.json`; `analysis/papersim/netsets.json`
+(untracked leftover, no reader left). Kept until the format pass: the table columns `good`, `sel`; old tables' `strict_u`,
+`strict`, `u_max` are read as plain columns and not used. smlmtorch's own camelCase methods (fromEstimates, numFrames) in
+analysis/baselines are that package's API and stay.

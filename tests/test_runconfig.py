@@ -101,7 +101,7 @@ def gpu_rerun(keep=''):
         B = RC.load(f'{d}/b')
         assert B['rerun_of']['sha256'] == RC.sha256(f'{d}/a/run_config.json')
         fs = sorted(f for f in os.listdir(f'{d}/a') if f.endswith('.npz'))
-        assert len(fs) >= 16
+        assert len(fs) >= 12                                 # 8 chunk files, 2 tables, 2 subset files (sig12)
         for f in fs:
             bad = compare_files(f'{d}/a/{f}', f'{d}/b/{f}', skip=('pattern',)); assert not bad, (f, bad)
         Pa, Pb = torch.load(f'{d}/a/pattern_est.pt'), torch.load(f'{d}/b/pattern_est.pt')
