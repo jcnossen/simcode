@@ -4,7 +4,9 @@ simcode/auto/runwrap.py for the in-memory preset overrides of a non-DMD setup).
 
 Steps (resumable: a trainer whose <dir>/final.pt exists is skipped; quick mode = train.quick_steps per trainer, in its own
 directory 'quick/'):
-  det -> hd (init hd_sc5nb) and p2det (init_n1 det) -> p2head (det = p2det at 25k steps, init hd) -> p2headL
+  det -> hd (init hd_sc5nb) and p2det (init_n1 det) -> p2det_c (init p2det); p2head (det = p2det at 25k steps, init hd) ->
+  p2headL -> p2headL2 (det = p2det); the pass-2 trainers draw generic illumination patterns (hd/realsim.RealSim._generic) with a
+  share --p_std of the dataset's own pattern: 0.25 in p2det / p2head / p2headL, 0.5 in p2det_c / p2headL2 (models/README.md)
   gate scenes (simcode.hd.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (det + hd) and pass 2 (p2det + p2headL)
   -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
@@ -19,12 +21,18 @@ T_BASE = dict(det=['-m', 'simcode.det.up2', 'train', '--batch', '16', '--size', 
               hd=['-m', 'simcode.hd.sc4', 'train', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--tau', '15,80',
                   '--pair_frac', '0.25', '--dens', '0.0005,0.04', '--med', '40,2500', '--nnw', '1', '--seed', '1', '--w_mr', '2.0', '--w_slope', '50.0',
                   '--bf16', '1', '--pct', '0.1'],
-              p2det=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11'],
+              p2det=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11',
+                     '--p_std', '0.25'],
+              p2det_c=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '1e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '51',
+                       '--p_std', '0.5'],
               p2head=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1.5e-4', '--pct', '0.1', '--w_mr', '2.0', '--w_slope', '50.0',
-                      '--seed', '21', '--no_illum', '0', '--pert_model', 'v1'],
+                      '--seed', '21', '--no_illum', '0', '--pert_model', 'v1', '--p_std', '0.25'],
               p2headL=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
-                       '--seed', '31', '--no_illum', '0', '--hold_v1', '15'])
-EVERY = dict(det=None, hd=('2000', '6000'), p2det=('2500', '5000'), p2head=('4000', '8000'), p2headL=('2000', '10000'))
+                       '--seed', '31', '--no_illum', '0', '--hold_v1', '15', '--p_std', '0.25'],
+              p2headL2=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
+                        '--seed', '41', '--no_illum', '0', '--hold_v1', '0', '--p_std', '0.5'])
+EVERY = dict(det=None, hd=('2000', '6000'), p2det=('2500', '5000'), p2det_c=('5000', '10000'), p2head=('4000', '8000'), p2headL=('2000', '10000'),
+             p2headL2=('5000', '10000'))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCEN_FIT = 'rs05qm'
 
@@ -81,13 +89,15 @@ def run(ds):
     det = stage('det', ['--init', det_init] if det_init else [])
     hd = stage('hd', ['--det', det, '--init', Tc['init']['hd']] + (['--hold', hold] if os.path.exists(hold) else []))
     p2det = stage('p2det', ['--init_n1', det])
+    p2det_c = stage('p2det_c', ['--init', p2det, '--init_n1', det])
     p25 = os.path.join(D, 'p2det', 'ckpt_25000.pt')
     p2head = stage('p2head', ['--det', p25 if os.path.exists(p25) else p2det, '--init', hd])
     p2headL = stage('p2headL', ['--det', p2det, '--init', p2head])
+    p2headL2 = stage('p2headL2', ['--det', p2det, '--init', p2headL])
     name = ('q' if quick else 'a') + c['name']
     M = os.path.join(D, 'models'); os.makedirs(M, exist_ok=True)
     files = {}
-    for k, f in (('det', det), ('head', hd), ('p2_det', p2det), ('p2_head', p2headL)):
+    for k, f in (('det', det), ('head', hd), ('p2_det', p2det_c), ('p2_head', p2headL2)):
         files[k] = os.path.join(M, f'{k}_{name}.pt'); shutil.copyfile(f, files[k])
     # ---- gate scenes, dumps, calibrations
     tag = 'g' + c['name']
@@ -142,7 +152,8 @@ def run(ds):
     # stored in each checkpoint are part of the file records
     from simcode.util import runconfig as RC
     recs = {k: RC.model_file(v) for k, v in {**files, **cals}.items()}
-    trained = {k: RC.file_record(f) for k, f in (('det', det), ('hd', hd), ('p2det', p2det), ('p2head', p2head), ('p2headL', p2headL))}
+    trained = {k: RC.file_record(f) for k, f in (('det', det), ('hd', hd), ('p2det', p2det), ('p2det_c', p2det_c), ('p2head', p2head),
+                                                 ('p2headL', p2headL), ('p2headL2', p2headL2))}
     recipe = dict(what='PSF-matched recipe of simcode.auto stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
                   written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,
                   code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),

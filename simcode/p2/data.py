@@ -12,7 +12,10 @@ pattern-estimate input; the original generator is unchanged).
            realism/c_calib.txt; the lower end = the old preset 0.07), angle factor sd preset
   kinetics on-time log-uniform 15-80 frames; density log-uniform 0.0005-0.04 /px; pair_frac 0.25, pair separation
            uniform pair_sep (detector 0.3-3.0 px) or the sc5 curriculum (head: pair_curr)
-  pattern  o['patt_p2'] = illum.perturb(true pattern) (realistic estimation errors), o['illum_p2'] = illum_maps of it
+  pattern  generic draw (hd/realsim.RealSim._generic: pitch 1.8-4 px, orientations, independent per-frame phases, frame order,
+           per-angle depth, power) in a share 1 - p_std of the FOVs, the SIMCODE (DMD) pattern in the others (p_std default
+           P_STD = 0.5; the recipe's first stages 0.25, models/README.md); o['patt_p2'] = illum.perturb(true pattern) (realistic
+           estimation errors), o['illum_p2'] = illum_maps of it
 """
 import torch
 from simcode.hd.realsim import lu
@@ -21,14 +24,16 @@ from simcode.p2 import illum as IL
 
 dev = 'cuda'
 QMED = {'0.5nM': 1260.0, '2.5nM': 1890.0}
+P_STD = 0.5     # share of FOVs with the SIMCODE pattern (the rest: generic draw); 2026-11-13 out/p2generic g2ss
 
 
 class Gen2(Gen):
-    def __init__(self, H=64, W=64, T=6, seed=0, calib=None, pgen=None):
+    def __init__(self, H=64, W=64, T=6, seed=0, calib=None, p_std=P_STD):
         super().__init__(H, W, T, seed, calib=calib)       # calib (2026-11-11, opt-in): PSF calib mixture, see hd/data.Gen
+        if not 0.0 <= p_std < 1.0: raise ValueError(f'p_std {p_std}: the share of SIMCODE-pattern FOVs must be in [0, 1)')
         for rs in self.all_rs():
             rs.p['frame_sd'] = 0.09
-            if pgen: rs.p['pgen'] = dict(pgen)   # (2026-11-13 generic p2, opt-in) generic pattern draw (hd/realsim.RealSim._pgen); None = unchanged
+            rs.p_std = float(p_std)      # generic pattern draw (hd/realsim.RealSim._generic) in a share 1 - p_std of the FOVs
 
     def batch2(self, nb, mix='paper', dens=(0.0005, 0.04), pair_frac=0.25, pair_sep=(0.5, 3.0), pair_curr=False,
                tau_r=(15.0, 80.0), bright_tail=(0.1, 2000.0, 20000.0), pert_scale=1.0, bgr=(1.0, 30.0),

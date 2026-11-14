@@ -148,13 +148,6 @@ def eval_hold(det, needs_il, head, col, H, il_on=True):
 
 
 # ------------------------------------------------------------------------------------------------ training
-def _load_pgen(v):
-    """(2026-11-13 generic p2, opt-in) --pgen: '' -> None (unchanged), a json file path, or inline json"""
-    import json as _j, os as _o
-    if not v: return None
-    return _j.load(open(v)) if _o.path.exists(v) else _j.loads(v)
-
-
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -179,7 +172,9 @@ def train(argv):
     # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
-    ap.add_argument('--pgen', default='')   # (2026-11-13 generic p2, opt-in; '' = unchanged) json file or inline json: realsim pgen dict
+    # pattern draw: generic (any pitch / orientation / phases / frame order / depth / power; hd/realsim.RealSim._generic) in a
+    # share 1 - p_std of the FOVs, the SIMCODE pattern in the others (models/README.md recipe: 0.25, then 0.5 in the last stage)
+    ap.add_argument('--p_std', type=float, default=0.5)
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-p2head')     # recognizable name in nvidia-smi / ps
     from simcode.p2.data import Gen2
@@ -189,7 +184,7 @@ def train(argv):
     os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     gen = Gen2(64, 64, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')],
-               pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
+               p_std=a.p_std)
     psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))

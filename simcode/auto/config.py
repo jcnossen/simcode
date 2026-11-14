@@ -17,7 +17,7 @@ DEFAULTS = {
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
     'train': dict(model=None, quick=False, quick_steps=30,
-                  steps=dict(det=40000, hd=18000, p2det=40000, p2head=24000, p2headL=50000),
+                  steps=dict(det=40000, hd=18000, p2det=40000, p2det_c=40000, p2head=24000, p2headL=50000, p2headL2=50000),
                   init=dict(det=None, hd='hd_sc5nb.pt'), extra=dict(det='', hd='', p2=''),
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), real_mult_from='m1809'),
     'process': dict(model=None, calib=None, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,

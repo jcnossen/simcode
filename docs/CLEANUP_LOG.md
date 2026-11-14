@@ -657,3 +657,18 @@ p2generic/{t1_eval.py,t1_run.sh,cont_gen.sh}; fourpi/after_mt_w4pi.sh; nanoruler
 r2040_{cycle,meta,pattern,sample,tables}.py,meta.py}; studies of the removed u / strict rules: evalproto/strictq.py, ablation_cov/movie_abl.py,
 selection_global/{sweep_real,sweep_sim,extract,fig_sweep,render_compare,write_subsets}.py; runs/psfmatch/u045.sh (untracked).
 Reasons per file: out/cleanpass/DELETE_CANDIDATES.md and the rename-pass report. Checks after deletion: tests 44 passed, check_imports clean except the known tests.test_tables note.
+
+## 2026-11-14: generic pattern draw = the only pass-2 training draw (user decision)
+"The generic pass 2 is completely functional, so we don't need any of the dedicated things anymore. From now on all pass-2
+models are generic."
+| file | change |
+|---|---|
+| hd/realsim.py | the RealSim preset key `pgen` (opt-in dict) removed; the generic draw `RealSim._generic` (was `_pgen`) uses the fixed ranges `GENERIC` (= out/p2generic/presets/pgen_v1 without p_std; its unused alternatives `phase: steps`, `ksign: false` removed) and the attribute `RealSim.p_std` (None = the SIMCODE pattern: pass-1 training, gate scenes, sim movies) |
+| p2/data.py | `Gen2(pgen=None)` -> `Gen2(p_std=P_STD)`, P_STD = 0.5, 0 <= p_std < 1 (no SIMCODE-only pass-2 training) |
+| p2/det2.py, p2/head2.py | `--pgen <json>` removed; `--p_std` (default 0.5): share of FOVs with the SIMCODE pattern |
+| auto/train.py, auto/config.py | stage e = the generic recipe: p2det (p_std 0.25) -> p2det_c (p_std 0.5, the model's pass-2 detector); p2head, p2headL (0.25) -> p2headL2 (0.5, the model's pass-2 head); steps keys p2det_c, p2headL2 |
+| analysis/p2generic/{chain_gen,chain_gen2,cont_det,cont_gen2}.sh | `--pgen <preset>` -> `--p_std <share>` (pgen_v1 = 0.25, pgen_v1s50 = 0.5); p2head stage with `--pert_model v1` |
+| models/README.md, docs/AUTO_PIPELINE.md, docs/METHOD.md | recipe / description |
+Check: Gen2 batches (frames, patterns, estimates, steps, illumination maps; both p_std values, 'paper' / 'det' mixes, v1 / real
+error models) bit-identical to the former `--pgen pgen_v1` / `pgen_v1s50` with the same seeds; RealSim.scene without
+p_std bit-identical to before (out/z3d/checks/gen_bitid.py).
