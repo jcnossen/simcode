@@ -68,8 +68,8 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 
 | file | what it does |
 |---|---|
-| `sc.py` | Shared pieces of the per-candidate head (patch extraction, PSF template, head call on detector candidates, loader) and the wrapper around the explicit pattern solve. |
-| `sc4.py` | The production head (neighbour and detector-probability inputs, full intensity covariance, position prior) and its training. |
+| `sc.py` | Shared pieces of the per-candidate head (patch extraction, PSF template, head call on detector candidates, loader), the wrapper around the explicit pattern solve, and z after the solve (`z_given_xy`: the head's 3D prior conditioned on the solved x, y). |
+| `sc4.py` | The production head (neighbour and detector-probability inputs, full intensity covariance, 3D position prior x, y, z with a 3 x 3 covariance; z in px relative to the PSF calibration's focal plane) and its training. |
 | `msolve.py` | Multi-start explicit pattern solve on the network intensities (reference implementation). |
 | `msolve_fast.py` | Faster drop-in for the same solve (production). |
 | `realsim.py` | Experiment-matched simulator: measured PSF with jitter, camera maps, structured and fluctuating background, filaments. |
