@@ -18,7 +18,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from cl4pi import Classic4Pi, wrap
-from simcode.fourpi.insitu import refine_k, slotZ, phase_field
+from simcode.fourpi.insitu import refine_k, slot_z, phase_field
 
 from simcode.fourpi.setup import PX_NM
 FILTERS = dict(R_max=0.2, MD=(0.6, 1.2), N_min=1000.0, sxy_max_nm=10.0, llr_max=500.0 * 225 / 169, C=(0.4, 1.6), chi2px_max=4.0)
@@ -45,7 +45,7 @@ def estimate_pattern(A, X, Y, kref, sel, nmax=200000):
     for a in range(2):
         I3 = A['Nt'][idx, 3 * a:3 * a + 3].astype(np.float64)
         k = refine_k(I3, Xg, np.array(kref[a]), span=0.02, n=21)
-        Z = slotZ(I3, Xg, k); psi = -np.angle(Z)
+        Z = slot_z(I3, Xg, k); psi = -np.angle(Z)
         pat[f'angle{a}'] = dict(k=k.tolist(), psi_deg=np.degrees(psi).tolist(), slot_abs=np.abs(Z).tolist())
     return pat
 

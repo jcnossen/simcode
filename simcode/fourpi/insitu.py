@@ -1,6 +1,6 @@
 """In-situ estimates of the 4Pi pipelines, per file, from the candidates themselves (no calibration sample):
 
-  SIM pattern   slotZ / refine_k / emitter_phase (per-emitter 3-step solve; global k and step phases from the slot DFT),
+  SIM pattern   slot_z / refine_k / emitter_phase (per-emitter 3-step solve; global k and step phases from the slot DFT),
                 repattern_xy (pattern of a file from per-frame intensities at given positions),
                 pattern_psi (per-candidate, per-frame pattern phase and depth in local patch coordinates)
   4Pi phase     phase_field: Phi0(x, y, t) = tile map M(x, y) + block drift d(t), by alternating circular means
@@ -12,7 +12,7 @@ phi_e = k_a . r_e. Global k, psi_j: maximise sum_j |Z_j|^2, Z_j = <(I_j / mean -
 import numpy as np
 
 
-def slotZ(I3, X, k):
+def slot_z(I3, X, k):
     m = I3.mean(1, keepdims=True)
     r = I3 / m - 1
     return 2 * (r * np.exp(-1j * (X @ k))[:, None]).mean(0)
@@ -26,7 +26,7 @@ def refine_k(I3, X, k0, span=0.05, n=41, rounds=2):
         for dx in np.linspace(-sp, sp, n):
             for dy in np.linspace(-sp, sp, n):
                 kk = k + [dx, dy]
-                s = (np.abs(slotZ(I3, X, kk)) ** 2).sum()
+                s = (np.abs(slot_z(I3, X, kk)) ** 2).sum()
                 if s > best[0]: best = (s, kk)
         k = best[1]
     return k
@@ -48,7 +48,7 @@ def repattern_xy(I, X, ref, sel):
     for a in range(2):
         I3 = I[sel, 3 * a:3 * a + 3]
         k = refine_k(I3, X[sel], np.array(ref[f'angle{a}']['k']), span=0.02, n=21)
-        psi = -np.angle(slotZ(I3, X[sel], k)); ph, mm, _ = emitter_phase(I3, psi)
+        psi = -np.angle(slot_z(I3, X[sel], k)); ph, mm, _ = emitter_phase(I3, psi)
         out[f'angle{a}'] = dict(k=k.tolist(), psi_deg=np.degrees(psi).tolist(), m_median=float(np.nanmedian(np.clip(mm, 0, 1.5))),
                                  R=float(np.abs(np.mean(np.exp(1j * (ph - X[sel] @ k))))))
     return out

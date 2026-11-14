@@ -9,7 +9,7 @@ import os, sys, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pattern import refine_k, slotZ, emitter_phase, wrap, cmean
+from pattern import refine_k, slot_z, emitter_phase, wrap, cmean
 from fourpi import chan_phase
 
 OUT = f'{P4}/smlm'
@@ -40,13 +40,13 @@ def run(cell):
         for a in range(2):
             I3 = It[ok][:, 3 * a:3 * a + 3]
             k = refine_k(I3, X, K0[cell][a], span=0.03, n=21, rounds=2)
-            Z = slotZ(I3, X, k); psi = -np.angle(Z)
+            Z = slot_z(I3, X, k); psi = -np.angle(Z)
             ph, mm, _ = emitter_phase(I3, psi); d_ = wrap(ph - X @ k)
             # the OTHER angle's k evaluated on these frames (an angle swap would show here)
-            Zx = slotZ(I3, X, K0[cell][1 - a])
+            Zx = slot_z(I3, X, K0[cell][1 - a])
             r[f'a{a}'] = dict(k=k.tolist(), period=float(2 * np.pi / np.linalg.norm(k)), psi=np.rad2deg(psi).tolist(),
-                              dpsi=np.rad2deg(wrap(np.diff(psi))).tolist(), slotZ=np.abs(Z).round(3).tolist(),
-                              slotZ_other_k=np.abs(Zx).round(3).tolist(), m_med=float(np.nanmedian(mm)), R=float(abs(cmean(d_))))
+                              dpsi=np.rad2deg(wrap(np.diff(psi))).tolist(), slot_z=np.abs(Z).round(3).tolist(),
+                              slot_z_other_k=np.abs(Zx).round(3).tolist(), m_med=float(np.nanmedian(mm)), R=float(abs(cmean(d_))))
         Phi, V, Q = chan_phase(I[ok].sum(1), tau, phc)
         c = cmean(Phi[V > 0.1]); r['phi4pi'] = float(np.rad2deg(np.angle(c))); r['R4pi'] = float(abs(c))
         rows.append(r)

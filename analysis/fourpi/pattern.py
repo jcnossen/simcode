@@ -25,7 +25,7 @@ def cmean(a, w=None):
     return np.average(e, weights=w) if w is not None else e.mean()
 
 
-from simcode.fourpi.insitu import slotZ, refine_k, emitter_phase  # noqa (the estimator lives in the package)
+from simcode.fourpi.insitu import slot_z, refine_k, emitter_phase  # noqa (the estimator lives in the package)
 
 
 def emitter_phase_err(I3, sI3, psi, nsim=1, rng=None):
@@ -42,7 +42,7 @@ def emitter_phase_err(I3, sI3, psi, nsim=1, rng=None):
 class AnglePattern:
     def __init__(self, I3, sI3, X, k0):
         self.k = refine_k(I3, X, k0)
-        Z = slotZ(I3, X, self.k)
+        Z = slot_z(I3, X, self.k)
         self.Z = Z; self.psi = -np.angle(Z); self.m_slot = 2 * np.abs(Z) / 2      # |Z_j| = m * R / 1 (see docstring)
         self.I3, self.sI3, self.X = I3, sI3, X
         self.phi, self.m, self.B = emitter_phase(I3, self.psi)

@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from render import load_locs
-from pattern import AnglePattern, wrap, cmean, emitter_phase, refine_k, slotZ
+from pattern import AnglePattern, wrap, cmean, emitter_phase, refine_k, slot_z
 from register import feats
 
 OUT = f'{P4}/smlm'
