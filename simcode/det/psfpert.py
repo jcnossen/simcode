@@ -7,7 +7,7 @@ calibrated vectorial PSF with a random perturbation:
 plus, per batch (sample()), a wider emitter z range (zmax_pert), and camera gain / offset errors (the frames are
 converted with gain (1 + eg) and offset + eo ADU instead of the true ones).
 """
-import math, copy
+import json, math
 import numpy as np, torch
 from simcode.sim.simulator import Simulator
 from simcode import psf as spsf
@@ -18,18 +18,21 @@ dev = 'cuda'
 
 def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle=None):
     """returns (lut [nz, ls+1, ls+1, R, R], zmax) for a perturbed PSF, rendered like Simulator.__init__
-    (2026-11-11) with the calib's opt-in PSF terms (torch_psf.load_psf; angle = that pattern angle's PSF, None = average).
+    (2026-11-11) with the calib's opt-in PSF terms: torch_psf.PSF.load of the calib dict with the pixel size / width, the focus
+    and the Zernikes changed (angle = that pattern angle's PSF, None = average).
     A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike / focus terms do not apply to it."""
     zmax = zmax or sim.zmax
-    base = spsf.load_psf(sim.calib_path, roisize=sim.R, oversample=3, device=dev, angle=angle)
-    if isinstance(base, spsf.GaussianPSF):
+    c = json.load(open(sim.calib_path))
+    if c.get('psf_gauss_sigma_um') is not None:
+        base = spsf.PSF.load(c, roisize=sim.R, device=dev)
         psf = spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)
     else:
-        o = base.optics; o.pixel_um = o.pixel_um / width
-        psf = spsf.VectorialPSF.from_optics(o, sim.R, oversample=3, device=dev, focus_um=sim.focus + focus_shift)
-        with torch.no_grad():
-            psf.zcoef.copy_(base.zcoef if zern_delta is None else base.zcoef + zern_delta); psf.apod.copy_(base.apod)
-        psf.blur, psf.dipM = base.blur, base.dipM
+        c['pixelsize_um'] = c['pixelsize_um'] / width
+        c['focus_um'] = sim.focus + focus_shift
+        if zern_delta is not None:
+            z = torch.tensor(c['zernike_waves'], device=dev, dtype=torch.float32) + zern_delta
+            c['zernike_waves'] = z.tolist()
+        psf = spsf.PSF.load(c, roisize=sim.R, oversample=3, device=dev, angle=angle)
     zs = torch.linspace(0, zmax, sim.lz, device=dev)
     sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
     Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
