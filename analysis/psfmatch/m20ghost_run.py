@@ -20,10 +20,10 @@ EXTRA = ['--nframes', '6000', '--sig_u', f'models/calib/sigu/sigu_p1_{S}.json,mo
 os.makedirs(OD, exist_ok=True)
 args = ['--movie', MOV, '--calib', CAL, '--out', OD] + CFG + NETS + EXTRA
 if not os.path.exists(f'{OD}/locs_p2.npz'):
-    open(f'{OD}/command.txt', 'a').write('python -m simcode2.run ' + ' '.join(args) + '\n')
+    open(f'{OD}/command.txt', 'a').write('python -m simcode.run ' + ' '.join(args) + '\n')
     run.main(args)
 for p, tg in ((1, 'est'), (2, 'est2')):
     sa = [OD, '--tag', tg, '--sig_u', f'models/calib/sigu/sigu_p{p}_{S}.json']
-    open(f'{OD}/command.txt', 'a').write('python -m simcode2.strict ' + ' '.join(sa) + '\n')
+    open(f'{OD}/command.txt', 'a').write('python -m simcode.strict ' + ' '.join(sa) + '\n')
     strict.main(sa)
 print('m20ghost run done', flush=True)

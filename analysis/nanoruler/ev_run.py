@@ -1,4 +1,4 @@
-"""nr80 evaluation: python -m simcode2.run on a movie of the nanoruler setup. simcode2.run itself takes the PSF, camera and
+"""nr80 evaluation: python -m simcode.run on a movie of the nanoruler setup. simcode2.run itself takes the PSF, camera and
 pixel size from --calib, but three constants of the other setup are hard-coded in the package; they are overridden here IN
 MEMORY (no package file is edited), then simcode2.run.main runs with the given arguments:
   1. simcode2/pipeline/pattern_est.estimate_k: pitch search annulus pitch_px = (1.6, 2.8) px. The nanoruler pitch is 3.38 px,

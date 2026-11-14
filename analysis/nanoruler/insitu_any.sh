@@ -17,8 +17,8 @@ with h5py.File('$O/quick_w6_good.hdf5', 'w') as h: h.create_dataset('locs', data
 nf = int(L['frame'].max()) + 1
 print('quick w6: good per window %.2f, photons p5/p50/p95 %s, bg/px/frame %.3f, sigma %.3f' % (len(G) / nf, np.percentile(G['photons'], [5, 50, 95]).round(0), np.median(G['bg']) / 6, np.median(G['sx'])))
 PY
-[ -f $O/camera_maps_$N.npz ] || python -m simcode2.insitu.camera_maps --movie $M --nframes 6000 --gain 0.45 --offset $OFF --locs $O/quick_w6_good.hdf5 --out $O/camera_maps_$N.npz > $O/camera_maps.log 2>&1
-[ -f $O/tracks.npz ] || python -m simcode2.insitu.extract_tracks --movie $M --locs $O/quick_w6_good.hdf5 --maxframe $MAXF --roi 15 --isolation 10 --out $O/tracks.npz > $O/tracks.log 2>&1
+[ -f $O/camera_maps_$N.npz ] || python -m simcode.insitu.camera_maps --movie $M --nframes 6000 --gain 0.45 --offset $OFF --locs $O/quick_w6_good.hdf5 --out $O/camera_maps_$N.npz > $O/camera_maps.log 2>&1
+[ -f $O/tracks.npz ] || python -m simcode.insitu.extract_tracks --movie $M --locs $O/quick_w6_good.hdf5 --maxframe $MAXF --roi 15 --isolation 10 --out $O/tracks.npz > $O/tracks.log 2>&1
 tail -2 $O/tracks.log
 for X in "" _cb0; do
   SP=""; [ "$X" = "_cb0" ] && SP="--split cb0"
@@ -28,7 +28,7 @@ for X in "" _cb0; do
   [ -f $O/blps3${X}_psf.pt ] || $F --init-fit $O/bl${X}_psf.pt --freeze-base 1 --photosel 3 --pol-calib $PWD/out/nanoruler/calib_nr80.json --out $O/blps3$X > $O/blps3$X.log 2>&1
 done
 for f in base bl blps3; do [ -f $O/held_$f.npz ] || python analysis/nanoruler/nr_psf_heldout.py --tracks $O/tracks.npz --fit $O/${f}_cb0_psf.pt --test cb1 --out $O/held_$f.npz > $O/held_$f.log 2>&1; done
-python -m simcode2.insitu.psf_compare $O/held_base.npz $O/held_bl.npz $O/held_blps3.npz > $O/held_compare.txt 2>&1
+python -m simcode.insitu.psf_compare $O/held_base.npz $O/held_bl.npz $O/held_blps3.npz > $O/held_compare.txt 2>&1
 [ -f $O/bl_int_intensities.pt ] || python -u analysis/nanoruler/nr_fit_insitu2.py --tracks $O/tracks.npz --gain 0.45 --init-fit $O/bl_psf.pt --freeze-base 1 --iters 200 --intensities 1 --out $O/bl_int > $O/bl_int.log 2>&1
-[ -f $O/pattern.json ] || python -m simcode2.insitu.fit_pattern --intensities $O/bl_int_intensities.pt --oldmod $PWD/out/nanoruler/oldmod_$N.pickle --out $O/pattern > $O/pattern.log 2>&1
+[ -f $O/pattern.json ] || python -m simcode.insitu.fit_pattern --intensities $O/bl_int_intensities.pt --oldmod $PWD/out/nanoruler/oldmod_$N.pickle --out $O/pattern > $O/pattern.log 2>&1
 echo "insitu $N done $(date)"
