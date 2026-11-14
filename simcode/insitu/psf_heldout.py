@@ -13,8 +13,9 @@ usage: python -m simcode.insitu.psf_heldout --tracks T.npz --fit F_psf.pt --test
 """
 import argparse, json, math
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras
-from simcode.insitu.varpro import solve_linear
+from simcode import psf as spsf
+from simcode.psf import VectorialPSF
+from simcode.psf import solve_linear
 from simcode import config
 
 APERTURES = (2.5, 3.0, 4.0)
@@ -24,7 +25,7 @@ def build_psf(R, fit=None, calib=None, dev='cuda', os_=2):
     """-> (model, focus, cam dict, per-angle kwargs list [angle0, angle1])"""
     if fit:
         S = torch.load(config.resolve(fit), weights_only=False)
-        model = VectorialPSF(R, oversample=os_, NA=float(S['NA']), wavelength=0.70, n_med=1.33, device=dev)
+        model = VectorialPSF(R, oversample=os_, NA=float(S['NA']), wavelength_um=0.70, n_med=1.33, device=dev)
         with torch.no_grad():
             model.zcoef.copy_(S['zcoef'].to(dev)); model.apod.copy_(S['apod'].to(dev))
         ex = S.get('extras', {})
@@ -35,11 +36,7 @@ def build_psf(R, fit=None, calib=None, dev='cuda', os_=2):
         bl, dw, dM = ex.get('blur_px2'), ex.get('dipole_w'), ex.get('dipole_M')
     else:
         c = json.load(open(config.resolve(calib)))
-        model = VectorialPSF(R, oversample=os_, NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'],
-                             pixelsize=c['pixelsize_um'], device=dev)
-        with torch.no_grad():
-            model.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); model.apod.copy_(torch.tensor(c['apod'], device=dev))
-        set_psf_extras(model, c)
+        model = spsf.load_psf(config.resolve(calib), roisize=R, oversample=os_, device=dev)   # with the opt-in psf_* terms
         focus = float(c['focus_um']); cam = dict(gain=0.56, offset=99.3, rn=1.9, zmax=0.2)
         bl = c.get('psf_blur_angle_px2'); dw = c.get('psf_dipole_w_angle'); dM = c.get('psf_dipole_M_angle')
     kws = []

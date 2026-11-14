@@ -23,8 +23,8 @@ is the held-out set of psf_heldout.py; --intensities 0 skips the all-sample inte
 """
 import argparse, json, math
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
-from simcode.insitu.varpro import solve_linear
+from simcode.psf import VectorialPSF
+from simcode.psf import solve_linear
 from simcode import config
 from simcode.insitu import out
 
@@ -60,7 +60,7 @@ Ball = len(D['rois'])
 R = D['rois'].shape[-1]; c = (R - 1) / 2
 import os as _os
 NR = {k: float(_os.environ.get('NR_' + k.upper(), d)) for k, d in (('px', 0.065), ('wl', 0.68), ('offset', 100.0), ('rn', 1.6))}
-model = VectorialPSF(R, pixelsize=NR['px'], oversample=2, NA=1.49, wavelength=NR['wl'], n_med=1.33, device=dev)
+model = VectorialPSF(R, pixel_um=NR['px'], oversample=2, NA=1.49, wavelength_um=NR['wl'], n_med=1.33, device=dev)
 if a.psf:
     with torch.no_grad(): model.zcoef.copy_(torch.load(a.psf)['zcoef'].to(dev))
 model.zcoef.requires_grad_(bool(a.fit_zernike)); model.apod.requires_grad_(bool(a.fit_apod)); model.NA.requires_grad_(bool(a.fit_na))
@@ -89,7 +89,7 @@ if a.fit_saf:
     model.saf.requires_grad_(True)
 GAM = EPS = None
 if a.photosel:
-    from simcode.psf.vectorial import photosel_tensor
+    from simcode.psf import photosel_tensor
     kc = torch.tensor(json.load(open(config.resolve(a.pol_calib)))['pattern']['k_rad_per_px'], device=dev)
     KDIR = kc / kc.norm(dim=1, keepdim=True)                                    # [2 angles, (x, y)]
     EDIR = torch.stack([-KDIR[:, 1], KDIR[:, 0]], 1)                            # s-pol: in-plane, perpendicular to k

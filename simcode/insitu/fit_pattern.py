@@ -7,7 +7,7 @@ Only frames where the emitter is on for the whole frame are used (it is also bri
 import argparse, json, math, pickle
 import numpy as np, torch
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-from simcode.psf.vectorial import VectorialPSF
+from simcode.psf import VectorialPSF
 from simcode.insitu import SFCFG_05, data, out
 
 ap = argparse.ArgumentParser()
@@ -36,7 +36,7 @@ else:
     B, T, R, _ = adu.shape
     c = (R - 1) / 2
 
-    model = VectorialPSF(R, oversample=2, NA=float(S['NA']), wavelength=0.70, n_med=1.33, device=dev)
+    model = VectorialPSF(R, oversample=2, NA=float(S['NA']), wavelength_um=0.70, n_med=1.33, device=dev)
     with torch.no_grad():
         model.zcoef.copy_(S['zcoef'].to(dev)); model.apod.copy_(S['apod'].to(dev))
     for prm in model.parameters(): prm.requires_grad_(False)

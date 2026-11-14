@@ -1,13 +1,15 @@
 """In-situ PSF fit of the automatic pipeline (stage d; docs/AUTO_PIPELINE.md sections 2 and 4).
 
-fit(tracks, out, ...) = simcode/insitu/fit_insitu2.py as a function (same algorithm, defaults, random draws and operation
-order, so with the same inputs it gives the same result), but with the optics and the camera constants as arguments
-(fit_insitu2 hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU, read noise 1.9 e). Supported terms: Zernike
-5-21 + focus, blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base, checkerboard split. Writes
-<out>_psf.pt / _psf.json in the fit_insitu2 format.
+fit(tracks, out, ...) = simcode/insitu/fit_insitu2.py as a function (same algorithm, defaults, random draws), but with the
+optics and the camera constants as arguments (fit_insitu2 hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
+read noise 1.9 e). The fit itself is torch_psf.insitu.fit_tracks (variable projection: per-frame I and per-(sample, pattern
+angle) bg solved in closed form, per-sample x, y, z and the PSF parameters by Adam); here: the sample selection, the camera
+conversion, the pattern-angle groups (frame % 6 // 3) and the photoselection hook. Supported terms: Zernike 5-21 + focus,
+blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base (frozen = learning rate 0), checkerboard split.
+Writes <out>_psf.pt / _psf.json in the fit_insitu2 format.
 
-lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (simcode.psf.conv_spline.ConvSplinePSF
-geometry) of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
+lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.ConvSplinePSF)
+of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
 (x, y, z gradients, varpro I / bg) run on the spline; the PSF parameters get the exact gradient of the spline loss over all
 samples by one backward pass through the table construction. Same optimizer, learning rates and iteration count as the
 direct fit; the final residuals / intensities use the vectorial model.
@@ -19,9 +21,10 @@ phase / modulation / relative intensity.
 """
 import json, math, time
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
-from simcode.psf.conv_spline import ConvSplinePSF
-from simcode.insitu.varpro import solve_linear
+from simcode import psf as spsf
+from simcode.psf import solve_linear
+from simcode.psf import Tracks
+from simcode.psf import fit_tracks
 
 
 class Fit:
@@ -29,8 +32,7 @@ class Fit:
                  init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2):
         self.dev, self.R, self.c, self.zmax = dev, R, (R - 1) / 2, zmax
         o = optics
-        self.model = VectorialPSF(R, pixelsize=o['pixel_um'], oversample=2, NA=o['NA'], n_imm=o['n_imm'], wavelength=o['wavelength_um'],
-                                  n_med=o['n_med'], device=dev)
+        self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(o), R, oversample=2, device=dev)
         m = self.model
         if init_zcoef is not None:
             with torch.no_grad(): m.zcoef.copy_(torch.as_tensor(init_zcoef).to(dev))
@@ -128,62 +130,28 @@ class Fit:
 
     # ---- spline table of the current model (section 4), differentiable in the PSF parameters
     def lut_init(self, sub=4, hz=0.01, xmax=2.0):
+        """spline geometry (one torch_psf.ConvSplinePSF per pattern angle) and the knot-building model (roisize Pl), whose
+        parameters are those of self.model"""
         m = self.model
-        self.luts = []
-        for k in range(self.n_angles()):
-            src = VectorialPSF(self.R, pixelsize=m.pixelsize, NA=float(m.NA), n_imm=m.n_imm, n_med=float(m.n_med), wavelength=m.wavelength,
-                               zernike_indices=m.zidx, npupil=m.npupil, oversample=m.os, device=self.dev)
-            with torch.no_grad(): src.zcoef.copy_(m.zcoef)
-            self.luts.append(ConvSplinePSF(src, float(self.G['focus'].detach()), self.zmax, sub=sub, hz=hz, xmax=xmax))
-        L = self.luts[0]
-        Pl = L.zstack.shape[1] // sub
-        self.big = VectorialPSF(Pl, pixelsize=m.pixelsize, NA=float(m.NA), n_imm=m.n_imm, n_med=float(m.n_med), wavelength=m.wavelength,
-                                zernike_indices=m.zidx, npupil=m.npupil, oversample=m.os, device=self.dev)
+        self.luts = [spsf.ConvSplinePSF(self.R, (0.0, self.zmax), oversample=sub, dz_um=hz, zpad=3, xy_limit=xmax, device=self.dev)
+                     for _ in range(self.n_angles())]
+        self.big = m.resized(self.luts[0].Pl)
         self.big.zcoef = m.zcoef; self.big.NA = m.NA; self.big.apod = m.apod; self.big.saf = m.saf   # shared parameters
-        zs = L.z0 + L.hz * torch.arange(L.nz, device=self.dev, dtype=torch.float64)
-        a = torch.arange(sub, device=self.dev, dtype=torch.float64) / sub
-        Zg, B, A = torch.meshgrid(zs, a, a, indexing='ij')
-        self.lut_pos = torch.stack([A.reshape(-1), B.reshape(-1), Zg.reshape(-1)], 1).float()
-        self.lut_geom = (L.nz, sub, Pl)
 
     def lut_knots(self, k):
-        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvSplinePSF.__init__"""
-        nz, S, Pl = self.lut_geom
-        f = self.G['focus'].expand(len(self.lut_pos))
-        imgs = self.big(self.lut_pos, f, **self.kwargs(k))
-        imgs = imgs.reshape(nz, S, S, Pl, Pl)
-        return imgs.flip(1).flip(2).permute(0, 3, 1, 4, 2).reshape(nz, Pl * S, Pl * S).contiguous()
+        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvSplinePSF.knots_from_vectorial"""
+        L, big = self.luts[k], self.big
+        kw = self.kwargs(k)
+        big.blur, big.dipM = kw.get('blur'), kw.get('dipM')
+        f = self.G['focus']
+        pos_fn = lambda z: (z, f.expand(len(z)))
+        return L.build_planes(big, dict(big.named_parameters()), 0, L.nz, pos_fn).contiguous()
 
     def lut_psf_fn(self, knots):
         def fn(xyz, focus):
-            out = [spline_eval(L, K, xyz) for L, K in zip(self.luts, knots)]
+            out = [L.render(xyz, knots=K) for L, K in zip(self.luts, knots)]
             return out[0] if len(out) == 1 else torch.stack(out, 1)
         return fn
-
-
-def spline_eval(L, K, pos):
-    """value of ConvSplinePSF L's spline with knots K [nz, nv, nu] at pos [N, 3] -> [N, P, P]; = ConvSplinePSF.evaluate (same knot
-    geometry, clamping and Catmull-Rom weights), but separable: only the 4 x 4P x 4P knots that the P x P output pixels use are
-    gathered, then contracted along z, y, x (instead of a grouped stride-S conv2d over the whole (P-1)S+4 block).
-    Differentiable in pos and in K."""
-    N, P, S = pos.shape[0], L.P, L.S
-    x = pos[:, 0].clamp(-L.xmax, L.xmax); y = pos[:, 1].clamp(-L.xmax, L.xmax)
-    tz = ((pos[:, 2] - L.z0) / L.hz).clamp(1, L.nz - 2 - 1e-4)
-    zyx = torch.stack([tz, L.oS0 - y * S, L.oS0 - x * S], 1)
-    ix = torch.floor(zyx); offs = zyx - ix
-    i0 = ix.long() - 1
-    if not hasattr(L, '_sep'):
-        e4 = torch.arange(4, device=pos.device)
-        j = (torch.arange(P, device=pos.device)[:, None] * S + e4[None]).reshape(-1)     # [4P]: knot offsets used by the pixels
-        L._sep = (e4, j)
-    e4, j = L._sep
-    base = i0[:, 0] * L.HW + i0[:, 1] * L.W + i0[:, 2]
-    idx = base[:, None, None, None] + (e4 * L.HW)[None, :, None, None] + (j * L.W)[None, None, :, None] + j[None, None, None, :]
-    blk = K.reshape(-1)[idx]                                                   # [N, 4, 4P, 4P]
-    w = (offs[..., None] ** e4) @ L.G                                          # [N, 3, 4] (z, y, x)
-    v = torch.einsum('nz,nzab->nab', w[:, 0], blk).reshape(N, P, 4, 4 * P)
-    v = torch.einsum('ny,nayb->nab', w[:, 1], v).reshape(N, P, P, 4)
-    return torch.einsum('nx,nabx->nab', w[:, 2], v)
 
 
 def _opt(F, S):
@@ -218,40 +186,13 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
     sel = select(D, nsamples, split, tile)
     S = F.load(D, sel)
     npx = S['mask'].sum().item() * R * R
-    opt = _opt(F, S)
     chunks = torch.arange(len(sel), device=dev).split(2000)
     m, G = F.model, F.G
-    if lut: F.lut_init(lut_sub)
-    psf_params = [v for v in [G['focus'], m.zcoef] + F.EXTRA if v.requires_grad]
     torch.cuda.synchronize(); t0 = time.time()
-    for it in range(iters):
-        opt.zero_grad(); tot = 0
-        warm = it < 100
-        if not lut or it >= iters - lut_polish:      # direct (vectorial) step; with lut: the last lut_polish iterations
-            for ch in chunks:
-                l = F.loss_and_linear(S, ch, gain)[0] / npx; l.backward(); tot += l.item()
-        else:
-            # knots: once for the position-only warm-up, then rebuilt (with the graph to the PSF parameters) every
-            # lut_inner iterations; the PSF parameters are updated on the rebuild iterations
-            rebuild = it == 0 or (not warm and (it - 100) % lut_inner == 0)
-            if rebuild:
-                with torch.set_grad_enabled(not warm):
-                    K = [F.lut_knots(k) for k in range(F.n_angles())]
-                KL = [k_.detach().requires_grad_(not warm) for k_ in K]
-            fn = F.lut_psf_fn(KL)
-            for ch in chunks:
-                l = F.loss_and_linear(S, ch, gain, psf_fn=fn)[0] / npx; l.backward(); tot += l.item()
-            if rebuild and not warm and psf_params:
-                torch.autograd.backward(K, [k_.grad for k_ in KL])
-            for k_ in KL:
-                k_.grad = None
-        if warm:
-            for v in list(G.values()) + [m.zcoef, m.apod, m.NA] + F.EXTRA: v.grad = None
-        opt.step()
-        with torch.no_grad(): m.NA.clamp_(1.0, 1.515)
-        if it % 100 == 0 or it == iters - 1:
-            log(f'{it:5d} nll/px {tot:.4f}  focus {G["focus"].item():.3f}  z med {(zmax*torch.sigmoid(S["z"])).median().item():.3f}  '
-                f'|Z| {m.zcoef.norm().item():.3f}' + (f'  extras {json.dumps(F.extras_json())}' if F.EXTRA else ''))
+    if lut:
+        tot = _fit_lut(F, S, gain, npx, chunks, iters, lut_sub, lut_inner, lut_polish, log)
+    else:
+        tot = _fit_direct(F, S, gain, iters, log)
     torch.cuda.synchronize(); t_fit = time.time() - t0
     with torch.no_grad():
         rs, nl, tot_v = [], [], 0.0
@@ -278,6 +219,70 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
                   frames=S['frames'].cpu(), mask=S['mask'].cpu(), sel=sel)
         return res, st
     return res
+
+
+def _fit_direct(F, S, gain, iters, log):
+    """the direct (vectorial) fit by torch_psf.insitu.fit_tracks; the result is written back into F (PSF, extras) and S
+    (per-sample x, y, z). Returns the loss of the last iteration."""
+    m, G, zmax = F.model, F.G, F.zmax
+    mask, frames = S['mask'], S['frames']
+    rois = (S['adu'] - G['offset']) * gain                                   # photons, as Fit.loss_and_linear
+    tr = Tracks(rois, mask, frames, S['corner'], S['xy'].detach() + F.c)
+    groups = torch.where(mask, (frames % 6) // 3, torch.zeros_like(frames))
+    m.blur = F.BL0                                                          # fixed blur of an init fit (None = none)
+    hook = (lambda k: dict(dipM=F.dip_tensor(k))) if F.GAM is not None else None
+    extra = [v for v in (F.GAM, F.ZETA) if v is not None]
+    logf = lambda it, tot, t, zc: (it % 100 == 0 or it == iters - 1) and log(
+        f'{it:5d} nll/px {tot:.4f}  |Z| {zc.norm().item():.3f}')
+    est = fit_tracks(tr, m, readnoise_e=float(torch.exp(G['logrn'])), zmax_um=zmax, iters=iters, warmup=100,
+                     focus_um=float(G['focus'].detach()), blur=F.blur_mode, groups=groups, ngroups=2, group_psf_kwargs=hook,
+                     extra_params=extra, lr_zernike=0.002 if m.zcoef.requires_grad else 0.0,
+                     lr_focus=0.005 if G['focus'].requires_grad else 0.0, log=logf)
+    with torch.no_grad():
+        m.zcoef.copy_(est.psf.zcoef); G['focus'].fill_(est.report['focus_um'])
+        S['xy'].copy_(est.data['xy']); S['z'].copy_(torch.logit(est.data['z'] / zmax))
+    if F.BL is not None:                                                    # fitted line blur -> fixed covariance
+        F.BL, F.BL0 = None, est.psf.blur
+        F.EXTRA = extra
+    m.blur = None
+    return est.history[-1]['nll_per_px'] if est.history else float('nan')
+
+
+def _fit_lut(F, S, gain, npx, chunks, iters, lut_sub, lut_inner, lut_polish, log):
+    """the alternating spline-table fit (module doc, lut=True)"""
+    m, G, zmax = F.model, F.G, F.zmax
+    opt = _opt(F, S)
+    F.lut_init(lut_sub)
+    psf_params = [v for v in [G['focus'], m.zcoef] + F.EXTRA if v.requires_grad]
+    for it in range(iters):
+        opt.zero_grad(); tot = 0
+        warm = it < 100
+        if it >= iters - lut_polish:                 # direct (vectorial) step: the last lut_polish iterations
+            for ch in chunks:
+                l = F.loss_and_linear(S, ch, gain)[0] / npx; l.backward(); tot += l.item()
+        else:
+            # knots: once for the position-only warm-up, then rebuilt (with the graph to the PSF parameters) every
+            # lut_inner iterations; the PSF parameters are updated on the rebuild iterations
+            rebuild = it == 0 or (not warm and (it - 100) % lut_inner == 0)
+            if rebuild:
+                with torch.set_grad_enabled(not warm):
+                    K = [F.lut_knots(k) for k in range(F.n_angles())]
+                KL = [k_.detach().requires_grad_(not warm) for k_ in K]
+            fn = F.lut_psf_fn(KL)
+            for ch in chunks:
+                l = F.loss_and_linear(S, ch, gain, psf_fn=fn)[0] / npx; l.backward(); tot += l.item()
+            if rebuild and not warm and psf_params:
+                torch.autograd.backward(K, [k_.grad for k_ in KL])
+            for k_ in KL:
+                k_.grad = None
+        if warm:
+            for v in list(G.values()) + [m.zcoef, m.apod, m.NA] + F.EXTRA: v.grad = None
+        opt.step()
+        with torch.no_grad(): m.NA.clamp_(1.0, 1.515)
+        if it % 100 == 0 or it == iters - 1:
+            log(f'{it:5d} nll/px {tot:.4f}  focus {G["focus"].item():.3f}  z med {(zmax*torch.sigmoid(S["z"])).median().item():.3f}  '
+                f'|Z| {m.zcoef.norm().item():.3f}' + (f'  extras {json.dumps(F.extras_json())}' if F.EXTRA else ''))
+    return tot
 
 
 def model_from_pt(pt, R, dev='cuda'):

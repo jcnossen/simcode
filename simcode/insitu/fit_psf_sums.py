@@ -9,7 +9,7 @@ import numpy as np
 import tifffile, torch
 from simcode.util.neighbours import nn_overlap
 from scipy.spatial import cKDTree
-from simcode.psf.vectorial import VectorialPSF
+from simcode.psf import VectorialPSF
 from simcode import config
 from simcode.insitu import MOVIE_05, data, out, cam_maps
 
@@ -44,8 +44,8 @@ rn2 = torch.stack([rn2m[y - h:y + h + 1, x - h:x + h + 1] for x, y in zip(cx, cy
 train = torch.tensor(np.random.default_rng(0).random(N) < 0.5, device=dev)
 print(f'{N} emitters ({int(train.sum())} train / {int((~train).sum())} held out), median sum photons {roi.sum((1, 2)).median().item():.0f}')
 
-psf = VectorialPSF(P, pixelsize=calib['pixelsize_um'], NA=calib['NA'], n_imm=calib['n_imm'], n_med=calib['n_med'],
-                   wavelength=calib['wavelength_um'], oversample=3, device=dev)
+psf = VectorialPSF(P, pixel_um=calib['pixelsize_um'], NA=calib['NA'], n_imm=calib['n_imm'], n_med=calib['n_med'],
+                   wavelength_um=calib['wavelength_um'], oversample=3, device=dev)
 with torch.no_grad(): psf.zcoef.copy_(torch.tensor(calib['zernike_waves'], device=dev))
 nz = psf.zcoef.numel()
 nfield = 7 if a.field else 0                          # Noll 5..11 get a linear field term
