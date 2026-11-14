@@ -26,7 +26,7 @@ g)  for v in fwd rev; do
       NR_PRESET=$PRE SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.p2.dump --scen $SCN --seeds $SEEDS \
         --fronts g2=$GM/p2det/final.pt:$GM/p2headL/final.pt --out $FE || { say FAILED dump $v; exit 1; }
       if [ $v = fwd ] && [ ! -f $MY/calib/calib_p2L_$G.json ]; then
-        CUDA_VISIBLE_DEVICES=$(gpu) python analysis/nanoruler/ev_fitcal.py g2 $FE rs05qm calib/calib_p2L.json $MY/calib/calib_p2L_$G.json \
+        CUDA_VISIBLE_DEVICES=$(gpu) python analysis/p2generic/fitcal_wrap.py analysis/nanoruler/ev_fitcal.py g2 $FE rs05qm calib/calib_p2L.json $MY/calib/calib_p2L_$G.json \
           $MY/calib/calib_p2L_${G}_real.json calib/calib_p2L_b10_real.json || { say FAILED cal; exit 1; }
       fi
       CUDA_VISIBLE_DEVICES=$(gpu) python $A/eval_cmp.py $FE $SCN g2:s2,g2:s1,s2:s1 $CALS $P/eval_nr80_$v.json > $P/eval_nr80_$v.txt && say "g $v done"

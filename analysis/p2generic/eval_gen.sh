@@ -21,7 +21,7 @@ a)  FE=$P/fe_m1809a_gen; [ $G = g1809 ] || FE=$P/fe_m1809a_$G; mkdir -p $FE
     for f in out/psfmatch/fe_m1809a/*__s*_s[12].npz; do ln -sfn $PWD/$f $FE/$(basename $f); done
     SIMCODE_GATE_DIR=out/psfmatch/gate_m1809a P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.p2.dump --scen iso,pair1,pair2,rs05qm,rs05pm \
       --seeds 202,301,302,303 --fronts $GN=p2det_$G.pt:p2headL_$G.pt --out $FE || { say FAILED dump a; exit 1; }
-    [ -f models/calib/calib_p2L_$G.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/calib_p2L.json \
+    [ -f models/calib/calib_p2L_$G.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fitcal_wrap.py $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/calib_p2L.json \
       models/calib/calib_p2L_$G.json models/calib/calib_p2L_${G}_real.json calib/calib_p2L_b10_real.json || { say FAILED cal; exit 1; }
     CUDA_VISIBLE_DEVICES=$(gpu) python $A/eval_cmp.py $FE iso,pair1,pair2,rs05qm,rs05pm $CMP $CALS $P/eval_a$SX.json > $P/eval_a$SX.txt && say "a done" ;;
 b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs05pm; else LIST="ood_nr ood_p3s4 ood_rph"; SCN=iso,pair2,rs05qm; fi
