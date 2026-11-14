@@ -85,6 +85,9 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
 def fit_cal(Rs, base, prior='own', iso=None, verbose=True):
     """Rs: list of tuning-seed dumps; base: dict (cmult etc.); iso: tuning iso dump for prior_off (exact pattern, 700-2000)"""
     cal = {k: v for k, v in base.items() if k not in ('kap_bins', 'sig_ph', 'prior_off')}
+    # (2026-11-14) sc_solve requires 'sig_ph' since the options clean-up; the intermediate solves of this fit run before
+    # sig_ph is fitted, so they use the neutral factor 1 (as the code did implicitly before); replaced by the fitted one below
+    cal['sig_ph'] = dict(ph=[1.0, 1e6], f=[1.0, 1.0])
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     po = np.zeros(2)
     if iso is not None:
