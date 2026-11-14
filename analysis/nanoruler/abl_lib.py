@@ -20,7 +20,7 @@ SIGMA_MAX_NM = 12.0   # the paper's main selection (simcode.strict.select 'main'
 
 
 def title(t='nr-abl'):
-    from simcode2.util import proctitle
+    from simcode.util import proctitle
     proctitle.set_title(t)
 
 
@@ -37,7 +37,7 @@ def selection(T, sel='u45'):
 
 def dme(x_px, y_px, cyc, sx_px, sy_px, ncyc, device=None):
     """DME v2 on the method's own localizations, time unit = one 6-frame cycle. Returns drift [ncyc, 2] px (mean removed), info."""
-    from simcode2.util.drift import dme_v2
+    from simcode.util.drift import dme_v2
     d, info = dme_v2(np.c_[x_px, y_px], cyc, np.c_[sx_px, sy_px], numframes=ncyc, return_info=True, device=device)
     d = np.asarray(d, np.float64); d = d - d.mean(0)
     return d, dict(chosen=[str(v) for v in info.get('chosen', ())], version=str(info.get('version', '')))

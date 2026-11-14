@@ -2,7 +2,7 @@
 # pass-1 stage of run_uncalibrated (fast path, production cut 0.3) on NF frames in chunks of CH, prefetch 0 vs 1, alternating,
 # REPS times; wall per run + output equality. usage: bash analysis/speed/e2e_prefetch.sh <movie> <calib> <tag> [NF] [CH] [REPS]
 MOV=$1; CAL=$2; TAG=$3; NF=${4:-6000}; CH=${5:-1500}; REPS=${6:-2}
-O=${SIMCODE_OUT:-${SIMCODE2_OUT:-out}}/speed/e2e_prefetch_$TAG
+O=${SIMCODE_OUT:-out}/speed/e2e_prefetch_$TAG
 for r in $(seq 1 $REPS); do
   for pf in $( [ $((r % 2)) -eq 1 ] && echo "0 1" || echo "1 0"); do
     t0=$(date +%s.%N)

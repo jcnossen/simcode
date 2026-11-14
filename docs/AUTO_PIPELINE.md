@@ -309,7 +309,7 @@ if a calibration fit has no matched targets the template calibrations are copied
 | p2det | `simcode.p2.det2 train --init_n1 <det> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11` | 40000 / 30 |
 | p2head | `simcode.p2.head2 train --det <p2det ckpt 25k> --init <hd> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0` (+ `--pgen <json>` when the generic pass-2 option is adopted) | 24000 / 30 |
 | p2headL | `simcode.p2.head2 train --det <p2det> --init <p2head> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15` | 50000 / 30 |
-| gates | `simcode.hd.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE2_GATE_CALIB`), `simcode.p2.dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
+| gates | `simcode.hd.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.p2.dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 

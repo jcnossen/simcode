@@ -9,7 +9,7 @@ CPU only."""
 import json, os, sys
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np, tifffile
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 import sim_nr_lib as L
 set_title('nr-simchk')
 D = sys.argv[1].rstrip('/')
@@ -150,8 +150,8 @@ print(f'  GT per-frame photons (stored order) vs calib model at the GT position:
       f'max |residual| {np.abs(gn - qn).max():.4f}, corr median {np.median(cr):.4f}; with the interleaved (acquisition) step order assigned to the stored frames: corr median {np.median(crw):.4f}')
 
 # ------------------------------------------------------------------ (d)
-print('\n(d) sim_gt.npz with simcode2.evalproto.lib.gt_windows_fast (as analysis/psf3d_nets/sigcal.py load / cmp)')
-from simcode2.evalproto import lib as E
+print('\n(d) sim_gt.npz with simcode.evalproto.lib.gt_windows_fast (as analysis/psf3d_nets/sigcal.py load / cmp)')
+from simcode.evalproto import lib as E
 G['nf'] = int(G['nf'])
 GW = E.gt_windows_fast(G, grid=3); GX = L.gt_windows_exact(G, grid=3)
 print(f'  gt_windows_fast rows {GW.shape}, exact rows {GX.shape}; fast target flag set {int(GW[:, 5].sum())} (evalproto CROP {E.CROP}, PX {E.PX})')

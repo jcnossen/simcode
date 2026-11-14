@@ -22,7 +22,7 @@ import numpy as np, torch
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ev_sigcal as ES
-from simcode2.pipeline.common import pattern_frames
+from simcode.pipeline.common import pattern_frames
 PX = 65.0
 a = sys.argv[1:]; g = lambda k, d=None: a[a.index(k) + 1] if k in a else d
 run, sim, out = a[0], a[1], a[2]; sel = g('--sel', 'sel')

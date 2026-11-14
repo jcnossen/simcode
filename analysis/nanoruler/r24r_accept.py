@@ -16,8 +16,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, os.path.join(HERE, '..', 'calib')); sys.path.insert(0, os.path.join(HERE, '..', 'psf3d_nets'))
 import plib as P
 import accept as A
-from simcode2 import config
-from simcode2.util.proctitle import set_title
+from simcode import config
+from simcode.util.proctitle import set_title
 set_title('nr-r24r')
 P.PX = 65.0
 P.solve = functools.partial(P.solve, dev=os.environ.get('R24R_DEV', 'cuda'))

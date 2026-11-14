@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
-from simcode2 import config
+from simcode import config
 
 OUT = os.path.join(config.root('out'), 'psfmatch', 'm20check')
 MOV = ['20nM_m2', '2p5nM_m2', '1809_2']; LAB = {'20nM_m2': '20nM_2', '2p5nM_m2': '2.5nM_2 (m25 training PSF)', '1809_2': '1809_2 (m1809 training PSF)'}

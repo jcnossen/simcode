@@ -1,5 +1,5 @@
 """R24 reuse check, part C (density question, nr20): what do the nr80 detector / head / solve return for two emitters 0.31 px (20 nm)
-apart?  Scene 'pair0.31' of simcode2.hd.gate (gate.py takes the separation from the scene name: pair<sep px>; 9 pairs per FOV on
+apart?  Scene 'pair0.31' of simcode.hd.gate (gate.py takes the separation from the scene name: pair<sep px>; 9 pairs per FOV on
 an 18 px grid, random orientation, both emitters 300-5000 photons per fully-on window (1:1 brightness), EACH emitter on for >= 3 of
 the 6 frames (on-time 50 frames) so that about a quarter of the pairs have one emitter switching inside the window), rendered
 with the movie's calib by r24r_gates.sh (seed 301), front dump of the nr80 nets, solved here with the nr80 calibration.
@@ -14,8 +14,8 @@ import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, os.path.join(HERE, '..', 'calib'))
 import plib as P
-from simcode2.hd import sc as SCM
-from simcode2.util.proctitle import set_title
+from simcode.hd import sc as SCM
+from simcode.util.proctitle import set_title
 set_title('nr-r24r')
 PX = 65.0; P.PX = PX
 name = sys.argv[1]; SCENE = sys.argv[2] if len(sys.argv) > 2 else 'pair0.31'

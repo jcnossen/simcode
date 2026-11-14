@@ -1,4 +1,4 @@
-"""Nanoruler ablation, part C: the automatic estimate theta = (s, c, c_a) of simcode2/autoc.py (unchanged estimator) on a pipeline run of
+"""Nanoruler ablation, part C: the automatic estimate theta = (s, c, c_a) of simcode/autoc.py (unchanged estimator) on a pipeline run of
 this setup, and the residual-variance-versus-intensity picture (= analysis/ablation_cov/autoc_est.py for this setup).
 
 Differences to autoc.pipeline_rows / autoc_est.py: ONLY cycle-aligned windows (wstart % 6 == 0) are used (the cache of the real movie is
@@ -19,8 +19,8 @@ import abl_lib as A
 def rows(d, chunks, nmax=120000, seed=0, pattern=None):
     """autoc.pipeline_rows restricted to cycle-aligned windows"""
     import torch
-    from simcode2 import autoc as AC
-    from simcode2.pipeline.common import pattern_frames
+    from simcode import autoc as AC
+    from simcode.pipeline.common import pattern_frames
     fs = sorted(glob.glob(f'{d}/pass1_*.npz'), key=lambda f: int(f.split('_')[-1][:-4])); fs = [fs[i] for i in chunks if i < len(fs)]
     Pt = torch.load(pattern or f'{d}/pattern_est.pt', weights_only=False)
     if 'pipeline' in Pt: Pt = Pt['pipeline']
@@ -41,8 +41,8 @@ def rows(d, chunks, nmax=120000, seed=0, pattern=None):
 def rows_p2(head, d, chunks, nmax=120000, seed=0, pattern=None):
     """the same for the pass-2 head outputs captured by abl_capture.py (isolation among the stored pass-2 candidates)"""
     import torch
-    from simcode2 import autoc as AC
-    from simcode2.pipeline.common import pattern_frames
+    from simcode import autoc as AC
+    from simcode.pipeline.common import pattern_frames
     fs = sorted(glob.glob(f'{head}/head_*.npz'), key=lambda f: int(f.split('_')[-1][:-4])); fs = [fs[i] for i in chunks if i < len(fs)]
     Pt = torch.load(pattern or f'{d}/pattern_est.pt', weights_only=False)
     if 'pipeline' in Pt: Pt = Pt['pipeline']
@@ -78,7 +78,7 @@ def estimate(setn, pattern=None, name='', nrep=4):
         del rw, Sres; torch.cuda.empty_cache()
     T = np.array([q['theta'] for q in reps]); sd = T.std(0, ddof=1) if nrep > 1 else np.zeros(3)
     R = dict(set=setn, dir=d, pattern=pattern or f'{d}/pattern_est.pt', cal0=S['prod'], reps=reps, mean=T.mean(0).tolist(), sd=sd.tolist(),
-             se=(sd / np.sqrt(nrep)).tolist(), picture=pic, note='cycle-aligned windows only; simcode2.autoc.estimate, 3 fixed-point iterations')
+             se=(sd / np.sqrt(nrep)).tolist(), picture=pic, note='cycle-aligned windows only; simcode.autoc.estimate, 3 fixed-point iterations')
     fn = f'{A.OUT}/autoc_{setn}{"_" + name if name else ""}.json'; A.jdump(R, fn)
     print(f'== {setn} {name}: s {T[:, 0].mean():.3f} +- {sd[0]:.3f}  c {T[:, 1].mean():.3f} +- {sd[1]:.3f}  c_a {T[:, 2].mean():.3f} +- {sd[2]:.3f} (sd over {nrep} '
           f'disjoint chunk subsets) | best single scale with c = 0: {pic["s_only"]:.2f} -> {fn}', flush=True)
@@ -92,7 +92,7 @@ def branch(setn, pattern=None, name='', mu_lo=40.0):
     together), bootstrap over the rows (200 resamples). Also the median relative residual e / mu per bin (a bias of the pattern model).
     One solve at the fitted theta of autoc_<set>[_<name>].json, chunks of repeat 0."""
     import torch
-    from simcode2 import autoc as AC
+    from simcode import autoc as AC
     A.title()
     assert not (pattern and not name), 'give --name with --pattern (the result is stored in autoc_<set>_<name>.json)'
     S = A.SETS[setn]; fn = f'{A.OUT}/autoc_{setn}{"_" + name if name else ""}.json'; R = json.load(open(fn)); th = R['reps'][0]['theta']
@@ -161,7 +161,7 @@ def fig(names, out=None, titles=None, table=True):
             if j == 0: a.set_ylabel('median of (network intensity - model) / model')
     out = out or f'{A.OUT}/fig_excess_variance.png'; fig_.savefig(out, dpi=140, bbox_inches='tight'); print('saved', out)
     if not table: return
-    L = ['**Automatic estimate theta = (s, c, c_a), simcode2/autoc.py, cycle-aligned windows.** mean +- sd over disjoint chunk subsets (se = sd / sqrt(repeats)).', '',
+    L = ['**Automatic estimate theta = (s, c, c_a), simcode/autoc.py, cycle-aligned windows.** mean +- sd over disjoint chunk subsets (se = sd / sqrt(repeats)).', '',
          '| data | pattern | repeats | s | c | c_a | isolated non-kinetic rows per repeat | best single scale with c = 0 | bright branch (mu >= 40): scale | relative excess c_eff |', '|---|---|---|---|---|---|---|---|---|---|']
     for n, R in Rs:
         m, s = R['mean'], R['sd']

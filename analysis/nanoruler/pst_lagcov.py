@@ -19,7 +19,7 @@ import numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2/analysis/nanoruler')
 import pst_lib as L
 import pst_jitter as J
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 
 BINS = [(0, 0), (1, 1), (2, 2), (3, 5), (6, 10), (11, 20), (21, 50), (51, 100), (101, 250), (251, 500)]
 NOISE = (1400.0, 0.0, 0.058)            # weights only (V = a0 + a1 mu + c^2 mu^2 of the trimmed ML fit); estimates are unbiased for any weights

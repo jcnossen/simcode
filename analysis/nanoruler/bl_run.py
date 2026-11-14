@@ -56,7 +56,7 @@ import os, sys, json, argparse, time
 os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 REPO = '/home/jc/simcode2'
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'baselines'))
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-base')
 import numpy as np, tifffile
 

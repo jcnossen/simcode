@@ -1,4 +1,4 @@
-"""Camera gain / read noise from the movie: simcode2/insitu/camera_gain.py with the level bins as an argument (this movie's
+"""Camera gain / read noise from the movie: simcode/insitu/camera_gain.py with the level bins as an argument (this movie's
 levels differ from the Zyla movies). Robust variance-vs-level fit of same-step frame differences (frames 6 apart)."""
 import argparse, sys, numpy as np, tifffile
 ap = argparse.ArgumentParser()

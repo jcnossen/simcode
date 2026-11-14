@@ -15,9 +15,9 @@ usage: python analysis/psfmatch/m20check_psf.py [n_per_level]  -> out/psfmatch/m
 import json, math, os, sys, time
 import numpy as np, torch
 from scipy.optimize import least_squares
-from simcode2 import config
-from simcode2.util import proctitle
-from simcode2.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode import config
+from simcode.util import proctitle
+from simcode.psf.vectorial import VectorialPSF, set_psf_extras
 
 proctitle.set_title('m20check')
 torch.set_num_threads(8)

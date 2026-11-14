@@ -19,7 +19,7 @@ name = lambda c: f'{c[0]}_{c[1]}' + (f'_{c[2]}' if c[2] else '')
 
 def job(arg):
     cfg, split, half = arg
-    from simcode2.util.proctitle import set_title; set_title('nr-pstep')
+    from simcode.util.proctitle import set_title; set_title('nr-pstep')
     torch.set_num_threads(2)
     D = L.load_data(); n = len(D['I'])
     if split < 0: sel = np.ones(n, bool)
@@ -38,7 +38,7 @@ def job(arg):
 
 if __name__ == '__main__':
     import multiprocessing as mp
-    from simcode2.util.proctitle import set_title; set_title('nr-pstep')
+    from simcode.util.proctitle import set_title; set_title('nr-pstep')
     jobs = [(c, -1, 0) for c in CONFIGS] + [(c, sp, h) for c in CONFIGS for sp in range(NSPLIT) for h in (0, 1)]
     with mp.get_context('spawn').Pool(int(sys.argv[1]) if len(sys.argv) > 1 else 6) as pool:
         res = pool.map(job, jobs, chunksize=1)

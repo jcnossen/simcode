@@ -17,7 +17,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'calib')); sys.path.insert(0, HERE)
 import variants as V
-from simcode2.util import proctitle
+from simcode.util import proctitle
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); PX = 108.33
 rob = lambda z: float(1.4826 * np.median(np.abs(np.asarray(z) - np.median(z))))
@@ -28,7 +28,7 @@ VS = ['A', 'F', 'H', 'C', 'D', 'Aauto']
 
 def solve_full(R, oi, cal, v):
     import torch
-    from simcode2.hd import sc as SCM
+    from simcode.hd import sc as SCM
     dev = 'cuda'; tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     P_ = tt(R['patt_est']); out = {k: [] for k in ('x', 'y', 's', 's_cal', 'q')}
     with torch.no_grad():

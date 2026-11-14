@@ -88,11 +88,11 @@ def crlb_ref(scene):
     if '/' in scene or '*' in scene:
         fs = sorted(glob.glob(scene))
     else:
-        gd = os.environ.get('SIMCODE_GATE_DIR') or os.environ.get('SIMCODE2_GATE_DIR')
+        gd = os.environ.get('SIMCODE_GATE_DIR')
         if not gd:
             from simcode import config
             gd = config.out_dir('gate', make=False)
-        fs = sorted(glob.glob(f'{gd}/{scene}__s30[123]{(os.environ.get("SIMCODE_GATE_TAG") or os.environ.get("SIMCODE2_GATE_TAG") or "_hd_sc5nb15pm")}.npz'))
+        fs = sorted(glob.glob(f'{gd}/{scene}__s30[123]{(os.environ.get("SIMCODE_GATE_TAG") or "_hd_sc5nb15pm")}.npz'))
     if not fs: raise FileNotFoundError(f'crlb_ref: no gate npz for {scene!r} (set SIMCODE_GATE_DIR / SIMCODE_GATE_TAG or pass a glob)')
     ph, c = [], []
     for f in fs:

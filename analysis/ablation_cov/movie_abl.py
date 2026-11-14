@@ -5,7 +5,7 @@ Per variant, everything downstream of the head is redone the production way:
            real calibration, as analysis/psfmatch/fit_cal_set.py) -> runs/<set>/<v>/pass2_est2_<f0>.npz (pipeline format)
   sig_u    the selection-aware sigma rescale g(strict_u) re-fitted per variant on the sim movie m05r3 frames 0-2400 (analysis/psf3d_nets/sigcal.py fit,
            the production recipe of models/calib/sigu/sigu_p2_m1809.json) -> calibs/sigu_p2_<v>.json; held-out check on frames 2400-4800
-  table    simcode2.strict.build_table (per-tile sigma rank strict_u, density-rule q, sig_u) -> locs_p2.npz
+  table    simcode.strict.build_table (per-tile sigma rank strict_u, density-rule q, sig_u) -> locs_p2.npz
   metrics  sim (papersim D1 / D4): the 'v2q45' row of analysis/papersim/metrics.py (rows strict_u <= 0.45; fair FRC, Jaccard 10 nm, GT match)
            real: analysis/paper/frc_fair.py (rows strict_u <= 0.45 & sel, disjoint windows, sigma < 0.15 px, own DME v2 drift, 300-frame halves)
   repeat noise: the same metrics on 4 consecutive quarters of the movie (FRC of a quarter is coarser than of the whole movie; the paired
@@ -17,8 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.pat
 for p in (REPO, HERE, os.path.join(REPO, 'analysis', 'papersim'), os.path.join(REPO, 'analysis', 'paper'), os.path.join(REPO, 'analysis', 'psf3d_nets')):
     sys.path.insert(0, p)
 import variants as V
-from simcode2 import config
-from simcode2.util import proctitle
+from simcode import config
+from simcode.util import proctitle
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); PX = 108.33
 SETS = dict(m05r3=dict(kind='fit', sim=os.path.join(REPO, 'out/psf3d_nets/sims/m05r3')),
@@ -39,7 +39,7 @@ def calib(name, real):
 
 @torch.no_grad()
 def solve(setn, name):
-    from simcode2.hd import msolve_fast as MF
+    from simcode.hd import msolve_fast as MF
     v = V.VARS[name]; cal = calib(name, SETS[setn]['kind'] == 'real'); d = f'{OUT}/runs/{setn}/{name}'; os.makedirs(d, exist_ok=True)
     fs = sorted(glob.glob(f'{OUT}/head_{setn}/head_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4]))
     t0 = time.time(); dmax = 0.0
@@ -70,7 +70,7 @@ def solve(setn, name):
 
 def fit_sigu(name):
     """sigcal.py fit on m05r3 [0, 2400), test on [2400, 4800)"""
-    import simcode2.strict as SP, sigcal
+    import simcode.strict as SP, sigcal
     d = f'{OUT}/runs/m05r3/{name}'
     T, info = SP.build_table(d, 'est2', PX); SP.write_table(T, info, f'{d}/locs_p2', ('npz',))
     sim = SETS['m05r3']['sim']
@@ -106,7 +106,7 @@ def quarters(nf): return [(i * nf // 4, (i + 1) * nf // 4) for i in range(4)]
 
 
 def sim_metrics(setn, name):
-    import simcode2.strict as SP, metrics as M, frc_fair
+    import simcode.strict as SP, metrics as M, frc_fair
     S = SETS[setn]; md = S['md']; nf = S['nframes']; d = f'{OUT}/runs/{setn}/{name}'
     g = json.load(open(f'{md}/gen.json')); W = int(g['W']); crop = (0.0, 0.0, float(W))
     SP.CROP = crop; SP.tile_of.__defaults__ = (crop, 10.0); SP.bin20.__defaults__ = (crop,)
@@ -136,7 +136,7 @@ def sim_metrics(setn, name):
 
 
 def real_metrics(name):
-    import simcode2.strict as SP, frc_fair
+    import simcode.strict as SP, frc_fair
     nf = SETS['real']['nframes']; d = f'{OUT}/runs/real/{name}'
     T_, info = SP.build_table(d, 'est2', PX, sig_u=f'{OUT}/calibs/sigu_p2_{name}.json')
     u = np.nan_to_num(T_['strict_u'].astype(np.float64), nan=2.0); m = (u <= 0.45)      # as the production locs_p2_u045.npz FRC row (n_all 1404302 = all u <= 0.45 rows)

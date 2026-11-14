@@ -4,7 +4,7 @@ Variant of analysis/psf3d_nets/sigcal.py with the SAME statistics (sigma' = sigm
 per movie, test criterion strict-set zcal after the rescale in [0.9, 1.15]; cmp: recall of the GT target windows, unmatched good
 rows, RMS on identical GT windows per GT-photon bin, gross > 50 nm). Differences:
   1. pixel size 65 nm (sigcal.py: PX = 108.33 hard-coded; it sets the 50 nm limits and the nm columns).
-  2. cycle-aligned windows only: table rows with frame % 6 == 0 (frame = window start, simcode2/strict.py) and GT windows on
+  2. cycle-aligned windows only: table rows with frame % 6 == 0 (frame = window start, simcode/strict.py) and GT windows on
      the grid 6. The movies are stored reordered within each 6-frame cycle, windows starting at 6 c + 3 mix two cycles.
   3. GT windows from analysis/nanoruler/sim_nr_lib.gt_windows_exact (exact stored on-fractions; evalproto.lib.gt_windows_fast
      ignores the within-cycle permutation and flags targets inside the hard-coded 5-115 px crop of the other setup). Target =
@@ -20,7 +20,7 @@ import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sim_nr_lib as NL
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 
 PX = 65.0
 MARGIN = float(os.environ.get('EV_MARGIN', 5))
@@ -102,7 +102,7 @@ def cmp(sim, tag, A, B):
 
 
 def main():
-    from simcode2.util.proctitle import set_title; set_title('nr-eval')
+    from simcode.util.proctitle import set_title; set_title('nr-eval')
     if sys.argv[1] == 'cmp':
         return cmp(*sys.argv[2:6])
     mode, arg = sys.argv[1], sys.argv[2]; specs = sys.argv[3:]

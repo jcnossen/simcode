@@ -26,7 +26,7 @@ def movie(a):
     import tifffile
     sys.path.insert(0, '/home/jc/simcode2')
     try:
-        from simcode2.util.proctitle import set_title; set_title('nr-flip')
+        from simcode.util.proctitle import set_title; set_title('nr-flip')
     except Exception: pass
     subprocess.call(['ionice', '-c', '3', '-p', str(os.getpid())], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     assert os.path.abspath(a.inp) != os.path.abspath(a.out) and not os.path.exists(a.out), 'output exists (or equals the input)'

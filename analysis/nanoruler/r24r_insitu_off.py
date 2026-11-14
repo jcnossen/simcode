@@ -7,7 +7,7 @@ usage: NR_OFFSET=99 NR_RN=1.6 python analysis/nanoruler/r24r_insitu_off.py <nr40
 import json, os, sys
 import numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-r24r')
 name, outp = sys.argv[1], sys.argv[2]
 ROOT = '/home/jc/simcode2/out/nanoruler'

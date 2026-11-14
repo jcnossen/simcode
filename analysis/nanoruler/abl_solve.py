@@ -3,7 +3,7 @@
 Same network outputs for every variant (pass 1: the run's pass1_<f0>.npz, which store I, L and the prior; pass 2: the captured head
 outputs of abl_capture.py); per variant the pipeline's solve (msolve_fast.sc_solve_fast, batches of 16384) with the variant's covariance
 and ITS OWN calibration (abl_gate.py; no '_real' multiplier of the other setup) -> <out>/pass2_<tag>_<f0>.npz in the pipeline format,
-then simcode2.strict.build_table (strict crop = the run's crop) -> locs.npz with the extra sigma columns
+then simcode.strict.build_table (strict crop = the run's crop) -> locs.npz with the extra sigma columns
     sx, sy          calibrated sigma (the solve's s_cal with the variant's per-photon-bin factor)
     sx_nb, sy_nb    the same without the per-photon-bin sigma factor f (still: kap_I2 / kap_p bins, chi2 inflation sig_a, sig_g, spread)
     sx_raw, sy_raw  UNCALIBRATED model sigma: a second solve with kap_I2 = kap_p = 1, sig_a = 1, sig_g = 0, no sigma factor
@@ -36,7 +36,7 @@ def raw_cal(cal, name):
 
 def chunks_p1(S, Pt):
     """pass-1 rows as run_chunk_pattern_solve_fast builds them"""
-    from simcode2.pipeline.common import pattern_frames
+    from simcode.pipeline.common import pattern_frames
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
     for f in sorted(glob.glob(f'{S["run"]}/pass1_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4])):
         R = np.load(f); X0, Y0 = int(R['X0']), int(R['Y0']); k = np.nonzero(R['out'].astype(bool))[0]
@@ -50,7 +50,7 @@ def chunks_p1(S, Pt):
 def chunks_p2(S, Pt):
     """captured pass-2 head outputs (abl_capture.py); the pattern per window is rebuilt from Pt (so --pattern works for pass 2 too;
     note the pass-2 networks were FED the run's own pattern)"""
-    from simcode2.pipeline.common import pattern_frames
+    from simcode.pipeline.common import pattern_frames
     for f in sorted(glob.glob(f'{S["head"]}/head_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4])):
         H = np.load(f); X0, Y0 = int(H['X0']), int(H['Y0']); ws = H['wstart'].astype(np.int64); uw, inv = np.unique(ws, return_inverse=True)
         PW = pattern_frames(Pt, (uw[:, None] + np.arange(T6)[None]).reshape(-1), X0, Y0, 'cuda').reshape(len(uw), T6, 5)
@@ -61,7 +61,7 @@ def chunks_p2(S, Pt):
 
 @torch.no_grad()
 def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
-    from simcode2.hd import msolve_fast as MF, sc as SCM
+    from simcode.hd import msolve_fast as MF, sc as SCM
     S = A.SETS[setn]; d = f'{A.OUT}/runs/{setn}{"_" + ptag if ptag else ""}/{name}'; os.makedirs(d, exist_ok=True)
     Pt = torch.load(pattern or f'{S["run"]}/pattern_est.pt', weights_only=False)
     if 'pipeline' in Pt: Pt = Pt['pipeline']
@@ -91,7 +91,7 @@ def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
 
 
 def table(setn, d, crop):
-    import simcode2.strict as SP
+    import simcode.strict as SP
     S = A.SETS[setn]; crop = tuple(float(c) for c in crop)
     SP.CROP = crop; SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]; SP.bin20.__defaults__ = SP.bin20.__defaults__[:-1] + (crop,)
     T, info = SP.build_table(d, S['tag'], A.PX)

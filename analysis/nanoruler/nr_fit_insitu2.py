@@ -1,4 +1,4 @@
-"""NANORULER COPY of simcode2/insitu/fit_insitu2.py (package file not edited). Only change: the optics / camera constants that are
+"""NANORULER COPY of simcode/insitu/fit_insitu2.py (package file not edited). Only change: the optics / camera constants that are
 hard-coded for the DMD-SIMFLUX setup come from the environment: NR_PX (pixel size um, 0.065), NR_WL (emission wavelength um, 0.68),
 NR_OFFSET (ADU, 100.0), NR_RN (read noise e, start / fixed value of the fit, 1.6). Original docstring follows.
 
@@ -23,10 +23,10 @@ is the held-out set of psf_heldout.py; --intensities 0 skips the all-sample inte
 """
 import argparse, json, math
 import numpy as np, torch
-from simcode2.psf.vectorial import VectorialPSF
-from simcode2.insitu.varpro import solve_linear
-from simcode2 import config
-from simcode2.insitu import out
+from simcode.psf.vectorial import VectorialPSF
+from simcode.insitu.varpro import solve_linear
+from simcode import config
+from simcode.insitu import out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--tracks', default=out('tracks_0.5nM.npz'))
@@ -89,7 +89,7 @@ if a.fit_saf:
     model.saf.requires_grad_(True)
 GAM = EPS = None
 if a.photosel:
-    from simcode2.psf.vectorial import photosel_tensor
+    from simcode.psf.vectorial import photosel_tensor
     kc = torch.tensor(json.load(open(config.resolve(a.pol_calib)))['pattern']['k_rad_per_px'], device=dev)
     KDIR = kc / kc.norm(dim=1, keepdim=True)                                    # [2 angles, (x, y)]
     EDIR = torch.stack([-KDIR[:, 1], KDIR[:, 0]], 1)                            # s-pol: in-plane, perpendicular to k

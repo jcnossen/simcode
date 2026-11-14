@@ -1,4 +1,4 @@
-"""NANORULER COPY of simcode2/insitu/psf_heldout.py (package file not edited). Only change: the optics / camera constants that are
+"""NANORULER COPY of simcode/insitu/psf_heldout.py (package file not edited). Only change: the optics / camera constants that are
 hard-coded for the DMD-SIMFLUX setup come from the environment: NR_PX (pixel size um, 0.065), NR_WL (emission wavelength um, 0.68),
 NR_OFFSET (ADU, 100.0), NR_RN (read noise e, start / fixed value of the fit, 1.6). Original docstring follows.
 (2026-11-11 in-situ 3D PSF) Held-out evaluation of an in-situ PSF on isolated emitter track samples.
@@ -16,9 +16,9 @@ usage: python -m simcode.insitu.psf_heldout --tracks T.npz --fit F_psf.pt --test
 """
 import argparse, json, math
 import numpy as np, torch
-from simcode2.psf.vectorial import VectorialPSF, set_psf_extras
-from simcode2.insitu.varpro import solve_linear
-from simcode2 import config
+from simcode.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode.insitu.varpro import solve_linear
+from simcode import config
 
 APERTURES = (2.5, 3.0, 4.0)
 

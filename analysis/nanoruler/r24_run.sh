@@ -1,9 +1,9 @@
 #!/bin/bash
 # R24: pass-1 pipeline run (nr80 pass-1 networks, sim-sigma calibration, fixed c = c_a = 0.10 i.e. --autoc 0, as out/nanoruler/runs/real_p1)
 # of a simulated movie or of the real nr40 / nr20 movie, through ev_run.py + r24_gpu.sh (lock, EV_DET_BATCH=8). Skipped when locs_p1.npz exists.
-# usage: bash analysis/nanoruler/r24_run.sh <nr40|nr20> <sim name | real> [extra simcode2.run arguments, e.g. --nframes 3000 --out DIR]
+# usage: bash analysis/nanoruler/r24_run.sh <nr40|nr20> <sim name | real> [extra simcode.run arguments, e.g. --nframes 3000 --out DIR]
 # R24_P2=1: the same run directory continued with pass 2 (--pass2 --cand_pmin 0.3, nr80 pass-2 networks and sim-sigma calibration; finished
-#   pass-1 chunks are skipped by simcode2.run); marker locs_p2.npz, log run_<name>_p2.log.
+#   pass-1 chunks are skipped by simcode.run); marker locs_p2.npz, log run_<name>_p2.log.
 source /home/jc/simcode2/runs/psfmatch/env.sh
 MV=$1; N=$2; shift 2; NR=$PWD/out/nanoruler; O=$NR/$MV; A=analysis/nanoruler
 if [ $N = real ]; then MOV=/mnt/data/dmdsf/simcode2_out/nanoruler/raw_$MV/movie_reord.tif; CAL=$NR/calib_$MV.json; CROP=5,5,390

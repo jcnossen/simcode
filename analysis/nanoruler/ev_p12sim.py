@@ -9,7 +9,7 @@ events), ratio, the pattern-free prior RMS of both passes, robust zcal. Also rec
 import os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode2.evalproto import lib as E
+from simcode.evalproto import lib as E
 run, sim, mode = sys.argv[1:4]
 PX = 65.0 if mode == 'nr' else 108.33
 G = dict(np.load(f'{sim}/sim_gt.npz', allow_pickle=True)); G['nf'] = int(G['nf'])

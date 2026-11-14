@@ -3,7 +3,7 @@
 # = runs/psfmatch/prod.sh m25 (the 2.5nM_2 matched production: frozen v2 flags runs/psf3d/frozen_config.txt, m25 nets, _real calibrations,
 # strict with the m25 sigma rescale, strict-only and u045 files) with the 20 nM movie + its own in-situ calib and the output in
 # out/paper2/20nM_2/v2_m25 -> symlink to /mnt/data/dmdsf/simcode2_out/paper2/20nM_2/v2_m25 (large; / must not fill up).
-# NOT started by the m20check worker. Resumable (finished chunks are skipped by simcode2.run).
+# NOT started by the m20check worker. Resumable (finished chunks are skipped by simcode.run).
 # usage: cd ~/simcode2; PREF="1 2 0" setsid nohup bash analysis/psfmatch/prod_m20_m25.sh > runs/psfmatch/prod_20nM_2_m25.log 2>&1 < /dev/null &
 S=m25; ds=20nM_2
 source /home/jc/simcode2/runs/psfmatch/env.sh

@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.pat
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'calib')); sys.path.insert(0, HERE)
 import plib as P
 import variants as V
-from simcode2 import config
-from simcode2.util import proctitle
+from simcode import config
+from simcode.util import proctitle
 from scipy.stats import spearmanr
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); FE = os.path.join(REPO, 'out', 'psfmatch', 'fe_m1809a'); FE2 = f'{OUT}/fe_m1809a'

@@ -17,8 +17,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'calib')); sys.path.insert(0, os.path.join(HERE, '..', 'psf3d_nets'))
 import plib as P
 import accept as A
-from simcode2 import config
-from simcode2.util import proctitle
+from simcode import config
+from simcode.util import proctitle
 
 proctitle.set_title('m20check')
 import torch; torch.set_num_threads(4)

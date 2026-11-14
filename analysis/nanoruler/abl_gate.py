@@ -24,7 +24,7 @@ def _tr(R, v):
     R = GA.tr(R, v)
     if 's' in v: R['sc_L'] = R['sc_L'] * float(v['s']) ** 0.5
     return R
-from simcode2 import config
+from simcode import config
 A.title(); P.PX = A.PX
 FE = os.path.join(A.NR, 'eval', 'fe_nr80'); CD = os.path.join(A.OUT, 'calibs')
 BASE = dict(s1='calib/calib_sc_hd_sc5nbb15_pm_bright.json', s2='calib/calib_p2L.json')

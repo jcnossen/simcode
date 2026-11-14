@@ -5,10 +5,10 @@ above thr x robust noise. Fit: Poisson MLE (Levenberg-Marquardt, torch) of x, y,
 Not a method component and not a baseline of the comparison.
 Output: Picasso-style hdf5 'locs' (frame = index in the reordered movie, x, y px with pixel centres at integers + 0... see
 below, photons, bg, sx, lpx) ; coordinates: pixel (i, j) covers [j, j + 1) x [i, i + 1)?  NO: here x = column index of the
-pixel centre (pixel centres at integer coordinates), as in the simcode2 pipeline and insitu scripts."""
+pixel centre (pixel centres at integer coordinates), as in the simcode pipeline and insitu scripts."""
 import argparse, sys, os, numpy as np, torch, tifffile, h5py, torch.nn.functional as Fn
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-smlm')
 ap = argparse.ArgumentParser()
 ap.add_argument('--movie', default='/home/jc/simcode2/out/nanoruler/raw/sim4_1_reord.tif')

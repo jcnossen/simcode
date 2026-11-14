@@ -4,10 +4,10 @@ Process title 'simcode:m20ghost' (proctitle.auto patched so the package's own 'r
 usage: source runs/psfmatch/env.sh; CUDA_VISIBLE_DEVICES=<g> python -u analysis/psfmatch/m20ghost_run.py > out/psfmatch/m20check/real6k_m25.log 2>&1
 """
 import os, sys
-from simcode2.util import proctitle
+from simcode.util import proctitle
 proctitle.set_title('m20ghost')
 proctitle.auto = lambda name: proctitle.set_title('m20ghost')
-from simcode2 import run, strict
+from simcode import run, strict
 
 S = 'm25'
 MOV = '/mnt/data/dmdsf/bn_dnapaint/dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif'

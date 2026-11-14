@@ -5,7 +5,7 @@ Data: out/nanoruler/psf/bl_int_intensities.pt (per-frame PSF-fit intensities of 
 Stored (reordered) frame f: step s = f % 6, orientation a = s // 3, acquisition time 6 (f // 6) + [0,2,4,1,3,5][s].
 
 Pattern models (all: I[b,f] = A[b,a] rel_s (1 + m_s cos(k_a . r_b - phi_s - D_s(f))), A per 12-frame sample and orientation,
-Huber loss (delta 3) on (pred - I) / sqrt(I + 100), as simcode2/insitu/fit_pattern.py):
+Huber loss (delta 3) on (pred - I) / sqrt(I + 100), as simcode/insitu/fit_pattern.py):
   shared   D_s(f) = eps_a(f)                 one piecewise-linear drift per orientation (the pipeline's model)
   perstep  D_s(f) = d_s(f)                   six independent piecewise-linear drifts
   hybrid   D_s(f) = eps_a(f) + d_s(f)        shared drift on fine knots (kf) + per-step drift on coarse knots (kf2)

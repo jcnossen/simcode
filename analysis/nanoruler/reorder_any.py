@@ -5,7 +5,7 @@ index and mean level (dropped-frame check over the WHOLE movie).
 usage: ionice -c3 nice -n 19 python reorder_any.py <first part .ome.tif> <out dir> [MB/s limit, default 40]"""
 import sys, os, re, glob, time, numpy as np, tifffile
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-reord')
 first, out = sys.argv[1:3]; lim = float(sys.argv[3]) if len(sys.argv) > 3 else 40.0
 os.makedirs(out, exist_ok=True)

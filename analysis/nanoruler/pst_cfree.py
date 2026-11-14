@@ -16,7 +16,7 @@ import numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2/analysis/nanoruler')
 import pst_lib as L
 import pst_jitter as J
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 
 Y = {}
 

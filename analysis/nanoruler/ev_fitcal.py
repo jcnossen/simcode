@@ -7,8 +7,8 @@ import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
 import plib as P
-from simcode2 import config
-from simcode2.util.proctitle import set_title
+from simcode import config
+from simcode.util.proctitle import set_title
 
 if __name__ == '__main__':
     set_title('nr-eval'); P.PX = 65.0

@@ -21,7 +21,7 @@ import numpy as np, torch
 from scipy.optimize import minimize
 sys.path.insert(0, '/home/jc/simcode2/analysis/nanoruler')
 import pst_lib as L
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 
 PITCH = np.array([219.9, 219.9, 219.9, 219.5, 219.5, 219.5])
 RAD2NM = PITCH / (2 * math.pi)

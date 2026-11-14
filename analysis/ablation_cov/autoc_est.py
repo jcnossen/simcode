@@ -1,4 +1,4 @@
-"""Excess intensity variance (the c terms), 2026-11-12. The automatic estimate theta = (s, c, c_a) of simcode2/autoc.py (unchanged code) on
+"""Excess intensity variance (the c terms), 2026-11-12. The automatic estimate theta = (s, c, c_a) of simcode/autoc.py (unchanged code) on
   real   the saved pass-1 outputs of the production runs: 1809_2 (m1809 set), 2.5nM_2 (m25 set), 20nM_2 (psf3dmix set, the existing run):
          3 repeats on disjoint chunk subsets (5 chunks each, <= 120000 rows, spread over the movie) -> mean +- sd
   sim    (a) papersim D1 through the whole pipeline (constant emitter brightness, matched PSF, pattern estimated from the data): control
@@ -15,8 +15,8 @@ import glob, json, os, sys
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'calib'))
-from simcode2 import autoc as AC, config
-from simcode2.util import proctitle
+from simcode import autoc as AC, config
+from simcode.util import proctitle
 from scipy.optimize import minimize_scalar
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); dev = 'cuda'

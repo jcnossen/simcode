@@ -6,8 +6,8 @@ run gives the chance level in this dense movie), and their mean offset from the 
 usage: python analysis/psfmatch/m20check_ghost_sim.py > out/psfmatch/m20check/ghost_sim_m20r.txt"""
 import numpy as np
 from scipy.spatial import cKDTree
-from simcode2.evalproto import lib as E
-from simcode2.util import proctitle
+from simcode.evalproto import lib as E
+from simcode.util import proctitle
 proctitle.set_title('m20check')
 SD = 'out/psf3d_nets/sims/m20r'
 G = dict(np.load(f'{SD}/sim_gt.npz', allow_pickle=True)); G['nf'] = int(G['nf'])

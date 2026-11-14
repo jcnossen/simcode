@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, '..', 'psf3d_nets')); sys.path.insert(0, os.path.join(HERE, '..', 'calib'))
 import accept as A
 import plib as P
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-eval')
 EV = '/home/jc/simcode2/out/nanoruler/eval'; MC = '/home/jc/simcode2/out/nanoruler/models/calib'
 P.PX = 65.0

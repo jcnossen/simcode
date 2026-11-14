@@ -7,7 +7,7 @@
 # detector batch 8) and the solve variants on the real movie and the two grid simulations (r24_variants.sh ... p2); (5) the reuse gates of
 # pass 2 (analysis/nanoruler/r24r_p2.sh of the reuse worker, if present). Every GPU command goes through r24_gpu.sh (one at a time).
 # Estimated GPU time: nr40 ~0.6 GPU-h (real pass 2 ~0.3, captures ~0.2, sims / solves ~0.1), nr20 ~2 GPU-h (real pass 2 ~0.8, capture ~0.6,
-# solves ~0.4, sims ~0.2); no single job over 1 GPU-h. NOT applied: the selection-aware sigma rescale sigu_p2_nr80.json (simcode2.strict
+# solves ~0.4, sims ~0.2); no single job over 1 GPU-h. NOT applied: the selection-aware sigma rescale sigu_p2_nr80.json (simcode.strict
 # --sig_u): the tables carry the sim-sigma calibration only, as in the nr80 ablation.
 source /home/jc/simcode2/runs/psfmatch/env.sh
 A=analysis/nanoruler; NR=$PWD/out/nanoruler

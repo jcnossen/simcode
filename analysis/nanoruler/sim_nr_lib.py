@@ -6,7 +6,7 @@ TIME BASES
   stored frame f      : the order of the frames in sim_movie.tif (and of the cached real movie, analysis/nanoruler/reorder.py).
                         Every 6-frame cycle is stored in the order PERM = [0, 2, 4, 1, 3, 5]:
                             stored frame 6 c + j  =  acquisition frame 6 c + PERM[j]
-                        so that stored step s = f % 6 has orientation s // 3 and phase step s % 3 (the simcode2 / calib convention).
+                        so that stored step s = f % 6 has orientation s // 3 and phase step s % 3 (the simcode / calib convention).
 Only stored windows that start at a multiple of 6 are 6 consecutive acquisition frames. A stored window starting at 6 c + 3
 holds the acquisition frames 6 c + {1, 3, 5} and 6 c + 6 + {0, 2, 4}."""
 import numpy as np
@@ -30,7 +30,7 @@ def stored_onf(t0, t1, f):
 
 
 def gt_windows_exact(G, grid=3, drift=True, margin=None):
-    """Exact counterpart of simcode2.evalproto.lib.gt_windows_fast for the reordered movie.
+    """Exact counterpart of simcode.evalproto.lib.gt_windows_fast for the reordered movie.
     Rows (event, stored window start w, w % grid == 0) with >= 1 on-frame; columns
       0 w (stored), 1 event, 2 x, 3 y (px, drift-free site/event position), 4 P (pattern-weighted window photons without the
       per-frame fluctuation, as gt_windows_fast; with the sample drift in the illumination phase if drift), 5 target flag

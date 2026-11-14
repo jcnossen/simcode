@@ -8,6 +8,6 @@ set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 export CUDA_VISIBLE_DEVICES=${GPU:-1} TORCH_DISABLE_NATIVE_JIT=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=$REPO${PYTHONPATH:+:$PYTHONPATH}
 PY=${PY:-python}
-SC=${1:-iso}; OUT=${2:-${SIMCODE_OUT:-${SIMCODE2_OUT:-simcode_out}}/gate}; TAG=_sc5nb_b10
+SC=${1:-iso}; OUT=${2:-${SIMCODE_OUT:-simcode_out}/gate}; TAG=_sc5nb_b10
 $PY -u -m simcode.hd.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal calib/calib_sc_hd_sc5nbb15_pm_bright.json --tag $TAG --out $OUT --ntarget 3500
 $PY -m simcode.hd.gate_report_xdet --dir $OUT --scen $SC --tag $TAG --phbins 1 --out $OUT/gate_report$TAG.json

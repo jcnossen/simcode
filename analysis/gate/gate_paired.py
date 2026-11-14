@@ -10,7 +10,7 @@ usage: python analysis/gate/gate_paired.py tagA tagB scen1,scen2 [--offset]   (R
 import sys, glob, os, re, numpy as np
 from simcode.hd.gate_report import match
 from simcode.eff.simcode_gate import fit_offset
-D = os.environ.get('SIMCODE_GATE_DIR') or os.environ.get('SIMCODE2_GATE_DIR')
+D = os.environ.get('SIMCODE_GATE_DIR')
 if not D:
     from simcode import config
     D = config.out_dir('gate', make=False)

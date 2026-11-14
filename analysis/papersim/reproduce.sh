@@ -13,7 +13,7 @@
 #   s10 "m1809 g13"                  isolated-emitter precision vs CRLB table per network set
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
-PY=${PY:-python}; O=${SIMCODE_OUT:-${SIMCODE2_OUT:-out}}/papersim; mkdir -p $O/logs
+PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
 disk_guard() { [ "$(df --output=avail -BG "$O" | tail -1 | tr -dc 0-9)" -ge 15 ] || { echo "less than 15 GB free: stop"; exit 1; }; }
 what=$1; items=${2:-}
 case $what in

@@ -8,7 +8,7 @@ import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
 import plib as P
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-eval'); P.PX = 65.0
 MC = '/home/jc/simcode2/out/nanoruler/models/calib'
 CAL = dict(s1=f'{MC}/calib_sc_hd_nr80.json', s2=f'{MC}/calib_p2L_nr80.json')

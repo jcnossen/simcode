@@ -1,14 +1,14 @@
-"""nr80 evaluation: are the gate scenes nanoruler-like? Draws a few batches of every gate scene exactly as simcode2.hd.gate.gen
+"""nr80 evaluation: are the gate scenes nanoruler-like? Draws a few batches of every gate scene exactly as simcode.hd.gate.gen
 does and prints window photons of the targets, on-frames, ON density, background, pattern pitch / depth / step spacing, read
 noise, gain and the Gaussian-equivalent PSF width (2D Gaussian + offset fitted to the summed images of bright isolated emitters).
 Must be run through the preset wrapper (otherwise the scenes are those of the other setup):
-  SIMCODE2_GATE_CALIB=out/nanoruler/calib_nr80.json python -u analysis/nanoruler/nrwrap.py analysis/nanoruler/ev_scenecheck.py [scenes] [seed] > out/nanoruler/eval/scenecheck_nr80.txt"""
+  SIMCODE_GATE_CALIB=out/nanoruler/calib_nr80.json python -u analysis/nanoruler/nrwrap.py analysis/nanoruler/ev_scenecheck.py [scenes] [seed] > out/nanoruler/eval/scenecheck_nr80.txt"""
 import math, sys
 import numpy as np, torch
 from scipy.optimize import least_squares
-from simcode2.hd import gate as GA
-from simcode2.hd import realsim as RS
-from simcode2.sim.simtools import CD, S
+from simcode.hd import gate as GA
+from simcode.hd import realsim as RS
+from simcode.sim.simtools import CD, S
 
 scen = (sys.argv[1] if len(sys.argv) > 1 else 'iso,pair1,pair2,rs05qm').split(',')
 seed = int(sys.argv[2]) if len(sys.argv) > 2 else 301
@@ -17,7 +17,7 @@ q = lambda v, p: np.percentile(v, p)
 CD.a.calib = GA.gate_calib()
 print(f'# gate calib {CD.a.calib}')
 print('# preset 0.5nM:', {k: v for k, v in RS.PRESETS['0.5nM'].items() if k in ('k', 'spacing', 'depth', 'relint', 'bg', 'bg_sd', 'dens', 'tau', 'bright', 'bright_sd', 'z_med', 'cam', 'struct_frac')})
-print(f'# hard-coded in simcode2/hd/gate.py (NOT from the preset): iso window photons log-uniform 100-20000; pair totals 300-5000 per emitter (log-uniform, 1:1); '
+print(f'# hard-coded in simcode/hd/gate.py (NOT from the preset): iso window photons log-uniform 100-20000; pair totals 300-5000 per emitter (log-uniform, 1:1); '
       f'rs05qm window-photon median Q_MED {GA.Q_MED["0.5nM"]} log-sd {GA.Q_SD} (preset bright x 6 = {RS.PRESETS["0.5nM"]["bright"] * 6:.0f})')
 
 

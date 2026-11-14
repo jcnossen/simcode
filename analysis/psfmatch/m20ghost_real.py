@@ -3,7 +3,7 @@ Tables (pass 2, window starts frame < 5994 = windows inside the first 6000 frame
   m25  out/psfmatch/m20check/real6k_m25/locs_p2.npz        (m25 set, production flags, --nframes 6000; strict_u from these 6000 frames)
   mix  out/psfmatch/m20check/ref6k_mix_locs_p2.npz         (subset of out/paper2/20nM_2/v2/locs_p2.npz, mixture set; stored strict_u
                                                              = tile ranks over the full 120k-frame movie) and mix6k = same rows with
-                                                             strict_u recomputed on these 6000 frames (simcode2.strict.strict_product on
+                                                             strict_u recomputed on these 6000 frames (simcode.strict.strict_product on
                                                              the un-rescaled sigma), the like-for-like comparison with m25.
 Test: parents = rows of a class with window photons in a bin; neighbours = other rows of the same class in the same window at 2-8 px.
 Counts in small disks at the ghost offsets vs their three mirrors (point -v, x-mirror, y-mirror); excess = n - mean(mirrors),
@@ -14,8 +14,8 @@ specified), 'L1' = (+3.9, +4.3) px r 1.0 (the main ghost lobe of the isolated-em
 usage: python analysis/psfmatch/m20ghost_real.py  ->  out/psfmatch/m20check/ghost_real.txt / .json"""
 import json, numpy as np
 from scipy.spatial import cKDTree
-from simcode2.util import proctitle
-from simcode2 import strict as SP
+from simcode.util import proctitle
+from simcode import strict as SP
 proctitle.set_title('m20ghost')
 O = 'out/psfmatch/m20check'
 FMAX = 6000 - 6

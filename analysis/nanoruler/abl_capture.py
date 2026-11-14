@@ -1,6 +1,6 @@
 """Nanoruler ablation: pass-2 head outputs of a pipeline run WITH the Cholesky factor of the intensity covariance (the pipeline's
 pass2_est2_<f0>.npz do not store it), so that the explicit solve can be re-run offline per variant (abl_solve.py).
-= analysis/ablation_cov/capture.py for this setup: the pass-2 stage of simcode2.run (pipeline.sc_front_fast.Pass2P2Fast.run_chunk with
+= analysis/ablation_cov/capture.py for this setup: the pass-2 stage of simcode.run (pipeline.sc_front_fast.Pass2P2Fast.run_chunk with
 return_head=True; the run's pattern_est.pt, candidate cut 0.3, the run's crop and chunking), detector batch 8 (a 400 x 400 px field
 needs 12-20 GB at the default 64; peak ~5 GB at 8), no package code changed. Networks and the production pass-2 calibration: from
 out/nanoruler/models/netset_nr80.json (p2_det, p2_head, p2_cal_sim) unless given.
@@ -22,11 +22,11 @@ def main():
     md = os.path.join(A.NR, 'models')
     p2_det = g('--p2_det', N.get('p2_det', f'{md}/p2det_nr80.pt')); p2_head = g('--p2_head', N.get('p2_head', f'{md}/p2headL_nr80.pt'))
     p2_cal = g('--p2_cal', N.get('p2_cal_sim', S['prod'])); det_batch = int(g('--det_batch', 8))
-    from simcode2 import config
-    from simcode2.pipeline import sc_front as _scf, sc_front_fast as _scff
-    from simcode2.p2 import front as _p2f
+    from simcode import config
+    from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
+    from simcode.p2 import front as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = 0.3
-    from simcode2.pipeline.common import Movie, load_calib
+    from simcode.pipeline.common import Movie, load_calib
     out = g('--out', S['head']); os.makedirs(out, exist_ok=True)       # --out, --chunks: smoke tests only
     movie = Movie(mv['movie']); cal = load_calib(mv['calib']); crop = tuple(int(v) for v in mv['crop'].split(','))
     chunks = sorted(int(f.rsplit('_', 1)[1][:-4]) for f in glob.glob(f'{S["run"]}/pass1_*.npz')); step = mv['chunk']

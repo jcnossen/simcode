@@ -77,7 +77,7 @@ OUTPUTS (all under <out_dir>)
 import argparse, json, math, os, sys
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np, torch, tifffile
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 from sim_nr_lib import PERM, INV, acq_of_stored
 
 ND = '/home/jc/simcode2/out/nanoruler/'
@@ -154,7 +154,7 @@ def main():
     assert NF % 6 == 0
     assert os.path.abspath(out).startswith('/home/jc/simcode2/out/nanoruler/sim'), 'outputs only under out/nanoruler/sim/'
     os.makedirs(out, exist_ok=True)
-    import simcode2.hd.realsim as RS
+    import simcode.hd.realsim as RS
     NR = json.load(open(a.preset_json))                      # in-memory preset patch, as analysis/nanoruler/nrwrap.py
     for name, p_ in RS.PRESETS.items():
         p_.update({k: (tuple(v) if isinstance(v, list) and k != 'k' else v) for k, v in {**NR.get('common', {}), **NR.get(name, {})}.items()})

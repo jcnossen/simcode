@@ -3,7 +3,7 @@ supplementary movies). tifffile with is_ome=False (no multi-file OME series). Re
 Output: out/nanoruler/r2040/meta.json"""
 import sys, json, glob, os, tifffile
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-facts')
 B = '/mnt/data/SIMFLUX/data/'
 SETS = {

@@ -3,7 +3,7 @@ per-frame Micro-Manager elapsed time / frame index and mean / median level. One 
 Output: <outdir>/sample.tif, <outdir>/frames_info.npz"""
 import argparse, sys, os, numpy as np, tifffile
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-facts')
 ap = argparse.ArgumentParser()
 ap.add_argument('--src', required=True); ap.add_argument('--outdir', required=True); ap.add_argument('--n', type=int, default=3000)

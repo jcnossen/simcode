@@ -2,13 +2,13 @@
 
 The SIMFLUX setup interleaves the two pattern orientations: acquisition frame t has pattern index t % 6 with orientation
 (t % 6) % 2 and phase step (t % 6) // 2 (the paper's processing: patterns [0 2 4] = axis 0, [1 3 5] = axis 1).
-simcode2 assumes orientation = (t % 6) // 3. Here every 6-frame cycle is written in the order [0, 2, 4, 1, 3, 5], so that
+simcode assumes orientation = (t % 6) // 3. Here every 6-frame cycle is written in the order [0, 2, 4, 1, 3, 5], so that
 written frame 6 c + j = acquisition frame 6 c + PERM[j]. Only windows that start at a multiple of 6 are true 6-consecutive-
 frame windows afterwards. Also records per-frame Micro-Manager elapsed time and mean / median ADU (dropped-frame check).
 Output: out/nanoruler/raw/sim4_1_reord.tif (BigTIFF, uint16), out/nanoruler/frames_info.npz"""
 import sys, os, numpy as np, tifffile
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 set_title('nr-reord')
 R = '/home/jc/simcode2/out/nanoruler/raw/'
 PERM = [0, 2, 4, 1, 3, 5]

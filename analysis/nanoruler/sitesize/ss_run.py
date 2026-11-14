@@ -121,5 +121,5 @@ def markdown(res):
 
 
 if __name__ == '__main__':
-    from simcode2.util import proctitle; proctitle.set_title('nr-sitesize')
+    from simcode.util import proctitle; proctitle.set_title('nr-sitesize')
     for mv in sys.argv[1:]: run(mv)

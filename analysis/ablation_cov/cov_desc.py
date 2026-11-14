@@ -16,8 +16,8 @@ import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'calib'))
 import plib as P
-from simcode2 import core as C
-from simcode2.util import proctitle
+from simcode import core as C
+from simcode.util import proctitle
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov')
 PHB = [(200, 700), (700, 2000), (2000, 1e9)]

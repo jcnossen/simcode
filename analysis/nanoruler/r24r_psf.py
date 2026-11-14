@@ -17,8 +17,8 @@ import json, math, os, sys, time
 import numpy as np, torch
 from scipy.optimize import least_squares
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util import proctitle
-from simcode2.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode.util import proctitle
+from simcode.psf.vectorial import VectorialPSF, set_psf_extras
 
 proctitle.set_title('nr-r24r')
 torch.set_num_threads(6)

@@ -19,7 +19,7 @@ import numpy as np, tifffile, h5py
 from scipy import ndimage as ndi
 from scipy.special import ndtr, gammaln
 sys.path.insert(0, '/home/jc/simcode2')
-from simcode2.util import proctitle
+from simcode.util import proctitle
 proctitle.set_title('nr-r24r')
 ROOT = '/home/jc/simcode2/out/nanoruler'; BIG = '/mnt/data/dmdsf/simcode2_out/nanoruler'
 MOV = dict(nr80=(f'{ROOT}/raw/sim4_1_reord.tif', f'{ROOT}/quick_smlm_w6.hdf5'),

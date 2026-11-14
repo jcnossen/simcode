@@ -9,7 +9,7 @@ import numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2/analysis/nanoruler')
 import pst_lib as L, pst_jitter as J, pst_lagcov as LC
 from scipy.sparse import csr_matrix
-from simcode2.util.proctitle import set_title
+from simcode.util.proctitle import set_title
 
 if __name__ == '__main__':
     set_title('nr-pstep'); torch.set_num_threads(2)
