@@ -649,3 +649,11 @@ Not renamed (on-disk names; layout pass): `out/nanoruler/models/netset_nr80.json
 (untracked leftover, no reader left). Kept until the format pass: the table columns `good`, `sel`; old tables' `strict_u`,
 `strict`, `u_max` are read as plain columns and not used. smlmtorch's own camelCase methods (fromEstimates, numFrames) in
 analysis/baselines are that package's API and stay.
+
+## 2026-11-14: dead analysis scripts deleted (user approved)
+Deleted (they remain in git history): analysis/detband/, analysis/hdunbias/, analysis/speed/ (whole directories); zimflux/s2_{crlbcheck,run,tracks}.py;
+psfmatch/m20check_{dump,fig,gates,ghost_sim,psf}.py, m20ghost_{real,run}.py, psf_compare.py; papersim/run_g13b.sh, papersim/netsets.json;
+p2generic/{t1_eval.py,t1_run.sh,cont_gen.sh}; fourpi/after_mt_w4pi.sh; nanoruler/{move_cache.sh,r24_memlog.sh,r24_refshift.py,ev_flipreal.sh,nr_p2gen.sh,
+r2040_{cycle,meta,pattern,sample,tables}.py,meta.py}; studies of the removed u / strict rules: evalproto/strictq.py, ablation_cov/movie_abl.py,
+selection_global/{sweep_real,sweep_sim,extract,fig_sweep,render_compare,write_subsets}.py; runs/psfmatch/u045.sh (untracked).
+Reasons per file: out/cleanpass/DELETE_CANDIDATES.md and the rename-pass report. Checks after deletion: tests 44 passed, check_imports clean except the known tests.test_tables note.
