@@ -1,58 +1,51 @@
-# Dataset format (draft for approval, 2026-11-14)
+# Dataset format
 
-One file format for every localization result: SIMCODE v2 (2D SIM), 4Pi-SIMFLUX / 4Pi-SIMCODE (3D), astigmatic 3D,
-classical SMLM / SIMFLUX fits, DECODE, simulations. Read and written only through `simcode.dataset.Dataset`.
-A selection is never stored; it is computed on load (`ds.select(...)`). Other estimates of the same localizations
-(the network's PSF-only position, the detector position, pass 1) are separate datasets, not extra columns.
+SIMCODE's localizations are `torch_psf.Dataset` objects: the specification (fields, units, metadata, drift, the HDF5
+container, Picasso / ThunderSTORM exports) is torch-psf's `docs/DATASET_FORMAT.md`, at the commit pinned in
+`pyproject.toml` (`external/torch-psf-<sha>/docs/DATASET_FORMAT.md` in a checkout with the export). In short: `pos` [n, D]
+px (pixel centres at integers, x = column; z in px of the lateral pixel size), `crlb` [n, D] px, `frame` = first frame,
+`n_frames` = frames covered, `photons`, `bg`, `id`, any further field [n, ...]; metadata `pixel_nm`, `image_size`,
+`n_frames`, ...; `ds.save('x.hdf5')` / `Dataset.load('x.hdf5')`.
 
-## Container
+`simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories, the v2 table `.npz` of `simcode.run` /
+`simcode.strict`, the earlier SIMCODE npz save, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
+selection `select()` (docs/USAGE.md). A selection is not stored: it is computed when needed.
 
-One HDF5 file per dataset, `<name>.hdf5`:
+## SIMCODE's fields and metadata
 
-| path | content |
-|---|---|
-| `/localizations` | one column per field (table, one row per localization) |
-| `/metadata` | attributes (below) |
-| `/drift` | optional, drift trace [n_frames, n_dims] in px, plus attributes: method per axis, applied yes / no |
+A v2 table (SIMCODE v2, `simcode/strict.py`) in this layout:
 
-## Fields
-
-Required for every dataset (as the v1 Dataset: one position array and one precision array, 2D or 3D):
-
-| field | dtype | unit | meaning |
+| field | dtype | shape | meaning |
 |---|---|---|---|
-| `id` | int64 | | localization id; the same id in related datasets of one run (final, prior, pass 1) links the rows |
-| `frame` | int32 | frames | first frame of the localization's window (single-frame methods: the frame) |
-| `pos` | float64 [n, D] | px | position (x, y) or (x, y, z), D = `metadata.n_dims`; pixel centres at integer coordinates, x = column; z relative to the focal plane of the PSF calibration (4Pi: the common focal plane of the aligned system), in px of the lateral pixel size |
-| `crlb` | float32 [n, D] | px | reported precision per axis (SIMCODE: calibrated sigma; fits: CRLB) |
-| `photons` | float32 | e- | total signal in the window |
-| `bg` | float32 | e- / px / frame | background |
+| `pos` | float64 | [n, 2] | final position (x, y) of the explicit pattern solve, px, sensor coordinates, not drift corrected |
+| `crlb` | float32 | [n, 2] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB |
+| `frame` | int32 | [n] | window start (absolute movie frame); windows start every 3 frames |
+| `n_frames` | int32 | [n] | 6: the window length (drift time = window centre, frame + 3) |
+| `photons` | float32 | [n] | sum of the 6 network per-frame intensities (label units) |
+| `score` | float32 | [n] | detector probability (`p` of the table; `select(min_score=)`) |
+| `intensities` | float32 | [n, 6] | network per-frame intensities (`I` of the table) |
+| `t` | float64 | [n] | time centroid of the window's intensities (absolute frame, fractional) |
+| `q_dof`, `dnll` | float32 | [n] | intensity-domain chi2 / dof of the solve; NLL gap to the best competing fringe (pass 1) |
+| `kin` | bool | [n] | on/off-kinetics model chosen |
+| `x_prior`, `y_prior` | float64 | [n] | pattern-free network position (px) |
+| `good`, `sel`, `disjoint` | bool | [n] | p >= 0.63; the phase-calibrated detection selection; frame % 6 == 0 |
+| `x_dc`, `y_dc` | float64 | [n] | only for runs with `--drift`: drift-corrected x, y |
+| `strict_u`, `strict` | | [n] | tables before 2026-11-14 only; unused |
 
-Optional for 3D: `cov` float32 [n, 3] = (xy, xz, yz) covariances of the position estimate, px^2.
+Metadata added by the loaders: `pixel_nm` (the table's px_nm), `crop` [x0, y0, size] (output region of the run; the
+selection's region), `sigma_max` (the run's selection threshold, nm), `info` (the table's info json), `run_config` (the run
+record), `model`, `pass` (1 / 2), `n_frames`, `image_size`, `source`, `format`; `selection` after `select()`.
 
-Optional, by method:
+Other sources:
 
-| field | dtype | meaning |
-|---|---|---|
-| `score` | float32 | detection score 0-1 (uncalibrated network score; absent for fits) |
-| `chi2` | float32 | goodness of fit per degree of freedom |
-| `intensities` | float32 [n, frames, channels] | per-frame (per-channel) intensities, e-; layout in `metadata.intensity_layout` |
-| `blink` | bool | the emitter switched on / off within the window |
-| `branch` | int16 | ambiguity index (4Pi fringe / phase branch); `branch_margin` float32 = how clearly it was chosen |
-| `group` | int64 | localizations of one binding event linked across windows |
-| user fields | any | added with `add_fields`; carried through indexing, merge, save / load |
+| source | mapping |
+|---|---|
+| DECODE npz of the paper (`analysis/baselines`) | phot -> `photons`, sphot -> `crlb_photons`, prob -> `score`, sx, sy -> `crlb`; `z` (nm) kept as a field (the datasets are 2D); `n_frames` 6 |
+| preprint code `.npy` (Dataset / SFDataset) | estim.pos / crlb.pos -> `pos` / `crlb` (a z column -> fields `z`, `crlb_z`), estim.ibg -> `intensities`, `intensities_bg`; `chisq`, `group`, `roi_id`, `roipos`; `n_frames` = `window=` (6 for the paper's tables) |
+| Picasso hdf5 (e.g. the paper's sf.hdf5) | torch_psf's `load_picasso` (lpx, lpy -> `crlb`; sx, sy -> `psf_sx`, `psf_sy`); `n_frames` = `window=` |
+| earlier SIMCODE npz save (`locs_meta`, `locs_drift`, `locs_drift_applied`) | the v2 table mapping plus its metadata (px_nm -> pixel_nm, imgshape -> image_size, nframes -> n_frames) and drift |
 
-## Metadata (attributes of `/metadata`)
-
-`format_version`, `pixel_size_nm`, `image_size` [h, w], `n_frames`, `window_length`, `window_step`, `n_dims`,
-`n_channels`, `intensity_layout`, `method` (e.g. 'simcode-v2 pass 2',
-'smlm', 'simflux', 'decode', '4pi-simcode'), `estimate` ('final' | 'prior' | 'detector' | 'pass1'), `model`,
-`source_run` (path) and `run_config_sha256`, `software_version`, `git_commit`, `created`, `converted_from` (path + sha256,
-for files converted from older formats).
-
-## Where results live: `runs/<run name>/` next to the movie
-
-Every run gets a name (`name` in its config, required) and is written to a `runs/` folder in the movie's own directory:
+## Where results live: `runs/<run name>/` next to the movie (planned layout)
 
 ```
 <movie dir>/
@@ -67,12 +60,3 @@ Every run gets a name (`name` in its config, required) and is written to a `runs
       report.html                   summary page
       work/                         intermediate files (chunks, caches); may be deleted after the run
 ```
-
-A run that reuses a model refers to it by path (e.g. `../<other run>/model` or a model in another movie's runs folder) and
-records its hashes; the model itself is not copied. `LocalizationPipeline` returns the datasets as `pipe.dataset()`
-(final) and `pipe.dataset(estimate='prior')` etc.
-
-## Export (not the storage format)
-
-`ds.save_picasso(path)` (Picasso hdf5: precision in lpx / lpy, PSF width in sx / sy) and `ds.save_csv(path)`
-(ThunderSTORM conventions: nm, frames from 1). `save_npz` for quick numpy use.

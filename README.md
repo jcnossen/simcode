@@ -21,7 +21,7 @@ More in the docs:
 - `docs/METHOD.md`: method
 - `docs/RESULTS.md`: results of the development phase (earlier default networks) and the limitations
 - `docs/EVALUATION.md`: evaluation protocol
-- `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset`: load, select, drift, render, FRC, Picasso / ThunderSTORM export)
+- `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset` = `torch_psf.Dataset` + SIMCODE's loaders and selection: load, select, drift, render, FRC, hdf5 / Picasso / ThunderSTORM files); `docs/DATASET_FORMAT.md`: the field layout
 - `simcode/FILE_DESCRIPTION.md`: what each file does
 - `docs/CLEANUP_LOG.md`: the 2026-11 cleanup (what was removed, renamed, and how results were checked)
 
