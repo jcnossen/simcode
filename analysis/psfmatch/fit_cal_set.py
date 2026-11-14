@@ -1,7 +1,7 @@
 """PSF-matched retrain (2026-11-11): sim-sigma solve calibration of a front-end on the tuning seed 202 of ONE PSF's averaged-PSF
 gate scenes (as the earlier fit of the mixture set, which pooled the 3 per-axis PSFs; same plib.fit_cal procedure, prior_off from iso
 of the same PSF). The _real variant multiplies the sigma factor by sig_ph_real_mult of an existing _real calib (copied, not re-measured).
-usage: python fit_cal_set.py <front> <fe tag, e.g. m1809a> <fit scenes, comma> <base calib> <out sim calib> <out real calib> <real-mult src>"""
+usage: python fit_cal_set.py <front> <fe tag, e.g. m1809a, or a dump directory> <fit scenes, comma> <base calib> <out sim calib> <out real calib> <real-mult src>"""
 import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
@@ -12,7 +12,7 @@ OUT = os.path.join(config.root('out'), 'psfmatch')
 
 if __name__ == '__main__':
     front, tag, scen, base, out_sim, out_real, src_real = sys.argv[1:8]
-    d = f'{OUT}/fe_{tag}'
+    d = tag if os.path.isdir(tag) else f'{OUT}/fe_{tag}'      # a dump directory, or a tag of out/psfmatch/fe_<tag>
     B = json.load(open(config.resolve(base)))
     Rs = [P.load(sc, front, seeds=(202,), d=d) for sc in scen.split(',')]
     iso = P.load('iso', front, seeds=(202,), d=d)

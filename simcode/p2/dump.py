@@ -1,7 +1,8 @@
 """
 Gate-scene dumps for the pass-2 benchmark (as <out>/bright/dump_fe.py; simcode/hd/gate.gen, identical seeds
 and iteration loop as gate.main). Per scene x seed x front-end: GT table, per-FOV patterns (estimate fed to the networks /
-the solve, and the truth), and the raw head outputs (I_t, Cholesky L, prior x, y, log sigma, bg, detector point, score),
+the solve, and the truth), and the raw head outputs (I_t, Cholesky L, prior x, y, log sigma, bg, detector point, score; z,
+log s_z|xy, b of a 3D head),
 so the explicit pattern solve, the calibration and all reports run offline. CRLB gt_sf_m copied from an existing gate npz
 of the same scene / seed after checking that the GT is identical.
 Fronts:
@@ -52,6 +53,7 @@ def front_out(F, o, il, col, pf_head=None):
         args = (fr, ilx, c['b'][sl], c['iy'][sl], c['ix'][sl], c['x'][sl], c['y'][sl], nbr, p[sl])
         oh = H2.head_apply(head, col, *args)
         r = {k: oh[k].float() for k in ('I', 'L', 'x', 'y', 'lsxy', 'bg')}
+        r.update(SCM.head_z(head, oh))           # 3D heads: z, lsz, bz (NaN for 2D checkpoints)
         if pf_head is not None:
             oa = H2.head_apply(pf_head, col, *args)
             r.update(pf_x=oa['x'].float(), pf_y=oa['y'].float(), pf_lsxy=oa['lsxy'].float(), pf_I=oa['I'].float(), pf_L=oa['L'].float())

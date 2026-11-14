@@ -2,7 +2,7 @@
   load(scene, front)            seeds pooled, FOV ids made unique
   targets(R)                    gate_report_xdet matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
-  solve(R, oi, cal, prior)      explicit pattern solve (simcode/hd/sc.sc_solve -> msolve; fringe posterior / cmult per cal) on
+  solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/hd/sc.sc_solve -> msolve; fringe posterior / cmult per cal) on
                                 the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free sc5nb prior on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
                                 sigma = s_prior * kap_p(bin) * f(bin)
@@ -69,13 +69,17 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
         return dict(x=x - po[0], y=y - po[1], sx=s[:, 0], sy=s[:, 1], q=np.zeros(len(oi)), xp=x - po[0], yp=y - po[1])
     P = torch.tensor(R['patt_est' if patt == 'est' else 'patt_true'], device=dev, dtype=torch.float32)
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
-    res = {k: [] for k in ('x', 'y', 'sx', 'sy', 'q', 'xp', 'yp')}
+    z3 = 'sc_z' in R and prior != 'pf'          # 3D head dump: z after the solve (sc.z_columns)
+    res = {k: [] for k in ('x', 'y', 'sx', 'sy', 'q', 'xp', 'yp') + (('z', 'sz', 'zp') if z3 else ())}
     for c0 in range(0, len(oi), chunk):
         j = oi[c0:c0 + chunk]
         o = dict(I=tt(R['sc_I'][j]), L=tt(R['sc_L'][j]), x=tt(R[pre + 'x'][j]), y=tt(R[pre + 'y'][j]), lsxy=tt(R[pre + 'lsxy'][j]),
                  x_det=tt(R['sc_x_det'][j]), y_det=tt(R['sc_y_det'][j]))
+        if z3: o.update(z=tt(R['sc_z'][j]), lsz=tt(R['sc_lsz'][j]), bz=tt(R['sc_bz'][j]))
         b = torch.tensor(R['sc_b'][j], device=dev).long()
         s = SCM.sc_solve(o, P, b, cal)
+        if z3:
+            zc = SCM.z_columns(o, s); res['z'].append(zc['z_hy0']); res['sz'].append(zc['sz_cal']); res['zp'].append(o['z'])
         res['x'].append(s['r'][:, 0]); res['y'].append(s['r'][:, 1]); res['sx'].append(s['s_cal'][:, 0]); res['sy'].append(s['s_cal'][:, 1])
         res['q'].append(s['q'])
         rp = s.get('r_prior', torch.stack([o['x'], o['y']], 1)); res['xp'].append(rp[:, 0]); res['yp'].append(rp[:, 1])
