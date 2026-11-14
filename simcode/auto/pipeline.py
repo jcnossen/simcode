@@ -3,8 +3,8 @@ fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
   python -m simcode.auto <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
 
-  from simcode.auto import Dataset
-  ds = Dataset('simcode/auto/configs/1809_2.yaml'); ds.run(); ds.stage('psf')
+  from simcode.auto import Acquisition
+  acq = Acquisition('simcode/auto/configs/1809_2.yaml'); acq.run(); acq.stage('psf')
 
 Stages (run order): order, camera, spots, cammaps, tracks, beads, psf, train, process, report. Each writes
 <out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped unless redone (--redo <stage> redoes
@@ -27,7 +27,7 @@ class StageFailed(RuntimeError):
     pass
 
 
-class Dataset:
+class Acquisition:
     def __init__(self, cfg, gpus=None, log=None, quick=None):
         self.c = C.load(cfg)
         if gpus is not None: self.c['gpus'] = list(gpus)
@@ -270,9 +270,13 @@ def main(argv=None):
     ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 1,2')
     ap.add_argument('--force', action='store_true', help='continue after failed checks')
     a = ap.parse_args(argv)
-    ds = Dataset(a.config, gpus=[int(v) for v in a.gpus.split(',')] if a.gpus else None, quick=True if a.quick else None)
+    ds = Acquisition(a.config, gpus=[int(v) for v in a.gpus.split(',')] if a.gpus else None, quick=True if a.quick else None)
     ds.run(a.stages.split(','), redo=[r for r in a.redo.split(',') if r], force=a.force)
 
 
 if __name__ == '__main__':
     main()
+
+
+# old name (2026-11-14 rename: an Acquisition is one measurement plus how to process it; results are simcode.locs.Localizations)
+Dataset = Acquisition

@@ -18,8 +18,8 @@ python -m simcode.auto <config.yaml> [--stages camera,spots,...|all] [--quick] [
 ```
 
 ```python
-from simcode.auto import Dataset
-ds = Dataset('simcode/auto/configs/1809_2.yaml')
+from simcode.auto import Acquisition
+ds = Acquisition('simcode/auto/configs/1809_2.yaml')
 ds.run()                                   # all stages, skipping finished ones
 ds.run(stages=['camera', 'spots'])         # some stages
 ds.stage('psf')                            # one stage, callable on its own
