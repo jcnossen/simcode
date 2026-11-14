@@ -22,9 +22,9 @@ The small calibration json files are in git.
 
 ## Models (weights, not in git)
 
-The models are defined in one place, `simcode/models.json` (`config.model_set(name)`, `python -m simcode.run --model <name>`;
-called network sets, `netsets.json`, `--netset` until 2026-11-14). One model = four networks, trained on one averaged in-situ
-PSF, and their calibrations:
+The shipped models are defined in `simcode/models.json` (`config.model_set(name)`, `python -m simcode.run --model <name>`);
+any other model is a folder with a `model.json` (`--model <folder>`, e.g. one written by `simcode.auto.train.export_model`).
+One model = four networks, trained on one averaged in-situ PSF, and their calibrations:
 
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
 |---|---|---|---|
@@ -48,7 +48,7 @@ head, 9.0 MB, a44a951d4d61a1cb; contains its frozen prior), `head4pi_v3L.pt` (th
 simulated movies and the start of a v10 training, 6.9 MB, 08d067f517dff6d0), `det4pi/final.pt` (detector, 7.3 MB,
 5069f76c17b73c92).
 
-Superseded models, removed from the code and from `netsets.json` in the 2026-11 cleanup (their weights are not needed by
+Superseded models, removed from the code and from the model definitions in the 2026-11 cleanup (their weights are not needed by
 anything in the tree): the mixture set `psf3dmix` and its close-pair variant, the ablation heads `hd_abl1809_avg / ax`,
 `hd_sc7bg`, `p2_det.pt`, `p2_head_long.pt`.
 

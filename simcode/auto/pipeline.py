@@ -10,7 +10,7 @@ fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
   pipe.run()                            # every stage, finished ones skipped
   pipe.estimate_psf()                   # one stage: determine_frame_order, calibrate_camera, find_spots, estimate_camera_maps,
                                         # extract_tracks, fit_beads, estimate_psf, train_model, process, report
-  ds = pipe.dataset_pass2()             # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1); ds.select('main')
+  ds = pipe.dataset_pass2()             # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1); ds.select()
 
 Stages (run order): order, camera, spots, cammaps, tracks, beads, psf, train, process, report. Each writes
 <out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped unless redone (--redo <stage> redoes
@@ -242,7 +242,7 @@ class LocalizationPipeline:
         return S['run']
 
     def dataset_pass1(self, **kw):
-        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (selection: ds.select('main'))"""
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (the paper's selection: ds.select())"""
         from simcode.dataset import Dataset
         return Dataset.from_run(self.run_dir(), pass_=1, **kw)
 

@@ -69,22 +69,25 @@ python -m simcode.run --dataset 1809_2 --out out_1809_2      # the same: movie, 
 
 What every run does (= the paper's settings; the options that switched these were removed on 2026-11-14):
 
-- model `m1809` (`--model`, older name `--netset`; models of `simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; one
-  model = pass-1 detector + head, pass-2 detector + head, their solve calibrations and the sigma rescale; `--det / --head /
-  --cal / --p2_det / --p2_head / --p2_cal` override single files)
+- the model (`--model`, required unless `--dataset` / `--config` gives it): a name of `simcode/models.json` (`m1809`,
+  `m25`, `g13`, `m1809g`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
+  stage / `simcode.auto.train.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
+  calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
 - pass 1, pattern estimation, the pattern solve, and pass 2
 - the fixed-c real-data solve calibrations of the model (`--cal_kind sim` for simulated movies)
 - stored-candidate cut p ≥ 0.3 (`simcode/pipeline/common.CAND_PMIN`)
 - the fast code path, with a compiled solve step when available
-- the model's selection-aware sigma rescale (`--sig_u set`) and the subset files `locs_p2_sig12.npz` / `locs_p2_u045.npz` /
-  `locs_p2_strictonly.npz` (`--subset main,u,strict`)
-- selections: the paper's main selection (since 2026-11-13) = a global threshold on the calibrated precision, rows with a
-  rank (p ≥ 0.63, inside the crop) and max(σx, σy) ≤ σ_max, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of
-  its own); the earlier per-tile rule "u ≤ 0.45" = `strict_u ≤ u_max` (`--u_max`, rule `u`); and the columns `sel`, `strict`
+- the model's selection-aware sigma rescale (`--sig_u set`) and the subset file `locs_p2_sig12.npz` (`--subset 12`; a list
+  of thresholds in nm, e.g. `--subset 12,14`)
+- the paper's selection (since 2026-11-13): a global threshold on the calibrated precision, max(σx, σy) ≤ σ_max on the rows
+  with score p ≥ 0.63 inside the crop, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of its own;
+  `simcode.strict.select(table, max_precision_nm=12, min_score=0.63, in_region=True)` = `Dataset.select()`); the column
+  `sel` (phase-calibrated detection selection) is the recommended full output for renders and drift. (The per-tile rule
+  "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
 
 `--dataset <name>` takes movie, calibration and model of a paper dataset from the `_production` entry of `models.json`.
-Older scripts may still pass the removed options; they are accepted only with their fixed value (`--pass2`, `--autoc 0`,
-`--cand_pmin 0.3`, `--fast 1`, `--compile auto`; `simcode/util/retired.py`).
+The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`, `--compile`, `--netset`, `--det` ...,
+`--u_max`, `--strict_q`) no longer exist (`docs/CLEANUP_LOG.md`).
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -99,8 +102,8 @@ two workers on one TIFF movie are not necessarily faster than one (not measured)
 Other options:
 
 - `--chunk_list 12000` processes only the chunk of frames 12000–18000.
-- `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) is used for the
-  strict-product coverage and tiles.
+- `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) adds the
+  drift-corrected columns `x_dc, y_dc`; the selection region and the tiles of the sigma rescale then use them.
 - `--format npz,csv,hdf5` sets the table formats.
 
 Outputs in `--out`:
@@ -108,8 +111,8 @@ Outputs in `--out`:
 | file | content |
 |---|---|
 | `locs_p1.npz`, `locs_p2.npz` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
-| `locs_p*_info.json` | counts, sigma_max and the size of the main selection, u_max and the size of the u rule, strict-product q and coverage, column list |
-| `locs_p2_sig12.npz`, `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (and the same for pass 1; `--subset`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
+| `locs_p*_info.json` | counts, crop, sigma_max and the size of the selection (`n_main`), column list |
+| `locs_p2_sig12.npz` (and the same for pass 1; `--subset`) | the rows of the selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
 | `run_config.json`, `run_config.yaml` | the complete record of the run: fully resolved settings, file hashes, code and environment, pattern and selection outcome (section "Run record") |
 | `summary.json` | settings, model, per-stage timing |
 | `command.txt` | plain log of the commands run on the directory |
@@ -123,27 +126,13 @@ Table columns:
 - `p` (detector), `q_dof`, `kin`, `dnll`, `x_prior, y_prior`
 - `good` (p ≥ 0.63), `sel` (phase-calibrated selection: the recommended full output for renders and drift), `disjoint`
   (frame % 6 == 0)
-- `strict_u` (per-tile σ rank quantile among the good rows in the crop; finite = the rows with a rank), the stored
-  `sigma_max` (12 nm) and `px_nm`: the paper's selection is `strict_u` finite and max(sx, sy) · px_nm ≤ sigma_max, row mask
-  `simcode.strict.select(table)`; the stored `u_max` (0.45) for the earlier rule `select(table, 'u')`; and `strict` (the
-  density-rule strict product)
-
-`strict` is a per-10-px-tile σ quantile among the good rows: in every tile the fraction q with the smallest calibrated σ
-is kept. By default q comes from the GT-free row density ρ (good rows in the crop per window start per µm²), interpolated
-between anchors measured on the three real movies, where q reproduces SIMCODE's coverage (occupied 20-nm bins): pass 1
-ρ 0.49 → q 0.275, ρ ≥ 0.87 → 0.12; pass 2 ρ 0.64 → 0.25, 1.69 → 0.12, ≥ 2.22 → 0.10 (`simcode/strict.py`). The per-tile
-q does not depend on the solve calibration (checked with the automatic c of `simcode/autoc.py` and with the fixed c of
-the pipeline): on the real 0.5 / 2.5 / 20 nM movies its coverage is 0.98–1.02 × SIMCODE's in both cases (pass 1;
-`analysis/evalproto/strictq.py`, `analysis/results/evalproto/strictq_*.txt`). This match is in-sample (the anchors were set on these movies). Without `--drift` the crop, tiles and ρ use raw
-(not drift-corrected) coordinates; the effect is negligible at ~1 px drift. On data far from these densities, check the
-coverage (`locs_p*_info.json`) or set q yourself. Options:
-
-- `--strict_q 0.25` fixes q. (The earlier rule `--strict_sigma_ref`, q from the coverage of a global σ threshold, was
-  removed on 2026-11-14.)
+- the stored `sigma_max` (12 nm) and `px_nm`; with `--drift`: `x_dc, y_dc`
+- tables made before 2026-11-14 also have `strict_u` (per-tile σ rank) and `strict` (strict product) and the scalar
+  `u_max`; nothing uses them now (they go in the dataset-format pass)
 
 The table can be rebuilt at any time with
-`python -m simcode.strict <out> [--tag est2] [--drift drift.npy] [--strict_q 0.25] [--u_max 0.45] [--subset main,strict] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
-The crop of the tiles and of the coverage is the output region of the run (`--crop` of the run; read from its chunk files).
+`python -m simcode.strict <out> [--tag est2] [--drift drift.npy] [--sigma_max 12] [--subset 12,14] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
+The crop of the selection and of the sigma-rescale tiles is the output region of the run (`--crop` of the run; read from its chunk files).
 
 Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
@@ -162,8 +151,8 @@ for reading. It holds (`simcode/util/runconfig.py`):
 
 | entry | content |
 |---|---|
-| `settings` | every argument after the defaults: movie, calibration, model, the single network / calibration files, crop, chunking, frames, σ_max, u_max, strict q, sigma rescale, subsets, formats; files as absolute paths |
-| `fixed` | what is not an option: pass 2, 6-frame windows every 3 frames, stored-candidate cut 0.3, p ≥ 0.63, fixed c, code path, compile mode, batch sizes, margin, pattern search range, strict crop and density anchors |
+| `settings` | every argument after the defaults: movie, calibration, model and its files, crop, chunking, frames, σ_max, sigma rescale, subsets, formats; files as absolute paths |
+| `fixed` | what is not an option: pass 2, 6-frame windows every 3 frames, stored-candidate cut 0.3, p ≥ 0.63, fixed c, code path, compile mode, batch sizes, margin, pattern search range, default crop |
 | `model` | name and definition; per file the absolute path, size, sha256; for a network the trainer arguments and step stored in its checkpoint; for a calibration its scalar parameters (`cmult` = the fixed c, `prior_off`, ...) |
 | `calib` | in-situ PSF / camera calibration: path, sha256, camera maps + sha256, the PSF parameters (NA, wavelength, indices, pixel size, focus, Zernike coefficients, extra terms) and the camera gain / offset / read noise |
 | `movie` | path, parts with size and sha256, frame count and size, frames and chunks processed, frame order / pattern scheme |
@@ -173,8 +162,8 @@ for reading. It holds (`simcode/util/runconfig.py`):
 | `outputs` | every table / subset file with its size and `arrays_sha256` (hash of the array contents; the file hash of an `.npz` changes with its zip time stamps) |
 | `steps` | later work on the directory: `python -m simcode.strict` appends its settings, input hashes, counts and outputs here and marks the files it replaced (`written_by: steps[i]`) |
 
-Re-run with exactly the settings of a record (the files of the record are passed explicitly; arguments after `--config`
-override single settings):
+Re-run with exactly the settings of a record (the model of the record is registered from its definition; a record made
+with single network files re-runs with them as model `<name>@record`; arguments after `--config` override single settings):
 
 ```bash
 python -m simcode.run --config out_1809_2/run_config.json --out out_1809_2_again
@@ -213,8 +202,8 @@ No path is hard-coded (`simcode/config.py`). The roots:
 
 The config file is `$SIMCODE_CONFIG`, else `<repo>/simcode.json`, else `~/.config/simcode.json`; see
 `simcode.example.json`. Network and calibration arguments are resolved relative to the models dir (also `calib/` and
-`insitu/`), so `--calib insitu/calib_1809_2_psf3d.json` works from anywhere. The names from before the package was renamed
-(`SIMCODE2_*`, `simcode2.json`) are still read when the new ones are absent.
+`insitu/`), so `--calib insitu/calib_1809_2_psf3d.json` works from anywhere. (The names from before the package was renamed,
+`SIMCODE2_*` and `simcode2.json`, are no longer read since 2026-11-14.)
 
 ## Models and calibrations (`models/`)
 

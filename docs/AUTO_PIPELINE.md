@@ -26,7 +26,7 @@ pipe.calibrate_camera(); pipe.find_spots() # single stages, each callable on its
 pipe.estimate_psf(redo=True)               # run a finished stage again (force=True: accept failed checks)
 pipe.run(redo=[pipe.estimate_psf])         # redo a stage and every later one
 ds = pipe.dataset_pass2()                  # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1)
-main = ds.select('main')
+sel = ds.select()                          # the paper's selection (<= 12 nm, p >= 0.63, in the crop)
 pipe.cfg.optics.NA                         # the resolved config, read-only
 ```
 
@@ -103,7 +103,7 @@ psf:                               # stage d
   readnoise_e: 1.9                 # fixed read noise / offset of the stage-A model (as fit_insitu2); null = camera stage values
   offset_adu: null
 train:                             # stage e
-  model: null                      # null = 'a<name>'; an existing model name = skip training and use it (key netset before 2026-11-14)
+  model: null                      # null = 'a<name>'; an existing model name / model folder = skip training and use it
   quick: false                     # few steps per trainer (plumbing test)
   steps: {det: 40000, hd: 18000, p2det: 40000, p2head: 24000, p2headL: 50000}
   init: {det: null, hd: hd_sc5nb.pt}
@@ -313,8 +313,8 @@ if a calibration fit has no matched targets the template calibrations are copied
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 
-The model is registered in `<out>/train/model.json` (format of `simcode/models.json`, absolute paths; `netset.json` before
-2026-11-14, still read); stage f reads it through an in-memory addition to `config.model_sets()` (no edit of `models.json`). The selection-aware sigma rescale (`sig_u`,
+The model is registered in `<out>/train/model.json` (format of `simcode/models.json`, absolute paths);
+stage f reads it through an in-memory addition to `config.model_sets()` (no edit of `models.json`). The selection-aware sigma rescale (`sig_u`,
 fitted on a simulated movie with ground truth, `analysis/psf3d_nets/sigcal.py`) is not in the quick path; without it stage f
 runs without it (the model's `sig_u` is empty).
 
@@ -328,12 +328,12 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
 | 1 | 6-frame cycle, blocked order, angle = frame % 6 // 3 (`pipeline/pattern_est.py`, `pipeline/common.pattern_frames`, `sc_front*.py` (ws + t) % 6 // 3, `insitu/*`, `psf/vectorial` per-angle PSF, `sim/*`) | `pattern.frame_order`: stage `order` writes a blocked-order cache; every later stage reads the cache. For interleaved data the windows starting at 6c + 3 mix two cycles: `process.cycle_aligned_only` keeps windows with frame % 6 == 0 in the selections. 4-step or 3-orientation schemes: refused by the config check (needs P1) |
 | 2 | 2 orientations classified by |kx| > |ky| (`core.angle_index`, `p2/illum.angle_of`, `hd/msolve`) | config check: the two fitted k (stage d pattern) must lie in different 45-degree sectors; otherwise stop with an explanation (P2) |
 | 3 | pitch search 1.6-2.8 px (`pattern_est.estimate_k(pitch_px=...)`) | stage f sets the default of `estimate_k` in memory to `pattern.pitch_px` (as `analysis/nanoruler/ev_run.py`; P3) |
-| 4 | strict CROP fixed to (5, 5, 110) (`strict.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `strict.CROP` and the bound defaults of `tile_of` / `bin20` in memory (P4) |
+| 4 | strict CROP fixed to (5, 5, 110) (`strict.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `strict.CROP` and the bound defaults of `tile_of` / `tile_rank` / `in_crop` in memory (P4) |
 | 5 | detector batch 64 windows (`run_uncalibrated --det_batch`, not exposed by `run.py`); 400 x 400 px needs > 12 GB | `process.det_batch` is set as the argparse default in memory |
 | 6 | optics / camera constants in `insitu/fit_insitu2.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/auto/psffit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
 | 7 | `hd/realsim.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in realsim / plib / sigcal | stage e: in-memory preset patch (`simcode/auto/runwrap.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
 | 8 | gate photon settings hard-coded in `hd/gate.py` (rs05qm median 1260 ph) | reported; P7 |
-| 9 | strict-product density anchors fitted on the DMD movies (`strict.Q_DENSITY`) | not changed; the main selection (global sigma threshold) does not use them |
+| 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
 | 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | stage e trains pass 2 with the dataset's pattern; the generic pass-2 option (`--pgen`, other worker) is used when it is adopted |
 
 ## 8. Proposed changes in files this work does not edit
@@ -343,7 +343,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
   6-frame cycle. Removes the reorder cache.
 - P2 (`core.angle_index`, `p2/illum.angle_of`, `hd/msolve`): take the orientation index from the pattern (per step) instead of |kx| > |ky|.
 - P3 (`pattern_est.estimate_k`, `run.py`, `run_uncalibrated.py`): a `--pitch_px lo,hi` flag (default 1.6,2.8).
-- P4 (`strict.py`): `build_table(..., crop=)` already takes the crop; `tile_of` / `bin20` should default to it instead of
+- P4 (`strict.py`): `build_table(..., crop=)` already takes the crop; `tile_of` / `tile_rank` / `in_crop` should default to it instead of
   the module constant `CROP`; `run.py --crop` default = the sensor minus 5 px.
 - P5 (`sim/simulator.py`, `det/psfpert.build_lut`, `hd/realsim.py`, `pipeline/common.load_calib`): optional calib key for the
   refined PSF of stage d2 (e.g. a pupil map): the Simulator / pipeline LUTs are built from it, the jitter bank applies its

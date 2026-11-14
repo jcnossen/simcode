@@ -18,18 +18,17 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 2. **Pattern estimation**: the illumination pattern (pitch, angle, phases, depth, drift) is estimated from the pass-1 output.
 3. **Explicit solve**: the position follows from the network intensities and the pattern.
 4. **Pass 2** (pattern-aware): detector and head get the estimated pattern as extra input, then the same solve.
-5. **Table**: localizations with calibrated uncertainties and the selections (the paper's: `strict_u` ≤ 0.45).
+5. **Table**: localizations with calibrated uncertainties; the paper's selection is max(σx, σy) ≤ 12 nm on the rows with p ≥ 0.63 inside the crop.
 
 ## Top level (`simcode/`)
 
 | file | what it does |
 |---|---|
-| `run.py` | User entry point: `python -m simcode.run --movie … --calib … --out … [--model m1809]`, or `--dataset <name>` for a paper dataset. Runs all stages; finished stages are skipped. |
-| `strict.py` | Builds the localization table from a pipeline output directory, with the score `strict_u` and the stored `u_max` (the paper's selection is strict_u ≤ u_max: `select(table)`), and the columns `sel`, `strict`. Writes subset files (`--subset`). Also a CLI. |
-| `dataset.py` | `Dataset` (alias `Localizations`): a localization table as an object. Columns as numpy arrays (extra fields: `addFields`), metadata, drift. Loads a run directory (`from_run(dir, pass_=2)`), v2 tables, the preprint code's `.npy` / hdf5, Picasso hdf5, ThunderSTORM csv, the paper's DECODE tables; `select('main')` (= `strict.select`), filters, crop, merge, DME v2 drift (estimate / apply / undo), `render`, `frc`; saves npz (lossless), Picasso hdf5, ThunderSTORM csv, `.npy`. Usage: `docs/USAGE.md`. |
-| `locs.py` | Re-exports `dataset.py` (`Localizations` = `Dataset`). |
-| `models.json` | The single definition of the models (m1809, m25, g13, m1809g; called network sets / `netsets.json` until 2026-11-14), the default model, and the paper's datasets (`_production`). |
-| `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from environment variables, `simcode.json` or defaults; `model_set(name)` (alias `netset`). No path is hard-coded elsewhere. |
+| `run.py` | User entry point: `python -m simcode.run --movie … --calib … --model m1809 --out …` (`--model`: a name of `models.json` or a model folder; required), or `--dataset <name>` for a paper dataset. Runs all stages; finished stages are skipped. |
+| `strict.py` | Builds the localization table from a pipeline output directory (with the model's sigma rescale), and the paper's selection `select(table, max_precision_nm=12, min_score=0.63, in_region=True)`; writes the selection as subset files (`--subset 12`). Also a CLI. |
+| `dataset.py` | `Dataset`: a localization table as an object. Columns as numpy arrays (extra fields: `add_fields`), metadata, drift. Loads a run directory (`from_run(dir, pass_=2)`), v2 tables (`load_npz`), the preprint code's `.npy` (`load_npy`), Picasso hdf5 (`load_hdf5`), ThunderSTORM csv (`load_csv_thunderstorm`), the paper's DECODE tables; `select()` (= `strict.select`), filters, crop, concatenate (copying, and in place with a trailing underscore: `filter_`, `crop_`, `crop_from_edge_`, `select_`, `crlb_filter_`, `autocrop_`), DME v2 drift (`estimate_drift` / `apply_drift` / `undo_drift`), render, FRC; saves npz / Picasso hdf5 / ThunderSTORM csv / `.npy`. `docs/USAGE.md`. |
+| `models.json` | The shipped models (m1809, m25, g13, m1809g), the default model, and the paper's datasets (`_production`); any other model is a folder with a `model.json` (`config.model_set` takes both). |
+| `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from `SIMCODE_*` environment variables, `simcode.json` or defaults; `model_set(name or model folder)`. No path is hard-coded elsewhere. |
 | `core.py` | Pattern geometry helpers used by the explicit solve (illumination at a position, fringe shifts, kinetics start values). |
 | `autoc.py` | Opt-in automatic per-dataset noise scale of the network intensities, estimated from the solve's own residuals (no ground truth). Its sigma table exists only for the earlier default head. |
 | `fastutil.py` | Optional `torch.compile` support for the fast inference paths. |

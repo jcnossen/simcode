@@ -1,6 +1,6 @@
 """Stage g (report): <out>/report/report.html (self-contained: tables + inline PNG figures) and report.json: settings, every
 stage summary with its checks, camera maps, PSF images per pattern angle and the held-out table, the in-situ pattern vs the
-pipeline's estimate, counts of the localization tables, the main-selection FRC (simcode.evalproto.frc, 300-frame block halves,
+pipeline's estimate, counts of the localization tables, the FRC of the paper's selection (simcode.evalproto.frc, 300-frame block halves,
 drift-corrected with DME v2 when available), the gate table of stage e."""
 import base64, html, io, json, os
 import numpy as np
@@ -89,17 +89,17 @@ def run(ds):
         S = pr['summary']; px = c['optics']['pixel_um'] * 1e3
         rows = [['model', pr.get('model')], ['estimated pitch px', pr.get('pattern_pitch_px')], ['timing', S.get('timing')]]
         for n in ('locs_p1', 'locs_p2'):
-            if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_u', 'n_sel', 'n_strict', 'median_sigma_nm', 'median_photons')}])
+            if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_sel', 'median_photons')}])
         parts.append('<h2>Processing</h2>' + _tab(rows))
         last = 'locs_p2' if 'locs_p2' in S else 'locs_p1'
         f = os.path.join(pr['run'], last + '.npz')
         if os.path.exists(f):
             from simcode.dataset import Dataset
             try:
-                L = Dataset.from_table(f); sel = L.mask('main')
+                L = Dataset.load_npz(f); sel = L.mask()
                 v, dr, D = frc_of(L, px, sel)
-                R['frc'] = dict(table=last, selection='main', n=int(sel.sum()), frc_nm=v, drift=dr)
-                parts.append(_tab([['FRC (main selection, 300-frame block halves)', f'{v:.2f} nm, {int(sel.sum())} rows, drift {dr}']]))
+                R['frc'] = dict(table=last, selection='max(sx, sy) <= 12 nm, p >= 0.63, inside the crop', n=int(sel.sum()), frc_nm=v, drift=dr)
+                parts.append(_tab([['FRC (selection <= 12 nm, 300-frame block halves)', f'{v:.2f} nm, {int(sel.sum())} rows, drift {dr}']]))
                 if D is not None:
                     fig, a = plt.subplots(figsize=(7, 2.5)); a.plot(D[:, 0] * px, label='x'); a.plot(D[:, 1] * px, label='y')
                     a.set_xlabel('frame'); a.set_ylabel('drift nm'); a.legend(); parts.append(_png(fig))
