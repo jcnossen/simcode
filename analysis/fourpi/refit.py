@@ -17,7 +17,7 @@ import numpy as np
 import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, f'{REPO}/analysis/baselines'); sys.path.insert(0, REPO)
-from zpsf import ZStackLUT
+from zpsf import knot_spline
 from mle import PSFModel, lm_fit, loglik
 from register import PolyMap
 
@@ -31,7 +31,7 @@ class LUTPSF:
         self.z0, self.hz = float(d['z0']), float(d['hz'])
         self.zmax = self.z0 + self.hz * (d['zstack'].shape[0] - 1)
         ks = torch.as_tensor(d['zstack'], dtype=torch.float32)
-        self.L = {P: ZStackLUT(ks, int(d['S']), float(d['u0']), self.z0, self.hz, P) for P in P_list}
+        self.L = {P: knot_spline(ks, int(d['S']), float(d['u0']), self.z0, self.hz, P) for P in P_list}
 
     def eval3(self, x, y, z, P):
         pos = torch.stack([x, y, z], 1).float()

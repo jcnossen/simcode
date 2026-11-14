@@ -15,7 +15,8 @@ z-stack npz format (written by `python analysis/baselines/zpsf.py export <calib.
   z0_um, dz_um                  z_k = z0_um + k dz_um
   emitter_z_um (optional)       plane used by the 2D fits (default: the calib's emitter_z_median_um, else 0.055)
   focus_um, source (optional)   metadata
-The knots are interpolated with the Catmull-Rom 3D spline of torch_psf.ConvSplinePSF.render (value and d/dx, d/dy, d/dz).
+The knots are interpolated with the Catmull-Rom 3D spline of torch_psf.ConvCubicSplinePSF.render (value and d/dx, d/dy, d/dz;
+knot_spline wraps the stored stack: knots= / knot_u0_px / knot_z0_um).
 
 API: psf = load(spec); g, gx, gy = psf.eval(xc, yc, P[, z]) with xc, yc [N] = emitter position relative to the ROI centre (px;
 pixel j of a P-px ROI has its centre at j - (P-1)/2), returns [N,P,P] tensors (g sums to ~1 over the full plane; gx = dg/dxc).
@@ -26,8 +27,7 @@ import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.psf import ConvSplinePSF
-from simcode.psf import geometry_matrix
+from simcode.psf import ConvCubicSplinePSF
 
 
 class GaussPSF:
@@ -48,29 +48,12 @@ class GaussPSF:
         return g, ey[:, :, None] * dex[:, None, :], dey[:, :, None] * ex[:, None, :]
 
 
-class ZStackLUT(ConvSplinePSF):
-    """torch_psf ConvSplinePSF.render on an arbitrary knot stack: knot origin u0 (px), S knots per px and any ROI size P (also
-    even). The ConvSplinePSF constructor derives the knot origin from its own grid (odd ROI), so the grid attributes that
-    render() uses are set here."""
-    def __init__(self, zstack, S, u0, z0, hz, P, xmax=None):
-        self.roisize = P; self.S = S = int(S); self.dev = zstack.device; self.dtype = torch.float32
-        self.z0, self.hz, self.nz = float(z0), float(hz), zstack.shape[0]
-        self.u0 = float(u0)
-        self.knots = zstack.contiguous(); D, H, W = zstack.shape; self.nv, self.nu = H, W
-        assert H == W, 'square knot grid expected'
-        self.Lw = Lw = (P - 1) * S + 4
-        r = lambda n_: torch.arange(n_, device=self.dev)
-        self.pat = (r(4)[:, None, None] * H * W + r(Lw)[None, :, None] * W + r(Lw)[None, None, :]).reshape(-1)
-        self.G = geometry_matrix(self.dev)
-        self.e = torch.arange(4, device=self.dev)
-        o0 = -(P - 1) / 2
-        self.oS0 = float((o0 - self.u0) * S)
-        # largest |x| whose 4 x Lw x Lw knot block stays inside the grid (both sides)
-        xm_lo = o0 - self.u0 - 1.0 / S                                   # x = +xmax: block corner >= 0
-        xm_hi = (W - 3) / S - (P - 1) - (o0 - self.u0)                   # x = -xmax: block end <= W
-        lim = min(xm_lo, xm_hi) - 1e-3
-        assert lim > 0.5, f'knot grid too small for a {P}-px ROI (|x| <= {lim:.2f})'
-        self.xmax = float(min(lim, P / 2 + 1) if xmax is None else min(xmax, lim))
+def knot_spline(zstack, S, u0, z0, hz, P, xmax=None):
+    """torch_psf ConvCubicSplinePSF on a stored knot stack [nz, n, n] (knot origin u0 px, S knots per px, plane 0 at z0 um,
+    spacing hz um) for P x P ROIs (also even); offset limit P / 2 + 1 px (or xmax), reduced to what the knots support"""
+    return ConvCubicSplinePSF(P, (float(z0), float(z0) + (zstack.shape[0] - 1) * float(hz)), oversample=int(S), dz_um=float(hz),
+                              zpad=0, xy_limit=P / 2 + 1 if xmax is None else xmax, device=zstack.device,
+                              knots=zstack.contiguous(), knot_u0_px=float(u0), knot_z0_um=float(z0))
 
 
 class SplinePSF:
@@ -84,7 +67,7 @@ class SplinePSF:
 
     def lut(self, P):
         if P not in self._luts:
-            self._luts[P] = ZStackLUT(self.knots, self.S, self.u0, self.z0, self.hz, P)
+            self._luts[P] = knot_spline(self.knots, self.S, self.u0, self.z0, self.hz, P)
         return self._luts[P]
 
     def eval(self, xc, yc, P, z=None, grad=True):
@@ -103,7 +86,7 @@ class SplinePSF:
 
 def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01, angles='avg'):
     """knot stack of a calib json's VectorialPSF (as simcode.pipeline.common.load_calib, larger ROI). angles: 'avg' = mean of
-    the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = torch_psf.load_psf(angle=None)."""
+    the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = torch_psf.PSF.load(angle=None)."""
     from simcode import psf as spsf
     from simcode.config import resolve
     from simcode.psf import has_angle_psf, spline
@@ -112,7 +95,7 @@ def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01,
     which = [0, 1] if (angles == 'avg' and ang) else ([angles] if isinstance(angles, int) else [None])
     stacks = []
     for a in which:
-        psf = spsf.load_psf(path, roisize=P, oversample=3, device=device, angle=a)
+        psf = spsf.PSF.load(path, roisize=P, oversample=3, device=device, angle=a)
         L = spline(psf, zmax, oversample=sub, dz_um=hz, xy_limit=xmax)
         stacks.append(L.knots)
     zs = torch.stack(stacks).mean(0)
