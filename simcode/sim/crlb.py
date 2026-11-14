@@ -16,7 +16,7 @@ import math, types
 import numpy as np, torch
 from scipy.optimize import linear_sum_assignment
 from simcode.sim.simulator import Simulator
-from simcode.psf.lut import PSFLUT
+from simcode.psf.conv_spline import ConvSplinePSF
 from simcode.nn.blocks import extract_patches
 from simcode import config as _cfg
 
@@ -387,4 +387,4 @@ def models(T):
     from simcode.psf.vectorial import copy_psf_extras, angle_kwargs
     for q in (rpsf, rp11): copy_psf_extras(q, p0)       # opt-in calib terms (angle average); absent = unchanged
     rpsf.angle_kw = angle_kwargs(sim.c, dev)             # per-angle PSF for psf_stack / crlb_all (None = off)
-    return sim, rpsf, PSFLUT(rp11, sim.focus, sim.zmax)
+    return sim, rpsf, ConvSplinePSF(rp11, sim.focus, sim.zmax)

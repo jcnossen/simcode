@@ -19,7 +19,7 @@ on the per-emitter expanded z-stack (copies the whole stack per emitter). The kn
 index (bit-identical to torch_convspline's slice_volumes for in-range blocks, ~3x faster; coordinates are clamped so
 blocks are always in range).
 
-PSFLUT(psf, focus, zmax) is callable like VectorialPSF: lut(pos [N,3], focus [N]) -> [N,P,P];
+ConvSplinePSF(psf, focus, zmax) is callable like VectorialPSF: lut(pos [N,3], focus [N]) -> [N,P,P];
 lut.evaluate(pos, grad=True) also returns d/dx, d/dy (px) and d/dz (um).
 """
 import math
@@ -37,7 +37,7 @@ def geometry_matrix(device, tau: float = 0.5):
     ], device=device, dtype=torch.float32)
 
 
-class PSFLUT:
+class ConvSplinePSF:
     def __init__(self, psf, focus, zmax=0.2, sub=6, hz=0.01, zpad=3, xmax=None, chunk=256):
         self.P = P = psf.roisize
         self.roisize = P
@@ -111,7 +111,7 @@ class PSFLUT:
     def __call__(self, pos, focus=None, zcoef_offset=None, intensity=None, bg=None):
         assert zcoef_offset is None
         if focus is not None and not torch.is_tensor(focus):      # (tensor focus not checked: avoids a GPU sync)
-            assert abs(float(focus) - self.focus) < 1e-6, 'PSFLUT built for another focus'
+            assert abs(float(focus) - self.focus) < 1e-6, 'ConvSplinePSF built for another focus'
         with torch.no_grad():
             out = self.evaluate(pos)
         if intensity is not None: out = out * intensity[:, None, None]
@@ -120,11 +120,11 @@ class PSFLUT:
 
 
 def make_lut(sim, P):
-    """PSFLUT of the simulator's calibrated vectorial PSF on a P x P ROI (same normalisation as crlb.models)."""
+    """ConvSplinePSF of the simulator's calibrated vectorial PSF on a P x P ROI (same normalisation as crlb.models)."""
     p0 = sim.psf
     rp = type(p0)(P, pixelsize=p0.pixelsize, NA=float(p0.NA), n_imm=p0.n_imm, n_med=float(p0.n_med),
                   wavelength=p0.wavelength, oversample=3, device=p0.u.device)
     with torch.no_grad():
         rp.zcoef.copy_(p0.zcoef); rp.apod.copy_(p0.apod)
     copy_psf_extras(rp, p0)         # (2026-11-11) opt-in terms of the simulator's calib (angle average)
-    return PSFLUT(rp, sim.focus, sim.zmax)
+    return ConvSplinePSF(rp, sim.focus, sim.zmax)

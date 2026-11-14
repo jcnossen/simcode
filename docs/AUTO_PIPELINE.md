@@ -239,7 +239,7 @@ photoselection), with gradients to x, y, z and to the PSF parameters.
 
 Alternating fit: per outer iteration
 
-1. the knots of a Catmull-Rom 3D spline table of the CURRENT vectorial model are built (`simcode/psf/lut.py` geometry:
+1. the knots of a Catmull-Rom 3D spline table of the CURRENT vectorial model are built (`simcode/psf/conv_spline.py` geometry:
    the pixel-integrated PSF sampled at S x S sub-pixel shifts and z steps hz over the fitted z range, per pattern angle
    when the model has per-angle terms), with autograd kept to the PSF parameters;
 2. the per-sample x, y, z steps (and the varpro I / bg) run on the spline (conv2d evaluation, value and gradients), which
@@ -250,7 +250,7 @@ Alternating fit: per outer iteration
 
 Implementation (`simcode/auto/psffit.py`, `fit(..., lut=True)`): knots S = 8 per pixel, hz = 10 nm (spline error 4e-5
 of the peak, rms 5e-6), |x|, |y| <= 2 px; the spline is evaluated separably (only the 4 x 4P x 4P knots the P x P pixels use
-are gathered, then contracted along z, y, x: equal to `PSFLUT.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
+are gathered, then contracted along z, y, x: equal to `ConvSplinePSF.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
 iterations (positions only) use one table; then one table per iteration with the graph to the PSF parameters; the last
 `lut_polish` = 50 iterations are direct vectorial steps (the focus / z direction is nearly flat and the spline optimum is
 offset along it by a few nm). Final residuals and intensities always use the vectorial model.

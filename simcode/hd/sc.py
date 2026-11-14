@@ -47,7 +47,7 @@ def patches(x, b, iy, ix, P=PP):
 class PSFCol:
     """unit-sum-free PSF columns on the PP x PP patch from the calibrated 15 x 15 LUT (z fixed 50 nm)"""
     def __init__(self, sim, z=0.05):
-        from simcode.psf.lut import make_lut
+        from simcode.psf.conv_spline import make_lut
         self.lut = make_lut(sim, PP); self.z = z
 
     def __call__(self, off):

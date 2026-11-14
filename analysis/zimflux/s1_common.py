@@ -1,4 +1,4 @@
-"""S1 shared parts: the calibrated vectorial PSF of the zimflux code as a PSFLUT, the astigmatic and ZIMFLUX models
+"""S1 shared parts: the calibrated vectorial PSF of the zimflux code as a ConvSplinePSF, the astigmatic and ZIMFLUX models
 (analytic Jacobians) for simcode.fourpi.lm.lm_poisson_j, and paths.
 Coordinates: x, y in px relative to the ROI centre (index 7.5); absolute px = corner + 7.5 + x (x = column, y = row).
 z = emitter height z_e above the coverslip in um (the paper's z = z_e - z_d, z_d = 60 nm). Focal plane at the Strehl maximum
@@ -6,7 +6,7 @@ for an emitter at z_d (zimflux config.set_saffocus)."""
 import sys, os, json, numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, '/home/jc/simcode2/analysis/zimflux')
 from simcode.psf.vectorial import VectorialPSF
-from simcode.psf.lut import PSFLUT
+from simcode.psf.conv_spline import ConvSplinePSF
 import crlb_s0 as C
 WORK = '/home/jc/simcode2/out/zimflux/s1/' + os.environ.get('ZF_S1_SUB', '')   # variant runs in subfolders
 RES = '/mnt/data/dmdsf/simcode2_out/zimflux/surfdrive/Zimflux/3Dnanorulers/simcode_results/'
@@ -44,7 +44,7 @@ def make_lut(dev, astig_sign=1.0, zern=None, variant=None, focus_shift=0.0):
                        npupil=64, oversample=3, device=dev)
     with torch.no_grad():
         psf.zcoef[:] = torch.tensor([zern[j] for j in sorted(zern)], device=dev)
-    lut = PSFLUT(psf, f, zmax=ZHI + 0.05, zpad=12, hz=0.01)
+    lut = ConvSplinePSF(psf, f, zmax=ZHI + 0.05, zpad=12, hz=0.01)
     return lut, f, zern
 
 

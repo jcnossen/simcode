@@ -3,7 +3,7 @@ Evaluation-only REFERENCE (user request 2026-11-09): a basic single-emitter Leve
 method (the method stays network-only); used only as a reference line in the CRLB plots (analysis/figures/crlb_all_v2.py).
 Model on a P x P ROI (default 11 x 11) centred on a pixel (cx, cy), all T frames:
     mu_t(px) = I_t * psf(px; x, y, z0) + bg_t
-  psf = the calibrated vectorial PSF (calib_0.5nM, simcode.psf.lut.make_lut on P x P; simulator normalisation, so I_t = photons),
+  psf = the calibrated vectorial PSF (calib_0.5nM, simcode.psf.conv_spline.make_lut on P x P; simulator normalisation, so I_t = photons),
   z FIXED at z0 = 0.05 um (the emitter median height, = the head's PSF template PSFCol) or free (zfree=True, clamped to
   [0, zmax], start z0); parameters theta = (x, y, [z,] I_1..I_T, bg_1..bg_T) (14 / 15), no pattern, no neighbours (single emitter: neighbours contaminate the fit by design).
 Likelihood: sCMOS Poisson (Huang et al. 2013): y + rn^2 ~ Poisson(mu + rn^2) per pixel, rn = the per-pixel read-noise
@@ -11,7 +11,7 @@ map; LM with Fisher scoring (F = J^T diag(1 / (mu + rn^2)) J), multiplicative da
 Returns the estimate and the inverse Fisher at the estimate (I-block -> covariance for the explicit pattern solve).
 """
 import torch
-from simcode.psf.lut import make_lut          # identical to the development hd/solve.make_lut
+from simcode.psf.conv_spline import make_lut          # identical to the development hd/solve.make_lut
 from simcode.hd.sc import patches
 
 

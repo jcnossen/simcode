@@ -4,20 +4,20 @@ dependence.
 For a global interferometer phase offset Phi (psf4pi phi_extra) every channel image is exactly
     g_c(x, y, z; Phi) = inc_c(x, y, z) + cos(Phi) cr_c(x, y, z) - sin(Phi) ci_c(x, y, z)
 (inc = incoherent part, cr + i ci = coherent cross term). The three components per channel are tabulated from
-g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks, reusing simcode.psf.lut.PSFLUT's evaluation (the convolutional 3D spline of torch-spline-3d,
+g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks, reusing simcode.psf.conv_spline.ConvSplinePSF's evaluation (the convolutional 3D spline of torch-spline-3d,
 https://gitlab.com/jcnossen/torch-spline-3d) (instances are
-created with their knot stacks set directly; PSFLUT itself is imported, not modified).
+created with their knot stacks set directly; ConvSplinePSF itself is imported, not modified).
 
 LUT4Pi(psf, zmin, zmax).evaluate(pos [N,3], Phi [N], grad=False) -> [N,4,P,P] (and d/dx, d/dy, d/dz, d/dPhi).
 """
 import math
 import torch
-from simcode.psf.lut import PSFLUT, geometry_matrix
+from simcode.psf.conv_spline import ConvSplinePSF, geometry_matrix
 from simcode.fourpi.psf4pi import PSF4Pi, psf_from_state
 
 
 def _lut_from_stack(G, P, S, z0, hz, c, dev):
-    L = object.__new__(PSFLUT)
+    L = object.__new__(ConvSplinePSF)
     L.P = L.roisize = P; L.focus = 0.0; L.dev = dev; L.S = S
     L.xmax = float(P / 2 + 1)
     nz = G.shape[0]

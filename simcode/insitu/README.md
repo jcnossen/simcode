@@ -114,7 +114,7 @@ Consumers of the new keys:
   angle's PSF.
 - So do `hd.realsim.RealSim` (LUT-bank entries are (angle 0, angle 1) tuples), `analysis/simreal/sim_movie_r.py` and
   `sim.crlb` (`psf_stack` returns 8 channels and `crlb_all` uses the per-frame PSF).
-- The pattern-free consumers (`pipeline.common.load_calib`, `psf.lut.make_lut`, the DECODE LUT with `DEC_CALIB=...`) use the
+- The pattern-free consumers (`pipeline.common.load_calib`, `psf.conv_spline.make_lut`, the DECODE LUT with `DEC_CALIB=...`) use the
   angle average.
 
 The recipe for the paper movies is in `out/psf3d/run_final.sh` and `out/psf3d/run_final_ps.sh`:

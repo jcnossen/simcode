@@ -6,7 +6,7 @@ order, so with the same inputs it gives the same result), but with the optics an
 5-21 + focus, blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base, checkerboard split. Writes
 <out>_psf.pt / _psf.json in the fit_insitu2 format.
 
-lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (simcode.psf.lut.PSFLUT
+lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (simcode.psf.conv_spline.ConvSplinePSF
 geometry) of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
 (x, y, z gradients, varpro I / bg) run on the spline; the PSF parameters get the exact gradient of the spline loss over all
 samples by one backward pass through the table construction. Same optimizer, learning rates and iteration count as the
@@ -20,7 +20,7 @@ phase / modulation / relative intensity.
 import json, math, time
 import numpy as np, torch
 from simcode.psf.vectorial import VectorialPSF
-from simcode.psf.lut import PSFLUT
+from simcode.psf.conv_spline import ConvSplinePSF
 from simcode.insitu.varpro import solve_linear
 
 
@@ -134,7 +134,7 @@ class Fit:
             src = VectorialPSF(self.R, pixelsize=m.pixelsize, NA=float(m.NA), n_imm=m.n_imm, n_med=float(m.n_med), wavelength=m.wavelength,
                                zernike_indices=m.zidx, npupil=m.npupil, oversample=m.os, device=self.dev)
             with torch.no_grad(): src.zcoef.copy_(m.zcoef)
-            self.luts.append(PSFLUT(src, float(self.G['focus'].detach()), self.zmax, sub=sub, hz=hz, xmax=xmax))
+            self.luts.append(ConvSplinePSF(src, float(self.G['focus'].detach()), self.zmax, sub=sub, hz=hz, xmax=xmax))
         L = self.luts[0]
         Pl = L.zstack.shape[1] // sub
         self.big = VectorialPSF(Pl, pixelsize=m.pixelsize, NA=float(m.NA), n_imm=m.n_imm, n_med=float(m.n_med), wavelength=m.wavelength,
@@ -147,7 +147,7 @@ class Fit:
         self.lut_geom = (L.nz, sub, Pl)
 
     def lut_knots(self, k):
-        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = PSFLUT.__init__"""
+        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvSplinePSF.__init__"""
         nz, S, Pl = self.lut_geom
         f = self.G['focus'].expand(len(self.lut_pos))
         imgs = self.big(self.lut_pos, f, **self.kwargs(k))
@@ -162,7 +162,7 @@ class Fit:
 
 
 def spline_eval(L, K, pos):
-    """value of PSFLUT L's spline with knots K [nz, nv, nu] at pos [N, 3] -> [N, P, P]; = PSFLUT.evaluate (same knot
+    """value of ConvSplinePSF L's spline with knots K [nz, nv, nu] at pos [N, 3] -> [N, P, P]; = ConvSplinePSF.evaluate (same knot
     geometry, clamping and Catmull-Rom weights), but separable: only the 4 x 4P x 4P knots that the P x P output pixels use are
     gathered, then contracted along z, y, x (instead of a grouped stride-S conv2d over the whole (P-1)S+4 block).
     Differentiable in pos and in K."""

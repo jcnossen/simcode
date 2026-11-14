@@ -67,9 +67,9 @@ def load_calib(path, dev='cuda'):
         psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
     from simcode.psf.vectorial import set_psf_extras
     set_psf_extras(psf, c)   # (2026-11-11) opt-in calib PSF terms (angle average); absent = unchanged
-    from simcode.psf.lut import PSFLUT
+    from simcode.psf.conv_spline import ConvSplinePSF
     zmax = 0.2
-    lut = PSFLUT(psf, c['focus_um'], zmax)
+    lut = ConvSplinePSF(psf, c['focus_um'], zmax)
     return dict(offset=maps['offset_adu'].astype(np.float32), rn2=(maps['readnoise_e'] ** 2).astype(np.float32),
                 gain=float(cam['gain_e_per_adu']), lut=lut, focus=float(c['focus_um']), zmax=zmax,
                 px_nm=c['pixelsize_um'] * 1e3)
