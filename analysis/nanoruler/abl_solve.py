@@ -9,9 +9,9 @@ then simcode.strict.build_table (strict crop = the run's crop) -> locs.npz with 
     sx_raw, sy_raw  UNCALIBRATED model sigma: a second solve with kap_I2 = kap_p = 1, sig_a = 1, sig_g = 0, no sigma factor
                     (= sqrt(posterior-mean Fisher variance + fringe spread) of the noise model as the network states it; variant E, which has no
                     network covariance, keeps its variance table); x_raw, y_raw = the positions of that solve
-    sx_u, sy_u      calibrated sigma x g(strict_u): the chain's selection-aware rescale (sigu_p<pass>_nr80.json), when that file exists
+    sx_u, sy_u      calibrated sigma x g(u): the chain's selection-aware rescale (sigu_p<pass>_nr80.json), when that file exists
     sx_f, sy_f      Fisher sigma at the MAP of the calibrated solve (no inflation, no spread, no factor)
-All rows of the run are solved (the strict_u ranking is defined on all good rows); the analysis uses the cycle-aligned rows only.
+All rows of the run are solved (the per-tile sigma rank u of the rescale is defined on all good rows); the analysis uses the cycle-aligned rows only.
 Options: --pattern <file.pt> --ptag <name> (part D: another pattern for the same rows; a dict with key 'pipeline' is unwrapped).
 
 usage: CUDA_VISIBLE_DEVICES=g python analysis/nanoruler/abl_solve.py <set> [variants A,B,..|all] [--pattern f --ptag name] [--auto 0]
@@ -93,18 +93,19 @@ def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
 def table(setn, d, crop):
     import simcode.strict as SP
     S = A.SETS[setn]; crop = tuple(float(c) for c in crop)
-    SP.CROP = crop; SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]; SP.bin20.__defaults__ = SP.bin20.__defaults__[:-1] + (crop,)
+    SP.CROP = crop; SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]; SP.tile_rank.__defaults__ = SP.tile_rank.__defaults__[:-1] + (crop,)
     T, info = SP.build_table(d, S['tag'], A.PX)
     R = SP.load_rows(d, S['tag'])
     for k in ('sx_nb', 'sy_nb', 'sx_f', 'sy_f', 'sx_raw', 'sy_raw', 'x_raw', 'y_raw'): T[k] = R[k].astype(np.float32 if k[0] == 's' else np.float64)
-    # sx_u, sy_u: calibrated sigma x g(strict_u), the chain's selection-aware rescale of this pass (out/nanoruler/models/calib/sigu_p<pass>_nr80.json,
-    # fitted on nr_a with the PRODUCTION calibration = variant A; the same g is applied to every variant's own strict_u)
+    # sx_u, sy_u: calibrated sigma x g(u), the chain's selection-aware rescale of this pass (out/nanoruler/models/calib/sigu_p<pass>_nr80.json,
+    # fitted on nr_a with the PRODUCTION calibration = variant A; u = each variant's own per-tile sigma rank, as simcode.strict.build_table)
     su = os.path.join(A.NR, 'models', 'calib', f'sigu_p{2 if S["tag"] == "est2" else 1}_nr80.json')
-    gg = np.ones(len(T['sx']), np.float32)
     if os.path.exists(su):
-        Gj = json.load(open(su)); fu = np.isfinite(T['strict_u']); gg[fu] = np.interp(T['strict_u'][fu], Gj['u_mid'], Gj['g'])
-    T['sx_u'] = T['sx'] * gg; T['sy_u'] = T['sy'] * gg
+        Tu, _ = SP.build_table(d, S['tag'], A.PX, sig_u=su); T['sx_u'] = Tu['sx']; T['sy_u'] = Tu['sy']
+    else:
+        T['sx_u'] = T['sx'].copy(); T['sy_u'] = T['sy'].copy()
     SP.write_table(T, info, f'{d}/locs', ('npz',)); A.jdump({k: v for k, v in info.items() if k != 'columns'}, f'{d}/locs_info.json')
+    T['crop'] = np.asarray(crop, np.float64)      # (for abl_lib.selection; not written to the table file)
     return T, info
 
 
@@ -122,8 +123,8 @@ def main():
         d, crop = solve(setn, name, v, cal, pattern, ptag)
         if crop is None: crop = tuple(float(c) for c in json.load(open(f'{d}/locs_info.json'))['crop'])
         T, info = table(setn, d, crop); info['crop'] = list(crop); A.jdump({k: v for k, v in info.items() if k != 'columns'}, f'{d}/locs_info.json')
-        m = A.selection(T, 'u45')
-        print(f'{setn} {ptag} {name}: {info["n_rows"]} rows, good {info["n_good"]}, q {info["q"]:.3f}, cycle-aligned u <= 0.45: {int(m.sum())}, median sigma '
+        m = A.selection(T, 'm12')
+        print(f'{setn} {ptag} {name}: {info["n_rows"]} rows, good {info["n_good"]}, cycle-aligned max sigma <= 12 nm: {int(m.sum())}, median sigma '
               f'{np.median(0.5 * (T["sx"] + T["sy"])[m]) * A.PX:.2f} nm (no bin factor {np.median(0.5 * (T["sx_nb"] + T["sy_nb"])[m]) * A.PX:.2f}, uncalibrated '
               f'{np.median(0.5 * (T["sx_raw"] + T["sy_raw"])[m]) * A.PX:.2f}), photons {np.median(T["photons"][m]):.0f}', flush=True)
 

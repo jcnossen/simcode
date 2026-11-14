@@ -1,14 +1,14 @@
 """R24: held-out check of the own DME v2 drift estimate (as abl_driftcheck.py, without a site list): DME on the rows of one half of the field
 (x < 200 px / x >= 200 px) applied to the rows of the OTHER half; cluster sharpness (r24_tab.sharp) of each half with no correction, the
 other half's trace (held out), its own trace (in sample), the whole-field trace and every reference trace; rms difference and correlation
-of the two half traces. usage: python r24_driftcheck.py <locs.npz> <ncyc> <out.json> [--sel u45] [--cmp name=file.npy ...]   (GPU: DME)"""
+of the two half traces. usage: python r24_driftcheck.py <locs.npz> <ncyc> <out.json> [--sel m12] [--cmp name=file.npy ...]   (GPU: DME)"""
 import json, sys, os
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import abl_lib as A, r24_tab as RT
 a = sys.argv[1:]; g = lambda k, d=None: a[a.index(k) + 1] if k in a else d
-ncyc = int(a[1]); sel = g('--sel', 'u45'); cmp = a[a.index('--cmp') + 1:] if '--cmp' in a else []
-A.title('nr-r24'); T = dict(np.load(a[0])); m = A.selection(T, sel); cyc = (T['frame'][m] // 6).astype(np.int64); k = cyc < ncyc
+ncyc = int(a[1]); sel = g('--sel', 'm12'); cmp = a[a.index('--cmp') + 1:] if '--cmp' in a else []
+A.title('nr-r24'); T = A.load_table(a[0]); m = A.selection(T, sel); cyc = (T['frame'][m] // 6).astype(np.int64); k = cyc < ncyc
 x, y, sx, sy, cyc = T['x'][m][k], T['y'][m][k], T['sx'][m][k], T['sy'][m][k], cyc[k]
 h = x < 200; D = {}
 for nm, mk in (('left', h), ('right', ~h), ('all', np.ones(len(x), bool))): D[nm] = A.dme(x[mk], y[mk], cyc[mk], sx[mk], sy[mk], ncyc)[0]

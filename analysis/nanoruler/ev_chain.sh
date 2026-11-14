@@ -59,8 +59,9 @@ simrun() {  # name det head cal p2det p2head p2cal [gt]; gt: the run gets the TR
     say "sim run $1: pattern_est.pt = the true pattern of the simulation (not estimated)"
   fi
   local g=$(gpu 4); say "sim run $1 on GPU $g"
-  CUDA_VISIBLE_DEVICES=$g python -u $A/ev_run.py --movie $SD/sim_movie.tif --calib $PWD/$SD/calib_sim.json --out $RD --crop $CROP --pass2 --autoc 0 \
-    --det $2 --head $3 --cal $4 --p2_det $5 --p2_head $6 --p2_cal $7 > $SR/run_$1.log 2>&1 || die "sim run $1 (see $SR/run_$1.log)"
+  python $A/mkmodel.py $RD/model_$1.json $1 $2 $3 $4 $5 $6 $7 > /dev/null || die "sim run $1: model files"     # simcode.run takes a model, not single files
+  CUDA_VISIBLE_DEVICES=$g python -u $A/ev_run.py --movie $SD/sim_movie.tif --calib $PWD/$SD/calib_sim.json --out $RD --crop $CROP \
+    --model $RD/model_$1.json --sig_u '' > $SR/run_$1.log 2>&1 || die "sim run $1 (see $SR/run_$1.log)"
   [ -f $RD/locs_p2.npz ] || die "sim run $1: no locs_p2.npz"
   [ "$(md5sum < $SD/sim_gt.npz)" = "$id" ] || die "sim run $1: $SD/sim_gt.npz changed during the run"
 }

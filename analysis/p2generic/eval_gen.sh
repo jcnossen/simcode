@@ -37,9 +37,11 @@ b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs
     done ;;
 c)  SD=out/psf3d_nets/sims/m05r3; mkdir -p $P/sims
     for s in $B $G; do RD=$P/sims/m05r3_$s
-      [ -f $RD/locs_p2.npz ] || CUDA_VISIBLE_DEVICES=$(gpu) python -m simcode.run --movie $SD/sim_movie.tif --calib out/psf3d_nets/calibs/calib_1809_2_psf3d_simcam.json \
-        --out $RD --pass2 --autoc 0 --det det_$B.pt --head hd_$B.pt --cal calib/calib_sc_hd_$B.json \
-        --p2_det p2det_$s.pt --p2_head p2headL_$s.pt --p2_cal calib/calib_p2L_$s.json > $P/sims/m05r3_$s.log 2>&1 || { say FAILED sim $s; exit 1; }
+      # simcode.run takes a model: pass 1 of $B, pass 2 of $s, with these (sim-sigma) calibrations, no sigma rescale (analysis/nanoruler/mkmodel.py)
+      [ -f $RD/locs_p2.npz ] || { python analysis/nanoruler/mkmodel.py $RD/model.json m05r3_$s det_$B.pt hd_$B.pt calib/calib_sc_hd_$B.json \
+        p2det_$s.pt p2headL_$s.pt calib/calib_p2L_$s.json > /dev/null && \
+        CUDA_VISIBLE_DEVICES=$(gpu) python -m simcode.run --movie $SD/sim_movie.tif --calib out/psf3d_nets/calibs/calib_1809_2_psf3d_simcam.json \
+        --out $RD --model $RD/model.json --sig_u '' > $P/sims/m05r3_$s.log 2>&1; } || { say FAILED sim $s; exit 1; }
       python analysis/nanoruler/ev_p12sim.py $RD $SD sc > $P/p12_m05r3_$s.md 2> $P/p12_m05r3_$s.err
     done
     python $A/simcmp_ci.py $SD est2 $P/sims/m05r3_$G $P/sims/m05r3_$B > $P/simcmp_m05r3_p2_${G}_vs_$B.txt

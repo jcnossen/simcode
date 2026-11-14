@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import nra_lib as L
 a = sys.argv[1:]; g = lambda k, d=None: a[a.index(k) + 1] if k in a else d
 plt = L._style(); C = L.COLORS; INK = '#0b0b0b'; MUTED = '#52514e'
-LAB = dict(pub_smlm='published SMLM', pub_simflux='published SIMFLUX', bl_smlm='baseline SMLM', bl_simflux='baseline SIMFLUX', simcode_u45='SIMCODE v2, u <= 0.45', simcode_sel='SIMCODE v2, sel',
+LAB = dict(pub_smlm='published SMLM', pub_simflux='published SIMFLUX', bl_smlm='baseline SMLM', bl_simflux='baseline SIMFLUX', simcode_m12='SIMCODE v2, max sigma <= 12 nm', simcode_sel='SIMCODE v2, sel',
            simcode='SIMCODE v2 (matched events)')
 if a[0] == 'dist':
     R = json.load(open(a[1])); d0 = float(g('--d0', R['args']['d0'])); Ms = R['methods']; n = len(Ms)

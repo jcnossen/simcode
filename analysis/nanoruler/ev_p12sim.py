@@ -1,7 +1,7 @@
 """Pass 2 versus pass 1 on IDENTICAL ground-truth windows of one pipeline run on a simulated movie (locs_p1.npz, locs_p2.npz
 of the same run + sim_gt.npz). Matching as ev_sigcal.py / analysis/psf3d_nets/sigcal.py (rows one-to-one within 1 px to GT event
 windows, evalproto.lib.match_fast; the median error of the matched set removed per pass). Row sets on the GT windows matched by
-BOTH passes: 'all' (any stored row), 'good' (p >= 0.63 in both), 'strict' (strict in both), 'good, fully on' (on in all 6 frames).
+BOTH passes: 'all' (any stored row), 'good' (p >= 0.63 in both), 'm12' (the paper's selection, simcode.strict.select, in both), 'good, fully on' (on in all 6 frames).
 Per set: RMS per axis (nm, errors > 50 nm are gross and excluded from both), pass 2 - pass 1 with a 95 % CI (bootstrap over GT
 events), ratio, the pattern-free prior RMS of both passes, robust zcal. Also recall of the GT target windows by good rows.
   nanoruler setup:  python ev_p12sim.py <run> <sim> nr      (65 nm px, cycle-aligned windows only, exact GT windows, drift added)
@@ -28,7 +28,9 @@ rob = lambda v: float(1.4826 * np.median(np.abs(v)))
 D = {}
 print(f'# {run} on {sim} ({mode}, px {PX} nm): GT windows {len(GW)}, targets {int(tg.sum())}')
 for p in (1, 2):
-    T = dict(np.load(f'{run}/locs_p{p}.npz'))
+    import abl_lib as A
+    from simcode import strict as SP
+    T = A.load_table(f'{run}/locs_p{p}.npz'); T['m12'] = SP.select(T, 12.0, px_nm=PX)
     k = np.ones(len(T['frame']), bool) if mode != 'nr' else (T['frame'] % 6 == 0)
     T = {c: v[k] for c, v in T.items() if np.ndim(v) and len(v) == len(k)}
     # good rows first (as sigcal), then the remaining rows on the still unmatched GT windows
@@ -44,11 +46,11 @@ for p in (1, 2):
     e -= np.median(e[gm], 0); ep -= np.median(ep[gm], 0)
     hit = np.zeros(len(GW), bool); hit[gi[gm]] = True; anyhit = row >= 0
     print(f'  pass {p}: rows {len(g)}, good {int(g.sum())}; GT targets with a row {anyhit[tg].mean():.4f}, with a good row {hit[tg].mean():.4f}; unmatched good rows {100 * np.mean(gi[g] < 0):.2f} %')
-    D[p] = dict(row=row, e=e, ep=ep, good=g, strict=T['strict'].astype(bool), s=np.c_[T['sx'], T['sy']])
+    D[p] = dict(row=row, e=e, ep=ep, good=g, m12=T['m12'], s=np.c_[T['sx'], T['sy']])
 both = (D[1]['row'] >= 0) & (D[2]['row'] >= 0)
 r1, r2 = D[1]['row'], D[2]['row']
 sets = {'all': both, 'good': both & D[1]['good'][np.maximum(r1, 0)] & D[2]['good'][np.maximum(r2, 0)],
-        'strict': both & D[1]['strict'][np.maximum(r1, 0)] & D[2]['strict'][np.maximum(r2, 0)]}
+        'm12': both & D[1]['m12'][np.maximum(r1, 0)] & D[2]['m12'][np.maximum(r2, 0)]}
 sets['good, fully on'] = sets['good'] & full
 sets['good, 200-2000 ph'] = sets['good'] & (GW[:, 4] >= 200) & (GW[:, 4] < 2000)
 rng = np.random.default_rng(0)

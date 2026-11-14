@@ -33,9 +33,11 @@ g)  for v in fwd rev; do
     done ;;
 s)  mkdir -p $P/sims
     for n in nr_a nr_c0; do SD=out/nanoruler/sim/$n; RD=$P/sims/${n}_$G
-      [ -f $RD/locs_p2.npz ] || CUDA_VISIBLE_DEVICES=$(gpu) python -u analysis/nanoruler/ev_run.py --movie $SD/sim_movie.tif --calib $PWD/$SD/calib_sim.json --out $RD \
-        --crop 5,5,246 --pass2 --autoc 0 --det $MD/det_nr80.pt --head $MD/hd_nr80.pt --cal $MC/calib_sc_hd_nr80.json \
-        --p2_det $GM/p2det/final.pt --p2_head $GM/p2headL/final.pt --p2_cal $MY/calib/calib_p2L_$G.json > $RD.log 2>&1 || { say FAILED run $n; exit 1; }
+      # simcode.run takes a model: nr80 pass 1 + the generic pass 2 $G, sim-sigma calibrations, no sigma rescale (analysis/nanoruler/mkmodel.py)
+      [ -f $RD/locs_p2.npz ] || { python analysis/nanoruler/mkmodel.py $RD/model.json nr80_$G $MD/det_nr80.pt $MD/hd_nr80.pt $MC/calib_sc_hd_nr80.json \
+        $GM/p2det/final.pt $GM/p2headL/final.pt $MY/calib/calib_p2L_$G.json > /dev/null && \
+        CUDA_VISIBLE_DEVICES=$(gpu) python -u analysis/nanoruler/ev_run.py --movie $SD/sim_movie.tif --calib $PWD/$SD/calib_sim.json --out $RD \
+        --crop 5,5,246 --model $RD/model.json --sig_u '' > $RD.log 2>&1; } || { say FAILED run $n; exit 1; }
       python analysis/nanoruler/ev_p12sim.py $RD $SD nr > $P/p12_${n}_$G.md 2> $P/p12_${n}_$G.err
     done
     python analysis/nanoruler/ev_flipclass.py --cross std,gen std=$EV/sim_nr_a/run_nr80:out/nanoruler/sim/nr_a gen=$P/sims/nr_a_$G:out/nanoruler/sim/nr_a > $P/flipclass_nr_a_$G.md

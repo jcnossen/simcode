@@ -6,8 +6,8 @@ minus the fraction two Gaussians at -+d / 2 (fitted weights and background, sd =
 also dv = along sd^2 - across sd^2. Merged rows (two sites of a structure ON in one window -> one row at the photon-weighted mean) fill the
 midpoint band and widen the along spread only. Mean over the resolved pairs valid in all methods of the file; bootstrap over structures.
 Truth (simulations): mixed fraction of the table rows (companion photons >= 5 % of the window, f2 >= 0.05, as r24_simeval.py):
-  grid simulations s20g_a / s20g_c0 (3 x 4 grids at 20 nm, occupancy 0.35; m12 / u45 / sel rows; r24_simeval json),
-  linear simulation s20_a (sel, u45 [r24_simeval json], the merged-score cuts combo90 / combo80 / photons80 / oracle [rows x f2 of
+  grid simulations s20g_a / s20g_c0 (3 x 4 grids at 20 nm, occupancy 0.35; m12 / sel rows; r24_simeval json),
+  linear simulation s20_a (sel [r24_simeval json], the merged-score cuts combo90 / combo80 / photons80 / oracle [rows x f2 of
   r24_merged.py scores]) and its re-implemented SMLM / SIMFLUX tables (f2 computed here as r24_blmerged.py).
 Calibration = least-squares line mixed = a + b excess_c over the GRID points (the main calibration; the linear-sim points are shown as a
 check of transfer between geometries and methods). Applied to the real tables with the calibration's residual sd as a systematic band.
@@ -62,9 +62,9 @@ def cut_mixed(name):
 
 cal = []     # (label, group, per_pair file, method, true mixed fraction)
 for s in ('s20g_a', 's20g_c0'):
-    for m in ('m12', 'u45', 'sel'):
+    for m in ('m12', 'sel'):
         cal.append((f'{s} SIMCODE {m}', 'grid', f'{O}/simeval/per_pair_m12_{s}_truth.npz', m, simeval_mixed(f'{O}/simeval/gt_{s}_p1m12.json', m)))
-for m in ('sel', 'u45'):
+for m in ('sel',):
     cal.append((f's20_a SIMCODE {m}', 'linear', f'{O}/simeval/per_pair_s20_a_truth.npz', m, simeval_mixed(f'{O}/simeval/gt_s20_a_p1.json', m)))
 for c in ('combo90', 'combo80', 'photons80', 'oracle'):
     cal.append((f's20_a SIMCODE sel, cut {c}', 'linear', f'{O}/merged/per_pair_s20_a_cut.npz', c, cut_mixed(c)))
@@ -78,14 +78,14 @@ b, a = np.polyfit(X, Y, 1); res = Y - (a + b * X); rsd = float(np.sqrt(np.sum(re
 for r in rows: r['pred'] = float(a + b * r['excess'])
 real = []
 for lst in ('picks_g2d', 'auto_sf'):
-    for tag, mlist in ((f'm12_{lst}', ('pub_smlm', 'pub_simflux', 'bl_smlm', 'bl_simflux', 'simcode_m12', 'simcode_u45')), (f'{lst}_matched_3way', ('pub_smlm', 'pub_simflux', 'simcode'))):
+    for tag, mlist in ((f'm12_{lst}', ('pub_smlm', 'pub_simflux', 'bl_smlm', 'bl_simflux', 'simcode_m12')), (f'{lst}_matched_3way', ('pub_smlm', 'pub_simflux', 'simcode'))):
         fn = f'{O}/methods_p1/per_pair_{tag}.npz'
         if not os.path.exists(fn): continue
         P = np.load(fn)
         for m in mlist:
             e = est(P, m); real.append(dict(pairs=lst, file=tag, method=m, pred=float(a + b * e['excess']), pred_ci=[float(a + b * v) for v in e['excess_ci']], **e))
 L = ['# Merged events on the real 20 nm movie: midpoint-band estimator calibrated on simulations', '',
-     f'Calibration on the grid simulations (s20g_a, s20g_c0; SIMCODE pass 1 rows m12 / u45 / sel): mixed fraction = {a:+.4f} + {b:.3f} x excess_c, '
+     f'Calibration on the grid simulations (s20g_a, s20g_c0; SIMCODE pass 1 rows m12 / sel): mixed fraction = {a:+.4f} + {b:.3f} x excess_c, '
      f'residual sd {rsd:.4f} ({len(G)} points). mixed = rows whose window has another site of the structure ON with >= 5 % of the photons.', '',
      '| simulation table | group | resolved pairs | resolved fraction | excess_c [95 % CI] | along^2 - across^2, nm^2 | true mixed fraction | predicted |', '|---|---|---|---|---|---|---|---|']
 for r in rows:

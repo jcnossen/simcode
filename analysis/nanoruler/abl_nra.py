@@ -1,10 +1,10 @@
 """Nanoruler ablation, part B3: nanoruler metrics per solve variant, paired differences to A, and the calibration picture.
 
 Input: the variant tables of abl_solve.py (out/nanoruler/ablation/runs/<set>[_<ptag>]/<variant>/locs.npz; identical rows in every variant).
-Drift: ONE trace for all variants = DME v2 on variant A's cycle-aligned u <= 0.45 rows (so that only the solve differs); none for simulated sets.
+Drift: ONE trace for all variants = DME v2 on variant A's cycle-aligned max sigma <= 12 nm rows (so that only the solve differs); none for simulated sets.
 Views:
-  common   the same windows for every variant: the cycle-aligned rows with strict_u <= 0.45 in variant A
-  own      each variant's own cycle-aligned strict_u <= 0.45 rows (its own sigma ranking)
+  common   the same windows for every variant: the cycle-aligned rows with max sigma <= 12 nm (m12) in variant A
+  own      each variant's own cycle-aligned max sigma <= 12 nm (m12) rows (its own sigma ranking)
 Per variant and view (nra_lib, fixed site list, rulers valid in all variants of the view, bootstrap over rulers):
   site spread (x, y, along, across), pooled spread, ruler distance mean / sd, locs per site;
   paired to A: per-site spread difference (nra_lib.paired), pooled spread difference, ruler distance difference;
@@ -25,7 +25,7 @@ import abl_lib as A
 import variants as V
 L = A.L
 VIEWS = ('common', 'own', 'sel')
-LEVELS = (('cal', 'sx', 'sy', 'calibrated sigma'), ('u', 'sx_u', 'sy_u', 'calibrated sigma x g(strict_u) (sigu rescale of the chain)'), ('nb', 'sx_nb', 'sy_nb', 'without the per-photon-bin factor'),
+LEVELS = (('cal', 'sx', 'sy', 'calibrated sigma'), ('u', 'sx_u', 'sy_u', 'calibrated sigma x g(u) (sigu rescale of the chain)'), ('nb', 'sx_nb', 'sy_nb', 'without the per-photon-bin factor'),
           ('raw', 'sx_raw', 'sy_raw', 'uncalibrated model sigma'), ('f', 'sx_f', 'sy_f', 'Fisher sigma at the MAP'))
 LABEL = dict(V.LABEL, auto='auto: full + automatic c, c_a', autoS='autoS: full + automatic s, c, c_a')
 G = {}
@@ -123,8 +123,8 @@ def f3(c, d=2): return ('%.{0}f [%.{0}f, %.{0}f]'.format(d)) % tuple(c)
 
 def markdown(R, setn):
     order = R['order']; nb = R['nbins']; ref = R['ref']; Ls = [f'# Solve-variant ablation on the nanorulers: {setn}', '', R['header'], '']
-    for view, txt in (('common', 'COMMON rows (the same windows for every variant: cycle-aligned, strict_u <= 0.45 in variant %s)' % ref),
-                      ('own', "each variant's OWN selection (cycle-aligned, its own strict_u <= 0.45)"),
+    for view, txt in (('common', 'COMMON rows (the same windows for every variant: cycle-aligned, max sigma <= 12 nm (m12) in variant %s)' % ref),
+                      ('own', "each variant's OWN selection (cycle-aligned, its own max sigma <= 12 nm (m12))"),
                       ('sel', "WIDE photon range, same windows for every variant: all cycle-aligned rows of the 'sel' selection of variant %s" % ref)):
         V_ = R['views'][view]
         Ls += [f'## Positions, {txt}', '', f'{V_["n_rulers"]} rulers valid in all variants. nm; [95 % CI, bootstrap over rulers]; differences are variant - {ref}, paired on the same sites.', '',
@@ -178,7 +178,7 @@ def figure(R, fn, show=('A', 'B', 'C', 'D', 'E', 'autoS'), view='common'):
     pal = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#6250d6']; mks = 'os^DvP'
     for i, n in enumerate(show): COL.setdefault(n, pal[i % 6]); MK.setdefault(n, mks[i % 6])
     cols = (('ratio', 'site spread / median sigma'), ('z', 'robust sd of residual / sigma'), ('pairz', 'consecutive-cycle pair z sd\n(no site size, no slow drift)'))
-    rows = (('cal', 'Calibrated sigma'), ('u', 'Calibrated x g(strict_u)'), ('raw', 'Uncalibrated model sigma'))
+    rows = (('cal', 'Calibrated sigma'), ('u', 'Calibrated x g(u)'), ('raw', 'Uncalibrated model sigma'))
     fig, ax = plt.subplots(3, 3, figsize=(11.5, 10.0), gridspec_kw=dict(wspace=0.25, hspace=0.38), sharex=True)
     for i, (lv, rt) in enumerate(rows):
         for j, (k, ct) in enumerate(cols):
@@ -191,7 +191,7 @@ def figure(R, fn, show=('A', 'B', 'C', 'D', 'E', 'autoS'), view='common'):
             if i == 2: a.set_xlabel('network window photons (bin median)')
             if j == 0: a.set_ylabel(f'{rt}\nratio (1 = sigma describes the scatter)')
     ax[2, 2].legend(frameon=False, fontsize=7.5, loc='upper left', bbox_to_anchor=(1.02, 1.0))
-    fig.suptitle(R['title'].replace('common rows', {'common': 'common rows u <= 0.45', 'sel': "all 'sel' rows"}[view]), x=0.125, ha='left', fontsize=10)
+    fig.suptitle(R['title'].replace('common rows', {'common': 'common rows max sigma <= 12 nm', 'sel': "all 'sel' rows"}[view]), x=0.125, ha='left', fontsize=10)
     fig.savefig(fn, dpi=140, bbox_inches='tight'); print('saved', fn)
 
 
@@ -208,23 +208,23 @@ def main():
     S = A.SETS[setn]; base = f'{A.OUT}/runs/{setn}{"_" + ptag if ptag else ""}'; suf = f'{setn}{"_" + ptag if ptag else ""}'
     order = [n for n in ['A', 'auto', 'autoS', 'B', 'C', 'D', 'E', 'E1', 'F', 'G', 'H', 'An', 'Dn'] if os.path.exists(f'{base}/{n}/locs.npz')]
     if g('--variants'): order = [n for n in g('--variants').split(',') if os.path.exists(f'{base}/{n}/locs.npz')]   # any sub-directory names (part D: patterns)
-    G['T'] = {n: dict(np.load(f'{base}/{n}/locs.npz')) for n in order}; G['ref'] = ref
+    G['T'] = {n: A.load_table(f'{base}/{n}/locs.npz') for n in order}; G['ref'] = ref
     G['sites'], G['rulers'] = load_sites(S)
-    TA = G['T'][ref]; mA = A.selection(TA, 'u45')
-    dfn = f'{base}/drift_{ref}_u45.npy'       # real and simulated sets alike (the simulated movies have sample drift)
+    TA = G['T'][ref]; mA = A.selection(TA, 'm12')
+    dfn = f'{base}/drift_{ref}_m12.npy'       # real and simulated sets alike (the simulated movies have sample drift)
     if not os.path.exists(dfn):
         cyc = (TA['frame'][mA] // 6).astype(np.int64)
-        d, rep = A.drift_report(TA['x'][mA], TA['y'][mA], cyc, TA['sx'][mA], TA['sy'][mA], S['ncyc'], name=f'{suf} variant {ref} u45', sites=(G['sites'], G['rulers']))
+        d, rep = A.drift_report(TA['x'][mA], TA['y'][mA], cyc, TA['sx'][mA], TA['sy'][mA], S['ncyc'], name=f'{suf} variant {ref} m12', sites=(G['sites'], G['rulers']))
         np.save(dfn, d); A.jdump(rep, dfn[:-4] + '.json')
     G['drift'] = np.load(dfn)
     mS = A.selection(TA, 'sel')
-    G['mask'] = dict(common={n: mA for n in order}, own={n: A.selection(G['T'][n], 'u45') for n in order}, sel={n: mS for n in order})
+    G['mask'] = dict(common={n: mA for n in order}, own={n: A.selection(G['T'][n], 'm12') for n in order}, sel={n: mS for n in order})
     jobs = [(n, v) for v in VIEWS for n in order]
     with Pool(min(12, len(jobs))) as pool: res = pool.map(one, jobs)
     G['M'] = {(n, v): M for n, v, M, s in res}; G['sig'] = {(n, v): s for n, v, M, s in res}
     R = dict(set=setn, ptag=ptag, order=order, ref=ref, nbins=nbins, views={}, title=f'Nanorulers, {suf}: does each noise model predict the scatter? (common rows, 95 % CI over rulers)',
              header=f'Set {suf} ({S["run"]}), {len(G["rulers"])} rulers / {len(G["sites"])} sites, radius 30 nm, min 10 locs per site, {nboot} bootstrap resamples over rulers. '
-                    + 'One drift trace for all variants (DME v2 on variant %s, cycle-aligned u <= 0.45 rows). ' % ref
+                    + 'One drift trace for all variants (DME v2 on variant %s, cycle-aligned max sigma <= 12 nm rows). ' % ref
                     + 'Each variant is solved with its own gate-scene calibration (abl_gate.py), no multiplier from the other setup.')
     fin = []
     for v in VIEWS:

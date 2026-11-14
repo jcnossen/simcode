@@ -16,19 +16,19 @@ Per-row statistics (larger = more merged-like after the stated sign):
   combo      logistic regression on the standardized statistics, 2-fold cross-validated over rulers (odd / even ruler index)
 Outputs: ROC AUC per statistic (all merged rows and per pair axis), merged fraction remaining versus the yield kept (cut on one statistic),
 and <out>_scores.npz (row index into the table, class, f2, axis, every statistic, combo) for cut tables.
-usage: python analysis/nanoruler/r24_merged.py <run dir> <sim dir> <out prefix> [--sel sel|u45|good]"""
+usage: python analysis/nanoruler/r24_merged.py <run dir> <sim dir> <out prefix> [--sel sel|m12|good]"""
 import json, os, sys
 import numpy as np, torch
 from scipy.spatial import cKDTree
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import ev_sigcal as ES
+import ev_sigcal as ES, abl_lib as A
 from simcode.pipeline.common import pattern_frames
 PX = 65.0
 a = sys.argv[1:]; g = lambda k, d=None: a[a.index(k) + 1] if k in a else d
 run, sim, out = a[0], a[1], a[2]; sel = g('--sel', 'sel')
-T = dict(np.load(f'{run}/locs_p1.npz')); GW = ES.gt_windows(sim); G = np.load(f'{sim}/sim_gt.npz', allow_pickle=True); S = np.load(f'{sim}/sites.npz')
+T = A.load_table(f'{run}/locs_p1.npz'); GW = ES.gt_windows(sim); G = np.load(f'{sim}/sim_gt.npz', allow_pickle=True); S = np.load(f'{sim}/sites.npz')
 ca = (T['frame'] % 6 == 0) & np.isfinite(T['x']) & np.isfinite(T['y'])
-k = ca & (T[sel].astype(bool) if sel != 'u45' else (np.nan_to_num(T['strict_u'].astype(float), nan=2.0) <= 0.45)); idx = np.nonzero(k)[0]
+k = ca & (T[sel].astype(bool) if sel != 'm12' else A.selection(T, 'm12')); idx = np.nonzero(k)[0]
 Tg = cKDTree(np.c_[GW[:, 2], GW[:, 3], GW[:, 0] * 1e3]); d, j = Tg.query(np.c_[T['x'][idx], T['y'][idx], T['frame'][idx] * 1e3], distance_upper_bound=1.5); m = np.isfinite(d)
 idx, j = idx[m], j[m]
 nb = Tg.query_ball_point(np.c_[GW[j, 2], GW[j, 3], GW[j, 0] * 1e3], 1.5)

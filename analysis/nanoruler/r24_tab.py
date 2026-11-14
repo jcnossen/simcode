@@ -4,7 +4,7 @@ number (sum of squares of the 4-nm histogram blurred by 4 nm, per localization) 
 and correlations to the reference traces at 1 / 50 / 250-cycle smoothing; (2) reference traces are arguments (--cmp name=file.npy [ncyc, 2] px,
 "corrected = raw - drift[cycle]"; --gt <sim dir>: the simulated sample drift); (3) extra sigma columns of the variant tables are carried
 (sx_raw -> sx_raw_nm ...); (4) --drift <file.npy> applies a given trace (one trace for all variants / selections).
-  python r24_tab.py locs  <locs.npz> <out.npz> --ncyc N [--sel u45|sel|good|all] [--drift own|none|file.npy] [--cmp n=f.npy ...] [--gt simdir]
+  python r24_tab.py locs  <locs.npz> <out.npz> --ncyc N [--sel m12|sel|good|all] [--drift own|none|file.npy] [--cmp n=f.npy ...] [--gt simdir]
   python r24_tab.py table <nra table.npz> <out.npz> --ncyc N [...]
 (5) common frame: the own trace (mean removed by DME) gets the MEAN of a reference trace (--ref_drift; default for real nr40 / nr20 tables: the
 published total SIMFLUX correction), so that all tables of a movie share the frame of the published tables up to ~1 nm.
@@ -28,13 +28,12 @@ def gt_drift(sim, ncyc):
     return d - d.mean(0)
 
 
-def convert(kind, src, out, ncyc, sel='u45', drift='own', cmp=(), gt=None, log=print, mask_from=None, ref_drift=None):
+def convert(kind, src, out, ncyc, sel='m12', drift='own', cmp=(), gt=None, log=print, mask_from=None, ref_drift=None):
     base = os.path.splitext(out)[0]; os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     if kind == 'locs':
-        T = np.load(src); T = {k: T[k] for k in T.files}; m = A.selection(T if not mask_from else dict(np.load(mask_from)), sel); tab = A.to_nra(T, m)
+        T = A.load_table(src); m = A.selection(T if not mask_from else A.load_table(mask_from), sel); tab = A.to_nra(T, m)
         for lv in ('raw', 'nb', 'f'):
             if 'sx_' + lv in T: tab[f'sx_{lv}_nm'] = T['sx_' + lv][m].astype(np.float64) * PX; tab[f'sy_{lv}_nm'] = T['sy_' + lv][m].astype(np.float64) * PX
-        if 'strict_u' in T: tab['strict_u'] = T['strict_u'][m].astype(np.float64)
     else:
         D = np.load(src); tab = {k: np.asarray(D[k], np.float64) for k in D.files if np.ndim(D[k]) == 1}; tab['frame'] = tab['frame'].astype(np.int64)
         tab['row'] = np.arange(len(tab['frame']))
@@ -79,6 +78,6 @@ def convert(kind, src, out, ncyc, sel='u45', drift='own', cmp=(), gt=None, log=p
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('kind', choices=('locs', 'table')); ap.add_argument('src'); ap.add_argument('out'); ap.add_argument('--ncyc', type=int, required=True)
-    ap.add_argument('--sel', default='u45'); ap.add_argument('--drift', default='own'); ap.add_argument('--cmp', nargs='*', default=[]); ap.add_argument('--gt', default=None); ap.add_argument('--ref_drift', default=None, help='trace whose mean the own drift gets (default for a real nr40 / nr20 table: ref/drift_pub_total_simflux.npy)'); ap.add_argument('--mask_from', default=None, help='locs npz with identical rows: the selection is taken from it (common view of the variants)')
+    ap.add_argument('--sel', default='m12'); ap.add_argument('--drift', default='own'); ap.add_argument('--cmp', nargs='*', default=[]); ap.add_argument('--gt', default=None); ap.add_argument('--ref_drift', default=None, help='trace whose mean the own drift gets (default for a real nr40 / nr20 table: ref/drift_pub_total_simflux.npy)'); ap.add_argument('--mask_from', default=None, help='locs npz with identical rows: the selection is taken from it (common view of the variants)')
     a = ap.parse_args(); A.title('nr-r24')
     convert(a.kind, a.src, a.out, a.ncyc, a.sel, a.drift, a.cmp, a.gt, mask_from=a.mask_from, ref_drift=a.ref_drift)

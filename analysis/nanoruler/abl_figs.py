@@ -27,7 +27,7 @@ def style():
 
 def method_tables(p):
     M = [('Published SMLM', f'{PUB}/tab_pub_smlm.npz'), ('Published SIMFLUX', f'{PUB}/tab_pub_simflux.npz'), ('Baseline SIMFLUX (own DME)', f'{T}/tab_bl_simflux_dme.npz')]
-    return M, [(f'SIMCODE v2 pass {q}', q) for q in ((1, 2) if p == 2 and os.path.exists(f'{T}/tab_p2_u45.npz') else (1,))]
+    return M, [(f'SIMCODE v2 pass {q}', q) for q in ((1, 2) if p == 2 and os.path.exists(f'{T}/tab_p2_m12.npz') else (1,))]
 
 
 def gallery(p):
@@ -44,7 +44,7 @@ def gallery(p):
 def methods(p, nboot=300, nbins=6):
     import abl_nra as N
     plt = style(); M, S = method_tables(p)
-    files = M + [(f'{nm}, u <= 0.45', f'{T}/tab_p{q}_u45.npz') for nm, q in S] + [(f'{nm}, sel', f'{T}/tab_p{q}_sel.npz') for nm, q in S]
+    files = M + [(f'{nm}, max sigma <= 12 nm', f'{T}/tab_p{q}_m12.npz') for nm, q in S] + [(f'{nm}, sel', f'{T}/tab_p{q}_sel.npz') for nm, q in S]
     sites, rulers, _ = L.load_sites(A.SITES); Ms = {}; tabs = {}
     for nm, fn in files:
         tabs[nm] = L.load_table(fn); Ms[nm] = L.eval_method(tabs[nm], sites, rulers, 30.0, 10)
@@ -106,11 +106,11 @@ def ablation():
                 a.plot([v[1], v[2]], [y, y], color=PAL[j], lw=2, solid_capstyle='round'); a.plot([v[0]], [y], color=PAL[j], marker='os'[j], ms=6.5, markeredgecolor=SURF, markeredgewidth=1.0, lw=0, label=pn if i == 0 else None)
         a.set_title(title, loc='left'); a.grid(color=GRID, lw=0.6, axis='x'); a.set_xlabel('variant - A (nm); right of 0 = worse than A')
     ax[0].set_yticks(range(len(order))); ax[0].set_yticklabels([lab.get(n, n) for n in order[::-1]]); ax[0].tick_params(axis='y', colors=INK); ax[0].legend(frameon=False, loc='lower right')
-    fig.suptitle('Solve variants on the same network outputs and the same windows (cycle-aligned, u <= 0.45 in A); 95 % CI over rulers', x=0.125, ha='left', fontsize=10)
+    fig.suptitle('Solve variants on the same network outputs and the same windows (cycle-aligned, max sigma <= 12 nm in A); 95 % CI over rulers', x=0.125, ha='left', fontsize=10)
     fig.savefig(f'{A.OUT}/fig_ablation.png', dpi=140, bbox_inches='tight'); print('saved fig_ablation.png')
     # ---- the table
     d3 = lambda v: '-' if v is None else '%+.3f [%+.3f, %+.3f]' % tuple(v); f2 = lambda v: '%.2f' % v
-    Ls = ['# Solve-variant ablation: summary table', '', 'Same network outputs, same windows for every variant (cycle-aligned, strict_u <= 0.45 in A), each variant with its own gate-scene calibration. '
+    Ls = ['# Solve-variant ablation: summary table', '', 'Same network outputs, same windows for every variant (cycle-aligned, max sigma <= 12 nm (m12) in A), each variant with its own gate-scene calibration. '
           'Differences are variant - A with 95 % CI over rulers (bootstrap). Real movie: paired per-site spread (x, y combined). Simulated movies: RMS error per axis against ground truth.', '']
     for pn, p in (('Pass 1', 'p1'), ('Pass 2', 'p2')):
         Rr, Ra, Rc = J(f'nra_{p}.json'), J(f'sim_sima_{p}.json'), J(f'sim_simc0_{p}.json')

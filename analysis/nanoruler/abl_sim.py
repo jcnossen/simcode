@@ -3,7 +3,7 @@
 Input: the variant tables of abl_solve.py for a simulated set (sima_p1 / sima_p2 = nr_a with brightness variation, simc0_* = nr_c0 without).
 GT rows: ev_sigcal.gt_windows (exact cycle-aligned windows, incl. the simulated sample drift); a table row is matched to the nearest GT
 window of the same start within 1 px; errors > 50 nm are counted as gross and excluded from RMS / z (as ev_sigcal.load).
-Views as abl_nra.py: common = cycle-aligned rows with strict_u <= 0.45 in variant A (same windows for all), own = each variant's own.
+Views as abl_nra.py: common = cycle-aligned rows with max sigma <= 12 nm (m12) in variant A (same windows for all), own = each variant's own.
 Per variant, per GT-photon bin (edges from A) and overall, bootstrap over rulers (the events of a ruler are resampled together):
   RMS error per axis (nm), gross fraction, median bias, robust z sd = robust sd of error / sigma for the four sigma levels
   (cal, nb, raw, f; see abl_solve.py), sigma_rms / RMS, and the paired RMS difference to A on the same rows (common view).
@@ -38,14 +38,14 @@ def evaluate(setn, nboot=300, nbins=6):
     GW = ES.gt_windows(sim); G = np.load(f'{sim}/sim_gt.npz', allow_pickle=True); SI = np.load(f'{sim}/sites.npz')
     ruler_of_site = np.zeros(int(SI['site'].max()) + 1, int); ruler_of_site[SI['site']] = SI['ruler']
     ev_ruler = ruler_of_site[G['site']]; nr = int(SI['ruler'].max()) + 1
-    T = {n: dict(np.load(f'{base}/{n}/locs.npz')) for n in order}; mA = A.selection(T['A'], 'u45')
+    T = {n: A.load_table(f'{base}/{n}/locs.npz') for n in order}; mA = A.selection(T['A'], 'm12')
     rng = np.random.default_rng(1); W = [np.ones(nr, int)] + [np.bincount(rng.integers(0, nr, nr), minlength=nr) for _ in range(nboot)]
     R = dict(set=setn, order=order, views={}, n_gt_targets=int((GW[:, 5] > 0).sum()))
     edges = None
     for view in ('common', 'own'):
         V_ = {}; EA = None
         for n in order:
-            t = T[n]; m = mA if view == 'common' else A.selection(t, 'u45'); rows = np.nonzero(m)[0]
+            t = T[n]; m = mA if view == 'common' else A.selection(t, 'm12'); rows = np.nonzero(m)[0]
             gi = ES.E.match_fast(GW, t['frame'][rows].astype(np.int64), t['x'][rows], t['y'][rows], r=1.0); ok = gi >= 0
             e = np.full((len(rows), 2), np.nan); e[ok] = np.c_[t['x'][rows][ok] - GW[gi[ok], 2], t['y'][rows][ok] - GW[gi[ok], 3]]
             e = (e - np.nanmedian(e, 0)) * A.PX; gross = ok & ~(np.hypot(*e.T) < 50); use = ok & ~gross
@@ -88,7 +88,7 @@ def evaluate(setn, nboot=300, nbins=6):
             Ls.append('| ' + ' | '.join([LABEL.get(n, n), str(v['n_rows']), '%.1f' % v['unmatched_pct'], '%.2f' % v['gross_pct'], f3(s['all|rms']),
                                          ('%+.3f [%+.3f, %+.3f]' % tuple(s['all|d_rms'])) if n != 'A' and view == 'common' else '-', f3(s['full|rms']), '%+.2f / %+.2f' % (s['all|bias_x'][0], s['all|bias_y'][0]),
                                          f3(s['all|cal_z']), f3(s['all|u_z']), f3(s['all|nb_z']), f3(s['all|raw_z']), f3(s['all|f_z']), f3(s['0|raw_z']), f3(s[f'{nbins - 1}|raw_z'])]) + ' |')
-        for key, txt in (('rms', 'RMS error (nm, per axis)'), ('cal_z', 'z sd, calibrated sigma'), ('u_z', 'z sd, calibrated sigma x g(strict_u)'), ('raw_z', 'z sd, uncalibrated model sigma')):
+        for key, txt in (('rms', 'RMS error (nm, per axis)'), ('cal_z', 'z sd, calibrated sigma'), ('u_z', 'z sd, calibrated sigma x g(u)'), ('raw_z', 'z sd, uncalibrated model sigma')):
             Ls += ['', f'{txt} per GT-photon bin ({view} rows):', '', '| variant | ' + ' | '.join('%.0f ph' % sA[f'{i}|phot'][0] for i in range(nbins)) + ' |', '|' + '---|' * (nbins + 1)]
             for n in order: Ls.append('| ' + ' | '.join([LABEL.get(n, n)] + [f3(V_[n]['stats'][f'{i}|{key}']) for i in range(nbins)]) + ' |')
         Ls.append('')

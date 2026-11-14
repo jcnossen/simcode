@@ -31,7 +31,7 @@ def npztab(fn):
 
 
 def locstab(fn, sel='m12'):
-    T = np.load(fn); T = {k: T[k] for k in T.files}; m = A.selection(T, sel); return A.to_nra(T, m)
+    T = A.load_table(fn); m = A.selection(T, sel); return A.to_nra(T, m)
 
 
 def gt_drift(sim, ncyc):

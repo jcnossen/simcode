@@ -2,7 +2,7 @@
 # nr80 evaluation, step-order flip, sim validation: the simulated nanoruler movies nr_a / nr_c0 rewritten with the steps of each
 # orientation reversed (ev_flipsteps.py; big files in /mnt/data/dmdsf/simcode2_out/nanoruler/eval_flip, symlink
 # out/nanoruler/eval/sim_flip), both passes with the nr80 set through ev_run.py exactly as ev_chain.sh step 4 (own pattern estimate,
-# --autoc 0, sim calibrations), the standard nr_c0 run for comparison, then the tables. One GPU job at a time.
+# model nr80 = out/nanoruler/models/netset_nr80.json with its sim calibrations, no sigma rescale), the standard nr_c0 run for comparison, then the tables. One GPU job at a time.
 # usage: setsid nohup bash analysis/nanoruler/ev_flipsim.sh >> out/nanoruler/eval/flipsim.log 2>&1 < /dev/null &
 source /home/jc/simcode2/runs/psfmatch/env.sh; set -o pipefail
 A=analysis/nanoruler; EV=out/nanoruler/eval; MD=$PWD/out/nanoruler/models; MC=$MD/calib; BIG=/mnt/data/dmdsf/simcode2_out/nanoruler/eval_flip
@@ -11,8 +11,8 @@ mkdir -p $BIG; [ -e $EV/sim_flip ] || ln -s $BIG $EV/sim_flip
 run() {  # movie dir, run dir
   [ -f $2/locs_p2.npz ] && return 0
   local g=$(NEED_GB=4 pickgpu 4 "2 0 1"); say "run $2 on GPU $g"
-  CUDA_VISIBLE_DEVICES=$g python -u $A/ev_run.py --movie $1/sim_movie.tif --calib $PWD/$1/calib_sim.json --out $2 --crop 5,5,246 --pass2 --autoc 0 \
-    --det $MD/det_nr80.pt --head $MD/hd_nr80.pt --cal $MC/calib_sc_hd_nr80.json --p2_det $MD/p2det_nr80.pt --p2_head $MD/p2headL_nr80.pt --p2_cal $MC/calib_p2L_nr80.json \
+  CUDA_VISIBLE_DEVICES=$g python -u $A/ev_run.py --movie $1/sim_movie.tif --calib $PWD/$1/calib_sim.json --out $2 --crop 5,5,246 \
+    --model $MD/netset_nr80.json --cal_kind sim --sig_u '' \
     > $2.log 2>&1 || die "run $2 (see $2.log)"
 }
 for n in nr_a nr_c0; do

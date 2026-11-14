@@ -1,7 +1,9 @@
 """nr80 evaluation: selection-aware sigma rescale and GT comparison on the simulated nanoruler movies.
-Variant of analysis/psf3d_nets/sigcal.py with the SAME statistics (sigma' = sigma * g(strict_u), g = robust zcal
+Variant of analysis/psf3d_nets/sigcal.py with the SAME statistics (sigma' = sigma * g(u), u = per-10-px-tile rank of the calibrated sigma among the
+good rows inside the run's crop (simcode.strict.tile_rank, as the table build's sigma rescale), g = robust zcal
 1.4826 median |e / sigma| of the matched good rows per u bin, same u bins, |e| < 50 nm, median error of the matched set removed
-per movie, test criterion strict-set zcal after the rescale in [0.9, 1.15]; cmp: recall of the GT target windows, unmatched good
+per movie, test criterion zcal of the paper's selection m12 (simcode.strict.select: max(sx, sy) <= 12 nm, 65 nm px) after
+the rescale in [0.9, 1.15] (the strict product of earlier versions was removed 2026-11-14); cmp: recall of the GT target windows, unmatched good
 rows, RMS on identical GT windows per GT-photon bin, gross > 50 nm). Differences:
   1. pixel size 65 nm (sigcal.py: PX = 108.33 hard-coded; it sets the 50 nm limits and the nm columns).
   2. cycle-aligned windows only: table rows with frame % 6 == 0 (frame = window start, simcode/strict.py) and GT windows on
@@ -45,9 +47,15 @@ def gt_windows(sim):
 
 
 def table(run, tag, flo=0, fhi=10 ** 9, need_u=False):
-    T = dict(np.load(f'{run}/locs_p{1 if tag == "est" else 2}.npz'))
+    """good, cycle-aligned rows of the run's table, with u (per-tile sigma rank, nan outside the crop) and m12 (the paper's selection)"""
+    from simcode import strict as SP
+    import abl_lib as A
+    T = A.load_table(f'{run}/locs_p{1 if tag == "est" else 2}.npz'); crop = tuple(float(v) for v in T['crop'])
+    inc = T['good'].astype(bool) & SP.in_crop(T['x'], T['y'], crop); ii = np.nonzero(inc)[0]
+    T['u'] = np.full(len(inc), np.nan); T['u'][ii] = SP.tile_rank(T['x'][ii], T['y'][ii], 0.5 * (T['sx'] + T['sy']).astype(np.float64)[ii], crop)
+    T['m12'] = SP.select(T, A.SIGMA_MAX_NM, px_nm=PX)
     k = T['good'].astype(bool) & (T['frame'] % 6 == 0) & (T['frame'] >= flo) & (T['frame'] < fhi)
-    if need_u: k &= np.isfinite(T['strict_u'])
+    if need_u: k &= np.isfinite(T['u'])
     return {c: v[k] for c, v in T.items() if np.ndim(v) and len(v) == len(k)}
 
 
@@ -61,7 +69,7 @@ def load(spec):
     e -= np.nanmedian(e[m], 0)
     s = np.c_[T['sx'], T['sy']]
     ok = m & (np.hypot(*e.T) * PX < 50)
-    return dict(e=e[ok], s=s[ok], u=T['strict_u'][ok], strict=T['strict'][ok].astype(bool), n_good=int(len(m)), n_match=int(m.sum()),
+    return dict(e=e[ok], s=s[ok], u=T['u'][ok], m12=T['m12'][ok].astype(bool), n_good=int(len(m)), n_match=int(m.sum()),
                 name=os.path.basename(run.rstrip('/')) + f'[{flo},{fhi})')
 
 
@@ -85,7 +93,7 @@ def cmp(sim, tag, A, B):
         gid[nm] = (gi, e, s_)
         tg = GW[:, 5] > 0; hit = np.zeros(len(GW), bool); hit[gi[gi >= 0]] = True
         print(f'  {nm}: good {len(gi)}, recall(target windows) {hit[tg].mean():.4f}, unmatched good rows {int((gi < 0).sum())} '
-              f'({(gi < 0).mean() * 100:.2f} %), strict {int(T["strict"].sum())}')
+              f'({(gi < 0).mean() * 100:.2f} %), m12 {int(T["m12"].sum())}')
     ga, ea, sa = gid['A']; gb, eb, sb = gid['B']
     com, ia, ib = np.intersect1d(ga[ga >= 0], gb[gb >= 0], return_indices=True)
     ia = np.nonzero(ga >= 0)[0][ia]; ib = np.nonzero(gb >= 0)[0][ib]
@@ -115,15 +123,15 @@ def main():
             mid.append(float(np.median(u[m]))); g.append(zc(e[m], s[m])); n.append(int(m.sum()))
         assert min(n) >= 20 and np.isfinite(g).all(), f'too few matched rows per u bin: {n}'
         fit = dict(u_edges=UE, u_mid=mid, g=g, n=n, specs=specs,
-                   note='nr80 evaluation: sigma x g(strict_u), g = robust zcal per u bin on the fit sims, cycle-aligned windows only, 65 nm px (analysis/nanoruler/ev_sigcal.py)')
+                   note='nr80 evaluation: sigma x g(u), g = robust zcal per u bin on the fit sims, cycle-aligned windows only, 65 nm px (analysis/nanoruler/ev_sigcal.py)')
         json.dump(fit, open(arg + '.tmp', 'w'), indent=1); os.replace(arg + '.tmp', arg)
         print('fit', arg, 'g(u):', ' '.join(f'{a:.3f}:{b:.3f}' for a, b in zip(mid, g)), '| n per bin', n)
         return
     fit = None if arg == 'none' else json.load(open(arg))
     print(f'# test, rescale {arg}; zcal = robust (1.4826 median |e/sigma|, both axes, |e| < 50 nm); cycle-aligned windows only, px {PX} nm')
-    print(f'{"set":34s}{"n_good":>8s}{"n_match":>8s}{"strict n":>9s}{"zc strict":>10s}{"zc strict*":>11s}{"zc all":>8s}{"zc all*":>8s}{"zc u<.02":>9s}{"*":>6s}  PASS(strict* in [0.9,1.15])')
+    print(f'{"set":34s}{"n_good":>8s}{"n_match":>8s}{"m12 n":>9s}{"zc m12":>10s}{"zc m12*":>11s}{"zc all":>8s}{"zc all*":>8s}{"zc u<.02":>9s}{"*":>6s}  PASS(m12* in [0.9,1.15])')
     for d in D:
-        gs = g_of(fit, d['u'])[:, None]; st = d['strict']; t1 = d['u'] < 0.02
+        gs = g_of(fit, d['u'])[:, None]; st = d['m12']; t1 = d['u'] < 0.02
         a, b = zc(d['e'][st], d['s'][st]), zc(d['e'][st], d['s'][st] * gs[st])
         print(f'{d["name"]:34s}{d["n_good"]:8d}{d["n_match"]:8d}{int(st.sum()):9d}{a:10.3f}{b:11.3f}{zc(d["e"], d["s"]):8.3f}'
               f'{zc(d["e"], d["s"] * gs):8.3f}{zc(d["e"][t1], d["s"][t1]):9.3f}{zc(d["e"][t1], d["s"][t1] * gs[t1]):6.3f}  {0.9 <= b <= 1.15}')

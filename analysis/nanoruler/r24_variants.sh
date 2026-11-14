@@ -1,6 +1,6 @@
 #!/bin/bash
 # R24: solve variants of one set (abl_all.sh 'variants' for nr40 / nr20 through r24_abl.py), resumable; then tables with ONE drift trace
-# (own DME v2 on variant A's cycle-aligned u <= 0.45 rows), common views (rows u <= 0.45 / sel of variant A) and the site-pair metrics
+# (own DME v2 on variant A's cycle-aligned max sigma <= 12 nm rows), common views (rows max sigma <= 12 nm / sel of variant A) and the site-pair metrics
 # (r24_rul.py); for simulated sets also the GT evaluation per variant (r24_simeval.py, common rows, calibrated and uncalibrated sigma, paired to A).
 # usage: bash analysis/nanoruler/r24_variants.sh <nr40|nr20> <set p1|sim[g]a_p1|sim[g]c0_p1|p2|...> <pairs.json> [variants, default "A B C D E F G H auto autoS"]
 source /home/jc/simcode2/runs/psfmatch/env.sh
@@ -16,11 +16,11 @@ run $G python $A/r24_abl.py $MV gate $FR all --auto $TH --noeval > $LG/gate_${FR
 run $G python $A/r24_abl.py $MV solve $S all > $LG/solve_$S.log || { echo "FAILED solve $S"; exit 1; }
 R=$B/runs/$S; T=$B/tabs_$S; mkdir -p $T
 GT=""; [ -n "$SD" ] && GT="--gt $SD"
-[ -f $T/A_u45_drift.npy ] || run $G python $A/r24_tab.py locs $R/A/locs.npz $T/A_u45.npz --ncyc $NC --sel u45 $GT > $LG/tab_$S.log
+[ -f $T/A_m12_drift.npy ] || run $G python $A/r24_tab.py locs $R/A/locs.npz $T/A_m12.npz --ncyc $NC --sel m12 $GT > $LG/tab_$S.log
 M=""; MS=""; P=""
 for v in $VARS; do [ -f $R/$v/locs.npz ] || continue
-  for sel in u45 sel; do [ -f $T/${v}_c$sel.npz ] || python $A/r24_tab.py locs $R/$v/locs.npz $T/${v}_c$sel.npz --ncyc $NC --sel $sel --mask_from $R/A/locs.npz --drift $T/A_u45_drift.npy >> $LG/tab_$S.log 2>&1; done
-  M="$M $v=$T/${v}_cu45.npz"; MS="$MS $v=$T/${v}_csel.npz"; [ $v != A ] && { P="$P $v:A"; }
+  for sel in m12 sel; do [ -f $T/${v}_c$sel.npz ] || python $A/r24_tab.py locs $R/$v/locs.npz $T/${v}_c$sel.npz --ncyc $NC --sel $sel --mask_from $R/A/locs.npz --drift $T/A_m12_drift.npy >> $LG/tab_$S.log 2>&1; done
+  M="$M $v=$T/${v}_cm12.npz"; MS="$MS $v=$T/${v}_csel.npz"; [ $v != A ] && { P="$P $v:A"; }
 done
 export R24_JOBS=5
 [ -f $B/rul_${S}_common.json ] || python $A/r24_rul.py run --pairs $RUL --d0 $D0 --out $B --tag ${S}_common --methods $M --cmp $P --levels raw nb f > $LG/rul_${S}_common.log 2>&1 &

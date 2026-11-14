@@ -15,8 +15,7 @@ import nra_lib as L
 NR = os.path.join(REPO, 'out', 'nanoruler'); OUT = os.path.join(NR, 'ablation'); PX = 65.0
 SITES = os.path.join(NR, 'analysis', 'sites.json')
 PICASSO_DRIFT = '/mnt/data/SIMFLUX/Submission Data/80 nm rulers/Sim4_1_MMStack_Pos0.omeMod0.12Gauss10/g2d-nodriftc_190824_132639_drift.txt'
-U_MAX = 0.45
-SIGMA_MAX_NM = 12.0   # the paper's main selection (simcode.strict.select 'main'): strict_u finite and max(sx, sy) * 65 nm <= 12 nm
+SIGMA_MAX_NM = 12.0   # the paper's selection (simcode.strict.select): p >= 0.63, inside the run's crop, max(sx, sy) * 65 nm <= 12 nm
 
 
 def title(t='nr-abl'):
@@ -24,15 +23,34 @@ def title(t='nr-abl'):
     proctitle.set_title(t)
 
 
-def selection(T, sel='u45'):
-    """row mask of a pipeline table (locs_p*.npz columns): cycle-aligned AND the named selection"""
+def load_table(path):
+    """a pipeline table (locs_p*.npz / locs.npz) as a dict of arrays, with 'crop' = the output region of its run (the table's
+    <base>_info.json or locs_info.json next to it, else the run's pass-1 files: simcode.strict.run_crop), which the selection needs"""
+    from simcode import strict as SP
+    z = np.load(path); T = {k: z[k] for k in z.files}
+    if 'crop' not in T:
+        b = os.path.splitext(path)[0]
+        for f in (b + '_info.json', os.path.join(os.path.dirname(path), 'locs_info.json')):
+            if os.path.exists(f):
+                c = json.load(open(f)).get('crop')
+                if c: T['crop'] = np.asarray(c, np.float64); break
+        else:
+            T['crop'] = np.asarray(SP.run_crop(os.path.dirname(os.path.abspath(path))), np.float64)
+    return T
+
+
+def selection(T, sel='m12'):
+    """row mask of a pipeline table (load_table): cycle-aligned AND the named selection: 'm12' = the paper's selection
+    (simcode.strict.select with the 65 nm pixel and the table's crop), 'sel' / 'good' (those columns), 'all'.
+    (The u rule 'u45' and the strict product 'strict' were removed 2026-11-14.)"""
     ca = (T['frame'] % 6 == 0) & np.isfinite(T['x']) & np.isfinite(T['y'])
-    if sel == 'u45': return ca & (np.nan_to_num(np.asarray(T['strict_u'], np.float64), nan=2.0) <= U_MAX)
-    if sel == 'm12':     # main rule of the paper on the stored (calibrated) sigma, as simcode.strict.select(T, 'main', sigma_max=12, px_nm=65)
-        return ca & np.isfinite(np.asarray(T['strict_u'], np.float64)) & (np.maximum(np.asarray(T['sx'], np.float64), np.asarray(T['sy'], np.float64)) * PX <= SIGMA_MAX_NM)
-    if sel in ('sel', 'good', 'strict'): return ca & T[sel].astype(bool)
+    if sel == 'm12':
+        from simcode import strict as SP
+        if 'crop' not in T: raise KeyError("the table has no 'crop': load it with abl_lib.load_table")
+        return ca & SP.select(T, SIGMA_MAX_NM, px_nm=PX)
+    if sel in ('sel', 'good'): return ca & T[sel].astype(bool)
     if sel == 'all': return ca
-    raise ValueError(sel)
+    raise ValueError(f'{sel!r}: selections m12, sel, good, all (u45 / strict were removed 2026-11-14)')
 
 
 def dme(x_px, y_px, cyc, sx_px, sy_px, ncyc, device=None):

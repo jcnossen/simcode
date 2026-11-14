@@ -9,8 +9,8 @@ R=out/nanoruler/train; S=.; D=$R; C=$PWD/out/nanoruler/calib_nr80.json; W="pytho
 XT="--tau 3,80 --dens 0.0005,0.06"
 mkdir -p $D out/nanoruler/models
 echo "$(date) chain nr80 calib $C pref $PREF"
-stage $S det 10 "$PREF" $W simcode.det.up2 train --up 1 --out $D/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --em_photons 40,2500 --seed 0 --calib $C --dens 0.0005,0.06 || exit 1
-( stage $S hd 10 "$PREF" $W simcode.hd.sc4 train --arch sc4n --out $D/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det $D/det/final.pt --paper 1 --tau 15,80 --hold out/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --bright_tail 0.1,2000,20000 --ckpt_every 6000 --calib $C $XT ) &
+stage $S det 10 "$PREF" $W simcode.det.up2 train --out $D/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --seed 0 --calib $C --dens 0.0005,0.06 || exit 1
+( stage $S hd 10 "$PREF" $W simcode.hd.sc4 train --out $D/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det $D/det/final.pt --tau 15,80 --hold out/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --ckpt_every 6000 --calib $C $XT ) &
 PH=$!
 ( stage $S p2det 10 "$PREF" $W simcode.p2.det2 train --out $D/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 --eval_every 2500 --ckpt_every 5000 --init_n1 $D/det/final.pt --calib $C $XT ) &
 PD=$!

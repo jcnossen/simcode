@@ -39,8 +39,9 @@ variants() {  # set front: theta, calibrations, solves, metrics
 simrun() {  # movie: pass-1 pipeline run (pattern estimated from the data; the solve calibration of this run is not used by the ablation)
   local m=$1 SD=$NR/sim/$1
   [ -f $O/prod/$m/locs_p1.npz ] && return 0
-  run python -u $A/ev_run.py --movie $SD/sim_movie.tif --calib $SD/calib_sim.json --out $O/prod/$m --crop 5,5,246 --chunk 1500 --autoc 0 \
-    --det $NR/train/det/final.pt --head $NR/train/hd/final.pt --cal $NR/models/calib/calib_sc_hd_nr80.json > $LG/prod_${m}_p1.log
+  # model nr80 (its pass-1 files are copies of train/det, train/hd final.pt) with the sim calibrations; simcode.run also runs pass 2
+  run python -u $A/ev_run.py --movie $SD/sim_movie.tif --calib $SD/calib_sim.json --out $O/prod/$m --crop 5,5,246 --chunk 1500 \
+    --model $NR/models/netset_nr80.json --cal_kind sim --sig_u '' > $LG/prod_${m}_p1.log
 }
 for st in $STAGES; do
   say "stage $st"
@@ -74,12 +75,12 @@ for st in $STAGES; do
       [ -f $O/p12_$m.json ] || run python $A/abl_p12.py sim $m > $LG/p12_$m.log; done;;
   methods) gpu
     for p in p1 p2; do [ -f $O/runs/$p/A/locs.npz ] && [ ! -f $O/methods_$p/metrics.md ] && bash $A/abl_methods.sh $O/runs/$p/A/locs.npz $p $CUDA_VISIBLE_DEVICES > $LG/methods_$p.out 2>&1; done
-    if [ -f $O/tabs/tab_p2_u45.npz ] && [ ! -f $O/methods_p12/metrics.md ]; then      # both passes next to the published tables and the baselines
+    if [ -f $O/tabs/tab_p2_m12.npz ] && [ ! -f $O/methods_p12/metrics.md ]; then      # both passes next to the published tables and the baselines
       P=$NR/analysis; T=$O/tabs
       python $A/nra_run.py run --sites $P/sites.json --out $O/methods_p12 --bins 6 --nboot 500 --gallery_n 12 \
         --methods pub_smlm=$P/tab_pub_smlm.npz pub_simflux=$P/tab_pub_simflux.npz bl_smlm=$T/tab_bl_smlm_dme.npz bl_simflux=$T/tab_bl_simflux_dme.npz \
-                  simcode_p1_u45=$T/tab_p1_u45.npz simcode_p1_sel=$T/tab_p1_sel.npz simcode_p2_u45=$T/tab_p2_u45.npz simcode_p2_sel=$T/tab_p2_sel.npz \
-        --pairs simcode_p2_u45:simcode_p1_u45 simcode_p2_sel:simcode_p1_sel simcode_p2_u45:pub_simflux simcode_p2_sel:pub_simflux simcode_p1_u45:pub_simflux simcode_p2_u45:bl_simflux > $LG/nra_methods_p12.log 2>&1
+                  simcode_p1_m12=$T/tab_p1_m12.npz simcode_p1_sel=$T/tab_p1_sel.npz simcode_p2_m12=$T/tab_p2_m12.npz simcode_p2_sel=$T/tab_p2_sel.npz \
+        --pairs simcode_p2_m12:simcode_p1_m12 simcode_p2_sel:simcode_p1_sel simcode_p2_m12:pub_simflux simcode_p2_sel:pub_simflux simcode_p1_m12:pub_simflux simcode_p2_m12:bl_simflux > $LG/nra_methods_p12.log 2>&1
     fi;;
   fig) N=""; for s in p1 p2 sima_p1 simc0_p1 sima_p2 simc0_p2 p1_ps p1_psd p1_shd p1_k60 p1_k30; do [ -f $O/autoc_$s.json ] && N="$N,$s"; done
     run python $A/abl_autoc.py fig ${N#,} $O/fig_excess_variance_all.png > $LG/fig_autoc.log        # all sets + the table tab_autoc_all.md

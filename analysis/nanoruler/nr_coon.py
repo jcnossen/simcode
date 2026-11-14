@@ -58,27 +58,27 @@ def mixed(fn, sel): return float(json.load(open(fn))['sel'][sel]['est']['mixed']
 
 S = f'{O}/simeval'; cal = []
 for s in ('s20g_a', 's20g_c0'):
-    for m in ('m12', 'u45', 'sel'):
+    for m in ('m12', 'sel'):
         for pl in ('truth', 'auto'):
             cal.append((f'{s} SIMCODE {m} ({pl} sites)', f'{S}/tabs/{s}_p1_{m}.npz', f'{S}/pairs_{pl}_s20g.json', mixed(f'{S}/gt_{s}_p1m12.json', m)))
-for m in ('u45', 'sel'):
+for m in ('sel',):
     cal.append((f's20_a (linear) SIMCODE {m} (truth sites)', f'{S}/tabs/s20_a_p1_{m}.npz', f'{S}/pairs_truth_s20.json', mixed(f'{S}/gt_s20_a_p1.json', m)))
 rows = []
 for lab, tab, pl, mix in cal:
     if not os.path.exists(tab): print('missing', tab); continue
     r = coon(tab, pl, 8000); r.update(label=lab, mixed=mix, ratio=mix / r['pred']); rows.append(r); print(lab, f"pred {r['pred']:.4f} true {mix:.4f} deficit {r['deficit']:.3f}", flush=True)
-# calibration: wide selections (m12 / sel) with the automatic site list (as on the real data); u45 enriches merged rows (x3.5), not calibrated
-G = [r for r in rows if r['label'].startswith('s20g') and ' u45 ' not in r['label'] and 'auto sites' in r['label']]; k = float(np.mean([r['ratio'] for r in G])); ksd = float(np.std([r['ratio'] for r in G], ddof=1))
+# calibration: the selections (m12 / sel) with the automatic site list (as on the real data)
+G = [r for r in rows if r['label'].startswith('s20g') and 'auto sites' in r['label']]; k = float(np.mean([r['ratio'] for r in G])); ksd = float(np.std([r['ratio'] for r in G], ddof=1))
 REF = f'{O}/ref'; T1 = f'{O}/methods_p1/tabs'; real = []
 for pl in ('auto_sf', 'auto_sc', 'picks_g2d'):
     for m, tab in (('published SMLM', f'{REF}/tab_pub_smlm.npz'), ('published SIMFLUX', f'{REF}/tab_pub_simflux.npz'), ('re-implemented SIMFLUX', f'{T1}/bl_simflux.npz'),
-                   ('SIMCODE v2 pass 1, m12', f'{T1}/simcode_m12.npz'), ('SIMCODE v2 pass 1, u45', f'{T1}/simcode_u45.npz')):
+                   ('SIMCODE v2 pass 1, m12', f'{T1}/simcode_m12.npz')):
         r = coon(tab, f'{O}/pairs_{pl}.json', 16666); r.update(pairs=pl, method=m, est=k * r['pred'], est_ci=[k * v for v in r['ci']['pred']]); real.append(r)
         print(pl, m, f"pred {r['pred']:.4f} est {r['est']:.4f} deficit {r['deficit']:.3f}", flush=True)
 Lz = ['# Merged events on the real 20 nm movie: co-ON estimator (GT-free), calibrated on the grid simulations', '',
       f'rows assigned to the nearest listed site within {0.5 * D0:g} nm; sites with >= {MINL} rows; adjacent = 0.65-1.35 d0, far = 1.8-3.5 d0 apart in one structure; '
       f'predicted merged fraction = summed duty cycle of the other populated sites of the structure per row (independent sites). Calibration factor true / predicted on the grid simulations: '
-      f'{k:.2f} +- {ksd:.2f} (sd over the {len(G)} m12 / sel tables with the automatic site list; truth sites give 0.93-1.04, u45 tables 3.5-4.5: the u selection keeps merged rows preferentially). Valid for the wide selections; the u45 and picks_g2d rows are shown uncalibrated-in-kind.', '',
+      f'{k:.2f} +- {ksd:.2f} (sd over the {len(G)} m12 / sel tables with the automatic site list; truth sites give 0.93-1.04). The picks_g2d rows are shown uncalibrated-in-kind.', '',
       '| simulation table | structures | p_co far | p_co adjacent | deficit adj / far | adjacent sites per row | predicted [95 % CI] | true mixed fraction | true / predicted |', '|---|---|---|---|---|---|---|---|---|']
 for r in rows:
     Lz.append(f"| {r['label']} | {r['n_units']} | {r['p_far']:.4f} | {r['p_adj']:.4f} | {r['deficit']:.3f} [{r['ci']['deficit'][0]:.3f}, {r['ci']['deficit'][1]:.3f}] | {r['n_adj']:.2f} | "

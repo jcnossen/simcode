@@ -1,6 +1,6 @@
 """Nanoruler ablation, part A: a localization table -> the nra input format, with DME v2 drift correction estimated on the table's own rows.
 
-  python abl_convert.py locs <locs_p*.npz> <out.npz> [--sel u45|sel|good|strict|all] [--drift own|none|<drift.npy>] [--ncyc 5000]
+  python abl_convert.py locs <locs_p*.npz> <out.npz> [--sel m12|sel|good|all] [--drift own|none|<drift.npy>] [--ncyc 5000]
         pipeline table (px, frame = window start): cycle-aligned rows of the selection; DME v2 on these rows (time unit = cycle)
   python abl_convert.py table <nra table.npz> <out.npz> [--drift own|none|<drift.npy>]
         a table already in the nra format (nm, frame = cycle; e.g. the re-implemented baselines): same own-DME procedure
@@ -13,11 +13,11 @@ import abl_lib as A
 L = A.L
 
 
-def convert(kind, src, out, sel='u45', drift='own', ncyc=5000, log=print, sig='cal'):
+def convert(kind, src, out, sel='m12', drift='own', ncyc=5000, log=print, sig='cal'):
     base = os.path.splitext(out)[0]; os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     if kind == 'locs':
-        T = np.load(src); T = {k: T[k] for k in T.files}; m = A.selection(T, sel)
-        sg = ('sx_u', 'sy_u') if sig == 'u' and 'sx_u' in T else ('sx', 'sy')      # 'u': calibrated sigma x g(strict_u) (abl_solve.py tables)
+        T = A.load_table(src); m = A.selection(T, sel)
+        sg = ('sx_u', 'sy_u') if sig == 'u' and 'sx_u' in T else ('sx', 'sy')      # 'u': calibrated sigma x g(u) (abl_solve.py tables)
         tab = A.to_nra(T, m, sig=sg)
     else:
         D = np.load(src); tab = {k: np.asarray(D[k], np.float64) for k in D.files}; tab['frame'] = tab['frame'].astype(np.int64)
@@ -39,6 +39,6 @@ def convert(kind, src, out, sel='u45', drift='own', ncyc=5000, log=print, sig='c
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('kind', choices=('locs', 'table')); ap.add_argument('src'); ap.add_argument('out')
-    ap.add_argument('--sel', default='u45'); ap.add_argument('--drift', default='own'); ap.add_argument('--ncyc', type=int, default=5000); ap.add_argument('--sig', default='cal', choices=('cal', 'u'))
+    ap.add_argument('--sel', default='m12'); ap.add_argument('--drift', default='own'); ap.add_argument('--ncyc', type=int, default=5000); ap.add_argument('--sig', default='cal', choices=('cal', 'u'))
     a = ap.parse_args(); A.title()
     convert(a.kind, a.src, a.out, a.sel, a.drift, a.ncyc, sig=a.sig)

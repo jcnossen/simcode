@@ -6,8 +6,8 @@ with the movie's calib by r24r_gates.sh (seed 301), front dump of the nr80 nets,
 Per pair: the stored candidates (score >= 0.2) within 2 px of the pair centre; the top-score row is compared with the
 photon-weighted mean position of the two emitters (weights = GT window photons), along and across the pair axis.
 Controls from the same movie's scenes: iso (single emitters; sigma and q/dof versus network photons) and the 'good' rows
-(score >= 0.63) of rs05qm (reference population for a strict_u-like sigma rank: u = fraction of the reference rows with a
-smaller sigma; the pipeline's strict_u is the same rank inside a 10 px tile of the movie).
+(score >= 0.63) of rs05qm (reference population for a sigma rank: u = fraction of the reference rows with a smaller sigma;
+the table build's sigma rescale uses the same rank inside a 10 px tile of the movie, simcode.strict.tile_rank).
 usage: [R24R_DEV=cpu] python analysis/nanoruler/r24r_pair031.py <nr40|nr20> [scene, default pair0.31]  -> out/nanoruler/<name>/reuse/pair031_<name>.txt / .json"""
 import json, os, sys
 import numpy as np, torch
@@ -118,7 +118,7 @@ def main():
                      sigma_median=float(np.median(sig)), sigma_iso_same_ph=float(np.median(s_iso(ph))), sigma_ratio_iso=float(np.median(sig / s_iso(ph))),
                      z_along=rob(T['e_al'][g] / T['s_al'][g]), z_across=rob(T['e_pe'][g] / T['s_pe'][g]),
                      q_median=float(np.median(T['q'][g])), q_iso_median=float(np.median(q50_iso(ph))), frac_q_gt_iso95=float(np.mean(T['q'][g] > q95_iso(ph))),
-                     kin_frac=float(np.mean(T['kin'][g])), u_median=float(np.median(urank(sig))), frac_u_le_045=float(np.mean(urank(sig) <= 0.45)),
+                     kin_frac=float(np.mean(T['kin'][g])), u_median=float(np.median(urank(sig))),
                      sprior_median=float(np.median(T['sprior'][g])), dist_nearer_median=float(np.median(np.minimum(T['d_a'][g], T['d_b'][g]))),
                      wmin_median=float(np.median(T['wmin'][m])), e_mid_abs_median=float(np.median(np.abs(T['e_mid_al'][g]))))
             if cname.startswith('ONE'):
@@ -135,7 +135,7 @@ def main():
             L.append(f'      network photons / GT total {d["net_over_gt_photons"]:.3f}; sigma median {d["sigma_median"]:.2f} (single emitter of the same network photons: {d["sigma_iso_same_ph"]:.2f}, ratio {d["sigma_ratio_iso"]:.3f});'
                      f' zcal vs weighted mean along {d["z_along"]:.2f} / across {d["z_across"]:.2f}; head prior sigma {d["sprior_median"]:.2f}')
             L.append(f'      flags: q/dof median {d["q_median"]:.2f} (single: {d["q_iso_median"]:.2f}), fraction above the single-emitter 95th percentile {d["frac_q_gt_iso95"]:.3f}; kin flag {d["kin_frac"]:.3f};'
-                     f' sigma rank u median {d["u_median"]:.2f}, fraction with u <= 0.45: {d["frac_u_le_045"]:.3f} (reference population: 0.45)'
+                     f' sigma rank u median {d["u_median"]:.2f} (reference population: 0.5)'
                      + (f'; position along the axis from the fully-on emitter {d["pos_from_bright_mean"]:+.2f} (photon-weighted mean would be {d["weighted_mean_from_bright"]:+.2f})' if 'pos_from_bright_mean' in d else ''))
     # single-emitter control numbers in the same format
     L.append('\n== control: iso single emitters (same calibration), bands = GT photons')
@@ -144,10 +144,10 @@ def main():
         m = (Ri['gt_phot'][ti] >= lo) & (Ri['gt_phot'][ti] < hi) & (Ri['sc_score'][oi] >= 0.63)
         if m.sum() < 15: continue
         sig = sgi[m]; d = dict(n=int(m.sum()), rms_x=rms(ei[m, 0]), rms_y=rms(ei[m, 1]), sigma_median=float(np.median(sig)), zcal=rob((ei[m] / (np.c_[si['sx'], si['sy']][m] * PX)).ravel()),
-                               q_median=float(np.median(si['q'][m])), kin_frac=float(np.mean(si['kin'][m])), frac_u_le_045=float(np.mean(urank(sig) <= 0.45)), u_median=float(np.median(urank(sig))))
+                               q_median=float(np.median(si['q'][m])), kin_frac=float(np.mean(si['kin'][m])), u_median=float(np.median(urank(sig))))
         out['iso'][f'{lo}-{hi}'] = d
         L.append(f'  {lo}-{hi} ph: n {d["n"]}  rms x / y {d["rms_x"]:.2f} / {d["rms_y"]:.2f}  sigma median {d["sigma_median"]:.2f}  zcal {d["zcal"]:.2f}  q/dof median {d["q_median"]:.2f}  kin flag {d["kin_frac"]:.3f}'
-                 f'  u median {d["u_median"]:.2f}, u <= 0.45: {d["frac_u_le_045"]:.3f}')
+                 f'  u median {d["u_median"]:.2f}')
     tag = '' if SCENE == 'pair0.31' else '_' + SCENE
     fn = f'{ROOT}/{name}/reuse/pair031_{F}_{name}{tag}'
     json.dump(out, open(fn + '.json', 'w'), indent=1, default=float); open(fn + '.txt', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
