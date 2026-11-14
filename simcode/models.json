@@ -52,17 +52,17 @@
   "sig_u": "m25/calib/sigu_p1_m25.json,m25/calib/sigu_p2_m25.json"
  },
  "g13": {
-  "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12)",
-  "psf": "insitu/calib_gauss1.3.json",
-  "det": "det_g13.pt",
-  "head": "hd_g13.pt",
-  "cal_sim": "calib/calib_sc_hd_g13.json",
-  "cal_real": "calib/calib_sc_hd_g13_real.json",
-  "p2_det": "p2det_g13.pt",
-  "p2_head": "p2headL_g13.pt",
-  "p2_cal_sim": "calib/calib_p2L_g13.json",
-  "p2_cal_real": "calib/calib_p2L_g13_real.json",
-  "sig_u": "calib/sigu/sigu_p1_g13.json,calib/sigu/sigu_p2_g13.json"
+  "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in g13/; the previous 2D model is the folder archive_2d/g13/ (not referenced by any config)",
+  "psf": "g13/calib_gauss1.3.json",
+  "det": "g13/det_g13.pt",
+  "head": "g13/hd_g13.pt",
+  "cal_sim": "g13/calib/calib_sc_hd_g13.json",
+  "cal_real": "g13/calib/calib_sc_hd_g13_real.json",
+  "p2_det": "g13/p2det_g13.pt",
+  "p2_head": "g13/p2headL_g13.pt",
+  "p2_cal_sim": "g13/calib/calib_p2L_g13.json",
+  "p2_cal_real": "g13/calib/calib_p2L_g13_real.json",
+  "sig_u": "g13/calib/sigu_p1_g13.json,g13/calib/sigu_p2_g13.json"
  },
  "m1809g": {
   "_doc": "1809_2 PSF with the GENERIC pass 2 (2026-11-13, g2ss: pattern draw with arbitrary pitch / angles / per-frame phases / order / depth / power, standard-draw share 0.5; out/p2generic). Pass 1 = m1809. Within 1-2 % of m1809 pass 2 on SIMCODE patterns; beats pass 1 on other patterns (nanoruler, 4-step, random phases). Use for setups other than the DMD-SIMFLUX one. Real-data multiplier of p2_cal_real copied from m1809, not re-measured.",
