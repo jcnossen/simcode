@@ -18,7 +18,7 @@ A v2 table (SIMCODE v2, `simcode/strict.py`) in this layout:
 | field | dtype | shape | meaning |
 |---|---|---|---|
 | `pos` | float64 | [n, 2] or [n, 3] | final position (x, y) of the explicit pattern solve, px, sensor coordinates, not drift corrected; 3D heads (2026-11-14): + z = the head's z prior conditioned on the solved x, y (px of the lateral pixel size, relative to the focal plane of the model's PSF calibration: z = (height above the coverslip - focus_um) / pixel size) |
-| `crlb` | float32 | [n, 2] or [n, 3] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB; z: sd of z after the conditioning (network sd, not recalibrated) |
+| `crlb` | float32 | [n, 2] or [n, 3] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB; z: sd of z after the conditioning (network sd, not recalibrated); pass-2 tables: z, its sd and cov are the pass-1 head's prior conditioned on the pass-2 x, y (NaN for rows without a linked pass-1 candidate) |
 | `cov` | float32 | [n, 3] | 3D heads: covariances (xy, xz, yz) px^2 of the position (xy = 0: the solve's x, y are uncorrelated) |
 | `z_prior` | float64 | [n] | 3D heads: the head's pattern-free z (px) before the conditioning |
 | `frame` | int32 | [n] | window start (absolute movie frame); windows start every 3 frames |
