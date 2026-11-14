@@ -7,8 +7,13 @@ gate's pattern estimate) with its own sim-sigma calibration. Per scene, A (3D) v
   sel12  the paper's selection on all solved candidates: score >= 0.63 and max(sx, sy) <= 12 nm: rows, true positives (matched
          to a target, 0.5 px), FP, RMS nm of the TP
   z (A)  z RMSE (nm) after the solve and of the head's z, GT spread, z-score RMS (e / sz), per GT photon bin and GT height bin
+         With <front P1> <cal P1> (pass-2 comparisons; the pass-1 dumps of A in <fe dir A>): z as the pipeline's pass-2 table
+         has it since 2026-11-14 = the linked pass-1 candidate's z prior conditioned on the pass-2 solved x, y (sc.link_pass1
+         on the candidates p >= CAND_PMIN of both fronts, same FOV, detector points; sc.z_from_pass1 with the pass-1
+         calibration's prior_off); rows without a partner: z NaN (share reported). The pass-2 head's own z is listed as
+         'z (pass-2 head)' for comparison.
 usage: python accept_z.py <out prefix> <fe dir A> <front A> <cal A> <fe dir B> <front B> <cal B> <psf calib> <scenes, comma>
-       -> <out prefix>.txt / .json"""
+       [<front P1> <cal P1>] -> <out prefix>.txt / .json"""
 import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
@@ -67,8 +72,32 @@ def zstats(R, E, sol, focus, px_um):
     return out
 
 
+def z_pass1(R2, sol, oi, R1, cal1):
+    """z of the pass-2 rows oi from pass 1, as the pipeline (sc.link_pass1 + sc.z_from_pass1): pass-1 / pass-2 candidates
+    with score >= CAND_PMIN, same FOV, detector points -> sol with z / sz / zp replaced, linked share of the rows oi"""
+    import torch
+    from simcode.hd import sc as SCM
+    from simcode.pipeline.common import CAND_PMIN
+    i1 = np.nonzero(R1['sc_score'] >= CAND_PMIN)[0]; i2 = np.nonzero(R2['sc_score'] >= CAND_PMIN)[0]
+    j = SCM.link_pass1(R1['sc_b'][i1], R1['sc_x_det'][i1], R1['sc_y_det'][i1], R2['sc_b'][i2], R2['sc_x_det'][i2], R2['sc_y_det'][i2])
+    J = np.full(len(R2['sc_score']), -1, np.int64); J[i2] = np.where(j >= 0, i1[np.maximum(j, 0)], -1)
+    tt = lambda v: torch.tensor(np.asarray(v), device='cuda', dtype=torch.float32)
+    p1 = dict(z=tt(R1['sc_z']), lsz=tt(R1['sc_lsz']), bz=tt(R1['sc_bz']),
+              r0=tt(np.c_[R1['sc_x'], R1['sc_y']] - np.asarray(cal1['prior_off'])[None]))
+    Z = SCM.z_from_pass1(p1, J[oi], tt(np.c_[sol['x'], sol['y']]), tt(np.c_[sol['sx'], sol['sy']]))
+    out = dict(sol, z=Z['z_hy0'].cpu().numpy(), sz=Z['sz_cal'].cpu().numpy(), zp=Z['z_prior'].cpu().numpy())
+    return out, float(np.mean(J[oi] >= 0))
+
+
+def zlines(zs, label):
+    return [f'  {label} {bn:>12s} n {v["n"]:5d}  gt sd {v["gt_sd_nm"]:5.1f}  rmse {v["rmse_nm"]:5.1f} (head prior {v["prior_rmse_nm"]:5.1f})'
+            f'  bias {v["bias_nm"]:+5.1f}  z-score rms {v["zrms"]:.2f}  sd med {v["sd_med_nm"]:5.1f} nm' for bn, v in zs.items()]
+
+
 def main():
     pre, dA, fA, cA, dB, fB, cB, calib, scen = sys.argv[1:10]
+    f1, c1 = (sys.argv[10:12] + ['', ''])[:2]
+    C1 = json.load(open(config.resolve(c1))) if f1 else None
     c = json.load(open(config.resolve(calib))); focus, px_um = c['focus_um'], c['pixelsize_um']
     CA, CB = json.load(open(config.resolve(cA))), json.load(open(config.resolve(cB)))
     res = {}; L = [f'# 3D {fA} ({dA}, cal {cA}) vs 2D {fB} ({dB}, cal {cB}); psf {calib}']
@@ -79,7 +108,13 @@ def main():
         db = det_sweep(Rb, Sb); da = det_sweep(Ra, Sa, fp_ref=db['at0.5']['FP'])
         s12a, s12b = sel12(Ra, Sa), sel12(Rb, Sb)
         zs = zstats(Ra, Ea, Sa_t, focus, px_um) if 'z' in Sa_t else {}
+        zh, lk = None, None
+        if f1 and 'z' in Sa_t:      # the table's z (pass 1 | pass-2 x, y); the pass-2 head's z kept as zh for comparison
+            zh = zs
+            S1, lk = z_pass1(Ra, Sa_t, Ea['oi'], P.load(sc, f1, d=dA), C1)
+            zs = zstats(Ra, Ea, S1, focus, px_um)
         res[sc] = dict(paired=pr, det_A=da, det_B=db, sel12_A=s12a, sel12_B=s12b, z_A=zs)
+        if zh is not None: res[sc].update(z_A_p2head=zh, z_A_linked=lk)
         L.append(f'\n== {sc}: {fA} (A, 3D) vs {fB} (B, 2D)')
         for bn, v in pr.items():
             L.append(f'  {bn:>10s} n {v["A"]["n"]:5d}  RMS/CRLB A {v["A"]["rms"]:.3f} B {v["B"]["rms"]:.3f}  d {v["d"]:+.3f} '
@@ -90,9 +125,11 @@ def main():
                  + (f' | A at FP <= {r5b["FP"]}: recall {rf["recall"]:.4f} (thr {rf["thr"]:.3f}, FP {rf["FP"]})' if rf else ' | A: no threshold reaches B FP'))
         L.append(f'  sel12 (p >= 0.63, max(sx, sy) <= 12 nm): A n {s12a["n"]} TP {s12a["TP"]} FP {s12a["FP"]} rms {s12a["rms_nm"]:.2f} nm | '
                  f'B n {s12b["n"]} TP {s12b["TP"]} FP {s12b["FP"]} rms {s12b["rms_nm"]:.2f} nm')
-        for bn, v in zs.items():
-            L.append(f'  z {bn:>12s} n {v["n"]:5d}  gt sd {v["gt_sd_nm"]:5.1f}  rmse {v["rmse_nm"]:5.1f} (head prior {v["prior_rmse_nm"]:5.1f})'
-                     f'  bias {v["bias_nm"]:+5.1f}  z-score rms {v["zrms"]:.2f}  sd med {v["sd_med_nm"]:5.1f} nm')
+        if zh is not None:
+            L.append(f'  z = pass 1 | pass-2 x, y (the table): {100 * lk:.2f} % of the targets linked to a pass-1 candidate (others NaN)')
+        L += zlines(zs, 'z')
+        if zh is not None:
+            L += zlines(zh, 'z (pass-2 head)')
     os.makedirs(os.path.dirname(os.path.abspath(pre)), exist_ok=True)
     json.dump(res, open(pre + '.json', 'w'), indent=1, default=float)
     open(pre + '.txt', 'w').write('\n'.join(L) + '\n'); print('\n'.join(L))
