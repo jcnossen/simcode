@@ -361,17 +361,16 @@ class LocalizationPipeline:
         o, cam = self.c['optics'], self.summary('camera'); d = self.dir('beads')
         g = self.gpu(6)
         pre = os.path.join(d, 'beads')
-        args = ['-m', 'simcode.psf.fit_beads', '--stacks', *b['stacks'], '--dz', b['dz_um'], '--sign', b['sign'],
+        args = ['-m', 'simcode.psf.beads', '--stacks', *b['stacks'], '--dz', b['dz_um'], '--sign', b['sign'],
                 '--gain', b['gain_e_per_adu'] or cam['gain'], '--offset', b['offset_adu'] if b['offset_adu'] is not None else cam['offset'],
-                '--na', o['NA'], '--wl', o['wavelength_um'], '--nmed', o['n_med'], '--pixelsize', o['pixel_um'], '--nball', b['nball'],
+                '--na', o['NA'], '--wl', o['wavelength_um'], '--nmed', o['n_med'], '--pixelsize', o['pixel_um'],
                 '--iters', b['iters'], '--holdout', b['holdout'], '--roi', b['roi'], '--out', pre, '--tag', '']
         txt = self.sh(args, os.path.join(d, 'beads.log'), gpu=g)
         f = f'{pre}_sign{int(b["sign"])}'
         J = json.load(open(f + '.json'))
         Z = np.array(list(J['zernike'].values()))
-        hd = re.search(r'holdout: mean Poisson deviance/pixel ([\d.]+)', txt)
         return dict(pt=f + '.pt', json=f + '.json', zernike_rms=float(np.sqrt((Z ** 2).sum())), NA=J['NA'],
-                    holdout_deviance=float(hd.group(1)) if hd else None,
+                    holdout_nll_per_px=J.get('heldout_nll_per_px'),
                     checks=[dict(name='|Z| < 0.15 waves', value=float(np.sqrt((Z ** 2).sum())), ok=float(np.sqrt((Z ** 2).sum())) < 0.15)])
 
     # ---- stage d: in-situ PSF

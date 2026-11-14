@@ -24,7 +24,7 @@ DEFAULTS = {
                     cycle_aligned_only=False, sig_u='', extra=[]),
     'gpus': [1, 2],
 }
-BEAD_DEFAULTS = dict(stacks=[], dz_um=0.010, sign=1.0, offset_adu=None, gain_e_per_adu=None, holdout=0, nball=32, iters=300, roi=26)
+BEAD_DEFAULTS = dict(stacks=[], dz_um=0.010, sign=1.0, offset_adu=None, gain_e_per_adu=None, holdout=0, iters=300, roi=26)
 ORDERS = {'blocked': [0, 1, 2, 3, 4, 5], 'interleaved': [0, 3, 1, 4, 2, 5]}   # acquisition frame j of a cycle -> slot
 
 

@@ -3,12 +3,11 @@
 name: "1809_2"
 movie: /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif
 out: /mnt/data/dmdsf/simcode2_out/auto/1809_2
-beads:                                   # the setup's bead z-stacks (models/insitu/beads = this fit, shipped)
+beads:                                   # the setup's bead z-stacks (fitted by simcode.psf.beads)
   stacks: [/mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack2-1.tif, /mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack3-1.tif,
            /mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack4-1.tif, /mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack5-1.tif,
            /mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack6-1.tif, /mnt/data/dmdsf/bn_dnapaint/PSF_calib/raw/zstack7-1.tif]
   sign: -1
-  nball: 32
   holdout: 7
   offset_adu: 106.34
   gain_e_per_adu: 0.56
