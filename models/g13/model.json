@@ -1,0 +1,329 @@
+{
+ "g13": {
+  "psf": "calib_gauss1.3.json",
+  "det": "det_g13.pt",
+  "head": "hd_g13.pt",
+  "cal_sim": "calib/calib_sc_hd_g13.json",
+  "cal_real": "calib/calib_sc_hd_g13_real.json",
+  "p2_det": "p2det_g13.pt",
+  "p2_head": "p2headL_g13.pt",
+  "p2_cal_sim": "calib/calib_p2L_g13.json",
+  "p2_cal_real": "calib/calib_p2L_g13_real.json",
+  "sig_u": "calib/sigu_p1_g13.json,calib/sigu_p2_g13.json"
+ },
+ "_recipe": {
+  "trainer_chain": "/home/jc/simcode2/out/z3d/runs/chain.sh g13 (logs out/z3d/runs/g13/)",
+  "evaluation": "/home/jc/simcode2/out/z3d/runs/eval.sh g13 (gate comparison /home/jc/simcode2/out/z3d/eval/g13/accept_p*.txt)",
+  "note": "head with the 3D position prior (x, y, z + 3 x 3 covariance; z in px relative to the PSF calibration focal plane); detectors of the previous model; same steps / schedules / seeds as the previous model"
+ },
+ "_files": {
+  "psf": {
+   "path": "calib_gauss1.3.json",
+   "size": 2828,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "d97cc50c0c3ba68fb4f4c4c9f74c55f194d396cff1af581a30a89f32fb26eae5",
+   "params": {
+    "source": "2026-11-12 Gaussian-PSF calib for the preprint-condition simulations (network set g13): pixel-integrated isotropic Gaussian, sigma 1.3 px (= analysis/baselines/zpsf.GaussPSF(1.3)), opt-in key psf_gauss_sigma_um read by simcode2/psf/vectorial.set_psf_extras; every other block (camera, pattern placeholder, TIRF, z) copied from calib_1809_2_psf3d_avg.json; the vectorial terms are ignored when psf_gauss_sigma_um is set",
+    "pixelsize_um": 0.10833,
+    "wavelength_um": 0.7,
+    "NA": 1.4900000095367432,
+    "n_imm": 1.518,
+    "n_med": 1.33,
+    "apod": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "focus_um": 0.14754445850849152,
+    "tirf_depth_um": 0.082,
+    "emitter_z_median_um": 0.055,
+    "psf_gauss_sigma_um": 0.140829
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_gauss1.3.json"
+  },
+  "det": {
+   "path": "det_g13.pt",
+   "size": 7266957,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "7a6130f3d34ca111bd8d79b0be3e7caaf75f4ce41203ac249b43762f5884d30c",
+   "checkpoint": {
+    "step": 40000,
+    "args": {
+     "out": "runs/psfmatch/g13/det",
+     "up": 1,
+     "steps": 40000,
+     "batch": 16,
+     "size": 64,
+     "lr": 0.001,
+     "w_off": 1.0,
+     "nnw": 1,
+     "em_photons": "40,2500",
+     "seed": 0,
+     "gen": "",
+     "init": "",
+     "pct": 0.05,
+     "psum": 0.0,
+     "ckpt_every": 5000,
+     "band": 0.0,
+     "calib": "models/insitu/calib_gauss1.3.json",
+     "pair_sub": "",
+     "dens": "0.0005,0.06",
+     "ch": [
+      48,
+      96,
+      160
+     ],
+     "stem_ch": 16,
+     "fch": 32
+    }
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/det_g13.pt"
+  },
+  "head": {
+   "path": "hd_g13.pt",
+   "size": 5519185,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "cbd17c8b098ccb3e0c324e6e3d1ac52b2e3556f2ea638ec3d43c077e984987ff",
+   "checkpoint": {
+    "step": 18000,
+    "args": {
+     "out": "/home/jc/simcode2/out/z3d/runs/g13/hd",
+     "steps": 18000,
+     "batch": 16,
+     "lr": 0.00015,
+     "ch": 96,
+     "det": "/home/jc/simcode2/runs/psfmatch/g13/det/final.pt",
+     "tau": "3,80",
+     "hold": "/home/jc/simcode2/out/sc4/heldout5.pt",
+     "pair_frac": 0.25,
+     "dens": "0.0005,0.06",
+     "med": "40,2500",
+     "nnw": 1,
+     "seed": 1,
+     "w_mr": 2.0,
+     "w_slope": 50.0,
+     "bf16": 1,
+     "eval_every": 2000,
+     "init": "hd_sc5nb.pt",
+     "pct": 0.1,
+     "ckpt_every": 6000,
+     "calib": "/home/jc/simcode2/models/insitu/calib_gauss1.3.json",
+     "arch": "sc4n",
+     "paper": 1,
+     "bright_tail": "0.1,2000,20000",
+     "z3d": 1,
+     "z_range_um": [
+      0.0,
+      0.3
+     ],
+     "z_unif": 0.5
+    }
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/hd_g13.pt"
+  },
+  "cal_sim": {
+   "path": "calib/calib_sc_hd_g13.json",
+   "size": 2059,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "cdcf1c456097aa0acb62c03d7f873cb30261e000ec8c9c8aa55bd05f4ed51726",
+   "params": {
+    "kap_p": 0.8945592641830444,
+    "kap_I2": 0.7926290588403049,
+    "sig_a": 1.4126241928985401,
+    "sig_g": 0.41589644697367406,
+    "n": 32239,
+    "kap_p_raw": 0.8945196270942688,
+    "kap_I2_raw": 0.7926039058284609,
+    "box": 1.5,
+    "mix_T": 1.0,
+    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json",
+    "cmult": 0.1,
+    "cmult_ang": 0.1,
+    "fit_scenes": [
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm",
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm"
+    ],
+    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+    "prior_off": [
+     -0.0009589724941179156,
+     0.0012835237430408597
+    ]
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_sc_hd_g13.json"
+  },
+  "cal_real": {
+   "path": "calib/calib_sc_hd_g13_real.json",
+   "size": 3385,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "542082057919d39c5fe86497d1c504b9d8c78825926a9a1986344bdacddd9005",
+   "params": {
+    "kap_p": 0.8945592641830444,
+    "kap_I2": 0.7926290588403049,
+    "sig_a": 1.4126241928985401,
+    "sig_g": 0.41589644697367406,
+    "n": 32239,
+    "kap_p_raw": 0.8945196270942688,
+    "kap_I2_raw": 0.7926039058284609,
+    "box": 1.5,
+    "mix_T": 1.0,
+    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json | _real: sig_ph_real_mult copied from calib/calib_sc_hd_sc5nbb15_pm_bright_real.json (not re-measured for the new networks)",
+    "cmult": 0.1,
+    "cmult_ang": 0.1,
+    "fit_scenes": [
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm",
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm"
+    ],
+    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+    "prior_off": [
+     -0.0009589724941179156,
+     0.0012835237430408597
+    ]
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_sc_hd_g13_real.json"
+  },
+  "p2_det": {
+   "path": "p2det_g13.pt",
+   "size": 7289160,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "065435555ff1ceedd503f2b630f87a737af3c76f3f43aee59f2bc677e37abedf",
+   "checkpoint": {
+    "step": 40000,
+    "args": {
+     "out": "runs/psfmatch/g13/p2det",
+     "steps": 40000,
+     "batch": 16,
+     "size": 64,
+     "lr": 0.0003,
+     "pct": 0.05,
+     "w_off": 1.0,
+     "seed": 11,
+     "eval_every": 2500,
+     "ckpt_every": 5000,
+     "no_illum": 0,
+     "gen": "",
+     "init": "",
+     "psum": 0.0,
+     "band": 0.0,
+     "calib": "models/insitu/calib_gauss1.3.json",
+     "pair_sub": "",
+     "dens": "0.0005,0.06",
+     "tau": "3,80",
+     "init_n1": "runs/psfmatch/g13/det/final.pt"
+    }
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/p2det_g13.pt"
+  },
+  "p2_head": {
+   "path": "p2headL_g13.pt",
+   "size": 5560783,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "40a835728312fc8a2fab1844163728ce17e2372eba76433d57d8c8aba96e4b73",
+   "checkpoint": {
+    "step": 50000,
+    "args": {
+     "out": "/home/jc/simcode2/out/z3d/runs/g13/p2headL",
+     "det": "/home/jc/simcode2/runs/psfmatch/g13/p2det/final.pt",
+     "init": "/home/jc/simcode2/out/z3d/runs/g13/p2head/final.pt",
+     "steps": 50000,
+     "batch": 16,
+     "lr": 0.0001,
+     "pct": 0.05,
+     "w_mr": 2.0,
+     "w_slope": 50.0,
+     "seed": 31,
+     "eval_every": 2000,
+     "ckpt_every": 10000,
+     "no_illum": 0,
+     "pert_model": "real",
+     "hold_v1": 15,
+     "calib": "/home/jc/simcode2/models/insitu/calib_gauss1.3.json",
+     "dens": "0.0005,0.06",
+     "tau": "3,80",
+     "pgen": ""
+    }
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/p2headL_g13.pt"
+  },
+  "p2_cal_sim": {
+   "path": "calib/calib_p2L_g13.json",
+   "size": 1934,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "5e35785e4ada75241fc4258cb957762feb28f2e88bb87bc404303299985b71a4",
+   "params": {
+    "kap_p": 0.8945592641830444,
+    "kap_I2": 0.7926290588403049,
+    "sig_a": 1.4126241928985401,
+    "sig_g": 0.41589644697367406,
+    "n": 32239,
+    "kap_p_raw": 0.8945196270942688,
+    "kap_I2_raw": 0.7926039058284609,
+    "box": 1.5,
+    "mix_T": 1.0,
+    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_p2L.json",
+    "cmult": 0.1,
+    "cmult_ang": 0.1,
+    "fit_scenes": [
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm",
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm"
+    ],
+    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+    "prior_off": [
+     0.0005592478555627167,
+     -0.0005215698038227856
+    ]
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_p2L_g13.json"
+  },
+  "p2_cal_real": {
+   "path": "calib/calib_p2L_g13_real.json",
+   "size": 3090,
+   "mtime": "2026-11-14T23:00:46+0100",
+   "sha256": "d5cd3100499e7dfc1e97ef18a2d8536e2b3d5ba2473ca4566fa6600cfa87441f",
+   "params": {
+    "kap_p": 0.8945592641830444,
+    "kap_I2": 0.7926290588403049,
+    "sig_a": 1.4126241928985401,
+    "sig_g": 0.41589644697367406,
+    "n": 32239,
+    "kap_p_raw": 0.8945196270942688,
+    "kap_I2_raw": 0.7926039058284609,
+    "box": 1.5,
+    "mix_T": 1.0,
+    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_p2L.json | _real: sig_ph_real_mult copied from calib/calib_p2L_b10_real.json (not re-measured for the new networks)",
+    "cmult": 0.1,
+    "cmult_ang": 0.1,
+    "fit_scenes": [
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm",
+     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm"
+    ],
+    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+    "prior_off": [
+     0.0005592478555627167,
+     -0.0005215698038227856
+    ]
+   },
+   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_p2L_g13_real.json"
+  }
+ },
+ "_exported": {
+  "when": "2026-11-14T23:00:46+0100",
+  "source": "/home/jc/simcode2/out/z3d/eval/g13/model_src.json",
+  "code": {
+   "package": "simcode",
+   "version": "2.0.0",
+   "repo": "/home/jc/simcode2-z3d",
+   "git_commit": "d7fc7df3ea72d210600189feff582b5f5bb92710",
+   "git_commit_time": "2026-11-14T21:22:30+01:00",
+   "git_branch": "z3d",
+   "git_dirty": false,
+   "modified_files": [],
+   "untracked_package_files": [],
+   "models_file": {
+    "path": "/home/jc/simcode2-z3d/simcode/models.json",
+    "size": 5083,
+    "mtime": "2026-11-14T21:22:29+0100",
+    "sha256": "ebe1d832a93ebf410b52609f5c91f2fae93ab0782a721cdd6a10d20ef42dcbc2"
+   }
+  }
+ }
+}
