@@ -24,7 +24,7 @@ psf:
   init: [zero, f0.1, f0.2, f0.3]         # no bead stack of this setup; multi-start, lowest base-fit NLL wins
   readnoise_e: 1.6
 process:
-  netset: /home/jc/simcode2/out/nanoruler/models/netset_nr80.json
+  model: /home/jc/simcode2/out/nanoruler/models/netset_nr80.json
   pass2: false                           # pass 2 needs the generic pass-2 networks (out/p2generic)
   crop: [5, 5, 390]
   chunk: 1500

@@ -1,33 +1,33 @@
-"""Stage f (process): python -m simcode.run on the (blocked-order) movie with the dataset's calibration and network set,
+"""Stage f (process): python -m simcode.run on the (blocked-order) movie with the dataset's calibration and model,
 through simcode/auto/runwrap.py for the instrument overrides of docs/AUTO_PIPELINE.md section 7 (pitch range, strict crop,
-detector batch, the network set of stage e). With the DMD-SIMFLUX defaults the wrapper changes nothing, so the run is the
+detector batch, the model of stage e). With the DMD-SIMFLUX defaults the wrapper changes nothing, so the run is the
 same as a plain simcode.run with the same arguments."""
 import json, os
 import numpy as np
 
 
-def netset_of(ds):
-    """(name, set dict with absolute paths or None for a set of simcode/netsets.json)"""
+def model_of(ds):
+    """(name, model dict with absolute paths, or None for a model of simcode/models.json)"""
     from simcode import config
     p = ds.c['process']
-    name = p['netset'] or ds.c['train']['netset']
+    name = p['model'] or ds.c['train']['model']
     if name and not os.path.exists(str(name)):
         try:
-            config.netset(name); return name, None
+            config.model_set(name); return name, None
         except KeyError:
             pass
-    f = name if name and os.path.exists(str(name)) else os.path.join(ds.out, 'train', 'netset.json')
+    f = name if name and os.path.exists(str(name)) else os.path.join(ds.out, 'train', 'model.json')
+    if not os.path.exists(f) and f.endswith('model.json') and os.path.exists(f[:-10] + 'netset.json'): f = f[:-10] + 'netset.json'   # stage e before 2026-11-14
     S = json.load(open(f))
     (n, s), = [(k, v) for k, v in S.items() if not k.startswith('_')]
     return n, s
 
 
-def argv(ds, out, calib=None, nframes=None, chunk_list=None, netset=None):
+def argv(ds, out, calib=None, nframes=None, chunk_list=None, model=None):
     p = ds.c['process']
-    name, _ = netset if netset is not None else netset_of(ds)
+    name, _ = model if model is not None else model_of(ds)
     calib = calib or p['calib'] or ds.summary('psf')['calib']
-    a = ['--movie', ds.movie, '--calib', calib, '--out', out, '--netset', name, '--chunk', p['chunk']]
-    if p['pass2']: a.append('--pass2')
+    a = ['--movie', ds.movie, '--calib', calib, '--out', out, '--model', name, '--chunk', p['chunk']]
     if p['crop']: a += ['--crop', ','.join(str(v) for v in p['crop'])]
     n = p['nframes'] if nframes is None else nframes
     if n: a += ['--nframes', n]
@@ -45,15 +45,15 @@ def crop_of(ds):
     return None if (H, W) == (120, 120) else [5.0, 5.0, float(min(H, W) - 10)]
 
 
-def wrap(ds, netset):
+def wrap(ds, model):
     p = ds.c['process']; extra = {}
     cr = crop_of(ds)
     if cr and tuple(cr) != (5.0, 5.0, 110.0):
         extra['crop'] = cr
         if not p['crop']: p['crop'] = cr
     if p['det_batch'] != 64: extra['det_batch'] = p['det_batch']
-    name, S = netset
-    if S is not None: extra['netset'] = {name: S}
+    name, S = model
+    if S is not None: extra['model'] = {name: S}
     extra['title'] = 'auto-process'
     return ds.wrapfile(extra, 'wrap_process')
 
@@ -73,18 +73,18 @@ def cycle_subset(out):
 
 def run(ds):
     import hashlib
-    ns = netset_of(ds)
+    ns = model_of(ds)
     W = wrap(ds, ns)
-    a0 = argv(ds, 'X', netset=ns)
+    a0 = argv(ds, 'X', model=ns)
     from simcode import config as SC
     calib = SC.resolve(a0[a0.index('--calib') + 1])
     key = hashlib.sha1(json.dumps([a0, open(calib).read() if os.path.exists(calib) else calib, ns[1], open(W).read()]).encode()).hexdigest()[:10]
-    out = os.path.join(ds.dir('process'), 'run_' + key)     # keyed by arguments, calibration, set and overrides: chunk files are never stale
+    out = os.path.join(ds.dir('process'), 'run_' + key)     # keyed by arguments, calibration, model and overrides: chunk files are never stale
     g = ds.gpu(10)
-    txt = ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.run'] + argv(ds, out, netset=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
+    txt = ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.run'] + argv(ds, out, model=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
     S = json.load(open(os.path.join(out, 'summary.json')))
     pe = json.load(open(os.path.join(out, 'pattern_est.json'))) if os.path.exists(os.path.join(out, 'pattern_est.json')) else {}
-    r = dict(run=out, netset=ns[0], summary=S, wrap=json.load(open(W)))
+    r = dict(run=out, model=ns[0], summary=S, wrap=json.load(open(W)))
     if ds.c['process']['cycle_aligned_only']: r['cycle_rows'] = cycle_subset(out)
     chk = []
     pit = _pitch(pe)

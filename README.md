@@ -38,7 +38,7 @@ pip install -e <repo>                   # or: export PYTHONPATH=<repo>
 ```
 
 The repository holds source only: network weights are not in git and have to be copied into `models/` (or the directory
-the config key `models` points to); `models/README.md` lists the files of each network set.
+the config key `models` points to); `models/README.md` lists the files of each model.
 
 Dependencies:
 
@@ -62,26 +62,28 @@ Only the baselines need more:
 ```bash
 export CUDA_VISIBLE_DEVICES=1           # GPU 1 or 2 on the lab server (keep GPU 0 free)
 python -m simcode.run --movie 1809/cover1/2/simflux_5.5ms_500mW.tif --calib insitu/calib_1809_2_psf3d.json \
-    --netset m1809 --out out_1809_2 --pass2
-python -m simcode.run --dataset 1809_2 --out out_1809_2      # the same movie with the paper's production recipe
+    --model m1809 --out out_1809_2
+python -m simcode.run --dataset 1809_2 --out out_1809_2      # the same: movie, calibration and model of a paper dataset
 ```
 
-Defaults (= the paper's settings, `simcode/netsets.json`):
+What every run does (= the paper's settings; the options that switched these were removed on 2026-11-14):
 
-- network set `m1809` (`--netset`; sets: `m1809`, `m25`, `g13`; one set = pass-1 detector + head, pass-2 detector + head,
-  their solve calibrations and the sigma rescale; `--det / --head / --cal / --p2_det / --p2_head / --p2_cal` override
-  single files)
-- fixed-c real-data calibration of the set (`--autoc 0`); `--autoc 1` is the opt-in automatic c per dataset, whose sigma
-  table exists only for the earlier default head
-- stored-candidate cut p ≥ 0.3 (`--cand_pmin`)
-- fast path, with a compiled solve step when available
+- model `m1809` (`--model`, older name `--netset`; models of `simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; one
+  model = pass-1 detector + head, pass-2 detector + head, their solve calibrations and the sigma rescale; `--det / --head /
+  --cal / --p2_det / --p2_head / --p2_cal` override single files)
+- pass 1, pattern estimation, the pattern solve, and pass 2
+- the fixed-c real-data solve calibrations of the model (`--cal_kind sim` for simulated movies)
+- stored-candidate cut p ≥ 0.3 (`simcode/pipeline/common.CAND_PMIN`)
+- the fast code path, with a compiled solve step when available
+- the model's selection-aware sigma rescale (`--sig_u set`) and the subset files `locs_p2_sig12.npz` / `locs_p2_u045.npz` /
+  `locs_p2_strictonly.npz` (`--subset main,u,strict`)
 - selections: the paper's main selection (since 2026-11-13) = a global threshold on the calibrated precision, rows with a
   rank (p ≥ 0.63, inside the crop) and max(σx, σy) ≤ σ_max, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of
   its own); the earlier per-tile rule "u ≤ 0.45" = `strict_u ≤ u_max` (`--u_max`, rule `u`); and the columns `sel`, `strict`
 
-`--dataset <name>` takes movie, calibration and network set of a paper dataset from `netsets.json` and adds what the
-production runs did after the pipeline: pass 2, the set's selection-aware sigma rescale (`--sig_u set`) and the subset
-files `locs_p2_sig12.npz` / `locs_p2_u045.npz` / `locs_p2_strictonly.npz` (`--subset main,u,strict`).
+`--dataset <name>` takes movie, calibration and model of a paper dataset from the `_production` entry of `models.json`.
+Older scripts may still pass the removed options; they are accepted only with their fixed value (`--pass2`, `--autoc 0`,
+`--cand_pmin 0.3`, `--fast 1`, `--compile auto`; `simcode/util/retired.py`).
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -96,7 +98,6 @@ two workers on one TIFF movie are not necessarily faster than one (not measured)
 Other options:
 
 - `--chunk_list 12000` processes only the chunk of frames 12000–18000.
-- `--pattern_field est_depth` is the opt-in depth-only pattern field (not recommended by default).
 - `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) is used for the
   strict-product coverage and tiles.
 - `--format npz,csv,hdf5` sets the table formats.
@@ -105,10 +106,10 @@ Outputs in `--out`:
 
 | file | content |
 |---|---|
-| `locs_p1.npz` (and `locs_p2.npz` with `--pass2`) | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
+| `locs_p1.npz`, `locs_p2.npz` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
 | `locs_p*_info.json` | counts, sigma_max and the size of the main selection, u_max and the size of the u rule, strict-product q and coverage, column list |
-| `locs_p2_sig12.npz`, `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (with `--subset main,u,strict`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
-| `summary.json` | settings, network set, per-stage timing |
+| `locs_p2_sig12.npz`, `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (and the same for pass 1; `--subset`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
+| `summary.json` | settings, model, per-stage timing |
 | `pass1_<f0>.npz`, `pattern_est.pt/.json`, `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
 
 Table columns:
@@ -128,30 +129,27 @@ Table columns:
 is kept. By default q comes from the GT-free row density ρ (good rows in the crop per window start per µm²), interpolated
 between anchors measured on the three real movies, where q reproduces SIMCODE's coverage (occupied 20-nm bins): pass 1
 ρ 0.49 → q 0.275, ρ ≥ 0.87 → 0.12; pass 2 ρ 0.64 → 0.25, 1.69 → 0.12, ≥ 2.22 → 0.10 (`simcode/strict.py`). The per-tile
-q does not depend on the solve calibration, so the default holds with the automatic c (`--autoc 1`) and with the
-fixed c (`--autoc 0`, default): on the real 0.5 / 2.5 / 20 nM movies its coverage is 0.98–1.02 × SIMCODE's in both cases (pass 1;
+q does not depend on the solve calibration (checked with the automatic c of `simcode/autoc.py` and with the fixed c of
+the pipeline): on the real 0.5 / 2.5 / 20 nM movies its coverage is 0.98–1.02 × SIMCODE's in both cases (pass 1;
 `analysis/evalproto/strictq.py`, `analysis/results/evalproto/strictq_*.txt`). This match is in-sample (the anchors were set on these movies). Without `--drift` the crop, tiles and ρ use raw
 (not drift-corrected) coordinates; the effect is negligible at ~1 px drift. On data far from these densities, check the
 coverage (`locs_p*_info.json`) or set q yourself. Options:
 
-- `--strict_q 0.25` fixes q.
-- `--strict_sigma_ref 7.0` is the earlier rule (q such that the product covers as many bins as the global σ ≤ 7.0 nm set;
-  7.4 nm for pass 2). It is valid only with the fixed-c calibration (`--autoc 0`): the automatic c gives ~10–17 % larger σ,
-  and then 7.0 nm keeps only 0.68–0.82 × SIMCODE's coverage (q 0.17 / 0.05 / 0.06 instead of 0.27 / 0.11 / 0.13).
+- `--strict_q 0.25` fixes q. (The earlier rule `--strict_sigma_ref`, q from the coverage of a global σ threshold, was
+  removed on 2026-11-14.)
 
 The table can be rebuilt at any time with
 `python -m simcode.strict <out> [--tag est2] [--drift drift.npy] [--strict_q 0.25] [--u_max 0.45] [--subset main,strict] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
 The crop of the tiles and of the coverage is the output region of the run (`--crop` of the run; read from its chunk files).
 
-Which settings produced the numbers in `docs/RESULTS.md` (`--cand_pmin 0.5 --autoc 0`, calibrations, SIMCODE model per
+Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
 
-The expert entry point with every development flag is `python -m simcode.pipeline.run_uncalibrated`
-(`--frontend sc|sc2p`, `--fast`, `--compile`, `--cand_pmin`, `--p1_solve`, `--pattern_field`, `--ref_pattern`, ...).
+The stage-level entry point is `python -m simcode.pipeline.run_uncalibrated` (`--frontend sc|sc2p`, `--stages`,
+`--ref_pattern` for a comparison solve with a given pattern, batch sizes).
 
-Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. The
-automatic c adds about 80 s, once per dataset (`--autoc_fast 1`: ~25 s, but θ then differs by ~1e-3 from the reference
-estimator). Pass 2 adds about 25 s per chunk.
+Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. Pass 2
+adds about 25 s per chunk.
 
 ## Paths and configuration
 
@@ -173,7 +171,7 @@ The config file is `$SIMCODE_CONFIG`, else `<repo>/simcode.json`, else `~/.confi
 ## Models and calibrations (`models/`)
 
 Calibrations (json) are in git; network weights are not (`models/README.md`: the sets, their files with checksums, the
-recipe of a set). The sets are defined in `simcode/netsets.json`.
+recipe of a model). The models are defined in `simcode/models.json`.
 
 ## 4Pi
 
@@ -190,7 +188,7 @@ Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.
 
 ## Repository layout
 
-`simcode/FILE_DESCRIPTION.md` has one line per file. In short: `simcode/` the package (`run.py`, `strict.py`, `netsets.json`,
+`simcode/FILE_DESCRIPTION.md` has one line per file. In short: `simcode/` the package (`run.py`, `strict.py`, `models.json`,
 `config.py`; `fileio/` readers and work driver; `pipeline/`, `det/`, `hd/`, `p2/` the 2D pipeline and its trainers; `sim/`,
 `psf/`, `insitu/` simulator, PSF and calibration; `fourpi/` the 4Pi pipeline), `analysis/` scripts that use it (baselines,
 paper figures and simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks), `models/` calibrations,

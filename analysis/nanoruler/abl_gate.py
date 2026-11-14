@@ -17,6 +17,13 @@ import abl_lib as A
 import plib as P
 import variants as V
 import gate_abl as GA
+
+
+def _tr(R, v):
+    """gate_abl.tr + the covariance scale s of an autoc variant (L -> sqrt(s) L; was the calibration key sig_scale, removed 2026-11-14)"""
+    R = GA.tr(R, v)
+    if 's' in v: R['sc_L'] = R['sc_L'] * float(v['s']) ** 0.5
+    return R
 from simcode2 import config
 A.title(); P.PX = A.PX
 FE = os.path.join(A.NR, 'eval', 'fe_nr80'); CD = os.path.join(A.OUT, 'calibs')
@@ -52,9 +59,8 @@ def fit(front, name, v, cache={}):
         cache[front] = ([P.load(sc, front, seeds=(202,), d=FE) for sc in FIT], P.load('iso', front, seeds=(202,), d=FE))
     Rs, iso = cache[front]
     base = V.cal_variant(json.load(open(config.resolve(BASE[front]))), v)
-    if 's' in v: base['sig_scale'] = float(v['s'])
-    Rv = [GA.tr(R, v) for R in Rs]
-    cal = P.fit_cal(Rv, base, iso=GA.tr(iso, v), verbose=False)
+    Rv = [_tr(R, v) for R in Rs]
+    cal = P.fit_cal(Rv, base, iso=_tr(iso, v), verbose=False)
     ph = np.concatenate([R['sc_I'][P.targets(R)[1]].sum(1) for R in Rs])
     gph = np.concatenate([R['gt_phot'][P.targets(R)[0]] for R in Rs])
     cov = [int(((ph >= lo) & (ph < hi)).sum()) for lo, hi in zip(P.EDG[:-1], P.EDG[1:])]
@@ -62,7 +68,7 @@ def fit(front, name, v, cache={}):
         cal['kap_bins']['kap_p'] = [1000.0 * k for k in cal['kap_bins']['kap_p']]; cal.pop('sig_ph')
         zs, p2 = [], []
         for R in Rs:
-            ti, oi = P.targets(R); sol = P.solve(GA.tr(R, v), oi, cal)
+            ti, oi = P.targets(R); sol = P.solve(_tr(R, v), oi, cal)
             zs.append((np.c_[sol['x'], sol['y']] - np.c_[R['gt_x'][ti], R['gt_y'][ti]]) / np.c_[sol['sx'], sol['sy']]); p2.append(R['sc_I'][oi].sum(1))
         zs, p2 = np.concatenate(zs), np.concatenate(p2); C2, F = [], []
         for lo, hi in zip(P.EDG[:-1], P.EDG[1:]):
@@ -127,7 +133,7 @@ def main():
             if not seeds: continue
             R = P.load(sc, front, seeds=seeds, d=FE); ti, oi = P.targets(R); EA = None
             for n in order:
-                v = VARS[n]; E = P.errs(R, ti, oi, P.solve(GA.tr(R, v), oi, cals[n]))
+                v = VARS[n]; E = P.errs(R, ti, oi, P.solve(_tr(R, v), oi, cals[n]))
                 if n == 'A': EA = E
                 st = GA.stats(R, E, None if n == 'A' else EA); res['variants'].setdefault(n, {})[sc] = st
                 for b in ('200-2000', '2000-4000'):

@@ -16,7 +16,7 @@ import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
-from simcode.det.up2 import DetUp, targets, focal_w, gt_nn, select, band_extra, band_off_loss
+from simcode.det.up2 import DetUp, targets, focal_w, gt_nn, select
 from simcode.det.model import n_params
 
 dev = 'cuda'
@@ -64,17 +64,11 @@ class DetP2(DetUp):
         x = F.interpolate(self.u0(F.gelu(x)), scale_factor=2, mode='bilinear', align_corners=False) + s0
         x = self.r0(x)
         o = self.head(F.gelu(x))[..., :H, :W]
-        out = dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range, log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
-        if getattr(self, 'psum', 0.0) != 0 and not self.training:     # (2026-11-10, opt-in via args['psum'])
-            from simcode.det.model import psum_out
-            out = psum_out(out, self.psum)
-        return out
+        return dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range, log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
 
 
 def build(args=None):
-    net = DetP2()
-    net.psum = float((args or {}).get('psum', 0.0) or 0.0)
-    return net
+    return DetP2()
 
 
 def load(ck, dev='cuda'):
@@ -144,6 +138,10 @@ def _load_pgen(v):
     return _j.load(open(v)) if _o.path.exists(v) else _j.loads(v)
 
 
+# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
+RETIRED = {'--gen': '', '--psum': '0', '--band': '0', '--pair_sub': ''}
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -157,19 +155,16 @@ def train(argv):
     ap.add_argument('--eval_every', type=int, default=2500)
     ap.add_argument('--ckpt_every', type=int, default=5000)
     ap.add_argument('--no_illum', type=int, default=0)     # control: same data / schedule, illumination inputs zeroed
-    ap.add_argument('--gen', default='')                   # (2026-11-10) 'r1' = simcode/hd/realgen.RGen (held-out too)
     ap.add_argument('--init', default='')                  # fine-tune from a DetP2 checkpoint (default: det_n1 zero-init)
-    ap.add_argument('--psum', type=float, default=0.0)     # stored in args: summed-p output radius at inference (eval too)
-    ap.add_argument('--band', type=float, default=0.0)     # sub-pixel-invariant target band (det/up2.band_extra), 0 = off
-    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list, hd/data.Gen calib), close-pair
-    # enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
-    ap.add_argument('--calib', default='')
-    ap.add_argument('--pair_sub', default='')
+    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib)
+    ap.add_argument('--calib', required=True)
     # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
     ap.add_argument('--pgen', default='')   # (2026-11-13 generic p2, opt-in; '' = unchanged) json file or inline json: realsim pgen dict
-    ap.add_argument('--init_n1', default='')               # (opt-in) det_n1-type checkpoint for the zero-init (default det_n1.pt)
+    ap.add_argument('--init_n1', default=_cfg.DET)          # pass-1 detector of the zero-init (the model's; default: the default model's)
+    from simcode.util import retired
+    argv = retired.strip(argv, RETIRED, 'p2.det2 train')
     a = ap.parse_args(argv)
     from simcode.util.proctitle import auto; auto('train-p2det')     # recognizable name in nvidia-smi / ps
     from simcode.p2.data import Gen2
@@ -178,25 +173,20 @@ def train(argv):
     os.makedirs(a.out, exist_ok=True)
     args = vars(a); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    if a.gen == 'r1':
-        from simcode.hd.realgen import RGen
-        gen = RGen(a.size, a.size, 6, seed=a.seed)
-    else:
-        gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None,
-                   pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
-    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
+    gen = Gen2(a.size, a.size, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')],
+               pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
+    psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
     if a.init:
         net = build().to(dev); net.load_state_dict(torch.load(__import__('simcode.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
     else:
-        net = load_init(_cfg.resolve(a.init_n1) if a.init_n1 else DET_N1)
-    net.psum = a.psum
+        net = load_init(_cfg.resolve(a.init_n1))
     print('params', n_params(net), flush=True)
     Hd = make_hold(gen)
     if a.no_illum:
         for h in Hd: h['illum'] = torch.zeros_like(h['illum'])
-    n1, _ = load_n1(_cfg.resolve(a.init_n1) if a.init_n1 else DET_N1)
+    n1, _ = load_n1(_cfg.resolve(a.init_n1))
     ref = eval_hold(n1, Hd, p2=False); del n1
     ev0 = eval_hold(net, Hd)
     json.dump(dict(det_n1=ref, p2_init=ev0), open(a.out + '/eval_ref.json', 'w'), indent=1)
@@ -216,9 +206,6 @@ def train(argv):
                 gi = tid[pm]
                 w = nn_weights(o['gt']['fov'][gi], gt_nn(o['gt'])[gi])
             wmap = torch.zeros_like(label); wmap[pm] = w
-            ign, ex = band_extra(o['gt'], label, ign, tid, a.band)
-            if ex is not None:
-                wg = torch.zeros(len(o['gt']['x']), device=dev); wg[tid[pm]] = w; wg = wg[ex['g']]
         with torch.autocast('cuda', dtype=torch.bfloat16):
             out = net(o['frames'], o['illum_p2'] * (0.0 if a.no_illum else 1.0))
         lg = out['logit'].float(); dxy = out['dxy'].float(); ls = out['log_sig'].float()
@@ -226,11 +213,7 @@ def train(argv):
         if pm.any():
             e = (dxy - off).permute(0, 2, 3, 1)[pm]
             s = ls[pm][:, None]
-            if ex is not None and len(ex['b']):
-                lb, wb = band_off_loss(dxy, ls, ex, wg)
-                l_off = (((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() + lb) / (w.sum() + wb).clamp(min=1e-6)
-            else:
-                l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
+            l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
         else:
             l_off = torch.zeros((), device=dev)
         loss = l_det + a.w_off * l_off

@@ -3,7 +3,7 @@ IN MEMORY (docs/AUTO_PIPELINE.md section 7; no package file is edited). The over
   pitch_px [lo, hi]   default of pipeline.pattern_est.estimate_k(pitch_px=...)                       (assumption 3)
   crop [x0, y0, S]    strict.CROP and the bound defaults of strict.tile_of / strict.bin20            (assumption 4)
   det_batch n         argparse default of run_uncalibrated --det_batch                              (assumption 5)
-  netset {name: {...}} added to simcode.config.netsets() (a set of this dataset, absolute paths)       (P8)
+  model {name: {...}} added to simcode.config.model_sets() (a model of this dataset, absolute paths; key netset before 2026-11-14) (P8)
   presets {preset: {key: value}} merged into simcode.hd.realsim.PRESETS (pattern k, spacing, camera maps, bg, brightness) (7)
   px_nm v             simcode.hd.realsim.PX_NM                                                       (7)
   title s             process title (<= 20 characters)
@@ -34,9 +34,9 @@ def apply(W):
             if a and a[0] == '--det_batch': k['default'] = int(W['det_batch'])
             return _orig(self, *a, **k)
         _ap.ArgumentParser.add_argument = _add
-    if W.get('netset'):
+    if W.get('model') or W.get('netset'):                    # 'netset' = the name before 2026-11-14
         from simcode import config
-        config.netsets().update(W['netset'])
+        config.model_sets().update(W.get('model') or W['netset'])
     if W.get('presets') or W.get('px_nm'):
         import simcode.hd.realsim as RS
         for name, p in RS.PRESETS.items():
@@ -55,7 +55,7 @@ def main():
     W = json.load(open(f)) if f else {}
     apply(W)
     mod = sys.argv[1]; sys.argv = [mod] + sys.argv[2:]
-    if W: print('auto.runwrap:', json.dumps({k: (v if k not in ('netset', 'presets') else '...') for k, v in W.items()}), flush=True)
+    if W: print('auto.runwrap:', json.dumps({k: (v if k not in ('model', 'netset', 'presets') else '...') for k, v in W.items()}), flush=True)
     if mod.endswith('.py'): runpy.run_path(mod, run_name='__main__')
     else: runpy.run_module(mod, run_name='__main__', alter_sys=True)
 

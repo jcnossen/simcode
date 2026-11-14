@@ -14,11 +14,11 @@ DEFAULTS = {
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
-    'train': dict(netset=None, quick=False, quick_steps=30,
+    'train': dict(model=None, quick=False, quick_steps=30,
                   steps=dict(det=40000, hd=18000, p2det=40000, p2head=24000, p2headL=50000),
                   init=dict(det=None, hd='hd_sc5nb.pt'), extra=dict(det='', hd='', p2=''),
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), real_mult_from='m1809'),
-    'process': dict(netset=None, calib=None, pass2=True, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,
+    'process': dict(model=None, calib=None, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,
                     cycle_aligned_only=False, sig_u='', extra=[]),
     'gpus': [1, 2],
 }
@@ -51,6 +51,11 @@ def load(path_or_dict):
         else:
             u = json.loads(txt)
     c = copy.deepcopy(DEFAULTS)
+    for sec in ('train', 'process'):          # names before 2026-11-14: 'netset' (= model); process.pass2 (pass 2 always runs now)
+        d = u.get(sec) or {}
+        if 'netset' in d: d['model'] = d.pop('netset')
+    if 'pass2' in (u.get('process') or {}):
+        if not u['process'].pop('pass2'): raise ValueError('config: process.pass2 false is no longer supported (pass 2 always runs, 2026-11-14)')
     if u.get('beads'):
         b = dict(BEAD_DEFAULTS); bu = u.pop('beads')
         for k in bu:

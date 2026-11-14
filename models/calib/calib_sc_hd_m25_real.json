@@ -11,8 +11,6 @@
  "kap_p_raw": 0.8945196270942688,
  "kap_I2_raw": 0.7926039058284609,
  "box": 1.5,
- "ms_xdet": false,
- "mix": "pm",
  "mix_T": 1.0,
  "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front s1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['m25a:rs25qm'], prior_off from iso (m25a); base calib/calib_sc_hd_sc5nbb15_pm_bright.json | _real: sig_ph_real_mult copied from calib/calib_sc_hd_sc5nbb15_pm_bright_real.json (not re-measured for the new networks)",
  "cmult": 0.1,

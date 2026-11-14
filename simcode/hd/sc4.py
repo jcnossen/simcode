@@ -257,6 +257,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
     from simcode.sim.crlb import illum_at
     T = 6
     CD.a.calib = config.model(config.INSITU_05)
+    os.environ.setdefault('SIMCODE_GATE_CALIB', CD.a.calib)    # the scenes with the same PSF (the gate default is the model's PSF since 2026-11-14)
     sim, rpsf, _ = CD.models(T)
     from simcode.hd.sc import load_det_front
     det, _ = load_det_front()
@@ -384,17 +385,21 @@ def eval_hold(head, H, chunk=4096, band=(500, 5000), extra=False):
 
 
 # ------------------------------------------------------------------------------------------------ training
+# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
+RETIRED = {'--arch': 'sc4n', '--paper': '1', '--bright_tail': '0.1,2000,20000', '--paper_med': '', '--paper_sd': '0', '--psfdiv': '',
+           '--gen': '', '--pair_sub': ''}
+BRIGHT_TAIL = (0.1, 2000.0, 20000.0)    # (frac, lo, hi) window photons of the bright-tail draw (hd/data.Gen.batch)
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
-    ap.add_argument('--arch', default='sc2', choices=['sc2', 'sc4n'])
     ap.add_argument('--steps', type=int, default=100000)
     ap.add_argument('--batch', type=int, default=16)
     ap.add_argument('--lr', type=float, default=5e-4)
     ap.add_argument('--ch', type=int, default=96)
     ap.add_argument('--det', default='det_n1.pt')
-    ap.add_argument('--paper', type=int, default=0)          # 30b: paper-matched photons (data.paper_bright)
-    ap.add_argument('--tau', default='2,80')
+    ap.add_argument('--tau', default='15,80')                # mean on-time range (frames); g13: 3,80
     ap.add_argument('--hold', default=HOLD)
     ap.add_argument('--pair_frac', type=float, default=0.25)
     ap.add_argument('--dens', default='0.0005,0.04')
@@ -405,44 +410,28 @@ def train(argv):
     ap.add_argument('--w_slope', type=float, default=50.0)
     ap.add_argument('--bf16', type=int, default=1)
     ap.add_argument('--eval_every', type=int, default=2000)
-    # iteration 31 (critic 30 #5): fine-tune options (defaults = the sc5 runs)
-    ap.add_argument('--init', default='')                     # start from this checkpoint (e.g. runs/hd_sc5n/final.pt)
+    ap.add_argument('--init', default='')                     # start from this checkpoint (e.g. hd_sc5nb.pt)
     ap.add_argument('--pct', type=float, default=0.05)        # OneCycle pct_start
-    ap.add_argument('--bright_tail', default='')              # 'frac,lo,hi' window photons, e.g. '0.1,2000,20000'
-    ap.add_argument('--paper_med', default='')                # '<0.5nM>,<2.5nM>' fully-on window photon medians
-    ap.add_argument('--paper_sd', type=float, default=0.0)    # 0 = PAPER_SD
     ap.add_argument('--ckpt_every', type=int, default=10000)
-    ap.add_argument('--psfdiv', default='')   # (2026-11-11, opt-in) json dict for realsim.psf_div_luts (PSF-diversity bank), D.Gen only
-    ap.add_argument('--gen', default='')      # (2026-11-10) 'r1' = realistic batches (simcode/hd/realgen.RGen 'paper' mix; the
-                                              # photon / density / pair options above are then set by the recipe)
-    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list; hd/data.Gen calib; the PSF-template
-    # column follows the batch's calib) and close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
-    ap.add_argument('--calib', default='')
-    ap.add_argument('--pair_sub', default='')
-    a = ap.parse_args(argv)
+    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib; the PSF-template column
+    # follows the batch's calib)
+    ap.add_argument('--calib', required=True)
+    from simcode.util import retired
+    a = ap.parse_args(retired.strip(argv, RETIRED, 'hd.sc4 train'))
     from simcode.util.proctitle import auto; auto('train-head')     # recognizable name in nvidia-smi / ps
     from simcode.sim import crlb as crlb_dense  # noqa
-    os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
+    # the fixed recipe (paper-matched photons with the bright tail, neighbour-aware sc4n head) is stored in args as before
+    args = dict(vars(a), arch='sc4n', paper=1, bright_tail=','.join(f'{v:g}' for v in BRIGHT_TAIL))
+    os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     from simcode.hd import data as D
     from simcode.det.model import load as load_det, select_subpixel
     from simcode.hd.sc import load_det_front
     det, _ = load_det_front(a.det)
-    if a.gen == 'r1':
-        from simcode.hd.realgen import RGen
-        gen = RGen(64, 64, 6, seed=a.seed)
-    else:
-        gen = D.Gen(64, 64, 6, seed=a.seed, psfdiv=json.loads(a.psfdiv) if a.psfdiv else None,
-                    calib=[config.resolve(c) for c in a.calib.split(',')] if a.calib else None)
-    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
-    nbr_on = a.arch == 'sc4n'
-    if not nbr_on: raise ValueError("only --arch sc4n is supported")
+    gen = D.Gen(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
     head = SCHead4(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
     if a.init:
         head.load_state_dict(torch.load(__import__('simcode.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
-    btail = tuple(float(v) for v in a.bright_tail.split(',')) if a.bright_tail else None
-    pmed = dict(zip(('0.5nM', '2.5nM'), (float(v) for v in a.paper_med.split(',')))) if a.paper_med else None
-    psd = a.paper_sd or None
     col = PSFCol(gen.rs['0.5nM'].sim)
     cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
     Hd = torch.load(a.hold, weights_only=False)
@@ -455,23 +444,17 @@ def train(argv):
     t0 = time.time(); acc = {}; IS, GS = [], []
     for step in range(a.steps + 1):
         with torch.no_grad():
-            if a.gen == 'r1':
-                o = gen.rbatch(a.batch, mix='paper', tau_r=tau_r, pair_curr=True)
-            else:
-                o = gen.batch(a.batch, dens=dens, med_photons=med, pair_frac=a.pair_frac, pair_curr=True, paper=bool(a.paper), tau_r=tau_r,
-                              bright_tail=btail, paper_med=pmed, paper_sd=psd, **psub)
+            o = gen.batch(a.batch, dens=dens, med_photons=med, pair_frac=a.pair_frac, pair_curr=True, paper=True, tau_r=tau_r,
+                          bright_tail=BRIGHT_TAIL)
             if cols is not None: col = cols[o['calib_i']]
             fr = o['frames']
             with torch.autocast('cuda', dtype=torch.bfloat16):
                 dd = det(fr)
             lgm = dd['logit'].float(); lgm = lgm[:, 0] if lgm.dim() == 4 else lgm
-            if nbr_on:
-                c = select_subpixel(lgm, dd['dxy'].float(), 640, p_min=NBR_PMIN, radius=0.7)
-                kp = torch.isfinite(c['logit'])
-                nbr = nbr_map(lgm, *(c[k][kp] for k in ('b', 'iy', 'ix', 'x', 'y', 'logit')))
-                c = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))   # head targets p >= 0.5
-            else:
-                c = select_subpixel(lgm, dd['dxy'].float(), 400, p_min=0.5, radius=0.7)
+            c = select_subpixel(lgm, dd['dxy'].float(), 640, p_min=NBR_PMIN, radius=0.7)
+            kp = torch.isfinite(c['logit'])
+            nbr = nbr_map(lgm, *(c[k][kp] for k in ('b', 'iy', 'ix', 'x', 'y', 'logit')))
+            c = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))   # head targets p >= 0.5
             m = match_gt(o, c)
         if m is None:
             sched.step(); continue
@@ -483,11 +466,9 @@ def train(argv):
             off = torch.stack([m['x'] - m['ix'].float(), m['y'] - m['iy'].float()], 1)
             pt = patches(fr, m['b'], m['iy'], m['ix'])
             psf = col(off)
-            nbp = None
-            if nbr_on:
-                # own p for the stamp removal: the candidate's logit at its NMS pixel
-                p_own = torch.sigmoid(lgm[m['b'], m['iy'], m['ix']])
-                nbp = nbr_patches(nbr, m['b'], m['iy'], m['ix'], m['x'], m['y'], p_own)
+            # own p for the stamp removal: the candidate's logit at its NMS pixel
+            p_own = torch.sigmoid(lgm[m['b'], m['iy'], m['ix']])
+            nbp = nbr_patches(nbr, m['b'], m['iy'], m['ix'], m['x'], m['y'], p_own)
         out = head_call(head, pt, off, psf, nbp)
         out['x'] = m['x'] + out['dxy'][:, 0]; out['y'] = m['y'] + out['dxy'][:, 1]
         Ig, tx, ty = t['Ig'], t['tx'], t['ty']
@@ -528,8 +509,8 @@ def train(argv):
             elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
             print('EVAL', step, json.dumps({s: ev[s].get('all', ev[s].get('nn1.5-2.5')) for s in ev}), flush=True)
         if step % a.ckpt_every == 0 and step > 0:
-            ckpt_save(dict(model=head.state_dict(), args=vars(a), step=step), a.out + f'/ckpt_{step}.pt')
-    ckpt_save(dict(model=head.state_dict(), args=vars(a), step=a.steps), a.out + '/final.pt')
+            ckpt_save(dict(model=head.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
+    ckpt_save(dict(model=head.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
 
 
 if __name__ == '__main__':

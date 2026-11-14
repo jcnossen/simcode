@@ -14,8 +14,9 @@ Each scene x eval seed (301, 302, 303; tuning used 202 / 5202) stores the GT tab
 targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / isolated CRLBs; dim emitters are
 'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
 a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/hd/gate_report.py).
-Front-end: sc = detector (det_n1, env SC_DET to override) + head (--sc, default models/hd_sc5nb.pt) + the explicit pattern
-solve with the calibration --sccal (default models/calib/calib_sc_hd_sc5nbb15_pm_bright.json, the sim-sigma gate calibration).
+Front-end: sc = detector (--det) + head (--sc) + the explicit pattern solve with the calibration --sccal (defaults: the default
+model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
+SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
 Other front-ends (SIMCODE: simcode/eff/simcode_gate.py; pass 2: simcode/p2/dump.py) write the same npz format.
 Reports: python -m simcode.hd.gate_report_xdet --dir <out> --tag <tag> --scen iso,...
 usage: python -m simcode.hd.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
@@ -34,57 +35,27 @@ THR0 = 0.2
 
 
 def gate_calib():
-    """(2026-11-11 psf3d retrain, opt-in) PSF calib of the gate scenes: env SIMCODE_GATE_CALIB (e.g. a movie's per-axis
-    *_psf3d.json; renders the scenes, the CRLB and the head's PSF template), default the 0.5 nM in-situ calib (unchanged)"""
+    """PSF calib of the gate scenes (renders the scenes, the CRLB and the head's PSF template): env SIMCODE_GATE_CALIB, default
+    the PSF of the default model (models.json 'psf'; until 2026-11-14 the default was the 0.5 nM in-situ calib insitu/calib_0.5nM.json)"""
     c = config.env('GATE_CALIB', '')
-    return config.resolve(c) if c else config.model(config.INSITU_05)
+    return config.resolve(c) if c else config.model(config.model_set()['psf'])
 
 
 def rsim(pre):
     if pre not in RSI:
-        c = config.env('GATE_CALIB', '')
-        RSI[pre] = RealSim(pre, S, S, 6, **({'calib': config.resolve(c)} if c else {}))
+        RSI[pre] = RealSim(pre, S, S, 6, calib=gate_calib())
     return RSI[pre]
 
 
-POVER, SOVER = {}, {}     # iteration 32 (critic 31 #2) mismatch ablation: RealSim preset / scene() overrides for the *pm / *qm scenes
+POVER, SOVER = {}, {}     # mismatch ablation (analysis/ablation_cov/gate_dump.py): RealSim preset / scene() overrides for the *pm / *qm scenes
 Q_MED = {'0.5nM': 1260.0, '2.5nM': 1890.0}    # iteration 32: label-unit paper brightness (rs05q / rs25q) = SIMCODE fit x kappa, sc7/kappa.txt
 Q_SD = 0.45
-# (2026-11-10, retrain on realistic sims) realistic gate scenes rs05r / rs25r = the m05r / m25rc movie recipes
-# (<out>/simreal2/run_m05r.sh, run_m25rc.sh) on 64 x 64 FOVs, full mismatch (as rs05pm), but with a RANDOM static
-# pattern phase / depth field per FOV (realsim pf_*; mean rms 0.12 / 0.14 rad ~ 4.3 / 5 nm, the measured own10 amplitude)
-# instead of the measured map (critic 35: the measured map is partly anchor-specific). dim = (density, window ph, tau).
-RREC = {'rs05r': dict(pre='0.5nM', med=700.0, sd=0.45, dim=None,
-                      p=dict(dens=0.0105, fil_on=0.97, fil_resample=True, fil_density=0.6, frame_sd=0.09, step_sd=0.14,
-                             pf_rad=0.24, pf_sig=(8.0, 12.0), pf_dep=0.14)),
-        'rs25r': dict(pre='2.5nM', med=750.0, sd=0.45, dim=(0.02, 300.0, 20.0),
-                      p=dict(fil_on=0.97, fil_resample=True, fil_density=0.8, frame_sd=0.09, step_sd=0.10,
-                             pf_rad=0.28, pf_sig=(8.0, 12.0), pf_dep=0.10))}
-# bright variants (calibration support above 2000 ph): the same recipes with 2.5x the window-photon median
-RREC.update({k + 'b': dict(v, med=2.5 * v['med']) for k, v in list(RREC.items())})
-
-
 def gen(sc, it, seed, T=6):
     # rs05pm / rs25pm (iteration 31, critic 30 #2): seeded as rs05p / rs25p -> the same emitters and paper_bright draw
     # rs05qm / rs25qm (iteration 32): seeded as rs05q / rs25q (label-unit brightness Q_MED / Q_SD)
     sk = sc[:-1] if sc in ('rs05pm', 'rs25pm', 'rs05qm', 'rs25qm') else sc
     torch.manual_seed(seed * 1000003 + it * 7919 + sum(ord(c) * (i + 1) for i, c in enumerate(sk)))
     exact = dict(emitter_var=False, psf_var=False, cam_err=False, exact_est=True, bgmode='struct')
-    if sc in RREC:
-        from simcode.hd.data import paper_bright
-        RC = RREC[sc]; pre = RC['pre']; rs = rsim(pre); nb = 12
-        save = dict(rs.p); rs.p.update(RC['p'])
-        try:
-            em = rs.emitters(nb, struct_frac=1.0)
-            em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, jitter=None, med0=RC['med'], sd=RC['sd'])
-            if RC['dim'] is not None:
-                e2 = rs.emitters(nb, dens=RC['dim'][0], tau=RC['dim'][2], struct_frac=1.0, fil_pts_in=em['fil_pts'])
-                e2['bright'] = paper_bright(pre, nb, e2['fov'], e2['z'], rs, jitter=None, med0=RC['dim'][1], sd=0.5)
-                for k_ in ('fov', 'x', 'y', 'z', 'bright', 't0', 't1'): em[k_] = torch.cat([em[k_], e2[k_]])
-            o = rs.scene(nb, em=em)
-        finally:
-            rs.p.clear(); rs.p.update(save)
-        return o
     if sc == 'iso' or sc.startswith('pair'):
         rs = rsim('0.5nM'); nb = 24
         if sc == 'iso':
@@ -138,6 +109,20 @@ def gen(sc, it, seed, T=6):
     return o
 
 
+def psf_rows(psS, rpsf, G, ai, focus):
+    """psS[ai] = CD.psf_stack of the emitters ai, in chunks that fit the free GPU memory (halved after an out-of-memory error;
+    per-emitter values, the same for any chunk size). Replaces the env GATE_PSF_CHUNK (2026-11-14)."""
+    ck = len(ai)
+    while True:
+        try:
+            for i in range(0, len(ai), max(ck, 1)):
+                a_ = ai[i:i + ck]; psS[a_] = CD.psf_stack(rpsf, G['x'][a_], G['y'][a_], G['z'][a_], focus)
+            return
+        except torch.OutOfMemoryError:
+            if ck <= 16: raise
+            torch.cuda.empty_cache(); ck = (ck + 1) // 2
+
+
 @torch.no_grad()
 def out_sc(SC, o, zmax):
     """sc front-end: detector (sub-pixel NMS + top-k, p > THR0) -> SCHead (network I_t, full covariance, bg_t,
@@ -173,17 +158,11 @@ def main():
     ap.add_argument('--seeds', default='301,302,303')
     ap.add_argument('--ntarget', type=int, default=3500)     # visible interior targets per seed
     ap.add_argument('--tag', default='')
+    ap.add_argument('--det', default=config.DET)
     ap.add_argument('--sc', default=config.HEAD)
     ap.add_argument('--sccal', default=config.CAL_P1_SIM)
     ap.add_argument('--out', default=OUT)
-    ap.add_argument('--pover', default='')     # e.g. 'frame_sd=0,step_sd=0' (RealSim preset values, *pm / *qm scenes only)
-    ap.add_argument('--sover', default='')     # e.g. 'psf_var=0,bgmode=struct,cam_err=0,exact_est=1' (scene() flags, *pm / *qm)
     a = ap.parse_args()
-    for kv in filter(None, a.pover.split(',')):
-        k_, v_ = kv.split('='); POVER[k_] = float(v_)
-    for kv in filter(None, a.sover.split(',')):
-        k_, v_ = kv.split('='); SOVER[k_] = v_ if k_ == 'bgmode' else bool(int(v_))
-    if POVER or SOVER: print('ablation overrides', POVER, SOVER, flush=True)
     os.makedirs(a.out, exist_ok=True)
     CD.a.calib = gate_calib()
     T = 6
@@ -191,7 +170,7 @@ def main():
     fronts = a.fronts.split(',')
     assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE: simcode.eff.simcode_gate; pass 2: simcode.p2.dump)'
     from simcode.hd import sc as SCM
-    det_, _ = SCM.load_det_front()
+    det_, _ = SCM.load_det_front(a.det)
     SC = (det_, SCM.load(config.resolve(a.sc)), SCM.PSFCol(sim), json.load(open(config.resolve(a.sccal))) if a.sccal else {})
     for sc in a.scen.split(','):
         for seed in [int(s_) for s_ in a.seeds.split(',')]:
@@ -211,12 +190,7 @@ def main():
                 nn = ST.nn_dist(G, tg)
                 fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
                 psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
-                _ck = int(os.environ.get('GATE_PSF_CHUNK', '0'))    # 2026-11-09 simcode_base2: optional chunking (memory cap); default unchanged
-                if _ck:
-                    for _i in range(0, len(ai), _ck):
-                        _a = ai[_i:_i + _ck]; psS[_a] = CD.psf_stack(rpsf, G['x'][_a], G['y'][_a], G['z'][_a], sim.focus)
-                else:
-                    psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai], sim.focus)
+                psf_rows(psS, rpsf, G, ai, sim.focus)
                 Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
                 n = len(G['x'])
                 full = lambda v, w=2: torch.full((n, w), float('nan'), device=dev).index_copy_(0, tg, v.float())

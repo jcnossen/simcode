@@ -87,8 +87,8 @@ for v in ('fast', 'fastc'):
     if R1 is not None: REP[f'{v}_pass1']['vs_orig'] = diffs(R1, Rf)
     save(); print(v, 'pass1', REP[f'{v}_pass1'], flush=True)
     if comp == 'on':     # compile warm-up
-        Lw = dict(Rf); Lw['out'] = Rf['out'] & (np.cumsum(Rf['out']) <= 20000); SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, D['sc_cal'], solve_opts=dict(compile='on'))
-    tm = {}; _, w = timed(lambda: SFF.run_chunk_pattern_solve_fast(Rf, info, Pt, D['sc_cal'], timing=tm, solve_opts=dict(compile=comp))); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+        Lw = dict(Rf); Lw['out'] = Rf['out'] & (np.cumsum(Rf['out']) <= 20000); SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, D['sc_cal'], compile='on')
+    tm = {}; _, w = timed(lambda: SFF.run_chunk_pattern_solve_fast(Rf, info, Pt, D['sc_cal'], timing=tm, compile=comp)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP[f'{v}_solve'] = r2(tm); save(); print(v, 'pattern solve', REP[f'{v}_solve'], flush=True)
     p2f = SFF.Pass2P2Fast(D['calib'], head=P2H, det=P2D, pf_head=PFH, compile=comp)
     p2f.run_chunk(movie, cal, D['f0'], D['f0'] + 600, Pt, D['p2_cal'])

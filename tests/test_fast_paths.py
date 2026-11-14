@@ -1,14 +1,14 @@
 """
 Regression test of the fast inference paths (the production default) against the reference code paths on a fixed,
 deterministic sim chunk. Run:  CUDA_VISIBLE_DEVICES=<gpu> python tests/test_fast_paths.py   (or: pytest tests)
-Needs a CUDA GPU (~1 min) and the models directory (simcode/config.py). Networks and calibrations: the default network set
-(m1809, simcode/netsets.json); PSF / camera: the in-situ calibration of the 1809/2 movie; pattern: the pattern estimate of
+Needs a CUDA GPU (~1 min) and the models directory (simcode/config.py). Networks and calibrations: the default model
+(m1809, simcode/models.json); PSF / camera: the in-situ calibration of the 1809/2 movie; pattern: the pattern estimate of
 the 1809/2 production run with that set (tests/data/pattern_est_1809_2.pt). Checks:
-  pass 1 (Pass1SC vs Pass1SCFast; queued, 1- and 2-stream, partial head batches, optional compiled head):
+  pass 1 (Pass1SC vs Pass1SCFast; queued, 1- and 2-stream, partial head batches):
     fp32 (bf16 autocast and TF32 off in both): identical candidate list, |dx|, |dy| < 1e-4 px, |dI| < 1e-2 ph
     bf16 (as in production): identical candidate list; I / x differences <= 2 x the bf16 noise reference (the original
          run with a different window batch, which changes the cuDNN algorithms) + 1e-6
-  pattern solve (sc.sc_solve vs msolve_fast.sc_solve_fast, exact options): median |dr| < 1e-5 px, p99 < 2e-3 px (the original
+  pattern solve (sc.sc_solve vs msolve_fast.sc_solve_fast): median |dr| < 1e-5 px (compiled LM step: < 5e-5 px), p99 < 2e-3 px (the original
     solve's own sensitivity to a 1-ulp input change is p99.9 ~6e-4, max ~0.09 px), kinetic-model choice >= 99.9 % equal
   pattern-aware pass 2 (Pass2P2 vs Pass2P2Fast, fp32): identical rows, |d prior| < 1e-4 px, solve positions as above
 """
@@ -89,14 +89,9 @@ def _pass1(fp32, **kw):
         A = Pass1SC(CALIB, head=HEAD, det=DET)
         B = Pass1SCFast(CALIB, head=HEAD, det=DET)
         B.det = A.det; B.head = A.head; B.front.det = A.det
-        B.front.heads = {'h': (A.head, 'sc', A.head)}
+        B.front.heads = {'h': (A.head, 'sc')}
         _C['p1'] = (A, B)
     A, B = _C['p1']
-    comp = kw.pop('compile', None)
-    if comp:
-        from simcode import fastutil
-        if not fastutil.compile_available(): return None
-        B.front.heads = {'h': (torch.compile(A.head, dynamic=False), 'sc', A.head)}
     A.head.bf16 = not fp32
     ctx = fp32_mode() if fp32 else contextlib.nullcontext()
     with ctx:
@@ -104,7 +99,6 @@ def _pass1(fp32, **kw):
         Rb, _ = B.run_chunk(mov, cal, 0, mov.n, **kw)
         Rr = None
     A.head.bf16 = True
-    B.front.heads = {'h': (A.head, 'sc', A.head)}
     return Ra, Rb, Rr
 
 
@@ -139,16 +133,11 @@ def test_pass1_bf16():
     _check_pass1(False)
 
 
-def test_pass1_compiled_fp32():
-    # the head is not compiled in the fast path (compiled SCHead4 is not equivalent; see sc_front_fast doc) -> nothing to test
-    pass
-
-
-def _solve_cmp(a, c, tag):
+def _solve_cmp(a, c, tag, med_tol=1e-5):
     d = (a['r'] - c['r']).abs().amax(1)
     med, p99 = float(d.median()), float(d.quantile(0.99))
     kin = float((a['kin'] == c['kin']).float().mean())
-    assert med < 1e-5 and p99 < 2e-3 and kin >= 0.999, f'{tag}: median {med:.2e} p99 {p99:.2e} kin {kin:.4f}'
+    assert med < med_tol and p99 < 2e-3 and kin >= 0.999, f'{tag}: median {med:.2e} p99 {p99:.2e} kin {kin:.4f}'
     print(f'  ok {tag}: n {len(d)} median|dr| {med:.1e} p99 {p99:.1e} max {float(d.max()):.1e} kin-equal {kin:.4f}')
 
 
@@ -169,7 +158,9 @@ def test_pattern_solve():
     _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal), 'pattern solve (eager)')
     from simcode import fastutil
     if fastutil.compile_available():
-        _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal, compile='on'), 'pattern solve (compiled)')
+        # compiled LM step: float rounding of the fused kernels; on the rows of the stored-candidate cut 0.3 (more dim rows than
+        # the earlier 0.5) the median is 2.3e-5 px (8.6e-6 px on the p >= 0.5 rows; docs/CLEANUP_LOG.md 2026-11-14)
+        _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal, compile='on'), 'pattern solve (compiled)', med_tol=5e-5)
 
 
 def test_pass2_p2_fp32():
@@ -178,7 +169,7 @@ def test_pass2_p2_fp32():
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
     A = Pass2P2(CALIB, head=P2H, det=P2D)
-    B = Pass2P2Fast(CALIB, head=P2H, det=P2D)
+    B = Pass2P2Fast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
     B.det = A.det; B.head = A.head
     A.head.bf16 = False
     with fp32_mode():
@@ -206,40 +197,6 @@ def test_prefetch_reader():
         assert np.array_equal(pm.read(*k), mov.read(*k))
     assert pm.stats['hits'] == 4 and pm.stats['misses'] == 1, pm.stats
     print(f'  ok prefetch reader {pm.stats}')
-
-
-def test_trunk_compile_bf16():
-    """opt-in compiled head trunk (compile_head 'trunk'): same candidates; on the head outputs it must be at least as close
-    to the fp32 head as the production eager bf16 head is (it is not bit-equivalent to the eager bf16 head)"""
-    from simcode import fastutil
-    if not fastutil.compile_available():
-        print('  skip (compile unavailable)'); return
-    from simcode.pipeline.sc_front_fast import Pass1SCFast, QueuedFront
-    mov, cal = sim_movie()
-    _pass1(False)
-    A, B = _C['p1']
-    Re = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
-    B.front.heads = QueuedFront(B.det, False, {'h': (A.head, 'sc')}, B.col, compile_head='trunk').heads
-    try:
-        Rc = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
-    finally:
-        B.front.heads = {'h': (A.head, 'sc', A.head)}
-    # fp32 reference of the HEAD only (the detector stays bf16, so that the candidate list is the same)
-    A.head.bf16 = False
-    tf = (torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32)
-    torch.backends.cudnn.allow_tf32 = False; torch.backends.cuda.matmul.allow_tf32 = False
-    try:
-        R32 = canon(B.run_chunk(mov, cal, 0, mov.n)[0])
-    finally:
-        A.head.bf16 = True
-        torch.backends.cudnn.allow_tf32, torch.backends.cuda.matmul.allow_tf32 = tf
-    for R in (Rc, R32):
-        ok, dd = same_cands(Re, R, BF16_DET); assert ok, f'candidate lists differ {dd}'
-    e = lambda R: np.quantile(np.abs(R['I'] - R32['I']), 0.99)
-    ex = lambda R: np.quantile(np.abs(np.c_[R['x'] - R32['x'], R['y'] - R32['y']]), 0.99)
-    print(f'  trunk compile vs fp32: |dI| p99 {e(Rc):.3f} (eager {e(Re):.3f}), |dx| p99 {ex(Rc):.2e} (eager {ex(Re):.2e})')
-    assert e(Rc) <= 1.1 * e(Re) and ex(Rc) <= 1.1 * ex(Re), 'compiled trunk further from fp32 than the eager bf16 head'
-    print('  ok trunk compile')
 
 
 def test_spatial_hash():
@@ -277,7 +234,6 @@ def test_spatial_hash():
 
 
 if __name__ == '__main__':
-    for f in (test_pass1_fp32, test_pass1_bf16, test_pass1_compiled_fp32, test_pattern_solve, test_pass2_p2_fp32, test_prefetch_reader,
-              test_trunk_compile_bf16, test_spatial_hash):
+    for f in (test_pass1_fp32, test_pass1_bf16, test_pattern_solve, test_pass2_p2_fp32, test_prefetch_reader, test_spatial_hash):
         print(f.__name__, flush=True); f()
     print('ALL OK')

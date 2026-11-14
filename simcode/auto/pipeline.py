@@ -1,5 +1,5 @@
 """SIMCODE v2 automatic per-dataset pipeline (docs/AUTO_PIPELINE.md): one config file -> camera calibration, optional bead
-fit, spot finding, isolated tracks, in-situ PSF, network set, processing, report.
+fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
   python -m simcode.auto <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
 
@@ -245,7 +245,7 @@ class Dataset:
         from simcode.auto import stage_psf
         return stage_psf.run(self)
 
-    # ---- stage e: network set
+    # ---- stage e: model (trained networks + calibrations)
     def st_train(self):
         from simcode.auto import train
         return train.run(self)

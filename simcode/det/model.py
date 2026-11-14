@@ -87,35 +87,7 @@ class DetNet(nn.Module):
         o = self.head(F.gelu(x))[..., :H, :W]
         out = dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range,
                    log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
-        return psum_out(out, getattr(self, 'psum', 0.0)) if (getattr(self, 'psum', 0.0) != 0 and not self.training) else out
-
-
-def psum_logit(logit, dxy, r=0.5, pmax=0.9999, mode='sum'):
-    """(2026-11-10, opt-in) sub-pixel-invariant detection probability: p'_i = min(pmax, sum of p_j over the 3 x 3 pixels j
-    (incl. i) whose predicted sub-pixel point lies within r px of pixel i's point). A detection split over two pixels
-    (emitter near a pixel edge, nearest-pixel training target) gets its summed mass; NMS / thresholds then act on p'.
-    mode 'or': p' = 1 - prod (1 - p_j) over the same pixels (fewer noise FPs than the sum; retrain_r/psum_test)."""
-    lg = logit.float(); B, H, W = lg.shape
-    p = torch.sigmoid(lg)
-    yy, xx = torch.meshgrid(torch.arange(H, device=lg.device, dtype=torch.float32), torch.arange(W, device=lg.device, dtype=torch.float32), indexing='ij')
-    X = xx + dxy[:, 0].float(); Y = yy + dxy[:, 1].float()
-    pP = F.pad(p, (1, 1, 1, 1)); XP = F.pad(X, (1, 1, 1, 1), value=1e6); YP = F.pad(Y, (1, 1, 1, 1), value=1e6)
-    acc = p.clone() if mode == 'sum' else 1 - p; r2 = r * r
-    for oy in (-1, 0, 1):
-        for ox in (-1, 0, 1):
-            if oy == 0 and ox == 0: continue
-            sl = (slice(None), slice(1 + oy, 1 + oy + H), slice(1 + ox, 1 + ox + W))
-            q = pP[sl] * (((XP[sl] - X) ** 2 + (YP[sl] - Y) ** 2) < r2).float()
-            acc = acc + q if mode == 'sum' else acc * (1 - q)
-    acc = (acc if mode == 'sum' else 1 - acc).clamp(1e-6, pmax)
-    return torch.log(acc) - torch.log1p(-acc)
-
-
-def psum_out(out, r):
-    """r > 0: summed p within r px; r < 0: noisy-or within |r| px"""
-    o = dict(out); o['logit_raw'] = out['logit']
-    o['logit'] = psum_logit(out['logit'], out['dxy'], abs(r), mode='sum' if r > 0 else 'or').to(out['logit'].dtype)
-    return o
+        return out
 
 
 @torch.no_grad()

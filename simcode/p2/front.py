@@ -6,15 +6,15 @@ intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   -> pass-2 detector DetP2 (frames + illumination) -> sub-pixel NMS, p >= 0.2 neighbour map, p >= 0.5 candidates
   -> pass-2 head SCHeadP2 (patch + neighbour + illumination channels): I_t, full covariance, bg_t, prior (pattern-informed)
   -> explicit intensity-domain pattern solve (hd/sc.sc_solve: fringe-start posterior, cmult, box 1.5, calibrated sigma)
-     with prior 'own' (the pass-2 head prior), or 'pf' (variant a: the pattern-free sc5nb prior computed on the same
-     candidates), per the calibration json key 'p2_prior'.
+     with the pass-2 head prior.
   Output rows: windows' central detections (time centroid in the central half, inside the crop, own frames) as pass 1,
   pass-2 format columns (x_hy0, y_hy0, sx_cal, sy_cal, sig_hy0, q_dof, phot, x_prior, y_prior, kin_hy, p, wstart, frame,
-  I_net) + x_dir / y_dir / sx_dir / sy_dir (variant b: the pass-2 head prior itself with its calibrated sigma).
+  I_net) + x_dir / y_dir / sx_dir / sy_dir (variant b: the pass-2 head prior itself with its sigma).
+Reference implementation (test oracle of simcode/pipeline/sc_front_fast.Pass2P2Fast, which the pipeline uses).
 """
 import json, time
 import numpy as np, torch
-from simcode.pipeline.common import Movie, region, pattern_frames
+from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
@@ -22,18 +22,15 @@ DET_P2 = _cfg.model(_cfg.P2_DET)
 HEAD_P2 = _cfg.model(_cfg.P2_HEAD)
 
 
-CAND_PMIN = 0.5     # stored-candidate cut; run_uncalibrated --cand_pmin (2026-11-10, default unchanged)
-
 
 class Pass2P2:
-    def __init__(self, calib_path, head=HEAD_P2, det=DET_P2, pf_head=None, dev='cuda'):
+    def __init__(self, calib_path, head=HEAD_P2, det=DET_P2, dev='cuda'):
         from simcode.hd import sc as SCM
         from simcode.p2 import head2 as H2
         from simcode.sim.simulator import Simulator
         self.SCM, self.H2 = SCM, H2
         self.det, self.needs_il = H2.load_det(det)
         self.head = H2.load(head) if ('p2_head' in head or H2.is_p2_head(head)) else SCM.load(head)     # detector-only pass 2: a pattern-free head
-        self.pf_head = SCM.load(pf_head) if pf_head else None
         self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
 
@@ -44,7 +41,6 @@ class Pass2P2:
         timing = timing if timing is not None else {}
         sync = lambda: torch.cuda.synchronize()
         scal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
-        prior = scal.get('p2_prior', 'own')
         X0, Y0, S = region(movie, crop, margin)
         own0, own1 = f0, min(f1, movie.n)
         l0 = max(f0 - pad, 0) // 6 * 6; l1 = min(own1 + pad, movie.n)
@@ -79,9 +75,6 @@ class Pass2P2:
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
                 oh = H2.head_apply(self.head, self.col, *args)
                 r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
-                if self.pf_head is not None and prior == 'pf':
-                    oa = H2.head_apply(self.pf_head, self.col, *args)
-                    r.update(pf_x=oa['x'].float(), pf_y=oa['y'].float(), pf_lsxy=oa['lsxy'].float())
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
@@ -100,21 +93,15 @@ class Pass2P2:
             t_ = time.time()
             k_ = torch.nonzero(keep)[:, 0]
             o = {kk: v[k_] for kk, v in oh.items()}
-            if prior == 'pf' and 'pf_x' in o:
-                o = dict(o, x=o['pf_x'], y=o['pf_y'], lsxy=o['pf_lsxy'])
             bw = b[k_]
             so = SCM.sc_solve(o, PW, bw, scal)
             sync(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
             sp = oh['lsxy'][k_].exp()
             ph = I[k_].sum(1)
-            fdir = torch.ones_like(ph)
-            if 'kap_bins_dir' in scal:
-                fdir = SCM._binval(scal['kap_bins_dir'], 'kap_p', ph) * SCM._binval(scal['sig_ph_dir'], 'f', ph)
-            po = torch.tensor(scal.get('prior_off_dir', [0.0, 0.0]), device=dev)
             r = dict(wstart=ws[k_], x_hy0=so['r'][:, 0] + X0, y_hy0=so['r'][:, 1] + Y0, sx_cal=so['s_cal'][:, 0], sy_cal=so['s_cal'][:, 1],
                      sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                      x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
-                     x_dir=oh['x'][k_] - po[0] + X0, y_dir=oh['y'][k_] - po[1] + Y0, sx_dir=sp[:, 0] * fdir, sy_dir=sp[:, 1] * fdir,
+                     x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
                      frame=fabs[k_], I_net=I[k_])
             rows.append({kk: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for kk, v in r.items()})
         R = {kk: np.concatenate([r_[kk] for r_ in rows]) for kk in rows[0]}

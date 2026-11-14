@@ -24,10 +24,10 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 
 | file | what it does |
 |---|---|
-| `run.py` | User entry point: `python -m simcode.run --movie … --calib … --out … [--netset m1809] [--pass2]`, or `--dataset <name>` for a paper dataset with the production recipe. Runs all stages; finished stages are skipped. |
+| `run.py` | User entry point: `python -m simcode.run --movie … --calib … --out … [--model m1809]`, or `--dataset <name>` for a paper dataset. Runs all stages; finished stages are skipped. |
 | `strict.py` | Builds the localization table from a pipeline output directory, with the score `strict_u` and the stored `u_max` (the paper's selection is strict_u ≤ u_max: `select(table)`), and the columns `sel`, `strict`. Writes subset files (`--subset`). Also a CLI. |
-| `netsets.json` | The single definition of the network sets (m1809, m25, g13), the default set, and the paper's production recipe (flags, datasets). |
-| `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from environment variables, `simcode.json` or defaults; `netset(name)`. No path is hard-coded elsewhere. |
+| `models.json` | The single definition of the models (m1809, m25, g13, m1809g; called network sets / `netsets.json` until 2026-11-14), the default model, and the paper's datasets (`_production`). |
+| `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from environment variables, `simcode.json` or defaults; `model_set(name)` (alias `netset`). No path is hard-coded elsewhere. |
 | `core.py` | Pattern geometry helpers used by the explicit solve (illumination at a position, fringe shifts, kinetics start values). |
 | `autoc.py` | Opt-in automatic per-dataset noise scale of the network intensities, estimated from the solve's own residuals (no ground truth). Its sigma table exists only for the earlier default head. |
 | `fastutil.py` | Optional `torch.compile` support for the fast inference paths. |
@@ -48,9 +48,9 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | `run_uncalibrated.py` | Expert entry point with all flags; `run.py` calls its stages. Chunks are the units of `fileio/work.py`. |
 | `common.py` | Read plan of the chunks, the rows of the pass-1 chunk files, camera conversion, PSF model loading (`Movie` / `PrefetchMovie` = the readers of `fileio/movie.py`). |
 | `sc_front.py` | Reference implementation of pass 1 (detector + head per window) and of the pass-2 chunk loop. |
-| `sc_front_fast.py` | Faster versions of the same chunks (queued fixed-size batches); same networks and outputs. Used with `--fast` (the default of `run.py`). |
+| `sc_front_fast.py` | Fast versions of the same chunks (queued fixed-size batches); same networks and outputs. The pipeline's code path (`sc_front.py`, `p2/front.py` are the test oracle). |
 | `pattern_est.py` | Estimates the illumination pattern from pass-1 localizations and intensities. |
-| `pattern_field.py` | Optional per-cell phase map and smooth depth field on top of the global pattern. Not used by default. |
+| `pattern_field.py` | Per-cell phase map and smooth depth field on top of the global pattern (`field_at`, `estimate_field`). Analysis only (`analysis/evalproto/spatial.py`, `analysis/simreal/sim_movie_r.py`); the pipeline option was removed on 2026-11-14. |
 | `compare_pattern.py` | Compares an estimated pattern with a reference pattern, in rad and nm. |
 | `dedup.py` | Output modes for overlapping windows: non-overlapping (disjoint) windows, or merged chains. |
 
@@ -72,7 +72,6 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | `msolve.py` | Multi-start explicit pattern solve on the network intensities (reference implementation). |
 | `msolve_fast.py` | Faster drop-in for the same solve (production). |
 | `realsim.py` | Experiment-matched simulator: measured PSF with jitter, camera maps, structured and fluctuating background, filaments. |
-| `realgen.py` | One realistic training-batch generator for all four networks (optional). |
 | `data.py` | Training batches for the head from `realsim.py` with widened parameter ranges. |
 | `gate.py` | The gate benchmark: fixed simulated scenes (isolated emitters, close pairs, realistic scenes) run through a front end. |
 | `gate_report.py` | Detection, precision and intensity metrics for gate outputs. |
@@ -87,7 +86,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 | `illum.py` | Illumination input maps from a pattern, and perturbed pattern estimates for training. |
 | `data.py` | Realistic training batches for the pass-2 networks. |
 | `front.py` | Pass 2 inside the pipeline. |
-| `dump.py` | Dumps raw network outputs on the gate scenes (input of the calibration fit of a network set). |
+| `dump.py` | Dumps raw network outputs on the gate scenes (input of the calibration fit of a model). |
 
 ## `sim/`: basic simulator and Cramér–Rao bounds
 
@@ -165,7 +164,7 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
   - `papersim/`: the paper simulations (generators, all methods, metrics, figures); `reproduce.sh` lists the commands.
   - `fourpi/`: 4Pi calibration chain (camera, registration, PSF, pattern checks), the v10 trainers and gates, post-processing, real-data comparisons and the simulated showcase. `real_w4pi.py` = `simcode.fourpi.run`.
   - `fourpi_classical/`: the classical 4Pi-SIMFLUX pipeline (published-style detection and fits, pixel MLE) on the same reader and work driver.
-  - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a network set (sigma tables, sigma rescale, PSF calibration files).
+  - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF calibration files).
   - `gate/`, `figures/`, `evalproto/`, `hd_compare/`, `simreal/`, `speed/`, `tput/`, `dme/`, `psfshape/`: benchmarks and development figures; `results/` holds text snapshots of their outputs.
 - `models/`: calibrations (`calib/`, `insitu/`); network weights are not in git (`models/README.md`).
 - `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_fileio.py` (CPU: readers, work driver, config names), `check_imports.py` (static check of the tree), `check_checkpoints.py`, `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).

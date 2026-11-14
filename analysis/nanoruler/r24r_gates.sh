@@ -19,12 +19,12 @@ for sc in iso pair1 pair2 rs05qm $XS; do
   last=${sd##*,}
   if [ ! -f $G/${sc}__s${last}_hd_cur.npz ]; then
     say "gate $N $sc"
-    SIMCODE2_GATE_CALIB=$C GATE_PSF_CHUNK=1500 bash $A/r24_gpu.sh 4 $W simcode2.hd.gate --scen $sc --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
+    SIMCODE2_GATE_CALIB=$C bash $A/r24_gpu.sh 4 $W simcode2.hd.gate --scen $sc --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
       --tag _hd_cur --out $G --ntarget 3500 --seeds $sd >> $LG/gate_$sc.log 2>&1 || { say "FAILED gate $sc (see $LG/gate_$sc.log)"; exit 1; }
   fi
   if [ ! -f $FE/${sc}__s${last}_$fn.npz ]; then
     say "dump $N $sc $fn"
-    SIMCODE2_GATE_CALIB=$C SIMCODE2_GATE_DIR=$G GATE_PSF_CHUNK=1500 bash $A/r24_gpu.sh 4 $W simcode2.p2.dump --scen $sc --seeds $sd --fronts $FR --out $FE \
+    SIMCODE2_GATE_CALIB=$C SIMCODE2_GATE_DIR=$G bash $A/r24_gpu.sh 4 $W simcode2.p2.dump --scen $sc --seeds $sd --fronts $FR --out $FE \
       >> $LG/dump_${fn}_$sc.log 2>&1 || { say "FAILED dump $sc (see $LG/dump_${fn}_$sc.log)"; exit 1; }
     grep -q "CRLB from None" $LG/dump_${fn}_$sc.log && { say "FAILED dump $sc: CRLB reference not found"; exit 1; }
   fi

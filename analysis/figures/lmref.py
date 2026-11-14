@@ -129,7 +129,8 @@ def solve_input(r, x_det, y_det):
 
 # explicit pattern solve settings for the LM reference: the same fringe-start posterior mean (PM, T = 1, box 1.5) as
 # the network path, with the LM's own Fisher covariance unscaled (kap = 1) and no chi2 sigma inflation
-LM_CAL = dict(kap_p=1.0, kap_I2=1.0, sig_a=1.0, sig_g=0.0, box=1.5, ms_xdet=False, mix='pm', mix_T=1.0)
+_ONE = dict(ph=[1.0, 2.0], kap_p=[1.0, 1.0], kap_I2=[1.0, 1.0], f=[1.0, 1.0])     # constant 1 (all solve calibration keys are required)
+LM_CAL = dict(kap_bins=_ONE, sig_ph=_ONE, prior_off=[0.0, 0.0], cmult=0.0, cmult_ang=0.0, sig_a=1.0, sig_g=0.0, box=1.5, mix_T=1.0)
 
 
 # ------------------------------------------------------------------------------------------------------------------------

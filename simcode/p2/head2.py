@@ -193,6 +193,10 @@ def _load_pgen(v):
     return _j.load(open(v)) if _o.path.exists(v) else _j.loads(v)
 
 
+# options removed 2026-11-14 (simcode/util/retired.py): accepted only with their fixed value
+RETIRED = {'--gen': '', '--pair_sub': ''}
+
+
 def train(argv):
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
@@ -208,31 +212,27 @@ def train(argv):
     ap.add_argument('--eval_every', type=int, default=4000)
     ap.add_argument('--ckpt_every', type=int, default=10000)
     ap.add_argument('--no_illum', type=int, default=0)       # control: same data / schedule, illumination inputs zeroed
-    ap.add_argument('--pert_model', default='v1')           # pattern-error model of the input estimate (illum.MODELS)
+    ap.add_argument('--pert_model', default='real')         # pattern-error model of the input estimate (illum.MODELS; p2headL: real,
+                                                            # the p2head stage before it: v1; default 'v1' until 2026-11-14)
     ap.add_argument('--hold_v1', type=int, default=0)       # also a held-out set with the v1 error model (n batches)
-    ap.add_argument('--gen', default='')                    # (2026-11-10) 'r1' = simcode/hd/realgen.RGen (held-out too)
-    # (2026-11-11 psf3d retrain, opt-in; defaults unchanged) PSF calib mixture (comma list, hd/data.Gen calib; the PSF-template
-    # column follows the batch's calib), close-pair enrichment 'frac,lo,hi' (realsim.emitters pair_sub)
-    ap.add_argument('--calib', default='')
-    ap.add_argument('--pair_sub', default='')
+    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib; the PSF-template column
+    # follows the batch's calib)
+    ap.add_argument('--calib', required=True)
     # (2026-11-12 g13 retrain, opt-in; '' = unchanged) training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames)
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
     ap.add_argument('--pgen', default='')   # (2026-11-13 generic p2, opt-in; '' = unchanged) json file or inline json: realsim pgen dict
-    a = ap.parse_args(argv)
+    from simcode.util import retired
+    a = ap.parse_args(retired.strip(argv, RETIRED, 'p2.head2 train'))
     from simcode.util.proctitle import auto; auto('train-p2head')     # recognizable name in nvidia-smi / ps
     from simcode.p2.data import Gen2
     from simcode.hd.sc4 import match_gt, targets
     from simcode.hd import sc as SCM
     os.makedirs(a.out, exist_ok=True); json.dump(vars(a), open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    if a.gen == 'r1':
-        from simcode.hd.realgen import RGen
-        gen = RGen(64, 64, 6, seed=a.seed)
-    else:
-        gen = Gen2(64, 64, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')] if a.calib else None,
-                   pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
-    psub = {'pair_sub': tuple(float(v) for v in a.pair_sub.split(','))} if a.pair_sub else {}
+    gen = Gen2(64, 64, 6, seed=a.seed, calib=[_cfg.resolve(c) for c in a.calib.split(',')],
+               pgen=_load_pgen(a.pgen))   # (2026-11-13 generic p2, opt-in)
+    psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
     det, needs_il = load_det(a.det)

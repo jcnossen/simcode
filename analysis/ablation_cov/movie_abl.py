@@ -72,7 +72,7 @@ def fit_sigu(name):
     """sigcal.py fit on m05r3 [0, 2400), test on [2400, 4800)"""
     import simcode2.strict as SP, sigcal
     d = f'{OUT}/runs/m05r3/{name}'
-    T, info = SP.build_table(d, 'est2', PX, None, None, None, None); SP.write_table(T, info, f'{d}/locs_p2', ('npz',))
+    T, info = SP.build_table(d, 'est2', PX); SP.write_table(T, info, f'{d}/locs_p2', ('npz',))
     sim = SETS['m05r3']['sim']
     D = sigcal.load(f'{d}:{sim}:est2:0:2400')
     mid, g, n = [], [], []
@@ -110,7 +110,7 @@ def sim_metrics(setn, name):
     S = SETS[setn]; md = S['md']; nf = S['nframes']; d = f'{OUT}/runs/{setn}/{name}'
     g = json.load(open(f'{md}/gen.json')); W = int(g['W']); crop = (0.0, 0.0, float(W))
     SP.CROP = crop; SP.tile_of.__defaults__ = (crop, 10.0); SP.bin20.__defaults__ = (crop,)
-    T_, info = SP.build_table(d, 'est2', g['px_nm'], None, None, None, f'{OUT}/calibs/sigu_p2_{name}.json')
+    T_, info = SP.build_table(d, 'est2', g['px_nm'], sig_u=f'{OUT}/calibs/sigu_p2_{name}.json')
     SP.write_table(T_, info, f'{d}/locs_p2_sim', ('npz',))
     T = M.load_method('v2q45', f'{d}/locs_p2_sim.npz')
     gt = dict(np.load(f'{md}/gt.npz')); pts = gt['pts']
@@ -138,7 +138,7 @@ def sim_metrics(setn, name):
 def real_metrics(name):
     import simcode2.strict as SP, frc_fair
     nf = SETS['real']['nframes']; d = f'{OUT}/runs/real/{name}'
-    T_, info = SP.build_table(d, 'est2', PX, None, None, None, f'{OUT}/calibs/sigu_p2_{name}.json')
+    T_, info = SP.build_table(d, 'est2', PX, sig_u=f'{OUT}/calibs/sigu_p2_{name}.json')
     u = np.nan_to_num(T_['strict_u'].astype(np.float64), nan=2.0); m = (u <= 0.45)      # as the production locs_p2_u045.npz FRC row (n_all 1404302 = all u <= 0.45 rows)
     np.savez(f'{d}/locs_p2_u045.npz', **{k: v[(u <= 0.45)] for k, v in T_.items()})
     T = dict(x=T_['x'][m].astype(np.float64), y=T_['y'][m].astype(np.float64), f=T_['frame'][m].astype(np.int64), sx=T_['sx'][m].astype(np.float64),

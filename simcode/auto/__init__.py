@@ -1,4 +1,4 @@
-"""SIMCODE v2 automatic per-dataset pipeline: config -> camera, spots, tracks, in-situ PSF, network set, processing, report.
+"""SIMCODE v2 automatic per-dataset pipeline: config -> camera, spots, tracks, in-situ PSF, model, processing, report.
 Design: docs/AUTO_PIPELINE.md. Entry points: python -m simcode.auto <config>, simcode.auto.Dataset."""
 
 

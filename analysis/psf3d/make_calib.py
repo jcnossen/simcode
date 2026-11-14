@@ -22,9 +22,10 @@ if 'blur_px2' in ex:
     else: c['psf_blur_angle_px2'] = ex['blur_px2']
 if 'dipole_M' in ex: c['psf_dipole_M_angle'] = ex['dipole_M']
 if 'dipole_w' in ex:
-    if len(ex['dipole_w']) == 1: c['psf_dipole_w'] = ex['dipole_w'][0]
+    if len(ex['dipole_w']) == 1:      # (2026-11-14) the global key psf_dipole_w is no longer read: as a diagonal tensor
+        w = ex['dipole_w'][0]; c['psf_dipole_M'] = [[w[0] / 3, 0, 0], [0, w[1] / 3, 0], [0, 0, w[2] / 3]]
     else: c['psf_dipole_M_angle'] = [[[w[0] / 3, 0, 0], [0, w[1] / 3, 0], [0, 0, w[2] / 3]] for w in ex['dipole_w']]
-if 'saf' in ex: c['saf'] = ex['saf']
+if 'saf' in ex: raise SystemExit('fit extras contain saf: the calibration key saf is no longer read (2026-11-14)')
 if AVG:
     if 'psf_dipole_M_angle' in c:
         M = c.pop('psf_dipole_M_angle'); c['psf_dipole_M'] = [[(M[0][i][j] + M[1][i][j]) / 2 for j in range(3)] for i in range(3)]

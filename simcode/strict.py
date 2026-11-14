@@ -42,16 +42,11 @@ illumination envelope and the depth field (a global sigma threshold selects the 
                            (analysis/evalproto/strictq.py, covpool protocol, own-DME drift): occupied 20-nm bins / SIMCODE's =
                            0.98-1.02 (pass 1, automatic c and fixed c, all three movies; in-sample: the anchors come from these movies); see docs/RESULTS.md "Reproduce".
   --strict_q <q>           fixed q
-  --strict_sigma_ref <nm>  the earlier rule: q such that the product covers as many occupied 20-nm bins as the global set
-                           sigma <= s_ref. Valid only for the solve calibration it was derived on: 7.0 nm (pass 1) matches
-                           SIMCODE's coverage with the fixed-c calibration (--autoc 0) but NOT with the automatic c (the
-                           default; sigma is ~10-17 % larger there and the matched threshold is 7.6 / 8.2 / 8.2 nm, so 7.0 nm
-                           gives q 0.17 / 0.05 / 0.06 and 0.82 / 0.71 / 0.68 of SIMCODE's bins at 0.5 / 2.5 / 20 nM).
   Coverage = occupied 20-nm bins of the (optionally drift-corrected, --drift) positions in the crop. The strict product's
   sigma is overconfident in its best bins (winner's curse, 1.3-1.9x in sim): quote NN / GT RMS for it, never its sigma.
 The crop (x0, y0, size px) of the tiles and of the coverage is the output region of the run: read from the run's pass-1
 files (their 'crop' entry) unless --crop is given; (5, 5, 110) if neither is available.
-usage: python -m simcode.strict <out dir> [--tag est|est2] [--drift drift.npy] [--strict_q q | --strict_sigma_ref nm] [--format npz,csv]
+usage: python -m simcode.strict <out dir> [--tag est|est2] [--drift drift.npy] [--strict_q q] [--format npz,csv]
                                 [--sigma_max nm] [--u_max 0.45] [--subset main,u,strict] [--sig_u <json>] [--crop x0,y0,size]
 """
 import argparse, glob, json, os
@@ -106,13 +101,6 @@ def bin20(x, y, px_nm, crop=CROP):
     return iy * nb + ix
 
 
-def n_for_cov(keys_sorted, target):
-    """smallest N such that the first N rows (in this order) cover >= target distinct keys"""
-    u, first = np.unique(keys_sorted, return_index=True)
-    fi = np.sort(first)
-    return int(fi[min(target, len(fi)) - 1] + 1) if len(fi) else 0
-
-
 def run_crop(out):
     """output region (x0, y0, size) of a pipeline run: the 'crop' entry of its pass-1 files; CROP if there is none"""
     fs = sorted(glob.glob(f'{out}/pass1_*.npz'))
@@ -142,10 +130,10 @@ def q_from_density(rho, tag='est'):
     return float(np.interp(np.log(max(rho, 1e-6)), np.log(a[:, 0]), a[:, 1]))
 
 
-def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, yc=None, frame=None, tag='est', crop=CROP):
+def strict_product(x, y, sig, good, px_nm, q=None, xc=None, yc=None, frame=None, tag='est', crop=CROP):
     """-> (u [n] (nan where not good), strict [n] bool, info). x, y raw px; xc, yc drift-corrected px (coverage / tiles;
     default = raw); sig = mean calibrated sigma (px); frame = window starts (for the density rule).
-    q given -> fixed; else sigma_ref_nm given -> coverage of the global sigma <= sigma_ref set; else the density rule."""
+    q given -> fixed; else the density rule."""
     xc = x if xc is None else xc; yc = y if yc is None else yc
     x0, y0, sz = crop
     inc = good & (xc >= x0) & (xc < x0 + sz) & (yc >= y0) & (yc < y0 + sz)
@@ -158,13 +146,6 @@ def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, y
     keys = bin20(xc[ii], yc[ii], px_nm, crop)
     if q is not None:
         info.update(mode='fixed')
-    elif sigma_ref_nm is not None:
-        ref = sig[ii] * px_nm <= sigma_ref_nm
-        target = len(np.unique(keys[ref]))
-        ou = np.argsort(ug, kind='stable')
-        Nq = n_for_cov(keys[ou], target)
-        q = float(ug[ou[Nq - 1]]) if Nq else 0.0
-        info.update(mode='sigma_ref', sigma_ref_nm=sigma_ref_nm, coverage_target_bins=int(target))
     else:
         if frame is None: raise ValueError('the density rule needs the window starts (frame)')
         n_starts = len(np.unique(frame))
@@ -178,9 +159,6 @@ def strict_product(x, y, sig, good, px_nm, q=None, sigma_ref_nm=None, xc=None, y
                 coverage_bins_good=int(len(np.unique(keys))), median_sigma_nm=float(np.median(sig[ii[sel]]) * px_nm) if sel.any() else float('nan'),
                 median_photons=None)
     return u, strict, info
-
-
-SIGMA_REF = {'est': 7.0, 'est2': 7.4}   # the earlier sigma_ref rule's values (fixed-c calibration); opt-in only
 
 
 def precision_nm(T, px_nm=None):
@@ -233,7 +211,7 @@ def write_subset(T, path_base, rule='main', u_max=None, sigma_max=None, px_nm=No
     return fn
 
 
-def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_ref_nm=None, sig_u=None, crop=None, u_max=U_MAX,
+def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, *, sig_u=None, crop=None, u_max=U_MAX,
                 sigma_max=SIGMA_MAX_NM):
     """pipeline output dir -> (table dict of numpy columns, info dict). sig_u (2026-11-11, opt-in; None = unchanged): json of a
     selection-aware sigma rescale sx, sy x g(strict_u) (analysis/psf3d_nets/sigcal.py; keys u_mid, g), applied to the good rows after
@@ -261,7 +239,7 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, strict_q=None, sigma_
         xc = T['x'] - d[fi, 0]; yc = T['y'] - d[fi, 1]
         T['x_dc'] = xc; T['y_dc'] = yc
     sig = 0.5 * (T['sx'] + T['sy']).astype(np.float64)
-    u, strict, info = strict_product(T['x'], T['y'], sig, T['good'], px_nm, q=strict_q, sigma_ref_nm=sigma_ref_nm, xc=xc, yc=yc,
+    u, strict, info = strict_product(T['x'], T['y'], sig, T['good'], px_nm, q=strict_q, xc=xc, yc=yc,
                                      frame=T['frame'], tag='est2' if tag.startswith('est2') else 'est', crop=crop)
     T['strict_u'] = u.astype(np.float32); T['strict'] = strict
     info.update(u_max=float(u_max), n_u=int(select(T, 'u', u_max=u_max).sum()), crop=list(crop))
@@ -306,8 +284,6 @@ def main(argv=None):
     ap.add_argument('--px_nm', type=float, default=0.0, help='pixel size (nm); default: from the run (runtime.json calib) or 108.33')
     ap.add_argument('--drift', default='', help='drift [F,2] px (.npy, .npz with key drift, or a DME v2 result npz), subtracted at frame + 3')
     ap.add_argument('--strict_q', type=float, default=None, help='fixed per-tile quantile (default: from the row density)')
-    ap.add_argument('--strict_sigma_ref', type=float, default=None,
-                    help='nm; opt-in earlier rule (7.0 pass 1 / 7.4 pass 2, valid with the fixed-c calibration --autoc 0 only)')
     ap.add_argument('--format', default='npz')
     ap.add_argument('--sig_u', default='', help='opt-in selection-aware sigma rescale json (analysis/psf3d_nets/sigcal.py)')
     ap.add_argument('--sigma_max', type=float, default=SIGMA_MAX_NM, help='nm; threshold of the main selection (max(sx, sy) <= sigma_max on the rows with a rank; stored in the table)')
@@ -320,7 +296,7 @@ def main(argv=None):
     if a.sig_u:
         from simcode import config
         a.sig_u = config.resolve(a.sig_u)                # a path, or a name relative to the models directory
-    T, info = build_table(a.out, a.tag, px, a.drift or None, a.strict_q, a.strict_sigma_ref, a.sig_u or None,
+    T, info = build_table(a.out, a.tag, px, a.drift or None, a.strict_q, sig_u=a.sig_u or None,
                           crop=[float(v) for v in a.crop.split(',')] if a.crop else None, u_max=a.u_max, sigma_max=a.sigma_max)
     if a.dest: os.makedirs(a.dest, exist_ok=True)
     base = os.path.join(a.dest or a.out, a.name or ('locs_p1' if a.tag == 'est' else 'locs_p2' if a.tag == 'est2' else f'locs_{a.tag}'))
