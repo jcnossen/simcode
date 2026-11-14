@@ -26,6 +26,8 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
 |---|---|
 | `run.py` | User entry point: `python -m simcode.run --movie … --calib … --out … [--model m1809]`, or `--dataset <name>` for a paper dataset. Runs all stages; finished stages are skipped. |
 | `strict.py` | Builds the localization table from a pipeline output directory, with the score `strict_u` and the stored `u_max` (the paper's selection is strict_u ≤ u_max: `select(table)`), and the columns `sel`, `strict`. Writes subset files (`--subset`). Also a CLI. |
+| `dataset.py` | `Dataset` (alias `Localizations`): a localization table as an object. Columns as numpy arrays (extra fields: `addFields`), metadata, drift. Loads a run directory (`from_run(dir, pass_=2)`), v2 tables, the preprint code's `.npy` / hdf5, Picasso hdf5, ThunderSTORM csv, the paper's DECODE tables; `select('main')` (= `strict.select`), filters, crop, merge, DME v2 drift (estimate / apply / undo), `render`, `frc`; saves npz (lossless), Picasso hdf5, ThunderSTORM csv, `.npy`. Usage: `docs/USAGE.md`. |
+| `locs.py` | Re-exports `dataset.py` (`Localizations` = `Dataset`). |
 | `models.json` | The single definition of the models (m1809, m25, g13, m1809g; called network sets / `netsets.json` until 2026-11-14), the default model, and the paper's datasets (`_production`). |
 | `config.py` | All paths (models, data, outputs, 4Pi work directory, 4Pi data, external DME) from environment variables, `simcode.json` or defaults; `model_set(name)` (alias `netset`). No path is hard-coded elsewhere. |
 | `core.py` | Pattern geometry helpers used by the explicit solve (illumination at a position, fringe shifts, kinetics start values). |
@@ -168,5 +170,5 @@ A movie is processed in 6-frame windows (2 pattern angles × 3 phase steps), one
   - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF calibration files).
   - `gate/`, `figures/`, `evalproto/`, `hd_compare/`, `simreal/`, `speed/`, `tput/`, `dme/`, `psfshape/`: benchmarks and development figures; `results/` holds text snapshots of their outputs.
 - `models/`: calibrations (`calib/`, `insitu/`); network weights are not in git (`models/README.md`).
-- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_fileio.py` (CPU: readers, work driver, config names), `check_imports.py` (static check of the tree), `check_checkpoints.py`, `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
+- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_fileio.py` (CPU: readers, work driver, config names), `test_tables.py` (CPU: table columns, selections, FRC), `test_dataset.py` (CPU: the `Dataset` class: formats, selection, drift, render, FRC against `analysis/paper/frc_fair.py`; one short DME call on the GPU when available), `check_imports.py` (static check of the tree), `check_checkpoints.py`, `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
 - `docs/`: method, evaluation, results, the PSF polarization note, the cleanup plan and log.

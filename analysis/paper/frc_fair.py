@@ -34,22 +34,19 @@ CROP = EP.CROP            # (x0, y0, size) px
 
 
 def load(kind, path):
-    """-> dict x, y (px, sensor, pixel centre = integer, x = column), f (window start), sx, sy (px), photons"""
+    """-> dict x, y (px, sensor, pixel centre = integer, x = column), f (window start), sx, sy (px), photons.
+    Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package)."""
+    from simcode.dataset import Dataset
     if kind in ('smlm', 'sf'):
-        from smlmtorch import Dataset
-        from smlmtorch.simflux.dataset import SFDataset
-        ds = SFDataset.load(path) if path.endswith('.npy') else Dataset.load(path)
-        return dict(x=ds.pos[:, 0].astype(np.float64), y=ds.pos[:, 1].astype(np.float64), f=ds.frame.astype(np.int64),
-                    sx=ds.crlb.pos[:, 0].astype(np.float64), sy=ds.crlb.pos[:, 1].astype(np.float64), photons=ds.photons.astype(np.float64))
-    z = np.load(path)
-    if kind == 'decode':
-        return dict(x=z['x'].astype(np.float64), y=z['y'].astype(np.float64), f=z['frame'].astype(np.int64),
-                    sx=z['sx'].astype(np.float64), sy=z['sy'].astype(np.float64), photons=z['phot'].astype(np.float64))
-    if kind == 'v2':
-        m = z['sel'].astype(bool)
-        return dict(x=z['x'][m].astype(np.float64), y=z['y'][m].astype(np.float64), f=z['frame'][m].astype(np.int64),
-                    sx=z['sx'][m].astype(np.float64), sy=z['sy'][m].astype(np.float64), photons=z['photons'][m].astype(np.float64))
-    raise ValueError(kind)
+        L = Dataset.from_smlmtorch_npy(path, window=GRID) if path.endswith('.npy') else Dataset.from_picasso(path, window=GRID)
+    elif kind == 'decode':
+        L = Dataset.from_decode(path, window=GRID)
+    elif kind == 'v2':
+        L = Dataset.from_table(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel.astype(bool)]
+    else:
+        raise ValueError(kind)
+    return dict(x=L.x.astype(np.float64), y=L.y.astype(np.float64), f=L.frame.astype(np.int64), sx=L.sx.astype(np.float64),
+                sy=L.sy.astype(np.float64), photons=L.photons.astype(np.float64))
 
 
 def in_crop(x, y, crop=CROP):

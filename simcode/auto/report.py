@@ -26,17 +26,16 @@ def _fmt(v):
     return s if len(s) < 300 else s[:300] + ' ...'
 
 
-def frc_of(T, px_nm, sel=None):
-    from simcode.evalproto.frc import frc_halves
-    m = np.ones(len(T['x']), bool) if sel is None else sel
-    x, y, f = T['x'][m], T['y'][m], T['frame'][m]
+def frc_of(L, px_nm, sel=None):
+    """FRC (300-frame block halves) of the rows sel of a simcode.dataset.Dataset table, after its DME v2 drift (estimated
+    on the whole table) when that is available -> (frc nm, True or the reason for no drift correction, drift or None)"""
     try:
-        from simcode.util.drift import drift_of_table
-        d = drift_of_table(T)
-        x = x - d[np.clip(f + 3, 0, len(d) - 1), 0]; y = y - d[np.clip(f + 3, 0, len(d) - 1), 1]; dr = True
+        d = L.estimate_drift(); dr = True
     except Exception as e:
         d, dr = None, f'no drift correction ({type(e).__name__}: {e})'
-    return float(frc_halves(x, y, f, px_nm=px_nm)), dr, d
+    S = L if sel is None else L[sel]
+    if d is not None: S.apply_drift()
+    return float(S.frc(px_nm=px_nm)), dr, d
 
 
 def run(ds):
@@ -95,11 +94,10 @@ def run(ds):
         last = 'locs_p2' if 'locs_p2' in S else 'locs_p1'
         f = os.path.join(pr['run'], last + '.npz')
         if os.path.exists(f):
-            from simcode import strict as SP
-            T = dict(np.load(f))
+            from simcode.dataset import Dataset
             try:
-                sel = SP.select(T)
-                v, dr, D = frc_of(T, px, sel)
+                L = Dataset.from_table(f); sel = L.mask('main')
+                v, dr, D = frc_of(L, px, sel)
                 R['frc'] = dict(table=last, selection='main', n=int(sel.sum()), frc_nm=v, drift=dr)
                 parts.append(_tab([['FRC (main selection, 300-frame block halves)', f'{v:.2f} nm, {int(sel.sum())} rows, drift {dr}']]))
                 if D is not None:
