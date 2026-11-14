@@ -105,7 +105,7 @@ psf:                               # stage d
 train:                             # stage e
   model: null                      # null = 'a<name>'; an existing model name / model folder = skip training and use it
   quick: false                     # few steps per trainer (plumbing test)
-  steps: {det: 40000, hd: 18000, p2det: 40000, p2head: 24000, p2headL: 50000}
+  steps: {det: 40000, hd: 18000, p2det: 40000, p2det_c: 40000, p2head: 24000, p2headL: 50000, p2headL2: 50000}
   init: {det: null, hd: hd_sc5nb.pt}
   extra: {det: '', hd: '', p2: ''}   # extra trainer flags (e.g. g13: --dens 0.0005,0.06 --tau 3,80)
   gates: {sigma_zcal: [0.9, 1.15], rms_ratio_max: 1.05}
@@ -306,9 +306,11 @@ if a calibration fit has no matched targets the template calibrations are copied
 |---|---|---|
 | det | `simcode.det.up2 train --up 1 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --em_photons 40,2500 --seed 0` | 40000 / 30 |
 | hd | `simcode.hd.sc4 train --arch sc4n --init hd_sc5nb.pt --det <det> --lr 1.5e-4 --ch 96 --paper 1 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
-| p2det | `simcode.p2.det2 train --init_n1 <det> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11` | 40000 / 30 |
-| p2head | `simcode.p2.head2 train --det <p2det ckpt 25k> --init <hd> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0` (+ `--pgen <json>` when the generic pass-2 option is adopted) | 24000 / 30 |
-| p2headL | `simcode.p2.head2 train --det <p2det> --init <p2head> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15` | 50000 / 30 |
+| p2det | `simcode.p2.det2 train --init_n1 <det> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 --p_std 0.25` | 40000 / 30 |
+| p2det_c | `simcode.p2.det2 train --init <p2det> --init_n1 <det> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 --p_std 0.5` (the model's pass-2 detector) | 40000 / 30 |
+| p2head | `simcode.p2.head2 train --det <p2det ckpt 25k> --init <hd> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0 --pert_model v1 --p_std 0.25` | 24000 / 30 |
+| p2headL | `simcode.p2.head2 train --det <p2det> --init <p2head> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15 --p_std 0.25` | 50000 / 30 |
+| p2headL2 | `simcode.p2.head2 train --det <p2det> --init <p2headL> --lr 1e-4 --pct 0.05 --seed 41 --no_illum 0 --pert_model real --hold_v1 0 --p_std 0.5` (the model's pass-2 head) | 50000 / 30 |
 | gates | `simcode.hd.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.p2.dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
@@ -319,7 +321,8 @@ fitted on a simulated movie with ground truth, `analysis/psf3d_nets/sigcal.py`) 
 runs without it (the model's `sig_u` is empty).
 
 Cost of a full stage e on an idle RTX 3090 (measured on the m1809 / m25 / g13 chains): det 0.65 + hd 0.65 + p2det 1.1 +
-p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-rescale sim movie ~0.5 GPU-h.
+p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c ~1.1 and p2headL2 ~2.5 (same step counts)
+= ~10.4 GPU-h; gates + dumps + calibs ~1.5 GPU-h, sigma-rescale sim movie ~0.5 GPU-h.
 
 ## 7. Instrument assumptions that block a new setup, and how the config resolves them
 
@@ -334,7 +337,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, gates + dumps + calibs ~1.5 GPU-h, sigma-r
 | 7 | `hd/realsim.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in realsim / plib / sigcal | stage e: in-memory preset patch (`simcode/auto/runwrap.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
 | 8 | gate photon settings hard-coded in `hd/gate.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
-| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | stage e trains pass 2 with the dataset's pattern; the generic pass-2 option (`--pgen`, other worker) is used when it is adopted |
+| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `hd/realsim.RealSim._generic`) in a share 1 - `--p_std` of the FOVs and the dataset's own pattern (preset patch) in the others |
 
 ## 8. Proposed changes in files this work does not edit
 
@@ -413,7 +416,7 @@ selection 18.84 nm / 126 618 rows with the final auto calibration (thr 3.5), 18.
 | cammaps + tracks | 1 min CPU | 2 min CPU |
 | beads | ~10 min GPU (shared) | - |
 | psf (5 starts, bl, ps3, held-out) | ~9 min GPU (~6 min with `psf.lut`) | ~25 min on a shared GPU |
-| train (full recipe) | 6.8 GPU-h training + ~1.5 GPU-h gates / dumps / calibrations (+ ~0.5 GPU-h for a sig_u sim movie, not wrapped) | same (+ wall time on shared GPUs 2x) |
+| train (full recipe) | ~10.4 GPU-h training + ~1.5 GPU-h gates / dumps / calibrations (+ ~0.5 GPU-h for a sig_u sim movie, not wrapped) | same (+ wall time on shared GPUs 2x) |
 | process | ~1.8 GPU-h (pass 1 + 2, full movie) | ~0.2 GPU-h pass 1 (pass 2 needs the generic pass-2 nets) |
 | report (DME drift + FRC) | ~2 min CPU / GPU | ~1.5 min |
 | total | ~10.5 GPU-h | ~9 GPU-h |

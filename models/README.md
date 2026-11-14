@@ -61,20 +61,33 @@ python -m simcode.det.up2 train --out runs/S/det --steps 40000 --batch 16 --size
 python -m simcode.hd.sc4 train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det runs/S/det/final.pt \
     --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --ckpt_every 6000 --calib $C
+# pass 2 (generic pattern draw, share --p_std of the SIMCODE pattern): detector, then its continuation
 python -m simcode.p2.det2 train --out runs/S/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
-    --eval_every 2500 --ckpt_every 5000 --init_n1 runs/S/det/final.pt --calib $C
+    --eval_every 2500 --ckpt_every 5000 --init_n1 runs/S/det/final.pt --calib $C --p_std 0.25
+python -m simcode.p2.det2 train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --init_n1 runs/S/det/final.pt --calib $C --p_std 0.5
+# pass-2 head: three stages (candidates from the first pass-2 detector runs/S/p2det)
 python -m simcode.p2.head2 train --out runs/S/p2head --det runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 \
-    --pert_model v1 --calib $C
+    --pert_model v1 --calib $C --p_std 0.25
 python -m simcode.p2.head2 train --out runs/S/p2headL --det runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
-    --hold_v1 15 --calib $C
-# -> models/det_S.pt, hd_S.pt, p2det_S.pt, p2headL_S.pt (the four final.pt)
+    --hold_v1 15 --calib $C --p_std 0.25
+python -m simcode.p2.head2 train --out runs/S/p2headL2 --det runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
+    --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 41 --eval_every 5000 --ckpt_every 10000 --no_illum 0 \
+    --hold_v1 0 --calib $C --p_std 0.5
+# -> det_S.pt, hd_S.pt = runs/S/det, hd; p2det_S.pt = runs/S/p2det_c; p2headL_S.pt = runs/S/p2headL2 (final.pt)
 ```
+Pass 2 is trained on generic illumination patterns (since 2026-11-14 the only pass-2 training draw; `hd/realsim.RealSim._generic`,
+out/p2generic): per FOV, with probability 1 - `--p_std`, pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg
+(separation 60-120 deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, per-angle
+depth 0.5-1.0 and per-slot / per-angle power 0.8-1.25; the other FOVs keep the SIMCODE (DMD) pattern. So a model's pass 2
+accepts any measured two-orientation pattern (nanoruler, 4-step, random phases), at 0-2 % cost on SIMCODE patterns vs the
+earlier pass 2 trained on the SIMCODE pattern only (out/p2generic/STATUS.md, out/z3d/STATUS.md).
 Since 2026-11-14 the trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,2500`, `--arch sc4n`,
 `--paper 1`, `--bright_tail 0.1,2000,20000`, `--pert_model real`); the old command lines still run (the removed flags are
 accepted with exactly these values). `--calib` is required.
-Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other three trainers.
+Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
 Calibrations: `python -m simcode.p2.dump` of the new networks on the gate scenes rendered with the model's PSF
 (`SIMCODE_GATE_CALIB=$C`), then `analysis/psfmatch/fit_cal_set.py` (templates: the hd_sc5nb calibrations above), then the
 sigma rescale `analysis/psf3d_nets/sigcal.py fit` on a simulated movie with ground truth.
