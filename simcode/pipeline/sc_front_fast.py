@@ -343,8 +343,10 @@ class Pass2P2Fast:
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
-    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024,
-                  streams=True, solve_batch=16384, timing=None, return_head=False):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64,
+                  head_batch=1024, streams=True, solve_batch=16384, timing=None, return_head=False):
+        """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: z from pass 1
+        (= p2.front.Pass2P2.run_chunk; sc.pass1_z_columns)"""
         from simcode.hd import msolve_fast as MF
         dev = self.dev
         timing = timing if timing is not None else {}
@@ -365,9 +367,9 @@ class Pass2P2Fast:
         PWall = torch.stack([PF[s0:s0 + T] for s0 in starts])                   # [nW,T,5]
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
-        outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz')
+        outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy')
         q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, head_batch=head_batch, streams=streams, outs=outs, ev=ev)
-        oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']; oh.update(self.SCM.head_z(self.head, oh))
+        oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         tc, fabs, keep = _flags(I, ws, oh['x'] + X0, oh['y'] + Y0, l0, starts[-1], crop, own0, own1, dev)
@@ -375,12 +377,11 @@ class Pass2P2Fast:
         o = {kk: v[k_] for kk, v in oh.items()}
         bw = q['w'][k_]
         done = ev.rec('solve')
-        acc = {k: [] for k in ('r', 's_cal', 'q', 'kin', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
+        acc = {k: [] for k in ('r', 's_cal', 'q', 'kin')}
         for c0 in range(0, len(k_), solve_batch):
             sl = slice(c0, c0 + solve_batch)
             oc = {kk: v[sl] for kk, v in o.items()}
             so = MF.sc_solve_fast(oc, PWall, bw[sl], scal, compile=self.compile)
-            so.update(self.SCM.z_columns(oc, so))
             for k in acc: acc[k].append(so[k])
         done()
         so = {k: torch.cat(v) if v else torch.zeros((0, 2) if k in ('r', 's_cal') else 0, device=dev) for k, v in acc.items()}
@@ -391,7 +392,9 @@ class Pass2P2Fast:
                  sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                  x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
                  x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
-                 frame=fabs[k_], I_net=I[k_], **{k: so[k] for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')})
+                 frame=fabs[k_], I_net=I[k_])
+        r.update(self.SCM.pass1_z_columns(p1, p1_cal, r['wstart'], r['x_det'], r['y_det'], torch.stack([r['x_hy0'], r['y_hy0']], 1),
+                                          torch.stack([r['sx_cal'], r['sy_cal']], 1)))      # z from pass 1 (the pass-2 head's z is not used)
         R = _np(r); R['wstart'] = R['wstart'].astype(np.int64)
         for k, v in ev.totals().items(): timing[k] = timing.get(k, 0) + v
         timing['wall'] = timing.get('wall', 0) + time.time() - tw

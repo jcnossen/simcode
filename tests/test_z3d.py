@@ -5,6 +5,10 @@ of the solve. CPU / GPU, no model files needed except where marked. Run: python 
   - nll_p (x, y) + nll_z (z | x, y) = the full 3D Gaussian NLL of prior_cov (up to the constant 1.5 log 2 pi)
   - z_given_xy = generic Gaussian conditioning of the joint (x, y, z) prior on a measurement of x, y
   - z_target_px: (z_um - focus_um) / pixelsize_um
+  - link_pass1: one-to-one pass-2 row <-> pass-1 candidate (same window, detector points within 1 px, iterated mutual NN)
+  - pass1_z_columns: the pass-2 z = the linked pass-1 prior (prior_off removed) conditioned on the pass-2 solved x, y; NaN
+    without a partner; build_table (est2) -> Dataset: NaN z rows load, select and render; earlier pass-2 files (no p1_row)
+    give no z columns
 """
 import math, os, sys
 import torch
@@ -93,6 +97,89 @@ def test_z_target():
     from simcode.hd.data import z_target_px
     class S: focus = 0.15; c = {'pixelsize_um': 0.1}
     assert abs(float(z_target_px(torch.tensor(0.05), S)) + 1.0) < 1e-6
+
+
+def test_link_pass1():
+    import numpy as np
+    from simcode.hd.sc import link_pass1
+    rng = np.random.default_rng(5); n = 500
+    k1 = rng.integers(0, 20, n) * 3; x1 = rng.uniform(0, 100, n); y1 = rng.uniform(0, 100, n)
+    take = rng.permutation(n)[:400]                                     # pass 2 = 400 of them, jittered, shuffled + 30 extra
+    k2 = np.r_[k1[take], rng.integers(0, 20, 30) * 3]
+    x2 = np.r_[x1[take] + rng.normal(0, 0.05, 400), rng.uniform(200, 300, 30)]; y2 = np.r_[y1[take] + rng.normal(0, 0.05, 400), rng.uniform(0, 100, 30)]
+    j = link_pass1(k1, x1, y1, k2, x2, y2)
+    assert (j[400:] == -1).all()
+    # every jittered row finds its own candidate unless another candidate of the window is nearer (dense random points)
+    own = j[:400] == take
+    assert own.mean() > 0.97, own.mean()
+    assert len(np.unique(j[j >= 0])) == (j >= 0).sum(), 'not one-to-one'
+    # chain: pass-2 A (0.0), B (0.6); pass-1 a (0.35), b (-0.5): round 1 links B-a (mutual), round 2 A-b
+    j = link_pass1([0, 0], [0.35, -0.5], [0, 0], [0, 0], [0.0, 0.6], [0, 0])
+    assert list(j) == [1, 0], j
+    # other window / beyond 1 px: no partner
+    assert list(link_pass1([0], [0.0], [0.0], [3, 0], [0.0, 1.0], [0.0, 0.0])) == [-1, -1]
+
+
+def test_pass1_z_columns():
+    import numpy as np
+    from simcode.hd.sc import pass1_z_columns, z_given_xy
+    rng = np.random.default_rng(2); n1 = 50
+    P1 = dict(wstart=np.repeat(np.arange(5) * 3, 10).astype(np.int64), x_det=rng.uniform(10, 60, n1), y_det=rng.uniform(10, 60, n1))
+    P1.update(x=P1['x_det'] + rng.normal(0, 0.1, n1), y=P1['y_det'] + rng.normal(0, 0.1, n1), z=rng.normal(-0.5, 0.3, n1),
+              sz=rng.uniform(0.1, 0.4, n1), bzx=rng.normal(0, 0.5, n1), bzy=rng.normal(0, 0.5, n1))
+    P1 = {k: np.asarray(v, np.float32) if k != 'wstart' else v for k, v in P1.items()}
+    sel = np.r_[3, 17, 25, 49]
+    ws = np.r_[P1['wstart'][sel], 99]; xd = np.r_[P1['x_det'][sel] + 0.1, 30.0]; yd = np.r_[P1['y_det'][sel] - 0.1, 30.0]
+    r = torch.tensor(np.c_[xd + 0.05, yd - 0.02], dtype=torch.float32); s = torch.full((5, 2), 0.1)
+    cal1 = dict(prior_off=[0.02, -0.01])
+    Z = pass1_z_columns(P1, cal1, ws, xd, yd, r, s)
+    assert list(Z['p1_row'].numpy()) == list(sel) + [-1]
+    o = dict(z=torch.tensor(P1['z'][sel]), lsz=torch.tensor(np.log(P1['sz'][sel])), bz=torch.tensor(np.c_[P1['bzx'][sel], P1['bzy'][sel]]))
+    r0 = torch.tensor(np.c_[P1['x'][sel] - 0.02, P1['y'][sel] + 0.01])
+    z, sz, cov = z_given_xy(o, r[:4], r0, s[:4])
+    assert torch.allclose(Z['z_hy0'][:4], z, atol=1e-5) and torch.allclose(Z['sz_cal'][:4], sz, atol=1e-6)
+    assert torch.allclose(Z['cov_xz'][:4], cov[:, 1]) and torch.allclose(Z['cov_yz'][:4], cov[:, 2])
+    assert torch.allclose(Z['z_prior'][:4], o['z'])
+    assert all(torch.isnan(Z[k][4]) for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior'))
+
+
+def _pass2_files(d, n, rng, p1_row=True):
+    import numpy as np
+    R = dict(wstart=(rng.integers(0, 100, n) * 3).astype(np.int64), x_hy0=rng.uniform(10, 100, n).astype(np.float32),
+             y_hy0=rng.uniform(10, 100, n).astype(np.float32), sx_cal=rng.uniform(0.02, 0.2, n).astype(np.float32),
+             sy_cal=rng.uniform(0.02, 0.2, n).astype(np.float32), phot=rng.uniform(100, 3000, n).astype(np.float32),
+             p=rng.uniform(0.3, 1, n).astype(np.float32), q_dof=np.ones(n, np.float32), kin_hy=np.zeros(n, np.float32),
+             I_net=rng.uniform(10, 500, (n, 6)).astype(np.float32), z_hy0=rng.normal(-0.5, 0.3, n).astype(np.float32),
+             sz_cal=np.full(n, 0.3, np.float32), cov_xz=np.full(n, 1e-3, np.float32), cov_yz=np.full(n, -2e-3, np.float32),
+             z_prior=rng.normal(-0.5, 0.3, n).astype(np.float32))
+    R['frame'] = R['wstart'] + 2.5; R['x_prior'] = R['x_hy0']; R['y_prior'] = R['y_hy0']
+    if p1_row:
+        R['p1_row'] = np.arange(n); R['p1_row'][::10] = -1
+        for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior'): R[k][::10] = np.nan
+    np.savez(os.path.join(d, 'pass2_est2_0.npz'), **R)
+    return R
+
+
+def test_table_pass2_z(tmp_path=None):
+    """build_table (est2): the pass-1 z columns, NaN rows without a partner -> Dataset pos [n, 3] (NaN z), selection and render
+    fine; pass-2 files of an earlier run (no p1_row: the pass-2 head z) -> no z columns"""
+    import tempfile, numpy as np
+    from simcode import strict as SP
+    from simcode.dataset import Dataset
+    rng = np.random.default_rng(4); n = 300
+    d = str(tmp_path or tempfile.mkdtemp())
+    R = _pass2_files(d, n, rng)
+    T, info = SP.build_table(d, 'est2', crop=(0, 0, 128))
+    assert np.isnan(T['z'][::10]).all() and np.isfinite(np.delete(T['z'], np.s_[::10])).all()
+    assert info['n_no_p1'] == n // 10 and 'p1_row' not in T and 'linked pass-1' in info['z']
+    SP.write_table(T, info, os.path.join(d, 'locs_p2'))
+    ds = Dataset.load_npz(os.path.join(d, 'locs_p2.npz'), info=False)
+    assert ds['pos'].shape == (n, 3) and torch.isnan(ds['pos'][::10, 2]).all()
+    img = ds.select(12, 0.63, False).render(pixel_nm=20)
+    assert np.isfinite(np.asarray(img)).all()
+    d2 = tempfile.mkdtemp(); _pass2_files(d2, n, rng, p1_row=False)
+    T2, info2 = SP.build_table(d2, 'est2', crop=(0, 0, 128))
+    assert 'z' not in T2 and info2['z'].startswith('none')
 
 
 def test_table_3d(tmp_path=None):

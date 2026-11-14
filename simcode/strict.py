@@ -164,8 +164,17 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
              q_dof=R['q_dof'].astype(np.float32), kin=R['kin_hy'].astype(bool),
              dnll=R['dnll'].astype(np.float32) if 'dnll' in R else np.full(n, np.nan, np.float32),
              x_prior=R['x_prior'].astype(np.float64), y_prior=R['y_prior'].astype(np.float64))
-    if 'z_hy0' in R:    # 3D heads (2026-11-14): z (px of the lateral pixel, relative to the PSF calibration's focal plane) after the
-        # solve (the head's z conditioned on the solved x, y), its sd and covariances with x, y (px^2); NaN for 2D heads
+    zinfo = ''
+    if 'z_hy0' in R and tag.endswith('2') and 'p1_row' not in R:
+        # pass-2 files written before the pass-1 z (2026-11-14) carry the pass-2 head's z, which is not used: no z columns
+        zinfo = 'none (pass-2 files without p1_row: the pass-2 head z of an earlier run is not used; re-run pass 2)'
+        print(f'build_table {out} [{tag}]: {zinfo}', flush=True)
+    elif 'z_hy0' in R:
+        # 3D heads (2026-11-14): z (px of the lateral pixel, relative to the PSF calibration's focal plane) after the solve, its
+        # sd and covariances with x, y (px^2); NaN for 2D heads. Pass 1 (est): the pass-1 head's z conditioned on the pass-1
+        # solved x, y. Pass 2 (est2): the LINKED PASS-1 candidate's z prior conditioned on the pass-2 solved x, y
+        # (sc.pass1_z_columns; NaN for rows without a pass-1 partner, p1_row = -1)
+        zinfo = 'pass 1: the pass-1 head z | pass-1 x, y' if not tag.endswith('2') else 'pass 1: the linked pass-1 head z | pass-2 x, y'
         T.update(z=R['z_hy0'].astype(np.float64), sz=R['sz_cal'].astype(np.float32), cov_xz=R['cov_xz'].astype(np.float32),
                  cov_yz=R['cov_yz'].astype(np.float32), z_prior=R['z_prior'].astype(np.float64))
     T['good'] = T['p'] >= P_GOOD
@@ -191,6 +200,9 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
     k = select(T, sigma_max, crop=crop, px_nm=px_nm)
     info.update(main_rule='max(sx, sy) * px_nm <= sigma_max on the rows with p >= 0.63 inside the crop', sigma_max=float(sigma_max),
                 n_main=int(k.sum()), median_photons=float(np.median(T['photons'][k])) if k.any() else float('nan'))
+    if zinfo: info['z'] = zinfo
+    if 'z' in T and 'p1_row' in R:      # pass-2 rows without a pass-1 partner (z NaN): all rows / the paper's selection
+        info.update(n_no_p1=int((R['p1_row'] < 0).sum()), n_main_no_p1=int((R['p1_row'][k] < 0).sum()))
     info.update(tag=tag, n_rows=int(n), n_good=int(T['good'].sum()), n_sel=int(T['sel'].sum()), drift=drift or '',
                 columns={k: str(v.dtype) + ('' if v.ndim == 1 else f'[{v.shape[1]}]') for k, v in T.items()})
     return T, info

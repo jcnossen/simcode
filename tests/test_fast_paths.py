@@ -10,7 +10,8 @@ the 1809/2 production run with that set (tests/data/pattern_est_1809_2.pt). Chec
          run with a different window batch, which changes the cuDNN algorithms) + 1e-6
   pattern solve (sc.sc_solve vs msolve_fast.sc_solve_fast): median |dr| < 1e-5 px (compiled LM step: < 5e-5 px), p99 < 2e-3 px (the original
     solve's own sensitivity to a 1-ulp input change is p99.9 ~6e-4, max ~0.09 px), kinetic-model choice >= 99.9 % equal
-  pattern-aware pass 2 (Pass2P2 vs Pass2P2Fast, fp32): identical rows, |d prior| < 1e-4 px, solve positions as above
+  pattern-aware pass 2 (Pass2P2 vs Pass2P2Fast, fp32): identical rows, |d prior| < 1e-4 px, solve positions as above; the
+    z from pass 1: identical links to the pass-1 rows (> 90 % of the selection linked), z differences as the solve positions
 """
 import contextlib, json, os, sys
 import numpy as np, torch
@@ -171,10 +172,12 @@ def test_pass2_p2_fp32():
     A = Pass2P2(CALIB, head=P2H, det=P2D)
     B = Pass2P2Fast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
     B.det = A.det; B.head = A.head
+    from simcode.pipeline.sc_front_fast import Pass1SCFast
+    P1, _ = Pass1SCFast(CALIB, head=HEAD, det=DET).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
     A.head.bf16 = False
     with fp32_mode():
-        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, P2CAL)
-        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, P2CAL)
+        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, P2CAL, P1, SCAL)
+        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, P2CAL, P1, SCAL)
     A.head.bf16 = True
     Ra, Rb = canon(Ra), canon(Rb)
     ok, dd = same_cands(Ra, Rb, 1e-4)
@@ -183,7 +186,20 @@ def test_pass2_p2_fp32():
     assert dp < 1e-4, f'pass-2 prior |d| {dp:.2e}'
     d = np.abs(np.c_[Ra['x_hy0'] - Rb['x_hy0'], Ra['y_hy0'] - Rb['y_hy0']]).max(1)
     assert np.median(d) < 1e-5 and np.quantile(d, 0.99) < 2e-3, f'pass-2 solve median {np.median(d):.2e} p99 {np.quantile(d, 0.99):.2e}'
-    print(f'  ok pass2 (p2) fp32: n {len(d)} prior max|d| {dp:.1e} solve median {np.median(d):.1e} p99 {np.quantile(d, 0.99):.1e}')
+    # z from pass 1: the same links, z of the linked pass-1 candidate | pass-2 solved x, y (differences = the solve's)
+    assert np.array_equal(Ra['p1_row'], Rb['p1_row']), 'pass-1 links differ'
+    lk = Ra['p1_row'] >= 0
+    # linked share on this dense 2.5 nM-like chunk: 0.61 of all rows (the detectors disagree on dim p < 0.5 candidates), 0.94
+    # of the paper's selection (real 2.5 nM / 0.5 nM chunks: 0.98 / 0.99 of the selection)
+    s12 = (Ra['p'] >= 0.63) & (np.maximum(Ra['sx_cal'], Ra['sy_cal']) * 108.33 <= 12)
+    assert lk.mean() > 0.5 and lk[s12].mean() > 0.9, f'linked to pass 1: {lk.mean():.3f} of all rows, {lk[s12].mean():.3f} of the selection'
+    assert np.isnan(Ra['z_hy0'][~lk]).all() and np.isnan(Rb['z_hy0'][~lk]).all()
+    assert np.isfinite(Ra['z_hy0'][lk]).all() == np.isfinite(P1['z']).all()
+    assert np.array_equal(Ra['z_prior'][lk], P1['z'][Ra['p1_row'][lk]])
+    dz = np.abs(Ra['z_hy0'] - Rb['z_hy0'])[lk]
+    assert np.median(dz) < 1e-5 and np.quantile(dz, 0.99) < 2e-3, f'pass-2 z median {np.median(dz):.2e} p99 {np.quantile(dz, 0.99):.2e}'
+    print(f'  ok pass2 (p2) fp32: n {len(d)} prior max|d| {dp:.1e} solve median {np.median(d):.1e} p99 {np.quantile(d, 0.99):.1e}; '
+          f'linked to pass 1 {lk.mean():.3f} (selection {lk[s12].mean():.3f}), z median |d| {np.median(dz):.1e}')
 
 
 def test_prefetch_reader():

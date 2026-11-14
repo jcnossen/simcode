@@ -10,6 +10,10 @@ intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   Output rows: windows' central detections (time centroid in the central half, inside the crop, own frames) as pass 1,
   pass-2 format columns (x_hy0, y_hy0, sx_cal, sy_cal, sig_hy0, q_dof, phot, x_prior, y_prior, kin_hy, p, wstart, frame,
   I_net) + x_dir / y_dir / sx_dir / sy_dir (variant b: the pass-2 head prior itself with its sigma).
+  z (z_hy0, sz_cal, cov_xz, cov_yz, z_prior) from PASS 1 (2026-11-14; the pass-2 head's z is not used): each row is linked
+  to a pass-1 candidate of the same window (sc.link_pass1: detector points, one-to-one, 1 px; p1_row = its index in
+  pass1_<f0>.npz, -1 = none -> z NaN) and that candidate's 3D prior is conditioned on the pass-2 solved x, y
+  (sc.pass1_z_columns).
 Reference implementation (test oracle of simcode/pipeline/sc_front_fast.Pass2P2Fast, which the pipeline uses).
 """
 import json, time
@@ -36,7 +40,9 @@ class Pass2P2:
         self.dev = dev
 
     @torch.no_grad()
-    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
+        """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: the z columns come
+        from pass 1 (sc.pass1_z_columns: the linked pass-1 candidate's z prior conditioned on the pass-2 solved x, y)"""
         from simcode.p2 import illum as IL
         dev = self.dev; SCM, H2 = self.SCM, self.H2
         timing = timing if timing is not None else {}
@@ -75,7 +81,7 @@ class Pass2P2:
                 sl = slice(c0, c0 + 4096)
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
                 oh = H2.head_apply(self.head, self.col, *args)
-                r = dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}, **SCM.head_z(self.head, oh))
+                r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
@@ -96,7 +102,6 @@ class Pass2P2:
             o = {kk: v[k_] for kk, v in oh.items()}
             bw = b[k_]
             so = SCM.sc_solve(o, PW, bw, scal)
-            so.update(SCM.z_columns(o, so))
             sync(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
             sp = oh['lsxy'][k_].exp()
             ph = I[k_].sum(1)
@@ -104,10 +109,14 @@ class Pass2P2:
                      sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                      x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
                      x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
-                     frame=fabs[k_], I_net=I[k_], **{k: so[k] for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')})
+                     frame=fabs[k_], I_net=I[k_])
             rows.append({kk: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for kk, v in r.items()})
         R = {kk: np.concatenate([r_[kk] for r_ in rows]) for kk in rows[0]}
         R['wstart'] = R['wstart'].astype(np.int64)
+        tt = lambda v: torch.as_tensor(v, device=dev)
+        Z = SCM.pass1_z_columns(p1, p1_cal, R['wstart'], R['x_det'], R['y_det'], torch.stack([tt(R['x_hy0']), tt(R['y_hy0'])], 1),
+                                torch.stack([tt(R['sx_cal']), tt(R['sy_cal'])], 1))
+        R.update({k: v.cpu().numpy() for k, v in Z.items()})
         return R
 
 

@@ -182,13 +182,15 @@ def main(argv=None):
                 mv2 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
             for f0 in U.todo(chunks):
                 tm = {}; t0 = time.time()
-                O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, crop=crop, margin=a.margin, timing=tm,
+                P1 = dict(np.load(f'{a.out}/pass1_{f0}.npz'))       # z of the pass-2 rows from pass 1 (sc.pass1_z_columns)
+                O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, P1, a.sc_cal, crop=crop, margin=a.margin, timing=tm,
                                  det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch)
                 tm['total'] = time.time() - t0
                 Ub.save(f0, **direct_view(O), pattern=pf)       # the head-prior variant first: the chunk counts as done by the
                 U.save(f0, **O, pattern=pf)                      # main file, so a run killed in between repeats both
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
-                say(f'pass2 [{tag}] f0={f0}: {len(O["x_hy0"])} localizations; ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
+                say(f'pass2 [{tag}] f0={f0}: {len(O["x_hy0"])} localizations ({int((O["p1_row"] < 0).sum())} without a pass-1 partner: z NaN); '
+                    + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
             if prefetch: mv2.close()
     say('done')
 
