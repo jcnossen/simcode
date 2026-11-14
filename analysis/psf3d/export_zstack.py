@@ -6,7 +6,7 @@ emitter at z = 0, so the sum over the ROI is < 1):
   <name>        [nz, R, R]          pixel-integrated PSF, emitter at the centre of the centre pixel, R = 31
   <name>_os     [nz, R*os, R*os]    the same PSF at os = 4 x finer emitter shifts: element [iz, i, j] = pixel-integrated value of the
                                     pixel whose centre is (j/os - c, i/os - c) px from the emitter (c = (R - 1) / 2 = 15), i.e. the
-                                    shift-invariant pixel-integrated PSF g(u, v) on a 1/os px grid (the ConvCubicSplinePSF knot grid)
+                                    shift-invariant pixel-integrated PSF g(u, v) on a 1/os px grid (the CubicSplinePSF knot grid)
 z: emitter height above the coverslip, z_um = z0 + dz * arange(nz), z0 = -0.03, dz = 0.01, up to 0.23 um (fit range [0, 0.2] plus
 3 knots of spline padding); focus fixed at the calib's focus_um.  Pixel size pixelsize_um (0.10833).  x = column, y = row.
 usage: python analysis/psf3d/export_zstack.py <calib.json> <out.npz>"""

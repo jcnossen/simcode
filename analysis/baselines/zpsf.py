@@ -15,7 +15,7 @@ z-stack npz format (written by `python analysis/baselines/zpsf.py export <calib.
   z0_um, dz_um                  z_k = z0_um + k dz_um
   emitter_z_um (optional)       plane used by the 2D fits (default: the calib's emitter_z_median_um, else 0.055)
   focus_um, source (optional)   metadata
-The knots are interpolated with the Catmull-Rom 3D spline of torch_psf.ConvCubicSplinePSF.render (value and d/dx, d/dy, d/dz;
+The knots are interpolated with the Catmull-Rom 3D spline of torch_psf.CubicSplinePSF.render (value and d/dx, d/dy, d/dz;
 knot_spline wraps the stored stack: knots= / knot_u0_px / knot_z0_um).
 
 API: psf = load(spec); g, gx, gy = psf.eval(xc, yc, P[, z]) with xc, yc [N] = emitter position relative to the ROI centre (px;
@@ -27,7 +27,7 @@ import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.psf import ConvCubicSplinePSF
+from simcode.psf import CubicSplinePSF
 
 
 class GaussPSF:
@@ -49,9 +49,9 @@ class GaussPSF:
 
 
 def knot_spline(zstack, S, u0, z0, hz, P, xmax=None):
-    """torch_psf ConvCubicSplinePSF on a stored knot stack [nz, n, n] (knot origin u0 px, S knots per px, plane 0 at z0 um,
+    """torch_psf CubicSplinePSF on a stored knot stack [nz, n, n] (knot origin u0 px, S knots per px, plane 0 at z0 um,
     spacing hz um) for P x P ROIs (also even); offset limit P / 2 + 1 px (or xmax), reduced to what the knots support"""
-    return ConvCubicSplinePSF(P, (float(z0), float(z0) + (zstack.shape[0] - 1) * float(hz)), oversample=int(S), dz_um=float(hz),
+    return CubicSplinePSF(P, (float(z0), float(z0) + (zstack.shape[0] - 1) * float(hz)), oversample=int(S), dz_um=float(hz),
                               zpad=0, xy_limit=P / 2 + 1 if xmax is None else xmax, device=zstack.device,
                               knots=zstack.contiguous(), knot_u0_px=float(u0), knot_z0_um=float(z0))
 

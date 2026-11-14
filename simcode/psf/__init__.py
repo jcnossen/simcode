@@ -3,7 +3,7 @@ imports the PSF models, the PSF / calibration file reader, the fits, the movie r
 here, so a change of the torch_psf API is a change of this file only.
 
 From torch_psf (names as there): PSF (base class; PSF.load(path | dict, roisize, device, angle, oversample): calibration
-json or torch-psf PSF file -> model, angle = per-pattern-angle PSF; psf.to_spline), VectorialPSF, ConvCubicSplinePSF
+json or torch-psf PSF file -> model, angle = per-pattern-angle PSF; psf.to_spline), VectorialPSF, CubicSplinePSF
 (knots= / knot_u0_px / knot_z0_um wrap a stored knot array), GaussianPSF, Optics, Camera, ZStackEstimator (bead z-stacks),
 Dataset (localizations: torch_psf.dataset; SIMCODE's layer is simcode/dataset.py), TiffMovie, ArrayMovie, open_movie,
 solve_linear (closed-form I / bg of the variable projection), Tracks, fit_tracks (in-situ PSF fit on tracks),
@@ -22,7 +22,7 @@ SIMCODE-specific:
                                            offset limit P / 2 + 1 px, at the model's focus (or focus_um).
 """
 import torch
-from torch_psf import PSF, VectorialPSF, ConvCubicSplinePSF, GaussianPSF, Optics, Camera, ZStackEstimator, Dataset
+from torch_psf import PSF, VectorialPSF, CubicSplinePSF, GaussianPSF, Optics, Camera, ZStackEstimator, Dataset
 from torch_psf.movie import TiffMovie, ArrayMovie, open_movie
 from torch_psf.varpro import solve_linear
 from torch_psf.spots import Tracks
@@ -60,7 +60,7 @@ def render(psf, pos, **kw):
 
 
 def spline(psf, zmax=0.2, roisize=None, focus_um=None, oversample=6, dz_um=0.01, zpad=3, xy_limit=None, chunk=4):
-    """ConvCubicSplinePSF of psf (VectorialPSF or GaussianPSF) for roisize x roisize patches (default psf.roisize) and
+    """CubicSplinePSF of psf (VectorialPSF or GaussianPSF) for roisize x roisize patches (default psf.roisize) and
     emitter heights 0 .. zmax um at the focus psf.focus_um (or focus_um; vectorial only)"""
     P = psf.roisize if roisize is None else roisize
     kw = dict(oversample=oversample, dz_um=dz_um, zpad=zpad, xy_limit=P / 2 + 1 if xy_limit is None else xy_limit, chunk=chunk)

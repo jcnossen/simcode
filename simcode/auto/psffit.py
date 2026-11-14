@@ -8,7 +8,7 @@ conversion, the pattern-angle groups (frame % 6 // 3) and the photoselection hoo
 blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base (frozen = learning rate 0), checkerboard split.
 Writes <out>_psf.pt / _psf.json in the fit_insitu2 format.
 
-lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.ConvCubicSplinePSF)
+lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.CubicSplinePSF)
 of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
 (x, y, z gradients, varpro I / bg) run on the spline; the PSF parameters get the exact gradient of the spline loss over all
 samples by one backward pass through the table construction. Same optimizer, learning rates and iteration count as the
@@ -130,16 +130,16 @@ class Fit:
 
     # ---- spline table of the current model (section 4), differentiable in the PSF parameters
     def lut_init(self, sub=4, hz=0.01, xmax=2.0):
-        """spline geometry (one torch_psf.ConvCubicSplinePSF per pattern angle) and the knot-building model (roisize Pl), whose
+        """spline geometry (one torch_psf.CubicSplinePSF per pattern angle) and the knot-building model (roisize Pl), whose
         parameters are those of self.model"""
         m = self.model
-        self.luts = [spsf.ConvCubicSplinePSF(self.R, (0.0, self.zmax), oversample=sub, dz_um=hz, zpad=3, xy_limit=xmax, device=self.dev)
+        self.luts = [spsf.CubicSplinePSF(self.R, (0.0, self.zmax), oversample=sub, dz_um=hz, zpad=3, xy_limit=xmax, device=self.dev)
                      for _ in range(self.n_angles())]
         self.big = m.resized(self.luts[0].Pl)
         self.big.zcoef = m.zcoef; self.big.NA = m.NA; self.big.apod = m.apod; self.big.saf = m.saf   # shared parameters
 
     def lut_knots(self, k):
-        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = ConvCubicSplinePSF.knots_from_vectorial"""
+        """knots [nz, Pl S, Pl S] of angle k's PSF (graph to the PSF parameters), = CubicSplinePSF.knots_from_vectorial"""
         L, big = self.luts[k], self.big
         kw = self.kwargs(k)
         big.blur, big.dipM = kw.get('blur'), kw.get('dipM')

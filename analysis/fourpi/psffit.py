@@ -129,7 +129,7 @@ def summary(model):
 
 
 def render_knots(model, zmin, zmax, hz=0.01, S=4, P=15, xmax=2.0, chunk=512):
-    """oversampled knot stack g(u, v, z) for zpsf.knot_spline (same layout as torch_psf.ConvCubicSplinePSF): returns
+    """oversampled knot stack g(u, v, z) for zpsf.knot_spline (same layout as torch_psf.CubicSplinePSF): returns
     zstack [nz, Pl*S, Pl*S], u0, z0. Pl = big ROI covering P + 2 xmax."""
     c = int(math.ceil((P - 1) / 2 + xmax)) + 2; Pl = 2 * c + 1
     big = SumPSF(Pl, **{k: model.meta[k] for k in ('px', 'NA', 'n_imm', 'n_med', 'lam', 'two_arm', 'depth')},
