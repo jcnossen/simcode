@@ -22,6 +22,10 @@ Networks and calibrations come from a model (--model, simcode/models.json; defau
 --det / --head / --cal / --p2_det / --p2_head / --p2_cal override single files. Paths are relative to the models directory
 (simcode/config.py). --dataset <name> takes movie, calibration and model of a paper dataset from the '_production' entry of
 models.json (what the paper tables are made with).
+Run record: <out>/run_config.json (+ run_config.yaml), written at the start (status 'running') and completed at the end
+('done'): the fully resolved settings, sha256 of the movie / calibration / every model file, code commit, environment,
+pattern and selection outcome (simcode/util/runconfig.py; README "Run record").
+  python -m simcode.run --config <run_config.json> --out <new dir>     re-run with exactly the settings of a record
 Code path: queued batching, the exact fast solve, torch.compile of the solve's LM step when available.
 Set CUDA_VISIBLE_DEVICES to choose the GPU; several GPUs: the same command once per GPU with --claim 1
 (python -m simcode.fileio.launch --gpus 1,2 -- python -m simcode.run ... --claim 1): the chunks of pass 1 and pass 2 are
@@ -44,8 +48,11 @@ def _uncal(args):
     run_uncalibrated.main(args)
 
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1].strip(), formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--config', default='', help='run_config.json of an earlier run (or its directory): re-run with exactly its settings '
+                    '(movie, calibration, model files, crop, chunking, selection); arguments given after it override single settings; '
+                    'a warning is printed for every input file, git commit or fixed value that differs from the record')
     ap.add_argument('--dataset', default='', help="a paper dataset (models.json '_production': " + ', '.join(PROD['datasets']) + '): '
                     'sets --movie, --calib, --model')
     ap.add_argument('--movie', default='', help='movie .tif (further parts movie_X1.tif ... are found automatically)')
@@ -73,9 +80,13 @@ def main(argv=None):
     ap.add_argument('--sig_u', default='set', help='selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table); '
                     "'set' (default) = the rescale of the model; '' = none")
     ap.add_argument('--redo', type=int, default=0)
+    return ap
+
+
+def resolve(ap, argv):
+    """arguments -> (a, model dict, pass-1 solve calibration): the dataset, the model's files and the defaults filled in"""
     from simcode.util import retired
     a = ap.parse_args(retired.strip(argv, RETIRED, 'simcode.run'))
-    from simcode.util.proctitle import auto; auto('run')     # recognizable name in nvidia-smi / ps
     if a.dataset:
         D = PROD['datasets'].get(a.dataset)
         if D is None: ap.error(f'unknown dataset {a.dataset!r} ({", ".join(PROD["datasets"])})')
@@ -86,16 +97,101 @@ def main(argv=None):
     a.det = a.det or N['det']; a.head = a.head or N['head']; a.p2_det = a.p2_det or N['p2_det']; a.p2_head = a.p2_head or N['p2_head']
     a.p2_cal = a.p2_cal or N[f'p2_cal_{a.cal_kind}']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
+    # (2026-11-11) with an explicit --cal (e.g. a retrained head's calibration) its prior_off also feeds the pattern stage
+    cal = config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
+    return a, N, cal
+
+
+def settings_of(a, cal):
+    """the fully resolved settings of a run (run_config.json 'settings'): every argument after the defaults, files as absolute paths"""
+    from simcode import strict as SP
+    r = config.resolve
+    return dict(dataset=a.dataset, movie=r(a.movie, 'data'), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
+                det=r(a.det), head=r(a.head), cal=r(cal), p2_det=r(a.p2_det), p2_head=r(a.p2_head), p2_cal=r(a.p2_cal),
+                sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',
+                crop=a.crop, chunk=a.chunk, chunk_list=a.chunk_list, nframes=a.nframes,
+                sigma_max=SP.SIGMA_MAX_NM if a.sigma_max is None else a.sigma_max, u_max=SP.U_MAX if a.u_max is None else a.u_max,
+                strict_q=a.strict_q, drift=os.path.abspath(a.drift) if a.drift else '', subset=a.subset, format=a.format,
+                prefetch=a.prefetch, claim=a.claim, min_free_gb=a.min_free_gb, redo=a.redo)
+
+
+def fixed_values():
+    """what a run does that is not an option (run_config.json 'fixed'), read from the code so that an in-memory override shows"""
+    from simcode.pipeline import run_uncalibrated as RU, pattern_est as PE
+    from simcode.pipeline.common import CAND_PMIN
+    from simcode import strict as SP
+    d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
+    return dict(stages='pass 1, pattern estimation, pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
+                window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, autoc=0,
+                solve_c='fixed c: cmult / cmult_ang of the solve calibrations (model.files.cal / p2_cal, params)',
+                code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_head='off',
+                margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], head_batch=d['head_batch'],
+                solve_batch=d['solve_batch'], pattern_pitch_search_px=list(PE.estimate_k.__defaults__[0]),
+                strict_crop_default=list(SP.CROP), strict_q_density_anchors={k: [list(v) for v in a] for k, a in SP.Q_DENSITY.items()},
+                table_files='locs_p1 = tag est (sig_u pass 1), locs_p2 = tag est2 (sig_u pass 2)')
+
+
+def _from_config(path, rest):
+    """--config: (argv that reproduces the record + the arguments given after it, the record, its in-memory overrides)"""
+    from simcode.util import runconfig as RC
+    REC = RC.load(path)
+    if not REC.get('settings'): raise SystemExit(f'--config {path}: no settings in this record (status {REC.get("status")!r})')
+    M = REC.get('model') or {}
+    if M.get('name') and M.get('definition') and M['name'] not in config.model_sets():        # e.g. the model of an automatic-pipeline dataset
+        config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k != 'name'}
+    W = REC.get('overrides')
+    if W and not os.environ.get('AUTO_WRAP'):
+        from simcode.auto import runwrap
+        runwrap.apply({k: v for k, v in W.items() if k != 'title'})
+        print('simcode.run --config: applied the in-memory overrides of the record:', ', '.join(k for k in W if k != 'title'), flush=True)
+    return RC.rerun_argv(REC) + rest, REC, W
+
+
+def main(argv=None):
+    from simcode.util import runconfig as RC
+    argv = list(sys.argv[1:] if argv is None else argv); argv0 = list(argv)
+    ap = build_parser()
+    pre = argparse.ArgumentParser(add_help=False, allow_abbrev=False); pre.add_argument('--config', default='')
+    c, rest = pre.parse_known_args(argv)
+    REC = None; W = json.load(open(os.environ['AUTO_WRAP'])) if os.environ.get('AUTO_WRAP') else None
+    if c.config:
+        argv, REC, W0 = _from_config(c.config, rest); W = W or W0
+    a, N, cal = resolve(ap, argv)
+    a.model_name = N['name']
+    from simcode.util.proctitle import auto; auto('run')     # recognizable name in nvidia-smi / ps
     from simcode.fileio.work import Units, atomic_json
     os.makedirs(a.out, exist_ok=True)
+    # ---- the run record (run_config.json): written now with status 'running', completed at the end
+    S = settings_of(a, cal); FX = fixed_values()
+    su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
+    files = dict(det=S['det'], head=S['head'], cal=S['cal'], p2_det=S['p2_det'], p2_head=S['p2_head'], p2_cal=S['p2_cal'],
+                 sig_u_p1=config.resolve(su[0]) if su[0] else '', sig_u_p2=config.resolve(su[1]) if su[1] else '')
+    rerun_of = None
+    if REC is not None:
+        warn = RC.verify(REC, fixed=FX)
+        for w in warn: print('simcode.run --config: WARNING', w, file=sys.stderr, flush=True)
+        cf = c.config if os.path.isfile(c.config) else os.path.join(c.config, RC.NAME)
+        rerun_of = dict(config=os.path.abspath(cf), sha256=RC.sha256(cf), status_of_source=REC.get('status'), arguments_after_config=rest, differences=warn)
+    RC.log_command(a.out, 'simcode.run', argv0)
+    RC.start(a.out, S, FX, RC.model_record(N['name'], N, files), RC.calib_record(a.calib), RC.movie_record(a.movie, a.nframes, a.chunk, a.chunk_list),
+             overrides=W, rerun_of=rerun_of, argv=argv0)
+    try:
+        ST = _stages(a, N, cal, Units, atomic_json)
+    except BaseException as e:
+        RC.finish(a.out, error=f'{type(e).__name__}: {e}')
+        raise
+    from simcode import fastutil
+    RC.finish(a.out, timing=ST, extra=dict(torch_compile_used=fastutil._STATE.get('ok')))
+    print('done', json.dumps(ST), flush=True)
+
+
+def _stages(a, N, cal, Units, atomic_json):
     t00 = time.time(); ST = {}
     common = ['--movie', a.movie, '--calib', a.calib, '--out', a.out, '--crop', a.crop, '--chunk', str(a.chunk),
               '--prefetch', str(a.prefetch), '--redo', str(a.redo),
               '--claim', str(a.claim), '--min_free_gb', str(a.min_free_gb), '--sc_det', a.det, '--sc_head', a.head]
     if a.chunk_list: common += ['--chunk_list', a.chunk_list]
     if a.nframes: common += ['--nframes', str(a.nframes)]
-    # (2026-11-11) with an explicit --cal (e.g. a retrained head's calibration) its prior_off also feeds the pattern stage
-    cal = config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
@@ -117,7 +213,8 @@ def main(argv=None):
     u_max = SP.U_MAX if a.u_max is None else a.u_max
     sigma_max = SP.SIGMA_MAX_NM if a.sigma_max is None else a.sigma_max
     from simcode.pipeline.common import CAND_PMIN
-    summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.p2_cal, cand_pmin=CAND_PMIN)
+    summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.p2_cal, cand_pmin=CAND_PMIN,
+                run_config='run_config.json (the complete, resolved settings of this run)')
     tags = [('est', 'locs_p1'), ('est2', 'locs_p2')]
     su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
     wrote = False
@@ -136,7 +233,7 @@ def main(argv=None):
     summ['timing'] = ST
     if wrote or not os.path.exists(os.path.join(a.out, 'summary.json')):
         atomic_json(os.path.join(a.out, 'summary.json'), summ, indent=1, default=str)
-    print('done', json.dumps(ST), flush=True)
+    return ST
 
 
 if __name__ == '__main__':

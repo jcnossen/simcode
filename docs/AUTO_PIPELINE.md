@@ -188,6 +188,21 @@ fit only if it is newer than the tracks and was made from the same start. Each s
 and a list `checks` of `{name, value, range, ok}`; a failed check stops the run (unless `--force`) and is listed in
 the report. Process title: `simcode:auto-<stage>` (at most 20 characters).
 
+Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run record"):
+
+- `<out>/run_config.json` (+ `run_config.yaml`): the resolved config, the config file with its sha256, the code (git commit,
+  dirty flag, modified files, DME version) and the environment at the top; `stages.<name>` = when the stage ran, with which
+  commit, how many checks passed and where its summary is.
+- every `<stage>/summary.json` has `record`: start / end, code commit and dirty flag, host, sha256 of the resolved config.
+- `train`: the summary and `<out>/train/model.json` hold `_recipe` (the acquisition config, every command in order: the five
+  trainers, gate scenes, dumps, calibration fits, acceptance; steps, init files, gate seeds, overrides, code commit) and
+  `_files` (size + sha256 of every network and calibration; for the networks the trainer arguments stored in the checkpoint).
+  `simcode.auto.train.export_model(model_json, dest)` copies a model next to the data (e.g. `<data>/simcode_results/model/`):
+  the files, `model.json` with relative paths, `_recipe`, `_files`, and a README that points to them.
+- `process`: the run directory has the complete `run_config.json` of `simcode.run`, including the in-memory overrides
+  (`overrides` = the AUTO_WRAP json, with the model of stage e); `python -m simcode.run --config <that file> --out <new dir>`
+  re-applies them and reproduces the run (checked bit-identical on a quick model). The summary has its path (`run_config`).
+
 | stage | what | output (in `<out>/<stage>/`) | checks |
 |---|---|---|---|
 | `order` | only for `frame_order != blocked`: writes the movie with every complete 6-frame cycle permuted to the blocked order (as `analysis/nanoruler/reorder_any.py`), or verifies an existing `pattern.cache` (frame count, first-cycle checksum against the permutation) | `movie_blocked.tif` (on the data disk) | frame count = 6 x cycles; per-slot mean level |

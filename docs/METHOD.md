@@ -20,6 +20,16 @@ intensity fit is done anywhere in the method.
 | 5. pass 2 | Pattern-aware detector **p2_det** and head **p2_head_long** (p2L). They are det_n1 / sc5nb with extra input channels for the estimated illumination, zero-initialised and then fine-tuned with a realistic pattern-error model. Their output goes through the same pattern solve (the model's pass-2 calibration, e.g. `calib/calib_p2L_m1809_real.json`). | `p2/front.py`, `p2/head2.py`, `p2/det2.py` |
 | 6. table | Localization table. The phase-calibrated selection `sel` keeps, per photon band, the pass fraction of p ≥ 0.63, taken as the top-p rows in each 6 × 6 sub-pixel cell. `strict` is the recommended strict product: a per-10-px-tile σ quantile; q from the GT-free row density (anchors where it matches SIMCODE's coverage on the real movies, in-sample, under the automatic and the fixed c alike). | `strict.py` |
 
+### Run record
+
+Every run writes `<out>/run_config.json` (readable copy `run_config.yaml`): the fully resolved settings, the fixed values
+of the code path, absolute path + sha256 of the movie, the calibration, the camera maps and every network / solve
+calibration (with the trainer arguments stored in each checkpoint), git commit and dirty flag, DME version, torch / CUDA /
+GPU, the pattern estimate and the counts per selection rule. `python -m simcode.strict` appends its settings to the `steps`
+list of the same file. `python -m simcode.run --config <run_config.json> --out <new dir>` re-runs with those settings and
+warns about every input or code difference; on the same code and GPU the outputs are bit-identical (README, "Run record";
+`simcode/util/runconfig.py`; `tests/test_runconfig.py`).
+
 ### Models (2026-11)
 
 The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; `--model`, default

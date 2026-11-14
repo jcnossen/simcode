@@ -110,7 +110,9 @@ Outputs in `--out`:
 | `locs_p1.npz`, `locs_p2.npz` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
 | `locs_p*_info.json` | counts, sigma_max and the size of the main selection, u_max and the size of the u rule, strict-product q and coverage, column list |
 | `locs_p2_sig12.npz`, `locs_p2_u045.npz`, `locs_p2_strictonly.npz` (and the same for pass 1; `--subset`) | the rows of a selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
+| `run_config.json`, `run_config.yaml` | the complete record of the run: fully resolved settings, file hashes, code and environment, pattern and selection outcome (section "Run record") |
 | `summary.json` | settings, model, per-stage timing |
+| `command.txt` | plain log of the commands run on the directory |
 | `pass1_<f0>.npz`, `pattern_est.pt/.json`, `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
 
 Table columns:
@@ -151,6 +153,51 @@ The stage-level entry point is `python -m simcode.pipeline.run_uncalibrated` (`-
 
 Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. Pass 2
 adds about 25 s per chunk.
+
+## Run record (`run_config.json`)
+
+Every output directory says how it was calculated. `python -m simcode.run` writes `<out>/run_config.json` at the start
+(status `running`) and completes it at the end (`done`; `failed` with the error text); `run_config.yaml` is the same content
+for reading. It holds (`simcode/util/runconfig.py`):
+
+| entry | content |
+|---|---|
+| `settings` | every argument after the defaults: movie, calibration, model, the single network / calibration files, crop, chunking, frames, σ_max, u_max, strict q, sigma rescale, subsets, formats; files as absolute paths |
+| `fixed` | what is not an option: pass 2, 6-frame windows every 3 frames, stored-candidate cut 0.3, p ≥ 0.63, fixed c, code path, compile mode, batch sizes, margin, pattern search range, strict crop and density anchors |
+| `model` | name and definition; per file the absolute path, size, sha256; for a network the trainer arguments and step stored in its checkpoint; for a calibration its scalar parameters (`cmult` = the fixed c, `prior_off`, ...) |
+| `calib` | in-situ PSF / camera calibration: path, sha256, camera maps + sha256, the PSF parameters (NA, wavelength, indices, pixel size, focus, Zernike coefficients, extra terms) and the camera gain / offset / read noise |
+| `movie` | path, parts with size and sha256, frame count and size, frames and chunks processed, frame order / pattern scheme |
+| `code`, `environment` | package version, git commit, dirty flag with the modified files, DME version and commit; python / numpy / torch / CUDA versions, GPU, host (no user name or e-mail) |
+| `invocations` | one entry per process: command line, GPU, start / end, timing (a resumed run or one copy per GPU with `--claim 1` adds entries) |
+| `pattern`, `selection`, `counts`, `timing` | the pattern estimate (pitch, angle, depth, phases, drift range), the counts per selection rule and table, detections, per-stage time |
+| `outputs` | every table / subset file with its size and `arrays_sha256` (hash of the array contents; the file hash of an `.npz` changes with its zip time stamps) |
+| `steps` | later work on the directory: `python -m simcode.strict` appends its settings, input hashes, counts and outputs here and marks the files it replaced (`written_by: steps[i]`) |
+
+Re-run with exactly the settings of a record (the files of the record are passed explicitly; arguments after `--config`
+override single settings):
+
+```bash
+python -m simcode.run --config out_1809_2/run_config.json --out out_1809_2_again
+```
+
+A warning is printed (and stored under `rerun_of.differences`) for every input file whose sha256 differs from the record,
+for a different git commit or modified working tree, and for different torch / CUDA / numpy versions or fixed values. On the
+same code and GPU the re-run is bit-identical (chunk files, pattern, tables; `python tests/test_runconfig.py --gpu`, 2 chunks
+of 1809_2). If the settings or input files of a directory change between invocations, the earlier ones are kept under
+`earlier_settings` with a warning, because existing chunk files are reused unless `--redo 1`.
+
+```bash
+python -m simcode.util.runconfig show <dir>       # one-page summary
+python -m simcode.util.runconfig verify <dir>     # recorded file hashes / commit / versions against the present ones
+python -m simcode.util.runconfig backfill <dir>   # reconstruct the record of a run made before 2026-11-14 (nothing is recomputed)
+```
+
+`command.txt` stays a plain log (one line per `simcode.run` / `simcode.strict` command); `summary.json`, `runtime.json` and
+`locs_p*_info.json` are unchanged. The three production runs of the paper (`out/paper2/1809_2/v2_matched`,
+`2.5nM_2/v2_matched`, `20nM_2/v2_m25`) predate the record: theirs has status `reconstructed` and lists under
+`reconstructed.not_recovered` what could not be recovered (git commit and environment at run time, hashes at run time,
+unlogged table rebuilds). The automatic pipeline writes the same kind of record per acquisition and per stage, and the
+training recipe with file hashes into the model json (`docs/AUTO_PIPELINE.md`, section 2).
 
 ## Paths and configuration
 

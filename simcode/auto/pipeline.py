@@ -50,6 +50,31 @@ class LocalizationPipeline:
             os.makedirs(os.path.dirname(link), exist_ok=True); os.symlink(os.path.abspath(self.out), link)
         self._log = log or self._default_log
         C.dump(self.c, os.path.join(self.out, 'config_resolved.json'))
+        self._record()
+
+    # ---- the record of the acquisition: <out>/run_config.json (same kind of file as the one simcode.run writes in its run directory)
+    def _record(self, stage=None, S=None):
+        """<out>/run_config.json: the resolved config, the config file with its hash, code (git commit, dirty flag) and
+        environment at the top, and one entry per finished stage (when, with which commit, its summary file). Each stage
+        summary carries the same code record under 'record'."""
+        from simcode.util import runconfig as RC
+        c = self.c
+        def fn(R):
+            R = R if R and R.get('format') == 'simcode.auto_config/1' else dict(format='simcode.auto_config/1', stages={})
+            R.update(name=c['name'], out=os.path.abspath(self.out), updated=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None,
+                     config=c, code=RC.code_record(), environment=RC.env_record(gpu=False),
+                     note='stages.<name>.summary = the settings, numbers and checks of a stage; the processing run has its own complete record '
+                          '(stages.process.run_config = <run directory>/run_config.json); the model: train/model.json (_recipe, _files)')
+            if stage:
+                R['stages'][stage] = dict(S['record'], time_s=S.get('time_s'), summary=os.path.join(stage, 'summary.json'),
+                                          checks_ok=[sum(bool(k.get('ok')) for k in S.get('checks', [])), len(S.get('checks', []))],
+                                          **({'run_config': S['run_config']} if S.get('run_config') else {}),
+                                          **({'model_json': S['model_json']} if S.get('model_json') else {}))
+            return R
+        try:
+            RC.update(self.out, fn)
+        except OSError as e:
+            self.log(f'run_config.json not written ({e})')
 
     @classmethod
     def from_file(cls, cfg, only=None, **kw):
@@ -233,9 +258,15 @@ class LocalizationPipeline:
         from simcode.util.proctitle import set_title
         set_title('auto-' + name[:7])
         self.log(f'[{name}] start')
-        t0 = time.time()
+        from simcode.util import runconfig as RC
+        t0 = time.time(); started = RC.now()
+        code = {k: v for k, v in RC.code_record(dme=False).items() if k in ('version', 'git_commit', 'git_dirty', 'modified_files', 'untracked_package_files')}
         S = getattr(self, '_st_' + name)()
         S['stage'] = name; S['time_s'] = time.time() - t0; S['finished'] = time.strftime('%Y-%m-%d %H:%M:%S')
+        # how the stage was calculated: code at its start, host, the config it ran with (the complete record: <out>/run_config.json)
+        S['record'] = dict(started=started, finished=RC.now(), code=code, host=RC.socket.gethostname(),
+                           config_sha256=RC.hashlib.sha256(json.dumps(self.c, sort_keys=True, default=str).encode()).hexdigest(),
+                           config_file=self.c.get('_file'), acquisition_record='../run_config.json')
         fails = [k for k in S.get('checks', []) if not k.get('ok') and not k.get('warn_only')]
         warns = [k for k in S.get('checks', []) if not k.get('ok') and k.get('warn_only')]
         for k in warns: self.log(f'[{name}] WARNING check: {k["name"]} = {k.get("value")}')
@@ -243,6 +274,7 @@ class LocalizationPipeline:
             atomic_json(os.path.join(self.dir(name), 'summary_failed.json'), S, indent=1, default=str)
             raise StageFailed(f'[{name}] failed checks: ' + '; '.join(f'{k["name"]} = {k.get("value")}' for k in fails))
         atomic_json(os.path.join(self.dir(name), 'summary.json'), S, indent=1, default=str)
+        self._record(name, S)
         self.log(f'[{name}] done in {S["time_s"]:.0f} s')
         return S
 

@@ -276,7 +276,7 @@ def write_table(T, info, path_base, formats=('npz',)):
     return out
 
 
-def main(argv=None):
+def build_parser():
     ap = argparse.ArgumentParser(description='localization table + strict product of a simcode output directory')
     ap.add_argument('out')
     ap.add_argument('--tag', default='est', help="'est' = pass 1 (pattern solve of the pass-1 rows), 'est2' = pass 2")
@@ -291,7 +291,11 @@ def main(argv=None):
     ap.add_argument('--subset', default='', help="also write these selections as small files, e.g. 'main,u,strict' -> <table>_sig10.npz, <table>_u045.npz, <table>_strictonly.npz")
     ap.add_argument('--crop', default='', help='x0,y0,size (px) of the tiles / coverage; default: the output region of the run')
     ap.add_argument('--dest', default='', help='directory for the table files (default: the run directory)')
-    a = ap.parse_args(argv)
+    return ap
+
+
+def main(argv=None):
+    a = build_parser().parse_args(argv)
     px = a.px_nm or PX_NM_DEFAULT
     if a.sig_u:
         from simcode import config
@@ -306,6 +310,23 @@ def main(argv=None):
     atomic_json(base + '_info.json', info, indent=1, default=str)
     print(json.dumps({k: v for k, v in info.items() if k != 'columns'}, default=str))
     print('written', *files)
+    # the settings of this rebuild go into the run record of the directory (run_config.json 'steps'); command.txt = a plain log
+    try:
+        import sys
+        from simcode.util import runconfig as RC
+        name = os.path.basename(base)
+        RC.log_command(a.out, 'simcode.strict', argv)
+        RC.append_step(a.out, dict(
+            step='strict', time=RC.now(), command='python -m simcode.strict ' + ' '.join(sys.argv[1:] if argv is None else argv),
+            settings=dict(out=os.path.abspath(a.out), tag=a.tag, name=name, dest=os.path.abspath(a.dest) if a.dest else '', px_nm=px,
+                          drift=os.path.abspath(a.drift) if a.drift else '', strict_q=a.strict_q, sig_u=a.sig_u, sigma_max=a.sigma_max,
+                          u_max=a.u_max, subset=a.subset, format=a.format, crop=info['crop'], p_good=P_GOOD),
+            files={k: RC.file_record(v) for k, v in (('sig_u', a.sig_u), ('drift', a.drift)) if v},
+            code={k: v for k, v in RC.code_record(dme=False).items() if k.startswith(('version', 'git_', 'modified'))},
+            result={k: v for k, v in info.items() if k != 'columns'}, outputs=[os.path.abspath(f) for f in files]),
+            outputs=files, selection={name: RC.selection_summary(info)} if not a.dest else None)
+    except OSError as e:
+        print(f'strict: run_config.json of {a.out} not updated ({e})')
 
 
 if __name__ == '__main__':

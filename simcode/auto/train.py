@@ -54,17 +54,26 @@ def run(ds):
     steps = {k: (Tc['quick_steps'] if quick else v) for k, v in Tc['steps'].items()}
     hold = os.path.join(REPO, 'out', 'sc4', 'heldout5.pt')
 
+    cmds = []                                # every command of the recipe, in order (model.json '_recipe', summary 'recipe')
+
+    def sh(step, args, log, **kw):
+        cmds.append(dict(step=step, command='python -u ' + ' '.join(str(v) for v in args), log=log, env=kw.get('env') or {}))
+        return ds.sh(args, log, **kw)
+
     def stage(name, extra, need=10):
         d = os.path.join(D, name)
-        if os.path.exists(os.path.join(d, 'final.pt')):
-            ds.log(f'train: {name} final.pt exists, skipped'); return os.path.join(d, 'final.pt')
         a = T_BASE[name] + ['--out', d, '--steps', str(steps[name]), '--calib', cal] + extra
         ev = EVERY[name]
         if ev:
             a += ['--eval_every', str(max(int(ev[0]), steps[name] + 1) if quick else ev[0]), '--ckpt_every', str(max(int(ev[1]), steps[name] + 1) if quick else ev[1])]
         xt = Tc['extra']['det' if name == 'det' else 'hd' if name == 'hd' else 'p2']
         if xt: a += xt.split()
-        ds.sh(['-m', 'simcode.auto.runwrap'] + a[1:] if a[0] == '-m' else a, os.path.join(D, name + '.log'), gpu=ds.gpu(need), wrap=W)
+        a = ['-m', 'simcode.auto.runwrap'] + a[1:] if a[0] == '-m' else a
+        if os.path.exists(os.path.join(d, 'final.pt')):
+            # the arguments the trainer actually ran with are stored in its checkpoint (model.json '_files' -> checkpoint.args)
+            cmds.append(dict(step=name, command='python -u ' + ' '.join(str(v) for v in a), skipped='final.pt existed (trained by an earlier invocation)'))
+            ds.log(f'train: {name} final.pt exists, skipped'); return os.path.join(d, 'final.pt')
+        sh(name, a, os.path.join(D, name + '.log'), gpu=ds.gpu(need), wrap=W)
         return os.path.join(d, 'final.pt')
 
     from simcode import config as SC
@@ -88,12 +97,12 @@ def run(ds):
     nt = '400' if quick else '3500'
     env = dict(SIMCODE2_GATE_CALIB=cal, SIMCODE2_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
-        ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.hd.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
+        sh('gate', ['-m', 'simcode.auto.runwrap', 'simcode.hd.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
                'calib/calib_sc_hd_sc5nbb15_pm_bright.json', '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
               os.path.join(D, 'gate.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(G, 'done'), 'w').close()
     if not os.path.exists(os.path.join(FE, 'done')):
-        ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.p2.dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
+        sh('dump', ['-m', 'simcode.auto.runwrap', 'simcode.p2.dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
                f's1={files["det"]}:{files["head"]},s2={files["p2_det"]}:{files["p2_head"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(FE, 'done'), 'w').close()
     C = os.path.join(M, 'calib'); os.makedirs(C, exist_ok=True)
@@ -105,7 +114,7 @@ def run(ds):
     tmpl = SC.model_set(rm)
     fallback = []
     for fr, base, ks, ksr in (('s1', 'calib/calib_sc_hd_sc5nbb15_pm_bright.json', 'cal_sim', 'cal_real'), ('s2', 'calib/calib_p2L.json', 'p2_cal_sim', 'p2_cal_real')):
-        ds.sh(['-m', 'simcode.auto.runwrap', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
+        sh('fitcal_' + fr, ['-m', 'simcode.auto.runwrap', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
               os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
         if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
             # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template set's calibrations
@@ -113,7 +122,7 @@ def run(ds):
             ds.log(f'train (quick): calibration fit of {fr} failed (no matched targets), copied the {rm} calibrations')
     # ---- acceptance (held-out seed 301)
     acc_js = os.path.join(D, 'accept.json')
-    ds.sh(['-m', 'simcode.auto.runwrap', os.path.join(REPO, 'simcode', 'auto', 'accept.py'), FE, cals['cal_sim'], cals['p2_cal_sim'],
+    sh('accept', ['-m', 'simcode.auto.runwrap', os.path.join(REPO, 'simcode', 'auto', 'accept.py'), FE, cals['cal_sim'], cals['p2_cal_sim'],
            scen, acc_js], os.path.join(D, 'accept.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
     if not os.path.exists(acc_js):
         json.dump(dict(zcal={}, rms={}, n={}, p2_over_p1=None, note='acceptance failed (quick plumbing: no matched targets)'), open(acc_js, 'w'))
@@ -129,6 +138,47 @@ def run(ds):
     gates = 'NOT EVALUATED' if not chk else 'PASS' if all(k['ok'] for k in chk) else 'FAIL'
     S = {name: dict(_doc=f'simcode.auto model of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
                          f'PSF {cal}; sig_u not fitted', _gates=gates, psf=cal, **files, **cals, sig_u='')}
-    json.dump(S, open(os.path.join(ds.dir('train'), 'model.json'), 'w'), indent=1)
-    return dict(model=name, quick=quick, calib_fallback=fallback, steps=steps, dir=D, files=files, calibs=cals, accept=A, gates=gates,
+    # ---- how the model was made: the recipe (config, commands, steps, code) and the hash of every file; the trainer arguments
+    # stored in each checkpoint are part of the file records
+    from simcode.util import runconfig as RC
+    recs = {k: RC.model_file(v) for k, v in {**files, **cals}.items()}
+    trained = {k: RC.file_record(f) for k, f in (('det', det), ('hd', hd), ('p2det', p2det), ('p2head', p2head), ('p2headL', p2headL))}
+    recipe = dict(what='PSF-matched recipe of simcode.auto stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
+                  written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,
+                  code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),
+                  steps=steps, trainer_base_args=T_BASE, eval_ckpt_every=EVERY, init=dict(Tc['init'], det_used=det_init), extra_args=Tc['extra'],
+                  gate=dict(scenes=scen, seeds=seeds, ntarget=nt, fit_scene=SCEN_FIT, heldout_seed=301), real_mult_from=rm, calib_fallback=fallback,
+                  overrides=json.load(open(W)), commands=cmds, trained_files=trained, accept=A, gates=gates,
+                  not_included='sig_u (selection-aware sigma rescale) is not fitted by this stage')
+    S['_recipe'] = recipe; S['_files'] = recs
+    json.dump(S, open(os.path.join(ds.dir('train'), 'model.json'), 'w'), indent=1, default=str)
+    return dict(recipe=recipe, file_records=recs, model=name, quick=quick, calib_fallback=fallback, steps=steps, dir=D, files=files, calibs=cals, accept=A, gates=gates,
                 model_json=os.path.join(ds.dir('train'), 'model.json'), wrap=json.load(open(W)), checks=chk)
+
+
+def export_model(model_json, dest):
+    """copy a model next to the data (e.g. <data>/simcode_results/model/): the network and calibration files, model.json with
+    paths relative to dest, the training recipe ('_recipe': config, commands, steps, git commit) and the sha256 of every file
+    ('_files'), and a README.md that points to them and to the run record of the processing. -> dest/model.json"""
+    import shutil
+    from simcode.util import runconfig as RC
+    S = json.load(open(model_json)); os.makedirs(os.path.join(dest, 'calib'), exist_ok=True)
+    (name, M), = [(k, v) for k, v in S.items() if not k.startswith('_')]
+    O = {}; recs = {}
+    for k, v in M.items():
+        if k.startswith('_') or not isinstance(v, str) or not os.path.isfile(v): O[k] = v; continue
+        rel = os.path.join('calib', os.path.basename(v)) if v.endswith('.json') and k != 'psf' else os.path.basename(v)
+        shutil.copyfile(v, os.path.join(dest, rel)); O[k] = rel
+        recs[k] = dict(RC.model_file(os.path.join(dest, rel)), path=rel, copied_from=os.path.abspath(v))
+    out = {name: O, '_recipe': S.get('_recipe', 'not recorded (model made before 2026-11-14: the trainer arguments are in _files.<net>.checkpoint.args)'),
+           '_files': recs, '_exported': dict(when=RC.now(), source=os.path.abspath(model_json), code=RC.code_record(dme=False))}
+    json.dump(out, open(os.path.join(dest, 'model.json'), 'w'), indent=1, default=str)
+    open(os.path.join(dest, 'README.md'), 'w').write(
+        f'# SIMCODE model {name}\n\nTrained networks and solve calibrations of this acquisition.\n\n'
+        '- `model.json`: the model (format of `simcode/models.json`, paths relative to this folder).\n'
+        '  - `_recipe`: how it was trained: the acquisition config, every command in order, steps per trainer, gate scenes, acceptance, git commit of the code.\n'
+        '  - `_files`: size and sha256 of every file; for the networks also the trainer arguments stored in the checkpoint.\n'
+        '- How a set of localization tables was calculated with this model: the `run_config.json` (readable copy `run_config.yaml`) in the folder of the '
+        'tables: fully resolved settings, sha256 of every network / calibration / movie file, code commit, environment. '
+        'Re-run: `python -m simcode.run --config run_config.json --out <new dir>`.\n')
+    return os.path.join(dest, 'model.json')

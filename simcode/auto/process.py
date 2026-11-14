@@ -84,7 +84,7 @@ def run(ds):
     txt = ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.run'] + argv(ds, out, model=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
     S = json.load(open(os.path.join(out, 'summary.json')))
     pe = json.load(open(os.path.join(out, 'pattern_est.json'))) if os.path.exists(os.path.join(out, 'pattern_est.json')) else {}
-    r = dict(run=out, model=ns[0], summary=S, wrap=json.load(open(W)))
+    r = dict(run=out, run_config=os.path.join(out, 'run_config.json'), model=ns[0], summary=S, wrap=json.load(open(W)))   # run_config.json = the complete record of the run
     if ds.c['process']['cycle_aligned_only']: r['cycle_rows'] = cycle_subset(out)
     chk = []
     pit = _pitch(pe)

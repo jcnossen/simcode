@@ -41,7 +41,10 @@ RETIRED = {'--fast': '1', '--compile': 'auto', '--cand_pmin': '0.3', '--p1_solve
            '--pattern_field': '', '--p2_pf_head': ''}
 
 
-def main(argv=None):
+COMPILE = 'auto'          # torch.compile of the solve's LM step when available (simcode/fastutil.py)
+
+
+def build_parser():
     ap = argparse.ArgumentParser()
     ap.add_argument('--movie', required=True)
     ap.add_argument('--calib', required=True)
@@ -72,13 +75,16 @@ def main(argv=None):
     ap.add_argument('--solve_batch', type=int, default=16384)
     ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) read the next chunk's frames in a background thread
                                                         # (fileio/movie.Prefetch; identical data); 0 = synchronous reads
+    return ap
+
+
+def main(argv=None):
     from simcode.util import retired
-    a = ap.parse_args(retired.strip(argv, RETIRED, 'run_uncalibrated'))
+    a = build_parser().parse_args(retired.strip(argv, RETIRED, 'run_uncalibrated'))
     from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'ref_pattern'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')
-    COMPILE = 'auto'                                     # torch.compile of the solve's LM step when available (simcode/fastutil.py)
     from simcode.pipeline.common import load_calib, load_pass1_rows, chunk_read_plan
     from simcode.fileio.movie import open_movie, Prefetch
     from simcode.fileio.work import Units, atomic_json, atomic_torch_save
