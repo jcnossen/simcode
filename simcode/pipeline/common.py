@@ -1,23 +1,16 @@
 """
 Shared pieces of the per-window pipeline (simcode/pipeline): the read plan of the chunks, the rows of the pass-1 chunk
-files, camera conversion and the PSF model. Movie reading itself is simcode/fileio/movie.py (Movie = TiffMovie,
-PrefetchMovie = Prefetch). Only the camera and PSF entries of the calibration json are read here; its 'pattern' entry is
+files, camera conversion and the PSF model. Movie reading: torch_psf.movie (TIFF) and simcode/fileio/movie.py (dcimg,
+Prefetch). Only the camera and PSF entries of the calibration json are read here; its 'pattern' entry is
 never used.
 """
 import json, os
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
-from simcode.fileio.movie import TiffMovie, Prefetch
 
 PX_NM = 108.33
 # stored-candidate detection cut of the pass-1 / pass-2 front-ends: the head and the solve run on the detector candidates with
 # p >= CAND_PMIN (production value since 2026-11-10; the phase-calibrated selection needs candidates below p 0.63)
 CAND_PMIN = 0.3
-
-
-# the readers live in simcode/fileio/movie.py (shared with the 4Pi pipelines); the old names stay valid
-Movie = TiffMovie
-PrefetchMovie = Prefetch
 
 
 def chunk_read_plan(movie, chunks, chunk, nf, crop, margin, pad=12):
@@ -61,15 +54,11 @@ def load_calib(path, dev='cuda'):
     path = resolve(path)
     c = json.load(open(path))
     cam = c['camera']; maps = np.load(camera_maps_path(path, c))
-    psf = VectorialPSF(11, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'],
-                       wavelength=c['wavelength_um'], oversample=3, device=dev)
-    with torch.no_grad():
-        psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
-    from simcode.psf.vectorial import set_psf_extras
-    set_psf_extras(psf, c)   # (2026-11-11) opt-in calib PSF terms (angle average); absent = unchanged
-    from simcode.psf.conv_spline import ConvSplinePSF
+    from simcode import psf as spsf
+    from simcode.psf import spline
+    psf = spsf.load_psf(path, roisize=11, oversample=3, device=dev)   # opt-in calib PSF terms: angle average
     zmax = 0.2
-    lut = ConvSplinePSF(psf, c['focus_um'], zmax)
+    lut = spline(psf, zmax)
     return dict(offset=maps['offset_adu'].astype(np.float32), rn2=(maps['readnoise_e'] ** 2).astype(np.float32),
                 gain=float(cam['gain_e_per_adu']), lut=lut, focus=float(c['focus_um']), zmax=zmax,
                 px_nm=c['pixelsize_um'] * 1e3)

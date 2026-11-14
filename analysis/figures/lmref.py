@@ -3,7 +3,7 @@ Evaluation-only REFERENCE (user request 2026-11-09): a basic single-emitter Leve
 method (the method stays network-only); used only as a reference line in the CRLB plots (analysis/figures/crlb_all_v2.py).
 Model on a P x P ROI (default 11 x 11) centred on a pixel (cx, cy), all T frames:
     mu_t(px) = I_t * psf(px; x, y, z0) + bg_t
-  psf = the calibrated vectorial PSF (calib_0.5nM, simcode.psf.conv_spline.make_lut on P x P; simulator normalisation, so I_t = photons),
+  psf = the calibrated vectorial PSF (calib_0.5nM, simcode.psf.spline on P x P; simulator normalisation, so I_t = photons),
   z FIXED at z0 = 0.05 um (the emitter median height, = the head's PSF template PSFCol) or free (zfree=True, clamped to
   [0, zmax], start z0); parameters theta = (x, y, [z,] I_1..I_T, bg_1..bg_T) (14 / 15), no pattern, no neighbours (single emitter: neighbours contaminate the fit by design).
 Likelihood: sCMOS Poisson (Huang et al. 2013): y + rn^2 ~ Poisson(mu + rn^2) per pixel, rn = the per-pixel read-noise
@@ -11,13 +11,13 @@ map; LM with Fisher scoring (F = J^T diag(1 / (mu + rn^2)) J), multiplicative da
 Returns the estimate and the inverse Fisher at the estimate (I-block -> covariance for the explicit pattern solve).
 """
 import torch
-from simcode.psf.conv_spline import make_lut          # identical to the development hd/solve.make_lut
+from simcode.psf import spline                 # = the development hd/solve.make_lut
 from simcode.hd.sc import patches
 
 
 class LMRef:
     def __init__(self, sim, P=11, z0=0.05, zfree=False, bg='frame'):
-        self.lut = make_lut(sim, P); self.P = P; self.z0 = z0; self.zfree = zfree; self.zmax = sim.zmax
+        self.lut = spline(sim.psf, sim.zmax, roisize=P); self.P = P; self.z0 = z0; self.zfree = zfree; self.zmax = sim.zmax
         self.k = 3 if zfree else 2                                              # index of I_1 in theta
         # bg='frame' (default, unchanged): one bg_t per frame; bg='angle' (critic 34 #4 diagnostic): one bg per pattern
         # angle (fit(..., ang=[n,T] angle index) required), as the CRLB_SF model
@@ -27,7 +27,7 @@ class LMRef:
     def model(self, th, T):
         k = self.k
         z = th[:, 2] if self.zfree else torch.full_like(th[:, 0], self.z0)
-        g, gx, gy, gz = self.lut.evaluate(torch.stack([th[:, 0], th[:, 1], z], 1), grad=True)   # [n,P,P]
+        g, gx, gy, gz = self.lut.render(torch.stack([th[:, 0], th[:, 1], z], 1), grad=True)   # [n,P,P]
         I = th[:, k:k + T]; bg = th[:, k + T:]
         if self.bmap is not None: bg = torch.einsum('nj,njt->nt', bg, self.bmap)
         mu = I[..., None, None] * g[:, None] + bg[..., None, None]
@@ -65,7 +65,7 @@ class LMRef:
         border = torch.cat([y[:, :, 0], y[:, :, -1], y[:, :, 1:-1, 0], y[:, :, 1:-1, -1]], -1)
         bg0 = border.median(-1).values.clamp(min=0.1)
         dx0, dy0 = x0 - cx.float(), y0 - cy.float()
-        g0 = self.lut.evaluate(torch.stack([dx0, dy0, torch.full_like(dx0, self.z0)], 1))
+        g0 = self.lut.render(torch.stack([dx0, dy0, torch.full_like(dx0, self.z0)], 1))
         I0 = ((y - bg0[..., None, None]).sum((2, 3)) / g0.sum((1, 2))[:, None]).clamp(min=1.0)
         zc = [torch.full_like(dx0, self.z0)[:, None]] if self.zfree else []
         if self.bmap is not None:
@@ -167,7 +167,7 @@ class SFRef:
     def model(self, th, pt, cx, cy, bmap, T, grad=True):
         k, kk, nbg = self._layout(T)
         z = th[:, 2] if self.zfree else torch.full_like(th[:, 0], self.z0)
-        g, gx, gy, gz = self.lut.evaluate(torch.stack([th[:, 0], th[:, 1], z], 1), grad=True)
+        g, gx, gy, gz = self.lut.render(torch.stack([th[:, 0], th[:, 1], z], 1), grad=True)
         X = cx.float() + th[:, 0]; Y = cy.float() + th[:, 1]
         arg = pt[..., 0] * X[:, None] + pt[..., 1] * Y[:, None] - pt[..., 2]
         il = pt[..., 4] * (1 + pt[..., 3] * torch.cos(arg))

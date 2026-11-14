@@ -35,12 +35,12 @@ class LUTPSF:
 
     def eval3(self, x, y, z, P):
         pos = torch.stack([x, y, z], 1).float()
-        g, gx, gy, gz = self.L[P].evaluate(pos, grad=True)
+        g, gx, gy, gz = self.L[P].render(pos, grad=True)
         return g.double(), gx.double(), gy.double(), gz.double()
 
     def img(self, x, y, z, P):
         pos = torch.stack([x, y, z], 1).float()
-        return self.L[P].evaluate(pos).double()
+        return self.L[P].render(pos).double()
 
 
 def psf_refit(psf, roi, g0, chunk=4000, zgrid=np.linspace(-0.8, 0.8, 17), iters=30):

@@ -64,7 +64,7 @@ class Head4PiW(nn.Module):
             Ws, gs, Bs = [], [], []
             for c in range(4):
                 pos = torch.stack([dxy[:, 0] + doff[:, c, 0], dxy[:, 1] + doff[:, c, 1], z], 1)
-                inc_, cr, ci = (lut.luts[j][c].evaluate(pos) for j in range(3))
+                inc_, cr, ci = (lut.luts[j][c].render(pos) for j in range(3))
                 inc = inc_.clamp(min=1e-7)
                 ex = ox[None] - pos[:, 0, None, None]; ey = oy[None] - pos[:, 1, None, None]
                 Ws.append(torch.stack([window(k, par, inc, ex, ey, (cr, ci)) for k, par in self.wins], 1))

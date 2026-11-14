@@ -26,9 +26,10 @@ def main():
     from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
     from simcode.p2 import front as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = 0.3
-    from simcode.pipeline.common import Movie, load_calib
+    from simcode.psf import TiffMovie
+    from simcode.pipeline.common import load_calib
     out = g('--out', S['head']); os.makedirs(out, exist_ok=True)       # --out, --chunks: smoke tests only
-    movie = Movie(mv['movie']); cal = load_calib(mv['calib']); crop = tuple(int(v) for v in mv['crop'].split(','))
+    movie = TiffMovie(mv['movie']); cal = load_calib(mv['calib']); crop = tuple(int(v) for v in mv['crop'].split(','))
     chunks = sorted(int(f.rsplit('_', 1)[1][:-4]) for f in glob.glob(f'{S["run"]}/pass1_*.npz')); step = mv['chunk']
     p2 = _scff.Pass2P2Fast(mv['calib'], head=config.resolve(p2_head), det=config.resolve(p2_det), compile='auto')
     Pt = torch.load(f'{S["run"]}/pattern_est.pt', weights_only=False); scal = config.resolve(p2_cal)

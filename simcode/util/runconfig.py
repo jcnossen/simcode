@@ -227,7 +227,7 @@ def calib_record(path):
         from simcode.pipeline.common import camera_maps_path
         r['camera_maps'] = file_record(camera_maps_path(p, c))
         z = np.asarray(c.get('zernike_waves', []), float)
-        r['psf'] = dict(model='vectorial (simcode.psf.vectorial.VectorialPSF, 11 px, oversample 3; LUT z range +-0.2 um)',
+        r['psf'] = dict(model='vectorial (torch_psf.VectorialPSF, 11 px, oversample 3; LUT z range +-0.2 um)',
                         NA=c.get('NA'), wavelength_um=c.get('wavelength_um'), n_imm=c.get('n_imm'), n_med=c.get('n_med'),
                         pixelsize_um=c.get('pixelsize_um'), focus_um=c.get('focus_um'), zernike_noll=c.get('zernike_noll'),
                         zernike_waves=c.get('zernike_waves'), zernike_rms_waves=float(np.sqrt((z ** 2).sum())) if z.size else None,

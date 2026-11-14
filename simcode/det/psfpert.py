@@ -10,29 +10,32 @@ converted with gain (1 + eg) and offset + eo ADU instead of the true ones).
 import math, copy
 import numpy as np, torch
 from simcode.sim.simulator import Simulator
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode import psf as spsf
+from simcode.psf import render
 
 dev = 'cuda'
 
 
 def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle=None):
     """returns (lut [nz, ls+1, ls+1, R, R], zmax) for a perturbed PSF, rendered like Simulator.__init__
-    (2026-11-11) with the calib's opt-in PSF terms (vectorial.set_psf_extras; angle = that pattern angle's PSF, None = average)"""
-    c = sim.c
+    (2026-11-11) with the calib's opt-in PSF terms (torch_psf.load_psf; angle = that pattern angle's PSF, None = average).
+    A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike / focus terms do not apply to it."""
     zmax = zmax or sim.zmax
-    psf = VectorialPSF(sim.R, pixelsize=c['pixelsize_um'] / width, NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'],
-                       wavelength=c['wavelength_um'], oversample=3, device=dev)
-    with torch.no_grad():
-        zc = torch.tensor(c['zernike_waves'], device=dev)
-        if zern_delta is not None: zc = zc + zern_delta
-        psf.zcoef.copy_(zc); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
-    set_psf_extras(psf, c, angle)
+    base = spsf.load_psf(sim.calib_path, roisize=sim.R, oversample=3, device=dev, angle=angle)
+    if isinstance(base, spsf.GaussianPSF):
+        psf = spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)
+    else:
+        o = base.optics; o.pixel_um = o.pixel_um / width
+        psf = spsf.VectorialPSF.from_optics(o, sim.R, oversample=3, device=dev, focus_um=sim.focus + focus_shift)
+        with torch.no_grad():
+            psf.zcoef.copy_(base.zcoef if zern_delta is None else base.zcoef + zern_delta); psf.apod.copy_(base.apod)
+        psf.blur, psf.dipM = base.blur, base.dipM
     zs = torch.linspace(0, zmax, sim.lz, device=dev)
     sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
     Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
     pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
     with torch.no_grad():
-        lut = torch.cat([psf(p, torch.full((len(p),), sim.focus + focus_shift, device=dev)) for p in pos.split(1024)])
+        lut = torch.cat([render(psf, p) for p in pos.split(1024)])
     return lut.reshape(sim.lz, sim.ls + 1, sim.ls + 1, sim.R, sim.R), zmax
 
 

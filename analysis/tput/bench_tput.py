@@ -14,7 +14,8 @@ usage: CUDA_VISIBLE_DEVICES=1 python analysis/tput/bench_tput.py <name> [variant
 import sys, os, json, time
 import numpy as np, torch
 from simcode import config
-from simcode.pipeline.common import Movie, load_calib
+from simcode.psf import TiffMovie
+from simcode.pipeline.common import load_calib
 from simcode.pipeline import sc_front as SF, sc_front_fast as SFF
 from simcode.p2 import front as FR
 
@@ -38,7 +39,7 @@ if os.environ.get('BENCH_NF'):      # smoke test: short chunk, separate output f
     D['f1'] = D['f0'] + int(os.environ['BENCH_NF']); out = os.path.join(OD, f'bench_{name}_smoke.json')
 REP = json.load(open(out)) if os.path.exists(out) else {}
 REP['gpu'] = torch.cuda.get_device_name(); REP['pid'] = os.getpid(); REP['cuda_visible'] = os.environ.get('CUDA_VISIBLE_DEVICES'); REP['frames'] = D['f1'] - D['f0']
-movie = Movie(D['movie']); cal = load_calib(D['calib']); Pt = torch.load(D['pattern'], weights_only=False)
+movie = TiffMovie(D['movie']); cal = load_calib(D['calib']); Pt = torch.load(D['pattern'], weights_only=False)
 r2 = lambda t: {k: (round(v, 3) if isinstance(v, float) else v) for k, v in t.items()}
 save = lambda: json.dump(REP, open(out, 'w'), indent=1)
 

@@ -28,9 +28,10 @@ def main():
     from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
     from simcode.p2 import front as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = a.cand_pmin
-    from simcode.pipeline.common import Movie, load_calib
+    from simcode.psf import TiffMovie
+    from simcode.pipeline.common import load_calib
     os.makedirs(a.out, exist_ok=True)
-    calib = config.resolve(a.calib); movie = Movie(config.resolve(a.movie, 'data')); cal = load_calib(calib)
+    calib = config.resolve(a.calib); movie = TiffMovie(config.resolve(a.movie, 'data')); cal = load_calib(calib)
     crop = tuple(int(v) for v in a.crop.split(','))
     nf = movie.n
     chunks = [int(v) for v in a.chunks.split(',')] if a.chunks else list(range(0, nf, a.chunk))

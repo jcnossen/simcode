@@ -1,6 +1,6 @@
 """Coherent two-arm vectorial 4Pi PSF with polarization-split interference channels.
 
-Built on simcode.psf.vectorial.VectorialPSF.pupil_fields() (imported, not modified).
+Built on torch_psf.VectorialPSF.pupil_fields().
 
 Geometry (index-matched objectives, focus of both arms at z = 0):
   top arm    : the standard VectorialPSF field of a dipole mu at (x, y, z), pupil aberration W_top.
@@ -21,7 +21,7 @@ forward(pos [B,3] (x, y px rel. ROI centre, z um), M=None [3,3] or [B,3,3], phi_
 """
 import math
 import torch
-from simcode.psf.vectorial import VectorialPSF, gauss_blur_os, dipole_tensor
+from simcode.psf import VectorialPSF, gauss_blur_os, dipole_tensor
 
 ZIDX = tuple(range(5, 22))
 
@@ -31,7 +31,7 @@ class PSF4Pi(torch.nn.Module):
                  zidx=ZIDX, pol=(0, 1, 0, 1)):
         super().__init__()
         self.R, self.os, self.mirror = R, os_, mirror
-        mk = lambda: VectorialPSF(R, pixelsize=px, NA=NA, n_imm=n, n_med=n, wavelength=lam, zernike_indices=zidx,
+        mk = lambda: VectorialPSF(R, pixel_um=px, NA=NA, n_imm=n, n_med=n, wavelength_um=lam, zernike_indices=zidx,
                                   npupil=npupil, oversample=os_, device=device)
         self.top, self.bot = mk(), mk()
         self.px = px
@@ -158,7 +158,7 @@ class PSF4PiA(PSF4Pi):
                  depth=(0.05, 2.0)):
         super().__init__(R, px=px, NA=NA_b, n=n_imm_b, lam=lam, npupil=npupil, os_=os_, device=device, mirror=mirror,
                          zidx=zidx, pol=pol)
-        mk = lambda NA, ni: VectorialPSF(R, pixelsize=px, NA=NA, n_imm=ni, n_med=n_med, wavelength=lam, zernike_indices=zidx,
+        mk = lambda NA, ni: VectorialPSF(R, pixel_um=px, NA=NA, n_imm=ni, n_med=n_med, wavelength_um=lam, zernike_indices=zidx,
                                          npupil=npupil, oversample=os_, device=device)
         self.top, self.bot = mk(NA_t, n_imm_t), mk(NA_b, n_imm_b)
         self.zmode = zmode

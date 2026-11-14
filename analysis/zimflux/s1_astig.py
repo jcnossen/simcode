@@ -51,7 +51,7 @@ def run(lut, idx, B=8192):
         dv = 2 * ((d + v).clamp(min=1e-3) * torch.log((d + v).clamp(min=1e-3) / (mu + v)) - (d - mu)).sum(1) / (P * P)
         F = fisher_j(fj, th, v); cr = torch.sqrt(torch.diagonal(torch.linalg.pinv(F), dim1=1, dim2=2).clamp(min=0))
         # per-frame intensities with the position fixed: mu_k = N_k h + b_k
-        h = lut.evaluate(th[:, :3]).view(n, -1)
+        h = lut.render(th[:, :3]).view(n, -1)
         Nk, bk = [], []
         for k in range(3):
             dk = R[:, k].reshape(n, -1); vk = vpatch(corner[ii])

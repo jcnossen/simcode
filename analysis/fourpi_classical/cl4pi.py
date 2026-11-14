@@ -62,7 +62,7 @@ class Classic4Pi:
         w = self._weights(torch.zeros(n, 4, 2, device=dev), torch.zeros(n, 2, device=dev))      # [n,4,P,P]
         I, R, Q = [], [], []
         for c in range(4):
-            inc, cr, ci = (row[c].evaluate(pos) for row in self.lut.luts)
+            inc, cr, ci = (row[c].render(pos) for row in self.lut.luts)
             I.append((inc * w[:, c]).sum((-1, -2))); R.append((cr * w[:, c]).sum((-1, -2))); Q.append((ci * w[:, c]).sum((-1, -2)))
         I, R, Q = torch.stack(I, 1), torch.stack(R, 1), torch.stack(Q, 1)                         # [nz,4]
         i0 = int(torch.argmin(zs.abs()))
@@ -122,7 +122,7 @@ class Classic4Pi:
         acc = None
         for c in range(4):
             pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
-            comps = [self.lut.luts[q][c].evaluate(pc, grad) for q in range(3 if cs is not None else 1)]
+            comps = [self.lut.luts[q][c].render(pc, grad) for q in range(3 if cs is not None else 1)]
             if not grad: comps = [(r,) for r in comps]
             acc = [list(r) for r in comps] if acc is None else [[a + b for a, b in zip(A_, r)] for A_, r in zip(acc, comps)]
         if cs is None:
@@ -261,7 +261,7 @@ class Classic4Pi:
             I_, R_, Q_ = [], [], []
             for c in range(4):
                 pc = torch.stack([xy[:, 0] + doff[:, c, 0], xy[:, 1] + doff[:, c, 1], z], 1)
-                inc, cr, ci = (row[c].evaluate(pc) for row in self.lut.luts)
+                inc, cr, ci = (row[c].render(pc) for row in self.lut.luts)
                 I_.append((inc * w[:, c]).sum((-1, -2))); R_.append((cr * w[:, c]).sum((-1, -2))); Q_.append((ci * w[:, c]).sum((-1, -2)))
             I_, R_, Q_ = torch.stack(I_, 1), torch.stack(R_, 1), torch.stack(Q_, 1)
             psi = self.phi_cal(z) + self.phical0

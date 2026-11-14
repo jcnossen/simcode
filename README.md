@@ -45,10 +45,10 @@ Dependencies:
 
 - numpy, scipy, tifffile, torch (CUDA GPU required); matplotlib for the calibration / figure scripts; h5py for
   `--format hdf5` and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
-- The PSF lookup tables use the convolutional 3D spline (Catmull-Rom spline evaluated as a grouped conv2d, value and
-  gradients) from torch-spline-3d by Jelmer Cnossen (MIT, https://gitlab.com/jcnossen/torch-spline-3d). `simcode/psf/conv_spline.py`
-  re-implements its evaluation for the PSF LUT (strided, single-index knot gather), so the package itself is not a
-  dependency.
+- torch-psf (MIT, https://github.com/jcnossen/torch-psf, pinned in pyproject.toml): the PSF models (vectorial PSF,
+  convolutional 3D spline, Gaussian), the calibration json reader, the bead and in-situ PSF fits (variable projection)
+  and the TIFF movie reader. `simcode/psf/__init__.py` is the only module that imports it (the rest of SIMCODE imports from `simcode.psf`) and holds the SIMCODE-specific glue (per-pattern-angle PSF terms, the
+  spline settings of the solve).
 
 Only the baselines need more:
 

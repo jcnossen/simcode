@@ -43,7 +43,7 @@ def astig_fit(F, lut, dev, chunk=20000):
     v = 24 * 1.3
     def fj(th):
         x, y, z, N, b = th.unbind(1)
-        out = [L.evaluate(torch.stack([x, y, z], 1), True) for L in [lut.luts[0][c] for c in range(4)]]
+        out = [L.render(torch.stack([x, y, z], 1), True) for L in [lut.luts[0][c] for c in range(4)]]
         g = sum(o[0] for o in out); gx = sum(o[1] for o in out); gy = sum(o[2] for o in out); gz = sum(o[3] for o in out)
         mu = N[:, None, None] * g + b[:, None, None]
         J = torch.stack([N[:, None, None] * gx, N[:, None, None] * gy, N[:, None, None] * gz, g, torch.ones_like(g)], -1)

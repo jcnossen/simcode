@@ -14,7 +14,8 @@ Reference implementation (test oracle of simcode/pipeline/sc_front_fast.Pass2P2F
 """
 import json, time
 import numpy as np, torch
-from simcode.pipeline.common import Movie, region, pattern_frames, CAND_PMIN
+from simcode.psf import TiffMovie
+from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
@@ -35,7 +36,7 @@ class Pass2P2:
         self.dev = dev
 
     @torch.no_grad()
-    def run_chunk(self, movie: Movie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
         from simcode.p2 import illum as IL
         dev = self.dev; SCM, H2 = self.SCM, self.H2
         timing = timing if timing is not None else {}

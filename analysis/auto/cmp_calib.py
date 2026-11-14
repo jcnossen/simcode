@@ -6,26 +6,22 @@ usage: python analysis/auto/cmp_calib.py <auto calib.json> <reference calib.json
 import json, os, sys
 import numpy as np, torch
 from simcode import config
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode import psf as spsf
 from simcode.insitu import cam_maps
 
 
-def model(c, angle, R=15, dev='cuda'):
-    m = VectorialPSF(R, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'],
-                     zernike_indices=c['zernike_noll'], oversample=3, device=dev)
-    with torch.no_grad():
-        m.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); m.apod.copy_(torch.tensor(c['apod'], device=dev))
-    return set_psf_extras(m, c, angle)
+def model(path, angle, R=15, dev='cuda'):
+    return spsf.load_psf(path, roisize=R, oversample=3, device=dev, angle=angle)
 
 
 def images(c, angle, z=(0.0, 0.05, 0.1, 0.15)):
-    m = model(c, angle)
+    m = model(c['_path'], angle)
     with torch.no_grad():
         return m(torch.tensor([[0.0, 0.0, v] for v in z], device='cuda'), torch.full((len(z),), c['focus_um'], device='cuda')).cpu().numpy()
 
 
 def crlb(c, angle, I=1000.0, bg=6.0, z=0.05):
-    m = model(c, angle)
+    m = model(c['_path'], angle)
     th = torch.tensor([0.1, -0.1, I, bg], device='cuda', dtype=torch.float32)
     def mu(t):
         p = m(torch.stack([t[0], t[1], torch.tensor(z, device='cuda')])[None], torch.tensor([c['focus_um']], device='cuda'))[0]
@@ -37,7 +33,7 @@ def crlb(c, angle, I=1000.0, bg=6.0, z=0.05):
 
 
 def main(a, b, outp=None, zmed_ref=None):
-    A, B = json.load(open(a)), json.load(open(b))
+    A, B = dict(json.load(open(a)), _path=a), dict(json.load(open(b)), _path=b)
     zA = A.get('emitter_z_median_um', 0.05); zB = float(zmed_ref) if zmed_ref else B.get('emitter_z_median_um', 0.05)
     r = {}
     za, zb = np.array(A['zernike_waves']), np.array(B['zernike_waves'])

@@ -5,8 +5,11 @@ z = emitter height z_e above the coverslip in um (the paper's z = z_e - z_d, z_d
 for an emitter at z_d (zimflux config.set_saffocus)."""
 import sys, os, json, numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, '/home/jc/simcode2/analysis/zimflux')
-from simcode.psf.vectorial import VectorialPSF
-from simcode.psf.conv_spline import ConvSplinePSF
+from simcode.psf import VectorialPSF
+from simcode import psf as spsf
+from simcode.psf import emitter_height_pos_fn
+sys.path.insert(0, '/home/jc/simcode2/analysis/baselines')
+from zpsf import ZStackLUT
 import crlb_s0 as C
 WORK = '/home/jc/simcode2/out/zimflux/s1/' + os.environ.get('ZF_S1_SUB', '')   # variant runs in subfolders
 RES = '/mnt/data/dmdsf/simcode2_out/zimflux/surfdrive/Zimflux/3Dnanorulers/simcode_results/'
@@ -20,7 +23,7 @@ ZERN = {C.NOLL[o]: float(a) / 715.0 for o, a in zip(ORD, ab)}
 def transpose_zern(z):
     """Zernikes of the x <-> y transposed pupil (phi -> pi/2 - phi): m = 1 cos <-> sin, m = 2 cos -> -cos,
     m = 3 cos -> -sin, sin -> -cos; m = 0 unchanged."""
-    from simcode.psf.vectorial import noll_to_nm
+    from simcode.psf import noll_to_nm
     out = {}
     for j, c in z.items():
         n, m = noll_to_nm(j); am = abs(m)
@@ -40,17 +43,20 @@ def make_lut(dev, astig_sign=1.0, zern=None, variant=None, focus_shift=0.0):
     if variant == 'T': zern = transpose_zern(zern)
     C.dev = dev
     f = C.focus_for_depth(ZD) + focus_shift
-    psf = VectorialPSF(P, pixelsize=0.065, NA=1.49, n_imm=1.52, n_med=1.33, wavelength=0.715, zernike_indices=sorted(zern),
+    psf = VectorialPSF(P, pixel_um=0.065, NA=1.49, n_imm=1.52, n_med=1.33, wavelength_um=0.715, zernike_indices=sorted(zern),
                        npupil=64, oversample=3, device=dev)
     with torch.no_grad():
         psf.zcoef[:] = torch.tensor([zern[j] for j in sorted(zern)], device=dev)
-    lut = ConvSplinePSF(psf, f, zmax=ZHI + 0.05, zpad=12, hz=0.01)
+    # knots of torch_psf.ConvSplinePSF for the odd ROI P + 1 (the same knot grid as P: Pl = 39), evaluated on the even P x P ROI
+    big = spsf.ConvSplinePSF.from_vectorial(psf, P + 1, (0.0, ZHI + 0.05), pos_fn=emitter_height_pos_fn(f), oversample=6,
+                                          dz_um=0.01, zpad=12, xy_limit=P / 2 + 1)
+    lut = ZStackLUT(big.knots, big.S, big.u0, big.z0, big.hz, P, xmax=P / 2 + 1)
     return lut, f, zern
 
 
 def astig_model(lut):
     def fj(th):                     # th [n,5] = x, y, z, N, b (b per pixel of the summed image)
-        h, dx, dy, dz = lut.evaluate(th[:, :3], grad=True)
+        h, dx, dy, dz = lut.render(th[:, :3], grad=True)
         n = th.shape[0]; N = th[:, 3, None]
         mu = N * h.view(n, -1) + th[:, 4, None]
         J = torch.stack([N * dx.view(n, -1), N * dy.view(n, -1), N * dz.view(n, -1), h.view(n, -1),
@@ -82,7 +88,7 @@ def zf_model(lut, pat, cx, cy, t):
     """ZIMFLUX model on the K frames: mu_kj = N w_k(r) H_j(r) + b; th = x, y, z, N, b (b per pixel per frame)."""
     def fj(th):
         n = th.shape[0]
-        h, dx, dy, dz = lut.evaluate(th[:, :3], grad=True)
+        h, dx, dy, dz = lut.render(th[:, :3], grad=True)
         h, dx, dy, dz = [a.view(n, 1, -1) for a in (h, dx, dy, dz)]
         w, dw = pattern_w(pat, cx + 7.5 + th[:, 0], cy + 7.5 + th[:, 1], th[:, 2], t)
         N = th[:, 3, None, None]; w3 = w[..., None]

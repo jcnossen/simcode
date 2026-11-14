@@ -12,7 +12,8 @@ z: emitter height above the coverslip, z_um = z0 + dz * arange(nz), z0 = -0.03, 
 usage: python analysis/psf3d/export_zstack.py <calib.json> <out.npz>"""
 import sys, json
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
+from simcode import psf as spsf
+from simcode.psf import has_angle_psf
 
 calib, outp = sys.argv[1:3]
 dev = 'cuda'
@@ -20,10 +21,6 @@ c = json.load(open(calib))
 R, OS = 31, 4
 z0, dz, nz = -0.03, 0.01, 27
 zs = z0 + dz * np.arange(nz)
-psf = VectorialPSF(R, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'],
-                   oversample=3, device=dev)
-with torch.no_grad():
-    psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=dev)); psf.apod.copy_(torch.tensor(c['apod'], device=dev))
 out = dict(z_um=zs.astype(np.float32), pixelsize_um=np.float32(c['pixelsize_um']), dz_um=np.float32(dz), z0_um=np.float32(z0),
            focus_um=np.float32(c['focus_um']), os=np.int32(OS), roi=np.int32(R), calib=calib,
            note=__doc__)
@@ -31,7 +28,7 @@ angles = ([0, 1] if has_angle_psf(c) else []) + [None]
 a = (np.arange(OS) / OS)
 with torch.no_grad():
     for ang in angles:
-        set_psf_extras(psf, c, angle=ang)
+        psf = spsf.load_psf(calib, roisize=R, oversample=3, device=dev, angle=ang)
         nm = 'mean' if ang is None else f'angle{ang}'
         if ang is None and 'angle0' in out:   # exact average of the two axis PSFs
             out['mean'] = 0.5 * (out['angle0'] + out['angle1']); out['mean_os'] = 0.5 * (out['angle0_os'] + out['angle1_os'])

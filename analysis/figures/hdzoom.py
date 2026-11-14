@@ -9,7 +9,7 @@ import lib20 as L
 from simcode import config
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter, uniform_filter
-from simcode.pipeline.common import Movie
+from simcode.psf import TiffMovie
 PX = L.PX
 cols = [('smlm', None), ('sf', None), ('decode_summed', None), ('sc_b', None), ('p1P', 6), ('p2P', 6)]
 Dc = {}
@@ -32,7 +32,7 @@ nwin = 120000 / 6
 dens_list = [((ref['x'] >= a) & (ref['x'] < b) & (ref['y'] >= c) & (ref['y'] < d)).sum() / nwin / ((b - a) * (d - c) * (PX / 1000) ** 2) for a, b, c, d in Z]
 print('zooms', Z, 'ours p1 locs / window / um2:', np.round(dens_list, 2))
 # busiest window per zoom (raw-frame column), using raw (not drift-corrected) ours positions
-mov = Movie(config.resolve('dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif', 'data'))
+mov = TiffMovie(config.resolve('dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif', 'data'))
 R = L.load('p1P')
 raws = []
 for a, b, c, d in Z:

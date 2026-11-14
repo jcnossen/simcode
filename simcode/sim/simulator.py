@@ -14,7 +14,8 @@ Ground truth: emitter table with per-frame photons (= brightness * illumination 
 import json, math
 import numpy as np
 import torch
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
+from simcode import psf as spsf
+from simcode.psf import has_angle_psf, render
 
 
 class Simulator:
@@ -28,12 +29,10 @@ class Simulator:
         self.zmax = zmax
         self.tirf = tirf_depth or self.c['tirf_depth_um']
         self.R = psf_roi
-        self.psf = VectorialPSF(psf_roi, pixelsize=self.c['pixelsize_um'], NA=self.c['NA'], n_imm=self.c['n_imm'],
-                                n_med=self.c['n_med'], wavelength=self.c['wavelength_um'], oversample=3, device=device)
-        with torch.no_grad():
-            self.psf.zcoef.copy_(torch.tensor(self.c['zernike_waves'], device=self.dev))
-            self.psf.apod.copy_(torch.tensor(self.c['apod'], device=self.dev))
-        set_psf_extras(self.psf, self.c)   # (2026-11-11, opt-in calib keys; absent = unchanged) blur / dipole tensor / SAF
+        # calibrated PSF (torch_psf.load_psf of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
+        # average; a GaussianPSF for 'psf_gauss_sigma_um')
+        self.calib_path = calib_path
+        self.psf = spsf.load_psf(calib_path, roisize=psf_roi, oversample=3, device=device)
         self.focus = self.c['focus_um']
         # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
         self.lz, self.ls = psf_lut_z, psf_lut_sub
@@ -42,20 +41,19 @@ class Simulator:
         Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
         pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
         with torch.no_grad():
-            lut = torch.cat([self.psf(p, torch.full((len(p),), self.focus, device=self.dev)) for p in pos.split(1024)])
+            lut = torch.cat([render(self.psf, p) for p in pos.split(1024)])
         self.lut = lut.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi)
         # (2026-11-11, opt-in) per-pattern-angle PSF (calib 'psf_dipole_M_angle' / 'psf_blur_angle_px2'): one LUT per angle;
         # self.lut = the exact average of the two angle LUTs (pattern-free consumers: templates, sums); self.psf = the
-        # angle-averaged model of set_psf_extras(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
+        # angle-averaged model of torch_psf.load_psf(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
         self.lut_angle = None
         if has_angle_psf(self.c):
             self.lut_angle = []
             for k in range(2):
-                set_psf_extras(self.psf, self.c, angle=k)
+                pk = spsf.load_psf(calib_path, roisize=psf_roi, oversample=3, device=device, angle=k)
                 with torch.no_grad():
-                    la = torch.cat([self.psf(p, torch.full((len(p),), self.focus, device=self.dev)) for p in pos.split(1024)])
+                    la = torch.cat([render(pk, p) for p in pos.split(1024)])
                 self.lut_angle.append(la.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi))
-            set_psf_extras(self.psf, self.c)
             self.lut = 0.5 * (self.lut_angle[0] + self.lut_angle[1])   # exact angle average (equal light per angle)
         self.zs = zs
         cam = self.c['camera']

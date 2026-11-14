@@ -8,7 +8,7 @@ usage: python crlb_jan13.py [gpu] -> out/zimflux/crlb/crlb_jan13.json"""
 import sys, json, numpy as np, torch
 sys.path.insert(0, '/home/jc/simcode2/analysis/zimflux')
 import crlb_s0 as C
-from simcode.psf.vectorial import VectorialPSF
+from simcode.psf import VectorialPSF
 ZD = 0.060
 ab = np.load('/home/jc/simcode2/out/zimflux/ref/zimflux/vectorpsf/delft_beads_feb23_15nm.npy')
 orders = [(2, -2), (2, 2), (3, -1), (3, 1), (3, -3), (3, 3), (4, 0), (4, -2), (4, 2), (5, -1), (5, 1), (6, 0)]
@@ -26,7 +26,7 @@ print('pattern', K, slots, PLAT, ANG, M, ETA, 'bg', BG, 'box p10/50/90', box, fl
 
 # fraction of the ROI photons in the box statistic (25 px ROI, emitter centred), mean over z_e 0..150 nm
 f = C.focus_for_depth(ZD)
-p25 = VectorialPSF(25, pixelsize=C.PX, NA=1.49, n_imm=1.52, n_med=1.33, wavelength=C.LAM, zernike_indices=sorted(ZERN),
+p25 = VectorialPSF(25, pixel_um=C.PX, NA=1.49, n_imm=1.52, n_med=1.33, wavelength_um=C.LAM, zernike_indices=sorted(ZERN),
                    npupil=64, oversample=3, device=C.dev)
 with torch.no_grad():
     p25.zcoef[:] = torch.tensor([ZERN[j] for j in sorted(ZERN)], device=C.dev)

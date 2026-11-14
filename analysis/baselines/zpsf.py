@@ -15,7 +15,7 @@ z-stack npz format (written by `python analysis/baselines/zpsf.py export <calib.
   z0_um, dz_um                  z_k = z0_um + k dz_um
   emitter_z_um (optional)       plane used by the 2D fits (default: the calib's emitter_z_median_um, else 0.055)
   focus_um, source (optional)   metadata
-The knots are interpolated with the Catmull-Rom 3D spline of simcode.psf.conv_spline.ConvSplinePSF (value and d/dx, d/dy, d/dz).
+The knots are interpolated with the Catmull-Rom 3D spline of torch_psf.ConvSplinePSF.render (value and d/dx, d/dy, d/dz).
 
 API: psf = load(spec); g, gx, gy = psf.eval(xc, yc, P[, z]) with xc, yc [N] = emitter position relative to the ROI centre (px;
 pixel j of a P-px ROI has its centre at j - (P-1)/2), returns [N,P,P] tensors (g sums to ~1 over the full plane; gx = dg/dxc).
@@ -26,7 +26,8 @@ import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.psf.conv_spline import ConvSplinePSF, geometry_matrix
+from simcode.psf import ConvSplinePSF
+from simcode.psf import geometry_matrix
 
 
 class GaussPSF:
@@ -48,18 +49,20 @@ class GaussPSF:
 
 
 class ZStackLUT(ConvSplinePSF):
-    """ConvSplinePSF.evaluate on an arbitrary knot stack (no VectorialPSF needed)."""
+    """torch_psf ConvSplinePSF.render on an arbitrary knot stack: knot origin u0 (px), S knots per px and any ROI size P (also
+    even). The ConvSplinePSF constructor derives the knot origin from its own grid (odd ROI), so the grid attributes that
+    render() uses are set here."""
     def __init__(self, zstack, S, u0, z0, hz, P, xmax=None):
-        self.P = self.roisize = P; self.S = S = int(S); self.dev = zstack.device
+        self.roisize = P; self.S = S = int(S); self.dev = zstack.device; self.dtype = torch.float32
         self.z0, self.hz, self.nz = float(z0), float(hz), zstack.shape[0]
-        self.u0 = float(u0); self.focus = float('nan')
-        self.zstack = zstack.contiguous(); D, H, W = zstack.shape; self.HW, self.W = H * W, W
+        self.u0 = float(u0)
+        self.knots = zstack.contiguous(); D, H, W = zstack.shape; self.nv, self.nu = H, W
         assert H == W, 'square knot grid expected'
         self.Lw = Lw = (P - 1) * S + 4
         r = lambda n_: torch.arange(n_, device=self.dev)
         self.pat = (r(4)[:, None, None] * H * W + r(Lw)[None, :, None] * W + r(Lw)[None, None, :]).reshape(-1)
         self.G = geometry_matrix(self.dev)
-        e = torch.arange(4, device=self.dev); self.e, self.em1 = e, (e - 1).clamp_min(0)
+        self.e = torch.arange(4, device=self.dev)
         o0 = -(P - 1) / 2
         self.oS0 = float((o0 - self.u0) * S)
         # largest |x| whose 4 x Lw x Lw knot block stays inside the grid (both sides)
@@ -89,8 +92,8 @@ class SplinePSF:
         zz = torch.full_like(xc, self.z_fit) if z is None else z
         pos = torch.stack([xc, yc, zz], 1).float()
         if not grad:
-            return L.evaluate(pos)
-        g, gx, gy, gz = L.evaluate(pos, grad=True)
+            return L.render(pos)
+        g, gx, gy, gz = L.render(pos, grad=True)
         return g, gx, gy
 
     def save(self, fn, **extra):
@@ -100,21 +103,18 @@ class SplinePSF:
 
 def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01, angles='avg'):
     """knot stack of a calib json's VectorialPSF (as simcode.pipeline.common.load_calib, larger ROI). angles: 'avg' = mean of
-    the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = set_psf_extras(angle=None)."""
+    the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = torch_psf.load_psf(angle=None)."""
+    from simcode import psf as spsf
     from simcode.config import resolve
-    from simcode.psf.vectorial import VectorialPSF, set_psf_extras, has_angle_psf
+    from simcode.psf import has_angle_psf, spline
     path = resolve(calib); c = json.load(open(path))
-    psf = VectorialPSF(P, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'],
-                       wavelength=c['wavelength_um'], oversample=3, device=device)
-    with torch.no_grad():
-        psf.zcoef.copy_(torch.tensor(c['zernike_waves'], device=device)); psf.apod.copy_(torch.tensor(c['apod'], device=device))
     ang = has_angle_psf(c)
     which = [0, 1] if (angles == 'avg' and ang) else ([angles] if isinstance(angles, int) else [None])
     stacks = []
     for a in which:
-        set_psf_extras(psf, c, angle=a)
-        L = ConvSplinePSF(psf, c['focus_um'], zmax, sub=sub, hz=hz, xmax=xmax)
-        stacks.append(L.zstack)
+        psf = spsf.load_psf(path, roisize=P, oversample=3, device=device, angle=a)
+        L = spline(psf, zmax, oversample=sub, dz_um=hz, xy_limit=xmax)
+        stacks.append(L.knots)
     zs = torch.stack(stacks).mean(0)
     desc = f'calib:{os.path.basename(path)} angles={"avg(0,1)" if len(which) == 2 else which[0]}'
     return SplinePSF(zs, L.S, L.u0, L.z0, L.hz, c.get('emitter_z_median_um', 0.055), desc, device,

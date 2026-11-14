@@ -9,7 +9,7 @@ per-axis (per pattern angle) PSF, for per-frame intensities and for a SIMFLUX jo
 usage: python analysis/psf3d/intensity.py <fit _psf.pt (blps3)> <calib json (pattern)> <out prefix>"""
 import sys, json, math
 import numpy as np, torch
-from simcode.psf.vectorial import VectorialPSF
+from simcode.psf import VectorialPSF
 
 import os
 dev = os.environ.get('PSF3D_DEV', 'cuda')
@@ -24,7 +24,7 @@ MODELS = {}
 
 def model(R):
     if R not in MODELS:
-        m = VectorialPSF(R, oversample=3, NA=float(S['NA']), wavelength=0.70, n_med=1.33, device=dev)
+        m = VectorialPSF(R, oversample=3, NA=float(S['NA']), wavelength_um=0.70, n_med=1.33, device=dev)
         with torch.no_grad(): m.zcoef.copy_(S['zcoef'].to(dev)); m.apod.copy_(S['apod'].to(dev))
         for p_ in m.parameters(): p_.requires_grad_(False)
         MODELS[R] = m

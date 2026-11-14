@@ -18,7 +18,7 @@ import numpy as np, torch
 from scipy.optimize import least_squares
 sys.path.insert(0, '/home/jc/simcode2')
 from simcode.util import proctitle
-from simcode.psf.vectorial import VectorialPSF, set_psf_extras
+from simcode import psf as spsf
 
 proctitle.set_title('nr-r24r')
 torch.set_num_threads(6)
@@ -35,11 +35,7 @@ dev = 'cpu'
 
 def load(m, dipM=None):
     c = json.load(open(f'{ROOT}/calib_{m}.json'))
-    p = VectorialPSF(R, pixelsize=c['pixelsize_um'], NA=c['NA'], n_imm=c['n_imm'], n_med=c['n_med'], wavelength=c['wavelength_um'],
-                     oversample=3, device=dev)
-    with torch.no_grad():
-        p.zcoef.copy_(torch.tensor(c['zernike_waves'])); p.apod.copy_(torch.tensor(c['apod']))
-    set_psf_extras(p, c)
+    p = spsf.load_psf(f'{ROOT}/calib_{m}.json', roisize=R, oversample=3, device=dev)
     if dipM is not None: p.dipM = torch.tensor(dipM, dtype=torch.float32)
     return c, p
 

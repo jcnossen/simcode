@@ -195,7 +195,7 @@ class RealSim4Pi:
                 Xi = ((ix.long() + pad)[:, None, None] + o_[None, None, :] - h).expand(-1, P, P)
                 ok = (Yi >= 0) & (Yi < img.shape[-2]) & (Xi >= 0) & (Xi < img.shape[-1])
                 bi = sb[idx][:, None, None].expand(-1, P, P)
-                inc, cr, cim = (row[c].evaluate(pos) for row in lut.luts)                         # 3 components, once
+                inc, cr, cim = (row[c].render(pos) for row in lut.luts)                         # 3 components, once
                 for a in range(2):
                     ph = (Phi[idx] + (delta[sb[idx]] if a else 0.0))[:, None, None]
                     g = inc + torch.cos(ph) * cr - torch.sin(ph) * cim                                 # [m,P,P]

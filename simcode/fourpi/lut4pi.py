@@ -4,36 +4,20 @@ dependence.
 For a global interferometer phase offset Phi (psf4pi phi_extra) every channel image is exactly
     g_c(x, y, z; Phi) = inc_c(x, y, z) + cos(Phi) cr_c(x, y, z) - sin(Phi) ci_c(x, y, z)
 (inc = incoherent part, cr + i ci = coherent cross term). The three components per channel are tabulated from
-g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks, reusing simcode.psf.conv_spline.ConvSplinePSF's evaluation (the convolutional 3D spline of torch-spline-3d,
-https://gitlab.com/jcnossen/torch-spline-3d) (instances are
-created with their knot stacks set directly; ConvSplinePSF itself is imported, not modified).
+g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks: torch_psf.ConvSplinePSF instances created with their knots set
+directly (the convolutional 3D spline of torch-spline-3d).
 
 LUT4Pi(psf, zmin, zmax).evaluate(pos [N,3], Phi [N], grad=False) -> [N,4,P,P] (and d/dx, d/dy, d/dz, d/dPhi).
 """
 import math
 import torch
-from simcode.psf.conv_spline import ConvSplinePSF, geometry_matrix
+from simcode.psf import ConvSplinePSF
 from simcode.fourpi.psf4pi import PSF4Pi, psf_from_state
 
 
-def _lut_from_stack(G, P, S, z0, hz, c, dev):
-    L = object.__new__(ConvSplinePSF)
-    L.P = L.roisize = P; L.focus = 0.0; L.dev = dev; L.S = S
-    L.xmax = float(P / 2 + 1)
-    nz = G.shape[0]
-    L.z0, L.hz, L.nz = z0, hz, nz
-    L.u0 = -(c * S + S - 1) / S
-    L.zstack = G.contiguous()
-    D, H, W = L.zstack.shape; L.HW, L.W = H * W, W
-    L.Lw = Lw = (P - 1) * S + 4
-    r = lambda n_: torch.arange(n_, device=dev)
-    L.pat = (r(4)[:, None, None] * H * W + r(Lw)[None, :, None] * W + r(Lw)[None, None, :]).reshape(-1)
-    L.G = geometry_matrix(dev)
-    e = torch.arange(4, device=dev)
-    L.e, L.em1 = e, (e - 1).clamp_min(0)
-    o = torch.arange(P, device=dev, dtype=torch.float32) - (P - 1) / 2
-    L.oS0 = float((o[0] - L.u0) * S)
-    return L
+def _lut_from_stack(G, P, S, zmin, zmax, hz, zpad, dev):
+    """ConvSplinePSF with the knots G [nz, nv, nu] (offset limit P / 2 + 1 px)"""
+    return ConvSplinePSF(P, (zmin, zmax), oversample=S, dz_um=hz, zpad=zpad, xy_limit=P / 2 + 1, device=dev, knots=G)
 
 
 class LUT4Pi:
@@ -65,26 +49,26 @@ class LUT4Pi:
             for ch in range(4):
                 im = comp[:, ch].reshape(nz, sub, sub, Pl, Pl)
                 G = im.flip(1).flip(2).permute(0, 3, 1, 4, 2).reshape(nz, Pl * sub, Pl * sub)
-                row.append(_lut_from_stack(G, P, sub, float(z0), hz, c, dev))
+                row.append(_lut_from_stack(G, P, sub, zmin, zmax, hz, zpad, dev))
             self.luts.append(row)
         self.zmin, self.zmax = zmin, zmax
 
     def components(self, pos, grad=False):
         """-> [3 (inc, cr, ci), N, 4, P, P] (+ the same for d/dx, d/dy, d/dz if grad)"""
-        out = [[L.evaluate(pos, grad) for L in row] for row in self.luts]
+        out = [[L.render(pos, grad) for L in row] for row in self.luts]
         if not grad:
             return torch.stack([torch.stack(r, 1) for r in out])
         return [torch.stack([torch.stack([o[k] for o in r], 1) for r in out]) for k in range(4)]
 
     def evaluate_ch(self, pos, Phi, c):
         """one channel: [N,P,P]"""
-        inc, cr, ci = (row[c].evaluate(pos) for row in self.luts)
+        inc, cr, ci = (row[c].render(pos) for row in self.luts)
         return inc + torch.cos(Phi)[:, None, None] * cr - torch.sin(Phi)[:, None, None] * ci
 
     def evaluate_ch_grad(self, pos, Phi, c):
         """one channel with derivatives: value, d/dx, d/dy, d/dz, d/dPhi, each [N,P,P]"""
         cP, sP = torch.cos(Phi)[:, None, None], torch.sin(Phi)[:, None, None]
-        a, b, e = (row[c].evaluate(pos, True) for row in self.luts)
+        a, b, e = (row[c].render(pos, True) for row in self.luts)
         out = [a[k] + cP * b[k] - sP * e[k] for k in range(4)]
         return out + [-sP * b[0] - cP * e[0]]
 
