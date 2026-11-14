@@ -5,7 +5,8 @@ candidate cut, crop, batches), no package code changed. Per chunk: <out>/head_<f
 x_det, y_det; region coordinates), bw (window index into PW), PW [nW,6,5] (pattern per window), and the production output rows
 (wstart, frame, p, phot, X0, Y0, and the production solve x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy as the reference for variant A).
 usage: CUDA_VISIBLE_DEVICES=2 python analysis/ablation_cov/capture.py --run <pipeline out dir> --movie <tif> --calib <json> --out <dir>
-          --p2_cal <calib json> [--crop 5,5,110] [--chunks 0,6000] [--netset m1809]"""
+          --p2_cal <calib json> [--crop 5,5,110] [--chunks 0,6000] [--model m1809]
+(--model: a name of simcode/models.json or a model folder; its pass-2 detector and head are used)"""
 import argparse, json, os, sys, time
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
@@ -19,11 +20,11 @@ def main():
     ap.add_argument('--run', required=True); ap.add_argument('--movie', required=True); ap.add_argument('--calib', required=True)
     ap.add_argument('--out', required=True); ap.add_argument('--p2_cal', required=True)
     ap.add_argument('--crop', default='5,5,110'); ap.add_argument('--chunks', default=''); ap.add_argument('--chunk', type=int, default=6000)
-    ap.add_argument('--netset', default='m1809'); ap.add_argument('--cand_pmin', type=float, default=0.3)
+    ap.add_argument('--model', default='m1809'); ap.add_argument('--cand_pmin', type=float, default=0.3)
     ap.add_argument('--pattern', default='')
     a = ap.parse_args()
     proctitle.set_title('covabl')
-    N = json.load(open(os.path.join(REPO, 'analysis', 'papersim', 'netsets.json')))[a.netset]
+    N = config.model_set(a.model)
     from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
     from simcode.p2 import front as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = a.cand_pmin

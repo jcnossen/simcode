@@ -18,7 +18,7 @@ intensity fit is done anywhere in the method.
 | (3. automatic c) | Not a pipeline stage since 2026-11-14 (the paper uses the fixed c of the model's calibration). `simcode/autoc.py` remains as an analysis estimator: it fits θ = (s, c, c_a) of the intensity noise model Σ(θ) = s Σ_net + c² diag(μ²) + c_a² μμᵀ (within angle) to the solve's own residuals (isolated, non-kinetic rows; per-frame and angle-contrast PIT medians binned by SNR; 3 fixed-point re-solves). | `autoc.py` |
 | 4. pattern solve | Per row, a Levenberg–Marquardt fit of (x, y, B[, t_on, t_off]) to I_t with the covariance Σ(μ). The prior is a Gaussian term. Starts: the prior centre plus the 8 fringe-shifted starts (±1 period per angle). The on/off kinetics model is kept only if it lowers the NLL by > 9.21. The output is the fringe posterior mean over the deduplicated starts. σ_cal = (chi²-aware Fisher σ + posterior spread) × a per-photon-bin factor, calibrated on sims and rescaled for real data. | `hd/msolve.py`, `hd/msolve_fast.py`, `hd/sc.py:sc_solve` |
 | 5. pass 2 | Pattern-aware detector **p2_det** and head **p2_head_long** (p2L). They are det_n1 / sc5nb with extra input channels for the estimated illumination, zero-initialised and then fine-tuned with a realistic pattern-error model. Their output goes through the same pattern solve (the model's pass-2 calibration, e.g. `calib/calib_p2L_m1809_real.json`). | `p2/front.py`, `p2/head2.py`, `p2/det2.py` |
-| 6. table | Localization table. The phase-calibrated selection `sel` keeps, per photon band, the pass fraction of p ≥ 0.63, taken as the top-p rows in each 6 × 6 sub-pixel cell. `strict` is the recommended strict product: a per-10-px-tile σ quantile; q from the GT-free row density (anchors where it matches SIMCODE's coverage on the real movies, in-sample, under the automatic and the fixed c alike). | `strict.py` |
+| 6. table | Localization table. The phase-calibrated selection `sel` keeps, per photon band, the pass fraction of p ≥ 0.63, taken as the top-p rows in each 6 × 6 sub-pixel cell. The paper's selection is max(σx, σy) ≤ 12 nm on the rows with p ≥ 0.63 inside the crop (`strict.select`; the per-tile strict product and the u ≤ 0.45 rule were removed on 2026-11-14). | `strict.py` |
 
 ### Run record
 
@@ -32,8 +32,8 @@ warns about every input or code difference; on the same code and GPU the outputs
 
 ### Models (2026-11)
 
-The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; `--model`, default
-`m1809`; called network sets / `netsets.json` / `--netset` until 2026-11-14). A model has the same four architectures and training recipes as described below; the simulator's PSF is the
+The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`, `m1809g`; `--model`,
+required; or the path of a model folder with a `model.json`). A model has the same four architectures and training recipes as described below; the simulator's PSF is the
 averaged in-situ PSF of the target movie (`--calib` of the trainers), and the pass-1 head is fine-tuned from `hd_sc5nb`
 (`models/README.md` has the recipe and the file list). In the table above, read det_n1 / sc5nb / p2_det / p2_head_long as
 the detector / head / pass-2 detector / pass-2 head of the model (`det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`,
@@ -162,5 +162,5 @@ See `RESULTS.md` for the numbers.
   and gross errors fall from 23 % (p1) to 4.5 % (p2s).
 - **2.5 nM.** There is an event-static prior error: about 40 % of an event-specific image-vs-pattern offset leaks into
   the final position. Per window vs SIMCODE there: p1 a tie, p2L ~7 % (indicative, NN bias-corrected).
-- **σ of the strict product.** It is overconfident in its best bins (winner's curse, 1.3–1.9× in sim). Quote NN or GT
-  RMS for it, never its σ threshold.
+- **σ of a per-tile σ-quantile selection** (the strict product, removed 2026-11-14) is overconfident in its best bins
+  (winner's curse, 1.3–1.9× in sim). Quote NN or GT RMS for such a subset, never its σ threshold.
