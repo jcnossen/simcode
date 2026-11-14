@@ -1,7 +1,7 @@
 """
 SIMCODE v2 on a DMD-SIMFLUX DNA-PAINT movie, production settings.
 
-  python -m simcode.run --movie <movie.tif> --calib <in-situ calib.json> --out <dir> [--model m1809]
+  python -m simcode.run --movie <movie.tif> --calib <in-situ calib.json> --model m1809 --out <dir>
   python -m simcode.run --dataset 1809_2 --out <dir>          (a paper dataset: movie, calibration, model)
 
 Stages (each skipped if its outputs exist, unless --redo):
@@ -13,15 +13,15 @@ Stages (each skipped if its outputs exist, unless --redo):
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
                  with the model's fixed-c solve calibration
   4  pass 2      pattern-aware pass-2 detector + head (p2L) fed the estimated pattern, then the same solve
-  5  table       localization tables locs_p1.npz and locs_p2.npz with the selections (simcode/strict.py): main = the
-                 paper's global precision rule max(sx, sy) <= sigma_max nm (--sigma_max), u = the earlier per-tile
-                 "u <= 0.45" (--u_max), sel (phase-calibrated), strict (per-10-px-tile sigma quantile, q from the
-                 row density); the model's selection-aware sigma rescale (--sig_u); the selections as small files
-                 (--subset); summary.json
-Networks and calibrations come from a model (--model, simcode/models.json; default m1809; --netset is the older name);
---det / --head / --cal / --p2_det / --p2_head / --p2_cal override single files. Paths are relative to the models directory
-(simcode/config.py). --dataset <name> takes movie, calibration and model of a paper dataset from the '_production' entry of
-models.json (what the paper tables are made with).
+  5  table       localization tables locs_p1.npz and locs_p2.npz (simcode/strict.py) with the model's selection-aware
+                 sigma rescale (--sig_u); the paper's selection max(sx, sy) <= sigma_max nm on the rows with p >= 0.63
+                 inside the crop (--sigma_max; simcode.strict.select / simcode.dataset.Dataset.select) as small files
+                 locs_p*_sig<X>.npz (--subset); summary.json
+Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13, m1809g;
+file names relative to the models directory, simcode/config.py), or the path of a model folder with a model.json (as written
+by the automatic pipeline's training stage / simcode.auto.train.export_model). There are no single-file overrides: a model
+with other files is a model folder. --dataset <name> takes movie, calibration and model of a paper dataset from the
+'_production' entry of models.json (what the paper tables are made with).
 Run record: <out>/run_config.json (+ run_config.yaml), written at the start (status 'running') and completed at the end
 ('done'): the fully resolved settings, sha256 of the movie / calibration / every model file, code commit, environment,
 pattern and selection outcome (simcode/util/runconfig.py; README "Run record").
@@ -31,16 +31,11 @@ Set CUDA_VISIBLE_DEVICES to choose the GPU; several GPUs: the same command once 
 (python -m simcode.fileio.launch --gpus 1,2 -- python -m simcode.run ... --claim 1): the chunks of pass 1 and pass 2 are
 shared between the copies, the stages in between run in one of them.
 A 6000-frame 0.5 nM chunk takes ~0.5 min (pass 1 + solve) on an idle RTX 3090.
-Options removed on 2026-11-14 (their production value is now the only behaviour) are accepted only with that value:
---pass2, --autoc 0, --autoc_fast 0, --cand_pmin 0.3, --fast 1, --compile auto, --compile_head off (simcode/util/retired.py).
 """
 import argparse, json, os, sys, time
 from simcode import config
 
 PROD = config.production()
-SUBSETS = 'main,u,strict'           # selections written as small files (strict.write_subset)
-RETIRED = {'--pass2': None, '--autoc': '0', '--autoc_fast': '0', '--cand_pmin': '0.3', '--fast': '1', '--compile': 'auto',
-           '--compile_head': 'off'}
 
 
 def _uncal(args):
@@ -58,7 +53,8 @@ def build_parser():
     ap.add_argument('--movie', default='', help='movie .tif (further parts movie_X1.tif ... are found automatically)')
     ap.add_argument('--calib', default='', help='in-situ PSF / camera calibration json (e.g. insitu/calib_1809_2_psf3d.json)')
     ap.add_argument('--out', required=True)
-    ap.add_argument('--model', '--netset', dest='model', default='', help='model of simcode/models.json (default: its _default)')
+    ap.add_argument('--model', default='', help='the model (required, or from --dataset / --config): a name of simcode/models.json '
+                    '(m1809, m25, g13, m1809g) or the path of a model folder with a model.json')
     ap.add_argument('--cal_kind', default=PROD['cal_kind'], choices=['real', 'sim'], help="solve calibrations of the model: 'real' (real movies; default) or 'sim' (simulated movies)")
     ap.add_argument('--prefetch', type=int, default=1, help='read the next chunk in a background thread (identical data); 0 = off')
     ap.add_argument('--claim', type=int, default=0, help='1: several copies of this command share the chunks (one copy per GPU)')
@@ -67,15 +63,12 @@ def build_parser():
     ap.add_argument('--chunk', type=int, default=6000)
     ap.add_argument('--chunk_list', default='', help="process only these chunk starts, e.g. '12000'")
     ap.add_argument('--nframes', type=int, default=0)
-    ap.add_argument('--det', default='', help='pass-1 detector (default: the model)'); ap.add_argument('--head', default='', help='pass-1 head')
-    ap.add_argument('--cal', default='', help="pass-1 solve calibration (default: the model's)")
-    ap.add_argument('--p2_det', default=''); ap.add_argument('--p2_head', default='')
-    ap.add_argument('--p2_cal', default='', help="pass-2 solve calibration (default: the model's)")
-    ap.add_argument('--drift', default='', help='optional drift [F,2] px for the strict-product coverage (e.g. DME output)')
-    ap.add_argument('--strict_q', type=float, default=None, help='fixed per-tile quantile (default: from the row density)')
-    ap.add_argument('--sigma_max', type=float, default=None, help='nm; threshold of the main selection (max(sx, sy) <= sigma_max on the rows with a rank; stored in the table; default strict.SIGMA_MAX_NM)')
-    ap.add_argument('--u_max', type=float, default=None, help="threshold of the per-tile rule 'u' (strict_u <= u_max, stored in the table; default 0.45)")
-    ap.add_argument('--subset', default=SUBSETS, help=f"selections also written as small files (strict.write_subset; default {SUBSETS!r}; '' = none)")
+    ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
+                    'selection region / sigma-rescale tiles use the corrected positions')
+    ap.add_argument('--sigma_max', type=float, default=None, help="nm; threshold of the paper's selection (max(sx, sy) <= sigma_max on the rows with "
+                    'p >= 0.63 inside the crop; stored in the table; default strict.SIGMA_MAX_NM)')
+    ap.add_argument('--subset', default=None, help="thresholds (nm) of the selection subset files locs_p*_sig<X>.npz, e.g. '12,14' "
+                    "(default: sigma_max; '' = none)")
     ap.add_argument('--format', default='npz', help='table formats: npz,csv,hdf5')
     ap.add_argument('--sig_u', default='set', help='selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table); '
                     "'set' (default) = the rescale of the model; '' = none")
@@ -85,20 +78,26 @@ def build_parser():
 
 def resolve(ap, argv):
     """arguments -> (a, model dict, pass-1 solve calibration): the dataset, the model's files and the defaults filled in"""
-    from simcode.util import retired
-    a = ap.parse_args(retired.strip(argv, RETIRED, 'simcode.run'))
+    a = ap.parse_args(argv)
     if a.dataset:
         D = PROD['datasets'].get(a.dataset)
         if D is None: ap.error(f'unknown dataset {a.dataset!r} ({", ".join(PROD["datasets"])})')
         if not (a.model or D['model']): ap.error(f'dataset {a.dataset}: no model is defined for it; give --model')
         a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.model = a.model or D['model']
     if not a.movie or not a.calib: ap.error('--movie and --calib are required (or --dataset)')
-    N = config.model_set(a.model or None)
-    a.det = a.det or N['det']; a.head = a.head or N['head']; a.p2_det = a.p2_det or N['p2_det']; a.p2_head = a.p2_head or N['p2_head']
-    a.p2_cal = a.p2_cal or N[f'p2_cal_{a.cal_kind}']
+    if not a.model: ap.error('--model is required (a name of simcode/models.json or a model folder), or --dataset')
+    try:
+        N = config.model_set(a.model)
+    except (KeyError, ValueError, OSError) as e:
+        ap.error(str(e))
+    a.det, a.head, a.p2_det, a.p2_head = N['det'], N['head'], N['p2_det'], N['p2_head']
+    a.p2_cal = N[f'p2_cal_{a.cal_kind}']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
-    # (2026-11-11) with an explicit --cal (e.g. a retrained head's calibration) its prior_off also feeds the pattern stage
-    cal = config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
+    if a.sigma_max is None:
+        from simcode import strict as SP
+        a.sigma_max = SP.SIGMA_MAX_NM
+    if a.subset is None: a.subset = f'{a.sigma_max:g}'
+    cal = N[f'cal_{a.cal_kind}']
     return a, N, cal
 
 
@@ -110,8 +109,7 @@ def settings_of(a, cal):
                 det=r(a.det), head=r(a.head), cal=r(cal), p2_det=r(a.p2_det), p2_head=r(a.p2_head), p2_cal=r(a.p2_cal),
                 sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',
                 crop=a.crop, chunk=a.chunk, chunk_list=a.chunk_list, nframes=a.nframes,
-                sigma_max=SP.SIGMA_MAX_NM if a.sigma_max is None else a.sigma_max, u_max=SP.U_MAX if a.u_max is None else a.u_max,
-                strict_q=a.strict_q, drift=os.path.abspath(a.drift) if a.drift else '', subset=a.subset, format=a.format,
+                sigma_max=a.sigma_max, drift=os.path.abspath(a.drift) if a.drift else '', subset=a.subset, format=a.format,
                 prefetch=a.prefetch, claim=a.claim, min_free_gb=a.min_free_gb, redo=a.redo)
 
 
@@ -127,7 +125,7 @@ def fixed_values():
                 code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_head='off',
                 margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], head_batch=d['head_batch'],
                 solve_batch=d['solve_batch'], pattern_pitch_search_px=list(PE.estimate_k.__defaults__[0]),
-                strict_crop_default=list(SP.CROP), strict_q_density_anchors={k: [list(v) for v in a] for k, a in SP.Q_DENSITY.items()},
+                crop_default=list(SP.CROP),
                 table_files='locs_p1 = tag est (sig_u pass 1), locs_p2 = tag est2 (sig_u pass 2)')
 
 
@@ -138,7 +136,18 @@ def _from_config(path, rest):
     if not REC.get('settings'): raise SystemExit(f'--config {path}: no settings in this record (status {REC.get("status")!r})')
     M = REC.get('model') or {}
     if M.get('name') and M.get('definition') and M['name'] not in config.model_sets():        # e.g. the model of an automatic-pipeline dataset
-        config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k != 'name'}
+        config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k not in ('name', 'folder')}
+    if M.get('files_are_the_models') is False and M.get('definition'):
+        # a record made (before 2026-11-14) with single network / calibration files given next to the model: the files it used
+        # become a model of their own, '<name>@record'
+        S = REC['settings']; k = S.get('cal_kind', 'real'); name = f"{M['name']}@record"
+        D = {kk: v for kk, v in M['definition'].items() if kk not in ('name', 'folder')}
+        D.update({r: S[r] for r in ('det', 'head', 'p2_det', 'p2_head') if S.get(r)})
+        if S.get('cal'): D[f'cal_{k}'] = S['cal']
+        if S.get('p2_cal'): D[f'p2_cal_{k}'] = S['p2_cal']
+        config.model_sets()[name] = D
+        REC = dict(REC, settings=dict(S, model=name))
+        print(f'simcode.run --config: the record used files other than those of model {M["name"]}: re-run with them as model {name}', flush=True)
     W = REC.get('overrides')
     if W and not os.environ.get('AUTO_WRAP'):
         from simcode.auto import runwrap
@@ -210,8 +219,7 @@ def _stages(a, N, cal, Units, atomic_json):
     from simcode import strict as SP
     px = json.load(open(config.resolve(a.calib)))['pixelsize_um'] * 1e3
     crop = tuple(float(v) for v in a.crop.split(','))
-    u_max = SP.U_MAX if a.u_max is None else a.u_max
-    sigma_max = SP.SIGMA_MAX_NM if a.sigma_max is None else a.sigma_max
+    sigma_max = a.sigma_max
     from simcode.pipeline.common import CAND_PMIN
     summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.p2_cal, cand_pmin=CAND_PMIN,
                 run_config='run_config.json (the complete, resolved settings of this run)')
@@ -220,15 +228,15 @@ def _stages(a, N, cal, Units, atomic_json):
     wrote = False
     for (tag, name), su_ in zip(tags, su):
         for _ in Units(a.out, 'table', pattern=name + '.npz', claim=a.claim, redo=not a.claim, title=False).todo(['']):
-            T, info = SP.build_table(a.out, tag, px, a.drift or None, a.strict_q, sig_u=config.resolve(su_) if su_ else None,
-                                     crop=crop, u_max=u_max, sigma_max=sigma_max)
+            T, info = SP.build_table(a.out, tag, px, a.drift or None, sig_u=config.resolve(su_) if su_ else None,
+                                     crop=crop, sigma_max=sigma_max)
             files = SP.write_table(T, info, os.path.join(a.out, name), a.format.split(','))
-            files += [SP.write_subset(T, os.path.join(a.out, name), r, u_max, sigma_max, px) for r in a.subset.split(',') if r]
+            files += [SP.write_subset(T, os.path.join(a.out, name), s, crop=crop, px_nm=px) for s in SP.subset_thresholds(a.subset)]
             atomic_json(os.path.join(a.out, name + '_info.json'), info, indent=1, default=str)
             summ[name] = {k: v for k, v in info.items() if k != 'columns'}; summ[name]['files'] = files
             summ['columns'] = info['columns']; wrote = True
-            print(f'{name}: {info["n_rows"]} rows, main (max sigma <= {sigma_max:g} nm) {info["n_main"]}, u <= {u_max:g} {info["n_u"]}, {info["n_sel"]} selected, strict {info["n_strict"]} (q {info["q"]:.3f}, '
-                  f'{info["coverage_bins"]} / {info["coverage_bins_good"]} occupied 20-nm bins) -> {files}', flush=True)
+            print(f'{name}: {info["n_rows"]} rows, selection (max sigma <= {sigma_max:g} nm, p >= 0.63, in the crop) {info["n_main"]}, '
+                  f'sel {info["n_sel"]} -> {files}', flush=True)
     ST['total_s'] = time.time() - t00
     summ['timing'] = ST
     if wrote or not os.path.exists(os.path.join(a.out, 'summary.json')):

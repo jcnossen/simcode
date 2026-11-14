@@ -41,8 +41,8 @@ REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
                'windows of 6 frames starting every 3 frames')
 # arguments of simcode.run that define the results (the others: out, claim, redo, config)
-RERUN_KEYS = ('movie', 'calib', 'model', 'cal_kind', 'crop', 'chunk', 'chunk_list', 'nframes', 'det', 'head', 'cal', 'p2_det', 'p2_head',
-              'p2_cal', 'drift', 'strict_q', 'sigma_max', 'u_max', 'subset', 'format', 'sig_u', 'prefetch', 'min_free_gb')
+RERUN_KEYS = ('movie', 'calib', 'model', 'cal_kind', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'sigma_max', 'subset', 'format',
+              'sig_u', 'prefetch', 'min_free_gb')
 
 
 def now():
@@ -284,14 +284,10 @@ def pattern_summary(out):
 def selection_summary(info):
     """locs_p*_info.json -> the selection outcome: rule + counts per rule"""
     g = info.get
-    return dict(base='rows with a rank = good (p >= p_good) and inside the crop', crop=g('crop'), px_nm=g('px_nm'),
-                main=dict(rule='rank and max(sx, sy) * px_nm <= sigma_max', sigma_max_nm=g('sigma_max'), n=g('n_main')),
-                u=dict(rule='rank and strict_u <= u_max', u_max=g('u_max'), n=g('n_u')),
-                strict=dict(rule='per-10-px-tile sigma quantile strict_u <= q', q=g('q'), q_mode=g('mode'),
-                            density_per_um2_per_start=g('density_per_um2_per_start'), n=g('n_strict'), coverage_bins=g('coverage_bins'),
-                            coverage_bins_good=g('coverage_bins_good'), median_sigma_nm=g('median_sigma_nm')),
+    return dict(base='rows with score p >= 0.63 inside the crop', crop=g('crop'), px_nm=g('px_nm'),
+                main=dict(rule='p >= 0.63, inside the crop, max(sx, sy) * px_nm <= sigma_max', sigma_max_nm=g('sigma_max'), n=g('n_main')),
                 sel=dict(rule='phase-calibrated detection selection', n=g('n_sel')),
-                counts=dict(n_rows=g('n_rows'), n_good=g('n_good'), n_good_crop=g('n_good_crop'), n_window_starts=g('n_window_starts')),
+                counts=dict(n_rows=g('n_rows'), n_good=g('n_good'), n_good_crop=g('n_good_crop')),
                 sig_u=g('sig_u') or '', drift=g('drift') or '', tag=g('tag'))
 
 
@@ -440,7 +436,12 @@ def append_step(out, step, outputs=None, selection=None):
 # ---- re-run
 def rerun_argv(R):
     """the simcode.run arguments that reproduce a record (without --out, --claim, --redo)"""
-    S = R['settings']; a = []
+    S = dict(R['settings']); a = []
+    if S.get('subset'):
+        # records made before 2026-11-14 name the subsets by rule ('main,u,strict'); the rules u and strict no longer exist
+        sm = S.get('sigma_max') if S.get('sigma_max') is not None else 12.0
+        t = [f'{float(sm):g}' if v == 'main' else v for v in str(S['subset']).split(',') if v and v not in ('u', 'strict', 'sel', 'good', 'all')]
+        S['subset'] = ','.join(t)
     for k in RERUN_KEYS:
         v = S.get(k)
         if v is None or (v == '' and k != 'sig_u' and k != 'subset') or (k in ('nframes',) and not v): continue
@@ -488,6 +489,29 @@ def _parse_commands(path):
     return L
 
 
+def _old_run_args(argv):
+    """a simcode.run command line of a run made before 2026-11-14 (single network / calibration files, --netset, the options that
+    were removed since) -> (args, model dict, pass-1 calibration) as simcode.run.resolve, for the reconstruction of its record"""
+    from simcode import run as RUN, strict as SP
+    ap = RUN.build_parser()
+    for k in ('--det', '--head', '--cal', '--p2_det', '--p2_head', '--p2_cal', '--netset', '--autoc', '--autoc_fast', '--cand_pmin', '--fast',
+              '--compile', '--compile_head', '--strict_q', '--u_max'):
+        ap.add_argument(k, default='')
+    ap.add_argument('--pass2', action='store_true')
+    a = ap.parse_known_args(argv)[0]
+    a.model = a.model or a.netset
+    if a.dataset:
+        D = RUN.PROD['datasets'][a.dataset]
+        a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.model = a.model or D['model']
+    N = config.model_set(a.model or None)
+    for r in ('det', 'head', 'p2_det', 'p2_head'): setattr(a, r, getattr(a, r) or N[r])
+    a.p2_cal = a.p2_cal or N[f'p2_cal_{a.cal_kind}']
+    if a.sig_u == 'set': a.sig_u = N['sig_u']
+    if a.sigma_max is None: a.sigma_max = SP.SIGMA_MAX_NM
+    if a.subset is None: a.subset = f'{a.sigma_max:g}'
+    return a, N, config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
+
+
 def backfill(out, write_file=True):
     """reconstruct run_config.json of a run made before 2026-11-14 from command.txt, summary.json, runtime.json, the info files
     and the present input files (nothing is recomputed). status 'reconstructed'; 'not_recovered' lists what is unknown."""
@@ -499,7 +523,7 @@ def backfill(out, write_file=True):
     cwd = os.getcwd()
     try:
         os.chdir(REPO)                                   # the commands were given from the repository root (relative paths)
-        a, N, cal = RUN.resolve(RUN.build_parser(), runs[0][3] + ['--sig_u', ''])
+        a, N, cal = _old_run_args(runs[0][3] + ['--sig_u', ''])
         # the model name is not in the old command lines: the model of models.json whose network files were used
         name = next((k for k, v in config.model_sets().items() if not k.startswith('_') and all(
             os.path.abspath(config.resolve(v[r])) == os.path.abspath(config.resolve(getattr(a, r))) for r in ('det', 'head', 'p2_det', 'p2_head'))), None)
@@ -514,10 +538,10 @@ def backfill(out, write_file=True):
         files = dict(det=RTJ['sc']['det'], head=RTJ['sc']['head'], cal=RTJ['sc']['cal'], p2_det=RTJ['p2']['det'], p2_head=RTJ['p2']['head'], p2_cal=RTJ['p2']['cal'])
         steps = []; sel = {}
         for t, g, mod, av in stricts:
-            sa = SP.build_parser().parse_args(av)
+            sa = SP.build_parser().parse_known_args(av)[0]         # (options of that time that no longer exist are ignored)
             su = config.resolve(sa.sig_u) if sa.sig_u else ''
             steps.append(dict(step='strict', time=t, command=f'python -m {mod} ' + shlex.join(av), reconstructed=True,
-                              settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, strict_q=sa.strict_q, format=sa.format, crop=sa.crop),
+                              settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, format=sa.format, crop=sa.crop),
                               files=dict(sig_u=file_record(su)) if su else {}))
             files['sig_u_p1' if sa.tag == 'est' else 'sig_u_p2'] = su
         # the tables were built by the logged simcode.strict commands with these rescales; simcode.run now does the same in its
@@ -567,7 +591,7 @@ def backfill(out, write_file=True):
                  invocations=[dict(command=f'python -m {mod} ' + shlex.join(av), time=t, gpu=g, reconstructed=True) for t, g, mod, av in runs],
                  steps=steps,
                  table_state={n: dict(file_modified=iso(t_tab[n]), sig_u=infos[n].get('sig_u'), sigma_max_nm=infos[n].get('sigma_max'), u_max=infos[n].get('u_max'),
-                                      strict_q=infos[n].get('q'), q_mode=infos[n].get('mode'), drift=infos[n].get('drift'), crop=infos[n].get('crop', list(SP.run_crop(out))),
+                                      drift=infos[n].get('drift'), crop=infos[n].get('crop', list(SP.run_crop(out))),
                                       note='settings stored in the info file of the table as it is now') for n in t_tab},
                  summary_json={k: v for k, v in SUM.items() if k not in ('columns', 'locs_p1', 'locs_p2')},
                  chunk_files=dict(first_modified=iso(t_first), crop=list(SP.run_crop(out))), **res)
@@ -587,11 +611,11 @@ def show(R):
          f'calib   {(R.get("calib") or {}).get("path")}  sha256 {str((R.get("calib") or {}).get("sha256"))[:12]}',
          f'model   {M.get("name")}' + ('' if M.get('files_are_the_models', True) else '  (files overridden)')]
     L += [f'  {k:9s} {v.get("path")}  sha256 {str(v.get("sha256"))[:12]}' for k, v in M.get('files', {}).items()]
-    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")} sigma_max {S.get("sigma_max")} u_max {S.get("u_max")} strict_q {S.get("strict_q")} sig_u {S.get("sig_u")!r}',
+    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")} sigma_max {S.get("sigma_max")} sig_u {S.get("sig_u")!r}',
           f'code    {c.get("package")} {c.get("version")} git {str(c.get("git_commit") or c.get("git_commit_inferred"))[:10]} dirty {c.get("git_dirty")}; '
           f'torch {e.get("torch")} cuda {e.get("cuda")} gpu {e.get("gpu")} host {e.get("host")}']
     for n, s in (R.get('selection') or {}).items():
-        L.append(f'{n}: rows {s["counts"]["n_rows"]}, main (sigma <= {s["main"]["sigma_max_nm"]} nm) {s["main"]["n"]}, u {s["u"]["n"]}, sel {s["sel"]["n"]}, strict {s["strict"]["n"]}')
+        L.append(f'{n}: rows {s["counts"]["n_rows"]}, selection (sigma <= {s["main"]["sigma_max_nm"]} nm) {s["main"]["n"]}, sel {s["sel"]["n"]}')
     L += [f'step {i}: {s.get("step")} {s.get("time")} {s.get("command", "")}' for i, s in enumerate(R.get('steps', []))]
     return '\n'.join(L)
 

@@ -1,9 +1,9 @@
 """
 CPU tests of the localization table and the evaluation helpers on synthetic rows (no GPU, no models, no raw data).
 Run: python tests/test_tables.py (or pytest tests).
-  strict   table columns; no 'main' column: select(table) = strict_u finite and max(sx, sy) * px_nm <= the stored sigma_max
-           (global precision rule); select(table, 'u') = strict_u finite and <= the stored u_max; the crop of the run is read
-           from its pass-1 file and a non-default crop moves the tiles; subset files hold exactly the selected rows
+  strict   table columns (no strict_u / strict); select(table) = p >= 0.63, inside the crop, max(sx, sy) * px_nm <= 12 nm
+           (max_precision_nm / min_score / in_region / crop / px_nm); the crop of the run is read from its pass-1 file and
+           moves the selection region and the sigma-rescale tiles; subset files hold exactly the selected rows
   drift    row selection of the drift estimate (simcode/util/drift.drift_rows; DME itself is not run)
   FRC      identical sets never drop below 1/7; block halves; a blurred point pattern resolves near its blur
 """
@@ -33,58 +33,54 @@ def test_strict_table():
         _run_dir(d)
         assert SP.run_crop(d) == (5.0, 5.0, 110.0)
         T, info = SP.build_table(d, 'est2')
-        for k in ('frame', 't', 'x', 'y', 'sx', 'sy', 'photons', 'I', 'p', 'q_dof', 'kin', 'dnll', 'x_prior', 'y_prior', 'good', 'sel', 'disjoint',
-                  'strict_u', 'strict'):
+        for k in ('frame', 't', 'x', 'y', 'sx', 'sy', 'photons', 'I', 'p', 'q_dof', 'kin', 'dnll', 'x_prior', 'y_prior', 'good', 'sel', 'disjoint'):
             assert k in T and len(T[k]) == 1000, k
-        u = T['strict_u']; inc = T['good'] & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115)
-        assert np.array_equal(np.isfinite(u), inc)                                     # a rank exactly for the good rows inside the crop
-        assert np.array_equal(T['good'], T['p'] >= SP.P_GOOD)
-        uu = np.isfinite(u) & (u <= 0.45)
+        assert 'strict_u' not in T and 'strict' not in T and 'u_max' not in info      # the u rule and the strict product are gone
+        inc = T['good'] & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115)
+        assert np.array_equal(T['good'], T['p'] >= SP.P_GOOD) and info['n_good_crop'] == int(inc.sum())
         prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
-        main = np.isfinite(u) & (prec <= SP.SIGMA_MAX_NM)
-        assert 'main' not in T and np.array_equal(SP.select(T), main) and info['sigma_max'] == SP.SIGMA_MAX_NM and info['n_main'] == int(main.sum())
-        assert 0 < main.sum() < np.isfinite(u).sum()                                   # the fixture straddles the threshold
-        assert np.array_equal(SP.select(T, 'u'), uu) and info['u_max'] == 0.45 and info['n_u'] == int(uu.sum())
-        assert np.array_equal(SP.select(T, sigma_max=8.0), np.isfinite(u) & (prec <= 8.0))
-        assert np.array_equal(SP.select(T, sigma_max=8.0, px_nm=100.0), np.isfinite(u) & (prec / SP.PX_NM_DEFAULT * 100 <= 8.0))
-        try: SP.select(T, 0.2); raise AssertionError('a float rule must raise')
-        except TypeError: pass
-        assert np.array_equal(SP.select(T, rule='strict'), T['strict'])
-        assert np.array_equal(T['strict'], np.isfinite(u) & (u <= info['q'])) and not (T['strict'] & ~T['good']).any()
-        assert 0 < np.nanmin(u) and np.nanmax(u) < 1 and SP.select(T, rule='all').all()
-        T2, i2 = SP.build_table(d, 'est2', u_max=0.2, sigma_max=12.5)
-        assert np.array_equal(SP.select(T2, 'u', u_max=0.2), np.isfinite(u) & (u <= 0.2)) and i2['u_max'] == 0.2 and np.array_equal(T2['strict_u'], u, equal_nan=True)
-        assert i2['sigma_max'] == 12.5 and i2['n_main'] == int((np.isfinite(u) & (prec <= 12.5)).sum())
+        main = inc & (prec <= SP.SIGMA_MAX_NM)
+        assert np.array_equal(SP.select(T), main) and info['sigma_max'] == SP.SIGMA_MAX_NM and info['n_main'] == int(main.sum())
+        assert 0 < main.sum() < inc.sum()                                               # the fixture straddles the threshold
+        assert np.array_equal(SP.select(T, 8.0), inc & (prec <= 8.0))
+        assert np.array_equal(SP.select(T, max_precision_nm=8.0, px_nm=100.0), inc & (prec / SP.PX_NM_DEFAULT * 100 <= 8.0))
+        assert np.array_equal(SP.select(T, min_score=0.8), (T['p'] >= 0.8) & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115) & (prec <= 12))
+        assert np.array_equal(SP.select(T, in_region=False), T['good'] & (prec <= 12))
+        assert SP.select(T, None, None, False).all()
+        T2, i2 = SP.build_table(d, 'est2', sigma_max=12.5)
+        assert i2['sigma_max'] == 12.5 and i2['n_main'] == int((inc & (prec <= 12.5)).sum())
         # table and subset files
-        files = SP.write_table(T, info, f'{d}/locs_p2'); fn = SP.write_subset(T, f'{d}/locs_p2', 'main'); fs = SP.write_subset(T, f'{d}/locs_p2', 'strict')
-        fu = SP.write_subset(T, f'{d}/locs_p2', 'u')
-        assert os.path.basename(fn) == f"locs_p2_sig{SP.SIGMA_MAX_NM:g}.npz" and os.path.basename(fs) == 'locs_p2_strictonly.npz' and files == [f'{d}/locs_p2.npz']
-        assert os.path.basename(fu) == 'locs_p2_u045.npz' and np.array_equal(np.load(fu)['x'], T['x'][uu])
+        files = SP.write_table(T, info, f'{d}/locs_p2'); fn = SP.write_subset(T, f'{d}/locs_p2')
+        assert os.path.basename(fn) == f"locs_p2_sig{SP.SIGMA_MAX_NM:g}.npz" and files == [f'{d}/locs_p2.npz']
         L = np.load(f'{d}/locs_p2.npz'); S = np.load(fn)
-        assert float(L['u_max']) == 0.45 and float(L['sigma_max']) == SP.SIGMA_MAX_NM and float(L['px_nm']) == SP.PX_NM_DEFAULT and 'main' not in L.files
-        assert np.array_equal(SP.select(L), main) and np.array_equal(SP.select(L, 'u'), uu)   # the stored thresholds are used when a table is read back
-        SP.write_table(T2, i2, f'{d}/t2'); L2 = np.load(f'{d}/t2.npz')
-        assert np.array_equal(SP.select(L2, 'u'), np.isfinite(u) & (u <= 0.2)) and np.array_equal(SP.select(L2), np.isfinite(u) & (prec <= 12.5))
-        assert os.path.basename(SP.write_subset(L2, f'{d}/t2', 'main')) == 't2_sig12p5.npz'
+        assert 'u_max' not in L.files and float(L['sigma_max']) == SP.SIGMA_MAX_NM and float(L['px_nm']) == SP.PX_NM_DEFAULT
+        assert np.array_equal(SP.select(L), main)
+        assert os.path.basename(SP.write_subset(L, f'{d}/t2', 12.5)) == 't2_sig12p5.npz'
         assert S['sel'].all() and np.array_equal(S['x'], T['x'][main]) and np.array_equal(S['frame'], T['frame'][main]) and float(S['sigma_max']) == SP.SIGMA_MAX_NM
-        assert SP.subset_name('u', 0.3) == 'u030' and SP.subset_name('main', sigma_max=10.0) == 'sig10' and SP.subset_name('main', sigma_max=12.5) == 'sig12p5'
-    print('  ok strict table: columns, main (global sigma) / u / strict / select, sigma_max, u_max, subset files')
+        assert SP.subset_name(10.0) == 'sig10' and SP.subset_name(12.5) == 'sig12p5'
+        assert SP.subset_thresholds(None) == [12.0] and SP.subset_thresholds('') == [] and SP.subset_thresholds('12,14') == [12.0, 14.0]
+    print('  ok strict table: columns, select (max_precision_nm, min_score, in_region), sigma_max, subset files')
 
 
 def test_strict_crop():
     with tempfile.TemporaryDirectory() as d:
-        _run_dir(d, crop=(0, 0, 40), lo=0.0, hi=60.0)                                   # a simulation-like field, crop from the run
+        R = _run_dir(d, crop=(0, 0, 40), lo=0.0, hi=60.0)                               # a simulation-like field, crop from the run
         assert SP.run_crop(d) == (0.0, 0.0, 40.0)
         T, info = SP.build_table(d, 'est2')
         inc = T['good'] & (T['x'] >= 0) & (T['x'] < 40) & (T['y'] >= 0) & (T['y'] < 40)
-        assert np.array_equal(np.isfinite(T['strict_u']), inc) and info['crop'] == [0.0, 0.0, 40.0]
-        Td, _ = SP.build_table(d, 'est2', crop=SP.CROP)                                 # the old hard-coded crop on the same rows: a different product
-        assert not np.array_equal(np.isfinite(Td['strict_u']), inc)
-        # per-tile rank: within one 10-px tile the rank follows sigma
-        t = SP.tile_of(T['x'], T['y'], (0.0, 0.0, 40.0)); k = np.nonzero(inc & (t == np.bincount(t[inc]).argmax()))[0]
-        sig = 0.5 * (T['sx'] + T['sy']).astype(np.float64)
-        assert np.array_equal(np.argsort(T['strict_u'][k], kind='stable'), np.argsort(sig[k], kind='stable'))
-    print('  ok strict crop: read from the run, tiles and ranks follow it')
+        assert info['crop'] == [0.0, 0.0, 40.0] and info['n_good_crop'] == int(inc.sum())
+        prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
+        assert np.array_equal(SP.select(T, crop=(0.0, 0.0, 40.0)), inc & (prec <= 12)) and info['n_main'] == int((inc & (prec <= 12)).sum())
+        # per-tile rank (the sigma rescale's u): within one 10-px tile the rank follows sigma
+        ii = np.nonzero(inc)[0]; sig = 0.5 * (T['sx'] + T['sy']).astype(np.float64)
+        u = SP.tile_rank(T['x'][ii], T['y'][ii], sig[ii], (0.0, 0.0, 40.0))
+        t = SP.tile_of(T['x'][ii], T['y'][ii], (0.0, 0.0, 40.0)); k = np.nonzero(t == np.bincount(t).argmax())[0]
+        assert np.array_equal(np.argsort(u[k], kind='stable'), np.argsort(sig[ii][k], kind='stable')) and 0 < u.min() and u.max() < 1
+        # sigma rescale: only the ranked rows, by g(u)
+        with open(f'{d}/sigu.json', 'w') as f: f.write('{"u_mid": [0.0, 1.0], "g": [1.0, 2.0]}')
+        Tg, ig = SP.build_table(d, 'est2', sig_u=f'{d}/sigu.json')
+        assert np.allclose(Tg['sx'][ii], T['sx'][ii] * (1 + u).astype(np.float32)) and np.array_equal(Tg['sx'][~inc], T['sx'][~inc])
+    print('  ok strict crop: read from the run, selection region, tile ranks and the sigma rescale follow it')
 
 
 def test_drift_rows():

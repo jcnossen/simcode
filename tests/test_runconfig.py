@@ -28,7 +28,7 @@ def _settings(argv):
 
 def test_settings_roundtrip():
     S = _settings(['--dataset', '1809_2', '--out', 'x', '--nframes', '12000', '--sigma_max', '14', '--sig_u', ''])
-    assert S['sigma_max'] == 14 and S['u_max'] == SP.U_MAX and S['sig_u'] == '' and os.path.isabs(S['det']) and os.path.isabs(S['cal'])
+    assert S['sigma_max'] == 14 and 'u_max' not in S and 'strict_q' not in S and S['subset'] == '14' and S['sig_u'] == '' and os.path.isabs(S['det']) and os.path.isabs(S['cal'])
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
@@ -36,6 +36,13 @@ def test_settings_roundtrip():
     assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'sigu_p2_m25' in S['sig_u']
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
+    # --model is required (no single-file options); an old record's rule-named subsets and removed keys are translated / dropped
+    for bad in (['--movie', 'm.tif', '--calib', 'c.json', '--out', 'x'], ['--dataset', '1809_2', '--out', 'x', '--det', 'd.pt'],
+                ['--dataset', '1809_2', '--out', 'x', '--netset', 'm25'], ['--dataset', '1809_2', '--out', 'x', '--pass2']):
+        try: _settings(bad); raise AssertionError(bad)
+        except SystemExit: pass
+    old = dict(settings=dict(S, subset='main,u,strict', u_max=0.45, strict_q=None, det='/x/det.pt'))
+    av = RC.rerun_argv(old); assert av[av.index('--subset') + 1] == '12' and '--u_max' not in av and '--det' not in av
     F = RUN.fixed_values()
     assert F['cand_pmin'] == 0.3 and F['pass2'] is True and F['det_batch'] == 64 and F['pattern_pitch_search_px'] == [1.6, 2.8]
     print('  ok settings -> arguments -> the same settings; fixed values')
@@ -62,10 +69,10 @@ def test_steps_and_start():
         assert len(R['invocations']) == 2 and 'earlier_settings' not in R                    # resumed / second copy
         R = RC.start(d, dict(S, crop='0,0,120'), dict(cand_pmin=0.3), dict(name='m', files={}), dict(path=''), dict(path=''), argv=['--out', d])
         assert len(R['invocations']) == 3 and R['earlier_settings'][0]['settings']['crop'] == '5,5,110'
-        SP.main([d, '--tag', 'est2', '--sigma_max', '14', '--subset', 'main,u'])
+        SP.main([d, '--tag', 'est2', '--sigma_max', '14', '--subset', '14,12'])
         R = RC.load(d); st = R['steps'][-1]
         assert st['step'] == 'strict' and st['settings']['sigma_max'] == 14 and st['settings']['tag'] == 'est2' and st['settings']['crop'] == [5.0, 5.0, 110.0]
-        assert R['outputs']['locs_p2.npz']['written_by'] == 'steps[0]' and 'locs_p2_sig14.npz' in R['outputs'] and 'locs_p2_u045.npz' in R['outputs']
+        assert R['outputs']['locs_p2.npz']['written_by'] == 'steps[0]' and 'locs_p2_sig14.npz' in R['outputs'] and 'locs_p2_sig12.npz' in R['outputs']
         assert R['selection']['locs_p2']['main']['sigma_max_nm'] == 14 and R['selection']['locs_p2']['main']['n'] == st['result']['n_main']
         assert R['outputs']['locs_p2.npz']['arrays_sha256'] == RC.arrays_sha256(f'{d}/locs_p2.npz')
         assert 'simcode.strict' in open(f'{d}/command.txt').read()

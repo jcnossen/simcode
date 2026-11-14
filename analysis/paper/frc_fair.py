@@ -38,11 +38,11 @@ def load(kind, path):
     Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package)."""
     from simcode.dataset import Dataset
     if kind in ('smlm', 'sf'):
-        L = Dataset.from_smlmtorch_npy(path, window=GRID) if path.endswith('.npy') else Dataset.from_picasso(path, window=GRID)
+        L = Dataset.load_npy(path, window=GRID) if path.endswith('.npy') else Dataset.load_hdf5(path, window=GRID)
     elif kind == 'decode':
         L = Dataset.from_decode(path, window=GRID)
     elif kind == 'v2':
-        L = Dataset.from_table(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel.astype(bool)]
+        L = Dataset.load_npz(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel.astype(bool)]
     else:
         raise ValueError(kind)
     return dict(x=L.x.astype(np.float64), y=L.y.astype(np.float64), f=L.frame.astype(np.int64), sx=L.sx.astype(np.float64),

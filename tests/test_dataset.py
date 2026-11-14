@@ -2,13 +2,16 @@
 CPU tests of simcode.dataset.Dataset (no models, no raw data; the two tests on files of the paper runs and the DME test are
 skipped when the files / the dme package / a GPU are not available).
 Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
-  table      built from a fake run directory with simcode.strict; select / mask equal strict.select; indexing; filters; crop
+  table      built from a fake run directory with simcode.strict; select / mask (max_precision_nm, min_score, in_region) equal
+             strict.select; indexing; filters; crop; the in-place variants (filter_, crop_, crop_from_edge_, select_,
+             crlb_filter_, autocrop_)
   formats    npz (lossless, and still a v2 table for the existing readers), Picasso hdf5 (+ yaml; field names / dtypes of the
              paper's sf.hdf5), ThunderSTORM csv (1-based frames, 0.5 px origin), the preprint code's .npy, DECODE npz
   drift      apply / undo, carried through indexing and files; estimate (DME v2) equals simcode.util.drift.drift_of_table
-  v1 names   the preprint class's interface (saveHDF5 / loadHDF5, saveNumpy / loadNumpy, merge, cropFromEdge, applyDrift, ...),
-             addFields: extra fields through indexing, merge, npz / hdf5 / npy / csv; from_run(pass_)
-  render     histogram counts and geometry;  frames  nframes, indices_per_frame;  merge
+  interface  the preprint class's interface in snake_case (save_hdf5 / load_hdf5, save_npz / load_npz, save_npy / load_npy,
+             save_csv_thunderstorm, concatenate, crop_from_edge, apply_drift, num_frames, ...), add_fields: extra fields
+             through indexing, concatenate, npz / hdf5 / npy / csv; from_run(pass_); the old camelCase names are gone
+  render     histogram counts and geometry;  frames  num_frames, indices_per_frame;  concatenate
   real       out/paper2/1809_2/v2_matched/locs_p2.npz: counts of the info json; FRC through the class equals
              analysis/paper/frc_fair.py on a subset
 """
@@ -18,7 +21,7 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 from simcode import strict as SP
-from simcode.dataset import Dataset, Localizations
+from simcode.dataset import Dataset
 from tests.test_tables import _run_dir
 
 REAL = os.path.join(REPO, 'out/paper2/1809_2/v2_matched/locs_p2.npz')
@@ -50,15 +53,21 @@ def test_table_select_index():
         T, info = _table(d)
         L = Dataset.load(d)                                                     # run directory -> locs_p2.npz
         assert len(L) == 3000 and set(L.columns) == set(T) and L.px_nm == SP.PX_NM_DEFAULT and L.window == 6 and L.t_offset == 3
-        assert L.meta['sigma_max'] == SP.SIGMA_MAX_NM and L.meta['u_max'] == SP.U_MAX and L.meta['crop'] == [5.0, 5.0, 110.0]
+        assert L.meta['sigma_max'] == SP.SIGMA_MAX_NM and 'u_max' not in L.meta and L.meta['crop'] == [5.0, 5.0, 110.0]
         assert L.meta['info']['n_main'] == info['n_main'] and L.I.shape == (3000, 6) and np.array_equal(L.x, T['x']) and L['x'] is L.x
         Tz = np.load(f'{d}/locs_p2.npz')
-        for rule, kw in (('main', {}), ('main', dict(sigma_max=8.0)), ('u', {}), ('u', dict(u_max=0.2)), ('strict', {}), ('sel', {}), ('good', {}), ('all', {})):
-            m = SP.select(Tz, rule, **kw)
-            assert np.array_equal(L.mask(rule, **kw), m), rule
-            S = L.select(rule, **kw)
-            assert len(S) == m.sum() and np.array_equal(S.x, T['x'][m]) and np.array_equal(S.I, T['I'][m]) and S.meta['selection']['rule'] == rule
-        assert L.info()['n_main'] == info['n_main'] and L.info()['n_u'] == info['n_u'] and 'main selection' in repr(L)
+        for kw in ({}, dict(max_precision_nm=8.0), dict(min_score=0.8), dict(in_region=False), dict(max_precision_nm=None, min_score=None, in_region=False)):
+            m = SP.select(Tz, **kw)
+            assert np.array_equal(L.mask(**kw), m), kw
+            S = L.select(**kw)
+            assert len(S) == m.sum() and np.array_equal(S.x, T['x'][m]) and np.array_equal(S.I, T['I'][m]) and S.meta['selection']['max_precision_nm'] == kw.get('max_precision_nm', 12.0)
+        assert int(L.mask().sum()) == info['n_main'] and L.info()['n_selected'] == info['n_main'] and 'selection (<= 12 nm)' in repr(L)
+        for old in ('fromEstimates', 'numFrames', 'indicesPerFrame', 'cropFromEdge', 'addFields', 'applyDrift', 'undoDrift', 'estimateDrift',
+                    'isDriftCorrected', 'saveHDF5', 'loadHDF5', 'saveNumpy', 'loadNumpy', 'saveCSVThunderStorm', 'loadCSVThunderStorm', 'merge',
+                    'background', 'fields', 'from_table', 'from_picasso', 'from_arrays', 'save_picasso', 'nframes'):
+            assert not hasattr(Dataset, old), old                               # the old names are gone (2026-11-14)
+        try: L.select('main'); raise AssertionError('a rule name must raise')
+        except TypeError: pass
         assert np.allclose(L.precision_nm, np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT)
         # indexing: mask, slice, index array, one row; a new object every time
         m = T['good']; A = L[m]
@@ -76,18 +85,23 @@ def test_table_select_index():
         C2 = L.crop(20, 30, 60, 70, shift=True); assert np.allclose(C2.x, C.x - 20) and C2.meta['origin'] == [20, 30] and C2.region() == (0, 0, 40, 40)
         L['w'] = np.arange(3000); assert np.array_equal(L[m].w, np.nonzero(m)[0])
         # frames
-        assert L.nframes == T['frame'].max() + 6 and L.numFrames == L.nframes
-        ipf = L.indices_per_frame(); assert len(ipf) == L.nframes and sum(len(i) for i in ipf) == 3000
+        assert L.num_frames == T['frame'].max() + 6
+        ipf = L.indices_per_frame(); assert len(ipf) == L.num_frames and sum(len(i) for i in ipf) == 3000
         f0 = int(T['frame'][100]); assert np.array_equal(np.sort(ipf[f0]), np.nonzero(T['frame'] == f0)[0])
         # merge
         B = Dataset.concatenate([L[:100], L[100:250]], set_group=True)
         assert len(B) == 250 and np.array_equal(B.x, T['x'][:250]) and B.group[99] == 0 and B.group[100] == 1 and len(L[:5] + L[5:9]) == 9
+        # in-place variants: the same rows as the copying methods, on this object
+        for name, args in (('filter', (m,)), ('crop', (20, 30, 60, 70)), ('select', ()), ('crlb_filter', (0.1,)), ('autocrop', ())):
+            A = L.copy(); ref = getattr(A, name)(*args); out = getattr(A, name + '_')(*args)
+            assert out is A and len(A) == len(ref) and np.array_equal(A.x, ref.x) and A.meta == ref.meta, name
+        A = L.copy(); A.meta['imgshape'] = [120, 120]; ref = A.crop_from_edge(10); assert A.crop_from_edge_(10) is A and np.array_equal(A.x, ref.x)
 
 
 def test_npz_roundtrip():
     with tempfile.TemporaryDirectory() as d:
         T, info = _table(d)
-        L = Dataset.from_run(d); L.set_drift(np.random.default_rng(1).normal(0, 0.1, (L.nframes, 2)).astype(np.float32))
+        L = Dataset.from_run(d); L.set_drift(np.random.default_rng(1).normal(0, 0.1, (L.num_frames, 2)).astype(np.float32))
         L.meta['model'] = 'mtest'
         f = L.save(f'{d}/copy.npz'); M = Dataset.load(f)
         assert set(M.columns) == set(L.columns); _same(L, M)
@@ -96,14 +110,14 @@ def test_npz_roundtrip():
         # still a v2 table for the existing readers
         z = np.load(f); assert np.array_equal(SP.select(z), SP.select(T)) and float(z['px_nm']) == SP.PX_NM_DEFAULT
         from simcode.util.drift import drift_rows
-        assert len(drift_rows(z['x'], z['y'], z['frame'], z['sx'], z['sy'], L.nframes)[0])
+        assert len(drift_rows(z['x'], z['y'], z['frame'], z['sx'], z['sy'], L.num_frames)[0])
         # drift applied -> stored corrected, flag kept, undo gives the raw positions
         L.apply_drift(); M = Dataset.load(L.save(f'{d}/dc.npz'))
         assert M.drift_applied and np.array_equal(M.x, L.x) and np.allclose(M.undo_drift().x, T['x'], atol=1e-9, rtol=0)
         # column subset; subset files of strict
-        P = Dataset.from_table(f'{d}/locs_p2.npz', columns=('sx', 'sy')); assert set(P.columns) == {'x', 'y', 'frame', 'sx', 'sy'} and P.meta['sigma_max'] == 12.0
-        S = Dataset.load(SP.write_subset(T, f'{d}/locs_p2', 'main')); assert len(S) == info['n_main'] and S.meta['sigma_max'] == 12.0
-        assert np.array_equal(S.x, L.select('main').undo_drift().x) or np.allclose(S.x, L.select('main').undo_drift().x, atol=1e-9, rtol=0)
+        P = Dataset.load_npz(f'{d}/locs_p2.npz', columns=('sx', 'sy')); assert set(P.columns) == {'x', 'y', 'frame', 'sx', 'sy'} and P.meta['sigma_max'] == 12.0
+        S = Dataset.load(SP.write_subset(T, f'{d}/locs_p2')); assert len(S) == info['n_main'] and S.meta['sigma_max'] == 12.0
+        assert np.array_equal(S.x, L.select().undo_drift().x) or np.allclose(S.x, L.select().undo_drift().x, atol=1e-9, rtol=0)
 
 
 def test_picasso_roundtrip():
@@ -127,15 +141,15 @@ def test_picasso_roundtrip():
         except ImportError:
             pass
         M = Dataset.load(f)
-        assert M.window == 6 and M.nframes == 6100 and M.meta['imgshape'] == [120, 120] and M.px_nm == L.px_nm
+        assert M.window == 6 and M.num_frames == 6100 and M.meta['imgshape'] == [120, 120] and M.px_nm == L.px_nm
         assert set(M.columns) == set(L.columns) | {'psf_sx', 'psf_sy', 'bg'}
         for k in L.columns:
             a, b = L[k], M[k]
             assert a.shape == b.shape, k
             if k in ('x', 'y', 'frame'): assert np.allclose(a, b, atol=1e-5, rtol=0), k                # float32 positions
             else: assert a.dtype == b.dtype and np.array_equal(a, b, equal_nan=a.dtype.kind == 'f'), k
-        assert np.array_equal(M.mask('main', sigma_max=12.0), L.mask('main'))
-        f2 = L.select('main').save(f'{d}/b.hdf5', extra=False)
+        assert np.array_equal(M.mask(in_region=False), L.mask(in_region=False))         # (the hdf5 file carries no crop: the default crop)
+        f2 = L.select().save(f'{d}/b.hdf5', extra=False)
         with h5py.File(f2, 'r') as h: assert h['locs'].dtype.names == tuple(k for k, _ in want) and len(h['locs']) == info['n_main']
 
 
@@ -143,11 +157,11 @@ def test_picasso_paper_file():
     """the paper's SIMFLUX table (written by the preprint code): same values as that code's loader gives (frc_fair.load before)"""
     if not os.path.exists(SF): return _skip('no ' + SF)
     import h5py
-    L = Dataset.from_picasso(SF, window=6)
+    L = Dataset.load_hdf5(SF, window=6)
     with h5py.File(SF, 'r') as h: A = h['locs'][:]
     assert np.array_equal(L.x, A['x']) and np.array_equal(L.sx, A['lpx']) and np.array_equal(L.sy, A['lpy']) and np.array_equal(L.psf_sx, A['sx'])
     assert np.array_equal(L.frame, A['frame']) and np.array_equal(L.photons, A['photons']) and np.array_equal(L.bg, A['bg']) and 'chisq' in L
-    assert L.meta['imgshape'] == [120, 120] and L.nframes == 119995 and L.window == 6
+    assert L.meta['imgshape'] == [120, 120] and L.num_frames == 119995 and L.window == 6
     with tempfile.TemporaryDirectory() as d:
         S = L[:5000]; S.save(f'{d}/s.hdf5')
         with h5py.File(f'{d}/s.hdf5', 'r') as h: B = h['locs'][:]
@@ -168,9 +182,9 @@ def test_thunderstorm_roundtrip():
         assert set(M.columns) == set(L.columns) | {'psf_sx', 'psf_sy', 'bg'} and np.array_equal(M.frame, L.frame)
         assert np.allclose(M.x, L.x, atol=2e-6, rtol=0) and np.allclose(M.y, L.y, atol=2e-6, rtol=0)             # 1e-4 nm
         assert np.allclose(M.sx, L.sx, atol=1e-6, rtol=0) and np.allclose(M.photons, L.photons, rtol=1e-6) and M.I.shape == (500, 6)
-        assert np.allclose(M.I, L.I, rtol=1e-6, atol=1e-6) and np.allclose(M.strict_u, L.strict_u, equal_nan=True, atol=1e-6)
-        for k in ('good', 'sel', 'strict', 'disjoint', 'kin'): assert M[k].dtype == bool and np.array_equal(M[k], L[k]), k
-        assert np.array_equal(M.mask('u', u_max=0.45), L.mask('u'))
+        assert np.allclose(M.I, L.I, rtol=1e-6, atol=1e-6) and np.allclose(M.p, L.p, atol=1e-6)
+        for k in ('good', 'sel', 'disjoint', 'kin'): assert M[k].dtype == bool and np.array_equal(M[k], L[k]), k
+        assert np.array_equal(M.mask(in_region=False), L.mask(in_region=False))
 
 
 def test_v1_and_decode_files():
@@ -194,14 +208,14 @@ def test_v1_and_decode_files():
         for E in (Dataset.load(f'{d}/dec.npz'), Dataset.from_decode(f'{d}/dec.npz')):
             assert np.array_equal(E.photons, L.photons) and 'p' in E and 'photons_sigma' in E and 'z' in E and E.window == 6 and E.meta['info'] == 'decode test'
             assert E.pos.shape == (n, 3)
-        A = Dataset.from_arrays(L.x, L.y, L.frame, L.sx, L.sy, photons=L.photons, px_nm=100.0, window=1, p=np.ones(n))
+        A = Dataset.from_estimates(L.x, L.y, L.frame, L.sx, L.sy, photons=L.photons, px_nm=100.0, window=1, p=np.ones(n))
         assert A.px_nm == 100.0 and A.t_offset == 0 and np.array_equal(A.pos_nm[:, 0], L.x.astype(np.float64) * 100) and A.frame.dtype == np.int64
 
 
-def test_v1_interface_and_fields():
-    """the preprint class's names; extra fields through indexing, merge and every format; from_run(pass_)"""
-    import simcode.locs as LO
-    assert Localizations is Dataset and LO.Dataset is Dataset and LO.Localizations is Dataset
+def test_interface_and_fields():
+    """the preprint class's interface in snake_case; extra fields through indexing, concatenate and every format; from_run(pass_)"""
+    import importlib.util
+    assert importlib.util.find_spec('simcode.locs') is None and importlib.util.find_spec('simcode2') is None     # aliases removed 2026-11-14
     with tempfile.TemporaryDirectory() as d:
         T, info = _table(d)
         T1, i1 = SP.build_table(d, 'est2', sigma_max=10.0); SP.write_table(T1, i1, f'{d}/locs_p1')          # a second table as "pass 1"
@@ -210,25 +224,25 @@ def test_v1_interface_and_fields():
         try: Dataset.from_run(d, pass_=3); raise AssertionError('a missing pass must raise')
         except FileNotFoundError: pass
         ds.meta['imgshape'] = [120, 120]
-        assert ds.numFrames == ds.nframes and ds.dims == 2 and ds.imgshape == [120, 120] and not ds.isDriftCorrected and len(ds.indicesPerFrame()) == ds.numFrames
+        assert ds.dims == 2 and ds.imgshape == [120, 120] and not ds.is_drift_corrected and len(ds.indices_per_frame()) == ds.num_frames
         assert ds.pos.shape == (3000, 2) and ds.crlb.shape == (3000, 2) and ds.photons is ds['photons'] and ds.frame is ds['frame']
         r = np.random.default_rng(4)
-        ds.addFields(bg=r.uniform(1, 5, 3000).astype(np.float32), track=r.integers(0, 50, 3000), feat=r.normal(size=(3000, 3)).astype(np.float32), flag=r.random(3000) < 0.5)
-        assert ds.background is ds.bg and {'track', 'feat', 'flag', 'p', 'strict_u', 'I', 'kin'} <= set(ds.fields)
-        try: ds.addFields(bad=np.zeros(5)); raise AssertionError('a field of the wrong length must raise')
+        ds.add_fields(bg=r.uniform(1, 5, 3000).astype(np.float32), track=r.integers(0, 50, 3000), feat=r.normal(size=(3000, 3)).astype(np.float32), flag=r.random(3000) < 0.5)
+        assert {'track', 'feat', 'flag', 'p', 'I', 'kin', 'bg'} <= set(ds.columns)
+        try: ds.add_fields(bad=np.zeros(5)); raise AssertionError('a field of the wrong length must raise')
         except ValueError: pass
-        m = ds.mask('main'); A = ds.filter(m); assert np.array_equal(A.track, ds.track[m]) and np.array_equal(A.feat, ds.feat[m]) and len(ds) == 3000
-        B = Dataset.merge([ds[:50], ds[50:80]]); assert np.array_equal(B.feat, ds.feat[:80]) and np.array_equal((ds[:50] + ds[50:80]).track, ds.track[:80])
-        E = ds.cropFromEdge(10); assert len(E) and E.x.min() >= 10 and E.x.max() < 109 and E.y.max() < 109
+        m = ds.mask(); A = ds.filter(m); assert np.array_equal(A.track, ds.track[m]) and np.array_equal(A.feat, ds.feat[m]) and len(ds) == 3000
+        B = Dataset.concatenate([ds[:50], ds[50:80]]); assert np.array_equal(B.feat, ds.feat[:80]) and np.array_equal((ds[:50] + ds[50:80]).track, ds.track[:80])
+        E = ds.crop_from_edge(10); assert len(E) and E.x.min() >= 10 and E.x.max() < 109 and E.y.max() < 109
         assert len(ds.crlb_filter(0.1, min_photons=500)) == ((np.maximum(T['sx'], T['sy']) < 0.1) & (T['photons'] > 500)).sum()
-        D = np.cumsum(r.normal(0, 0.002, (ds.numFrames, 2)), 0).astype(np.float32)
-        C = ds[:100]; C.applyDrift(D); assert C.isDriftCorrected and np.array_equal(C.x, T['x'][:100] - D[T['frame'][:100] + 3, 0]); C.undoDrift(); assert not C.isDriftCorrected
+        D = np.cumsum(r.normal(0, 0.002, (ds.num_frames, 2)), 0).astype(np.float32)
+        C = ds[:100]; C.apply_drift(D); assert C.is_drift_corrected and np.array_equal(C.x, T['x'][:100] - D[T['frame'][:100] + 3, 0]); C.undo_drift(); assert not C.is_drift_corrected
         cols = set(ds.columns)
         # npz: lossless, every field with its dtype
         N = Dataset.load(ds.save(f'{d}/f.npz')); assert set(N.columns) == cols; _same(ds, N); assert N.meta['pass'] == 2
-        _same(ds, Dataset.loadNumpy(ds.saveNumpy(f'{d}/g.npz')))
+        _same(ds, Dataset.load_npz(ds.save_npz(f'{d}/g.npz')))
         # hdf5 (Picasso): extra columns, float32 positions
-        H = Dataset.loadHDF5(ds.saveHDF5(f'{d}/f.hdf5')); assert set(H.columns) == cols | {'psf_sx', 'psf_sy'} and H.feat.shape == (3000, 3)
+        H = Dataset.load_hdf5(ds.save_hdf5(f'{d}/f.hdf5')); assert set(H.columns) == cols | {'psf_sx', 'psf_sy'} and H.feat.shape == (3000, 3)
         for k in cols - {'x', 'y', 'frame'}: assert H[k].dtype == ds[k].dtype and np.array_equal(H[k], ds[k], equal_nan=ds[k].dtype.kind == 'f'), k
         assert np.allclose(H.x, ds.x, atol=1e-5, rtol=0)
         # npy (the preprint code's layout): the structured array that code reads, extra fields as top-level fields
@@ -237,24 +251,24 @@ def test_v1_interface_and_fields():
             shp = np.load(s_); A = np.load(s_)
         assert list(shp) == [120, 120] and A.dtype.names[:7] == ('roi_id', 'frame', 'estim', 'crlb', 'chisq', 'group', 'roipos')
         assert A['estim'].dtype.names == ('pos', 'photons', 'bg', 'ibg') and A['estim']['ibg'].shape == (3000, 6, 2) and np.array_equal(A['crlb']['pos'][:, 0], T['sx'])
-        V = Dataset.loadNumpy(f, window=6); assert cols <= set(V.columns) and V.imgshape == [120, 120]
+        V = Dataset.load_npy(f, window=6); assert cols <= set(V.columns) and V.imgshape == [120, 120]
         for k in cols - {'x', 'y', 'frame'}: assert V[k].dtype == ds[k].dtype and np.array_equal(V[k], ds[k], equal_nan=ds[k].dtype.kind == 'f'), k
-        assert np.array_equal(V.x, ds.x.astype(np.float32)) and np.array_equal(V.frame, ds.frame) and np.array_equal(V.mask('main', sigma_max=12.0), m)
+        assert np.array_equal(V.x, ds.x.astype(np.float32)) and np.array_equal(V.frame, ds.frame) and np.array_equal(V.mask(in_region=False), ds.mask(in_region=False))
         # csv (ThunderSTORM)
-        S = Dataset.loadCSVThunderStorm(ds[:200].saveCSVThunderStorm(f'{d}/f.csv')); assert cols <= set(S.columns) and np.array_equal(S.track, ds.track[:200])
+        S = Dataset.load_csv_thunderstorm(ds[:200].save_csv_thunderstorm(f'{d}/f.csv')); assert cols <= set(S.columns) and np.array_equal(S.track, ds.track[:200])
         assert np.allclose(S.feat, ds.feat[:200], rtol=1e-6, atol=1e-6) and np.array_equal(S.flag > 0.5, ds.flag[:200]) and np.allclose(S.bg, ds.bg[:200], rtol=1e-6)
-        F = Dataset.fromEstimates(ds.x, ds.y, ds.frame, track=ds.track); assert np.array_equal(F.track, ds.track)
+        F = Dataset.from_estimates(ds.x, ds.y, ds.frame, track=ds.track); assert np.array_equal(F.track, ds.track)
 
 
 def test_drift_apply_undo():
     with tempfile.TemporaryDirectory() as d:
         T, info = _table(d)
-        L = Dataset.from_run(d); F = L.nframes
+        L = Dataset.from_run(d); F = L.num_frames
         D = np.cumsum(np.random.default_rng(2).normal(0, 0.002, (F, 2)), 0).astype(np.float32)
         assert not L.is_drift_corrected
         try: L.apply_drift(); raise AssertionError('apply without a drift must raise')
         except ValueError: pass
-        x0 = L.x; L.set_drift(D); S = L.select('main'); m = L.mask('main')            # the drift goes with the selection
+        x0 = L.x; L.set_drift(D); S = L.select(); m = L.mask()            # the drift goes with the selection
         S.apply_drift()
         fi = np.clip(T['frame'][m] + 3, 0, F - 1)
         assert np.array_equal(S.x, T['x'][m] - D[fi, 0]) and np.array_equal(S.y, T['y'][m] - D[fi, 1]) and S.is_drift_corrected     # x - drift[frame + 3]
@@ -283,7 +297,7 @@ def test_drift_estimate():
     site = r.uniform(10, 110, (300, 2)); k = r.integers(0, 300, n); f = np.sort(r.integers(0, F // 6, n)) * 6
     true = np.c_[np.linspace(0, 0.4, F), 0.2 * np.sin(np.arange(F) / F * 6)]
     x = site[k, 0] + r.normal(0, 0.05, n) + true[f + 3, 0]; y = site[k, 1] + r.normal(0, 0.05, n) + true[f + 3, 1]
-    L = Dataset.from_arrays(x, y, f, np.full(n, 0.05, np.float32), np.full(n, 0.05, np.float32), photons=np.full(n, 1000.0))
+    L = Dataset.from_estimates(x, y, f, np.full(n, 0.05, np.float32), np.full(n, 0.05, np.float32), photons=np.full(n, 1000.0))
     d = L.estimate_drift(nframes=F)
     ref = DR.drift_of_table(L.table(), F)
     assert d.shape == (F, 2) and np.allclose(d, ref, atol=1e-4, rtol=0) and L.drift is d      # (DME on the GPU is not bit-reproducible between calls) and L.meta['drift_info']['n'] == n
@@ -294,7 +308,7 @@ def test_drift_estimate():
 
 def test_render():
     x = np.array([10.0, 10.2, 10.26, 12.0, 30.0]); y = np.array([5.0, 5.0, 5.0, 7.5, 30.0])
-    L = Dataset.from_arrays(x, y, np.zeros(5, int), px_nm=100.0)
+    L = Dataset.from_estimates(x, y, np.zeros(5, int), px_nm=100.0)
     img, ext = L.render(pixel_nm=25.0, region=(10, 5, 13, 8), return_extent=True)                 # 4 bins per camera pixel
     assert img.shape == (12, 12) and img.dtype == np.float32 and img.sum() == 4 and ext == (10, 13, 5, 8)
     assert img[0, 0] == 2 and img[0, 1] == 1 and img[10, 8] == 1                                     # row = y, column = x
@@ -312,7 +326,7 @@ def test_frc_equals_reference():
     from simcode.evalproto.frc import frc_halves
     r = np.random.default_rng(7); n = 60000
     site = r.uniform(10, 40, (4000, 2)); k = r.integers(0, 4000, n); f = r.integers(0, 2000, n) * 3
-    L = Dataset.from_arrays(site[k, 0] + r.normal(0, 0.08, n), site[k, 1] + r.normal(0, 0.08, n), f)
+    L = Dataset.from_estimates(site[k, 0] + r.normal(0, 0.08, n), site[k, 1] + r.normal(0, 0.08, n), f)
     v = L.frc(); res, freq, curve = L.frc(return_curve=True)
     assert np.isfinite(v) and v == frc_halves(L.x, L.y, L.frame) == res and v == FF.frc_halves(L.x, L.y, L.frame)[0]
     assert np.array_equal(curve, FF.frc_halves(L.x, L.y, L.frame)[2]) and L.frc(blk=30) == FF.frc_halves(L.x, L.y, L.frame, blk=30)[0]
@@ -325,18 +339,16 @@ def test_real_table():
     sys.path.insert(0, os.path.join(REPO, 'analysis', 'paper'))
     import frc_fair as FF
     info = json.load(open(REAL[:-4] + '_info.json'))
-    L = Dataset.load(os.path.dirname(REAL), columns=('sx', 'sy', 'photons', 'p', 'good', 'sel', 'disjoint', 'strict', 'strict_u'))
-    assert len(L) == info['n_rows'] and L.px_nm == info['px_nm'] and L.meta['info']['q'] == info['q'] and L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2
-    assert int(L.sel.sum()) == info['n_sel'] and int(L.good.sum()) == info['n_good'] and int(L.strict.sum()) == info['n_strict']
-    z = np.load(REAL)
-    T = dict(strict_u=z['strict_u'], sx=z['sx'], sy=z['sy'], px_nm=z['px_nm'], x=z['x'])
-    for rule, key in (('main', 'n_main'), ('u', 'n_u')):
-        m = L.mask(rule); assert np.array_equal(m, SP.select(T, rule)) and int(m.sum()) == info[key], rule
-    I = L.info(); assert I['n_main'] == info['n_main'] and I['window'] == 6 and 'Dataset: 6328751 rows' in repr(L)
+    L = Dataset.load(os.path.dirname(REAL), columns=('sx', 'sy', 'photons', 'p', 'good', 'sel', 'disjoint', 'strict_u'))
+    assert len(L) == info['n_rows'] and L.px_nm == info['px_nm'] and L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2
+    assert int(L.sel.sum()) == info['n_sel'] and int(L.good.sum()) == info['n_good']
+    # the selection computed from x, y, sx, sy, p equals the stored-rank rule the table was made with (strict_u: tables before 2026-11-14)
+    m = L.mask(); assert np.array_equal(m, np.isfinite(L.strict_u) & (L.precision_nm <= 12.0)) and int(m.sum()) == info['n_main']
+    I = L.info(); assert I['n_selected'] == info['n_main'] and I['window'] == 6 and 'Dataset: 6328751 rows' in repr(L)
     # frc_fair on the first 12000 frames: its table loader, masks, and FRC; a fixed synthetic drift instead of DME (no GPU)
     F = 12000
     Tf = FF.load('v2', REAL); keep = Tf['f'] + 6 <= F; Tf = {k: v[keep] for k, v in Tf.items()}
-    S = L.select('sel').filter_frames(0, F)
+    S = L.filter(L.sel).filter_frames(0, F)
     assert len(S) == len(Tf['x']) and np.array_equal(S.x, Tf['x']) and np.array_equal(S.frame, Tf['f']) and np.array_equal(S.sx.astype(np.float64), Tf['sx'])
     drift = np.c_[np.linspace(0, 0.3, F), np.linspace(0, -0.2, F)].astype(np.float32)
     with tempfile.TemporaryDirectory() as d:
