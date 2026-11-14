@@ -532,7 +532,9 @@ Checks (all on GPU 2):
 - Tr: 20 steps of the five production trainers (det, hd, p2det, p2head, p2headL; m1809 recipe, batch 4): the new command
   lines (flags that became defaults dropped; p2head with `--pert_model v1`) vs the old explicit flags on 42f36ba: step-0 lines
   of det / hd / p2det / p2headL equal (max rel. diff 0 / 0 / 0 / 4e-7), p2head equal except `w_il` (2e-5, the known
-  run-to-run range of that field, see above). The old command lines (`TRV=old`) give the same.
+  run-to-run range of that field, see above). The old command lines (`TRV=old`, the removed flags dropped by
+  retired.py) give the same for det / hd / p2det / p2headL; the old p2head line (no `--pert_model`) now trains with `real`
+  (step-0 loss 2e-2 different), hence `--pert_model v1` in the p2head stage of chain2.sh, auto/train.py and models/README.md.
 - G: gate scenes iso + rs05qm, seed 301, 400 targets: new code without env (default PSF = the model's) vs 42f36ba with
   `SIMCODE_GATE_CALIB=insitu/calib_1809_2_psf3d_avg.json`: iso identical; rs05qm identical except CRLB entries (26 of 7956
   `gt_fr_m` differ by <= 6e-5), the same as two runs of the old code (30 of 7956, <= 3e-5).
