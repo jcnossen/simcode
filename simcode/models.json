@@ -39,17 +39,17 @@
   "sig_u": "m1809/calib/sigu_p1_m1809.json,m1809/calib/sigu_p2_m1809.json"
  },
  "m25": {
-  "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched)",
-  "psf": "insitu/calib_2p5nM_m2_psf3d_avg.json",
-  "det": "det_m25.pt",
-  "head": "hd_m25.pt",
-  "cal_sim": "calib/calib_sc_hd_m25.json",
-  "cal_real": "calib/calib_sc_hd_m25_real.json",
-  "p2_det": "p2det_m25.pt",
-  "p2_head": "p2headL_m25.pt",
-  "p2_cal_sim": "calib/calib_p2L_m25.json",
-  "p2_cal_real": "calib/calib_p2L_m25_real.json",
-  "sig_u": "calib/sigu/sigu_p1_m25.json,calib/sigu/sigu_p2_m25.json"
+  "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config)",
+  "psf": "m25/calib_2p5nM_m2_psf3d_avg.json",
+  "det": "m25/det_m25.pt",
+  "head": "m25/hd_m25.pt",
+  "cal_sim": "m25/calib/calib_sc_hd_m25.json",
+  "cal_real": "m25/calib/calib_sc_hd_m25_real.json",
+  "p2_det": "m25/p2det_m25.pt",
+  "p2_head": "m25/p2headL_m25.pt",
+  "p2_cal_sim": "m25/calib/calib_p2L_m25.json",
+  "p2_cal_real": "m25/calib/calib_p2L_m25_real.json",
+  "sig_u": "m25/calib/sigu_p1_m25.json,m25/calib/sigu_p2_m25.json"
  },
  "g13": {
   "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12)",
