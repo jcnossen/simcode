@@ -38,15 +38,16 @@ def load(kind, path):
     Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package)."""
     from simcode.dataset import Dataset
     if kind in ('smlm', 'sf'):
-        L = Dataset.load_npy(path, window=GRID) if path.endswith('.npy') else Dataset.load_hdf5(path, window=GRID)
+        L = Dataset.load(path, window=GRID)
     elif kind == 'decode':
         L = Dataset.from_decode(path, window=GRID)
     elif kind == 'v2':
-        L = Dataset.load_npz(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel.astype(bool)]
+        L = Dataset.load_npz(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel]
     else:
         raise ValueError(kind)
-    return dict(x=L.x.astype(np.float64), y=L.y.astype(np.float64), f=L.frame.astype(np.int64), sx=L.sx.astype(np.float64),
-                sy=L.sy.astype(np.float64), photons=L.photons.astype(np.float64))
+    F = L.numpy(); f8 = lambda v: v.astype(np.float64)
+    return dict(x=f8(F['pos'][:, 0]), y=f8(F['pos'][:, 1]), f=F['frame'].astype(np.int64), sx=f8(F['crlb'][:, 0]),
+                sy=f8(F['crlb'][:, 1]), photons=f8(F['photons']))
 
 
 def in_crop(x, y, crop=CROP):

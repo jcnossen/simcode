@@ -26,16 +26,20 @@ def _fmt(v):
     return s if len(s) < 300 else s[:300] + ' ...'
 
 
-def frc_of(L, px_nm, sel=None):
+def frc_of(L, sel=None):
     """FRC (300-frame block halves) of the rows sel of a simcode.dataset.Dataset table, after its DME v2 drift (estimated
-    on the whole table) when that is available -> (frc nm, True or the reason for no drift correction, drift or None)"""
+    on the good, disjoint windows of the whole table) when that is available -> (frc nm, True or the reason for no drift
+    correction, drift or None)"""
     try:
-        d = L.estimate_drift(); dr = True
+        from simcode.util.drift import dme_package
+        dme_package()                                    # puts the configured DME checkout on the path
+        rows = (L.good & L.disjoint) if ('good' in L and 'disjoint' in L) else None
+        d = L.estimate_drift(rows=rows).numpy(); dr = True
     except Exception as e:
         d, dr = None, f'no drift correction ({type(e).__name__}: {e})'
     S = L if sel is None else L[sel]
     if d is not None: S.apply_drift()
-    return float(S.frc(px_nm=px_nm)), dr, d
+    return float(S.frc()), dr, d
 
 
 def run(ds):
@@ -96,8 +100,8 @@ def run(ds):
         if os.path.exists(f):
             from simcode.dataset import Dataset
             try:
-                L = Dataset.load_npz(f); sel = L.mask()
-                v, dr, D = frc_of(L, px, sel)
+                L = Dataset.load_npz(f); sel = L.mask().numpy()
+                v, dr, D = frc_of(L, sel)
                 R['frc'] = dict(table=last, selection='max(sx, sy) <= 12 nm, p >= 0.63, inside the crop', n=int(sel.sum()), frc_nm=v, drift=dr)
                 parts.append(_tab([['FRC (selection <= 12 nm, 300-frame block halves)', f'{v:.2f} nm, {int(sel.sum())} rows, drift {dr}']]))
                 if D is not None:
