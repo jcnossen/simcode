@@ -359,8 +359,8 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
    - The solve scales LL^T per photon bin (kap_I2) and the prior sigma (kap_p) (solve/solve.solve_inputs).
    - Pass 2: the z output of the pass-2 network is not used (z from pass 1, solve/z_conditioning.py).
 
-Differences from the preprint's network figure (si_network_structure_v2): the preprint network had per-frame 2-layer
-U-Nets, three intensity-estimator U-Nets and a combiner U-Net with 64/128/256 features; v2 has a separate detector
+Differences from the earlier network figure (si_network_structure_v2): the earlier network had per-frame 2-layer
+U-Nets, three intensity-estimator U-Nets and a combiner U-Net with 64/128/256 features; the current one has a separate detector
 U-Net and one per-candidate EmitterNet with a linear read-out and full covariance.
 
 Code vs docs notes

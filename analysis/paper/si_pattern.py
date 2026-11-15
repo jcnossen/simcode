@@ -359,7 +359,7 @@ def caption_decouple(V, pat):
     b = V['blocks150']; c = V['clean']; deg = np.degrees
     L = ['DRAFT CAPTION',
          'Shared phase drift of the illumination pattern (low-density DNA-PAINT movie of main-text Fig. 3, 1809/cover1/2, '
-         'SIMCODE v2 pattern estimation). SIMCODE v2 models the phase of each of the 6 illumination patterns as a fixed per-step '
+         'SIMCODE pattern estimation). SIMCODE models the phase of each of the 6 illumination patterns as a fixed per-step '
          'offset psi_s plus a phase drift eps_a(t) shared by the 3 phase steps of an orientation a (the DMD shifts the pattern in '
          'discrete pixel steps, so a drift of the optics moves all 3 steps together). (A) Per orientation: the per-step phases fitted '
          'independently in 3000-frame blocks (left) decompose into the shared drift estimated by the pattern estimation (middle; '
@@ -411,7 +411,7 @@ def caption_decouple(V, pat):
 def caption_pattern(V, D=None):
     f = V['fits']
     L = ['DRAFT CAPTION',
-         'Pattern modulation of the SIMCODE v2 localizations (low-density DNA-PAINT movie of main-text Fig. 3, 1809/cover1/2). '
+         'Pattern modulation of the SIMCODE localizations (low-density DNA-PAINT movie of main-text Fig. 3, 1809/cover1/2). '
          'Each point is one frame of a localization: its pass-1 network intensity normalized by the sum of the 6 intensities of '
          'the window, I_t / sum_6 I, against the illumination phase k_a.r - psi_s - eps_a(t) at the position from the explicit '
          'pattern solve, for orientation 0 (A) and 1 (B). Red: localizations in the paper\'s selection (detection score p >= 0.63, '
@@ -611,13 +611,13 @@ def caption_pattern_preprint(V):
          'phase step 0), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
          'localization by the sum of the 6 intensities of its window, I_k / sum_6 I. SIMFLUX: per-frame intensities of the SMLM '
          'ROI fit, phase from the SMLM (2D Gaussian) position; included (blue) = modulation error < 0.1, the filter that selects '
-         'the SIMFLUX input. SIMCODE v2: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
+         'the SIMFLUX input. SIMCODE: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
          'pass-1 network head, not at the position of the pattern solve (which is computed from these intensities and the pattern '
          'and would agree with it partly by construction); included (blue) = the paper\'s selection (detection score p >= 0.63, calibrated precision '
          'max(sigma_x, sigma_y) <= 12 nm); excluded (red) = all other localizations in the field of view (x, y in [5, 115) px). '
          f'{V["n_show_per_class"]} random localizations per class are shown in each panel (not the class proportions; see the '
-         'numbers). Black: the illumination pattern of each method (SIMFLUX: depth fixed to 0.9, as in the preprint pipeline; '
-         'SIMCODE v2: the estimated depth).',
+         'numbers). Black: the illumination pattern of each method (SIMFLUX: depth fixed to 0.9, as in the SIMFLUX pipeline; '
+         'SIMCODE: the estimated depth).',
          '', 'NUMBERS (si_pattern_plots_values.json; m_eff = least-squares sine fit of y / relint over ALL rows of the class)']
     for k, p in P.items():
         L.append(f'  {k}: n {p["n"]} in the crop, included {p["n_included"]} ({100 * p["frac_included"]:.1f} %), rule: {p["rule"]}; '
@@ -629,14 +629,14 @@ def caption_pattern_preprint(V):
     L += ['  Files: ' + '; '.join(f'{k}: {", ".join(p["files"])}' for k, p in P.items()),
           '', 'PHASE POSITION: the SIMCODE phase uses the pattern-free pass-1 head position (x_prior, y_prior), so the plotted '
           'modulation is not agreement by construction (the solved position is computed from these intensities and the pattern; its '
-          'm_eff is listed for reference only). SIMFLUX uses the SMLM position (pattern-free), as in the preprint. '
+          'm_eff is listed for reference only). SIMFLUX uses the SMLM position (pattern-free), as in the SIMFLUX pipeline. '
           'Both inclusion rules relate to the modulation in part by construction: SIMFLUX selects on the modulation error itself '
           '(|I_k / sum I - model| < 0.1); the SIMCODE selection uses the detection score and the calibrated precision only (not the '
           'modulation), but the plotted position comes from the pattern solve.',
-          'Conventions: SIMFLUX (smlmtorch) model relint (1 + depth sin phase); SIMCODE v2 rel (1 + m cos phase); each panel uses '
+          'Conventions: SIMFLUX (smlmtorch) model relint (1 + depth sin phase); SIMCODE rel (1 + m cos phase); each panel uses '
           'its own method\'s phase definition, so the curves are shifted by pi/2 relative to each other.',
           'Extended version (both angles, SIMCODE only, binned means): si_pattern_plots_extended.*',
-          '', 'CODE: analysis/paper/si_pattern.py (fig_pattern_plots, simflux_pattern_rows, simcode_pattern_rows); preprint: '
+          '', 'CODE: analysis/paper/si_pattern.py (fig_pattern_plots, simflux_pattern_rows, simcode_pattern_rows); plot style: '
           'smlmtorch/simflux/localizer_report.py draw_pattern; SIMFLUX baseline: analysis/baselines/paper_pipeline.py.',
           'Rerun: PYTHONPATH=. CUDA_VISIBLE_DEVICES= python analysis/paper/si_pattern.py --which pattern [--datasets 1809_2,2.5nM_2] '
           '(default: 2.5nM_2 included automatically once its run is done)']

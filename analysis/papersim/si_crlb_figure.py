@@ -80,7 +80,7 @@ def main():
 def table(R, fn):
     """per-bin table (x precision in nm; v2 RMSD / CRLB: SIMFLUX one-bg CRLB at const1, per-frame-bg CRLB at unif16)"""
     nm = lambda v: v * C.PX_NM
-    L = ['| cond | photons | CRLB SMLM / SF / SF(bg per frame) | SMLM | SF (1 bg) | SF (bg per frame) | NN p1 (pred) | v2 (pred) | v2 RMSD / CRLB SF | v2 pred / RMSD | recall v2 |',
+    L = ['| cond | photons | CRLB SMLM / SF / SF(bg per frame) | SMLM | SF (1 bg) | SF (bg per frame) | NN Output (pred) | SIMCODE (pred) | SIMCODE RMSD / CRLB SF | SIMCODE pred / RMSD | recall SIMCODE |',
          '|---|---|---|---|---|---|---|---|---|---|---|']
     for cond in R['cond']:
         for b in sorted(R['cond'][cond], key=int):
