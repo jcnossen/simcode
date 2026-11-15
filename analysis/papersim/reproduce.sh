@@ -14,6 +14,13 @@
 #   v2 "D1 Dexp1 D1_gauss ..."       SIMCODE v2 + metrics + GT-FRC only, next to the earlier v2 (movies / baselines / v1
 #                                    unchanged): model m1809 (g13 for *_gauss), output <run>/v2_<model>${V2TAG} (default
 #                                    V2TAG=_3d), metrics_<model>${V2TAG}.json, gtfrc_<model>${V2TAG}.json (ref = the earlier v2)
+#   v2psf_movies                     (2026-11-15) the v2-PSF movie sets D<d>_v2psf (gen_density.py --psf v2) and Dexp<d>_v2psf
+#                                    (gen_hollow.py --radius_nm 0 --v2psf 1): in-situ PSF v2, v2 camera, heights from the v2 calib
+#   v2psf_decode                     DECODE retrain for them (dec_sim1809v2; out/papersim/decode_v2psf/train_dec_sim1809v2.sh, hours)
+#   v2psf "D1 Dexp1 ..."             all methods on <item>_v2psf: SMLM / SIMFLUX with the v2 PSF, SIMCODE v1 (+ GT pattern), DECODE
+#                                    dec_sim1809v2, SIMCODE v2 (MODEL = a models.json name or a model folder, NAME = its output
+#                                    name, default m1809 / m1809v2), metrics, GT-FRC
+#   v2psf_figs                       overview / fig_density / summaries / time to fidelity of the v2-PSF sets (NAME as above)
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
 PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
@@ -55,5 +62,27 @@ case $what in
       $PY analysis/papersim/run_all.py $O/$D --steps v2,metrics,gtfrc --model $M --gt_diag 0 --tag ${V2TAG:-_3d} --ref $M >> $O/logs/v2${V2TAG:-_3d}_$D.log 2>&1
       echo "$(date) done v2${V2TAG:-_3d} $D rc $?"
     done ;;
-  *) sed -n 2,20p "$0"; exit 1 ;;
+  v2psf_movies)
+    for D in 0.5 1 2 4; do
+      [ -f $O/D${D}_v2psf/gen.json ] || $PY analysis/papersim/gen_density.py --density $D --nframes 60000 --psf v2 --out $O/D${D}_v2psf > $O/logs/gen_D${D}_v2psf.log 2>&1
+      [ -f $O/Dexp${D}_v2psf/gen.json ] || $PY analysis/papersim/gen_hollow.py --radius_nm 0 --density $D --nframes 60000 --v2psf 1 --out $O/Dexp${D}_v2psf > $O/logs/gen_Dexp${D}_v2psf.log 2>&1
+      echo "$(date) movies D${D}_v2psf Dexp${D}_v2psf"
+    done ;;
+  v2psf_decode)
+    bash $O/decode_v2psf/train_dec_sim1809v2.sh > $O/decode_v2psf/train_dec_sim1809v2.log 2>&1 ;;
+  v2psf)
+    for D in $items; do
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf --steps base,v1,v1gt,decode,v2,metrics,gtfrc --psf models/insitu/calib_1809_2_psf_v2.json \
+        --decode_name dec_sim1809v2 --model ${MODEL:-m1809} --name ${NAME:-m1809v2} --gt_diag 0 >> $O/logs/full_${D}_v2psf.log 2>&1
+      rc=$?; rm -rf $O/${D}_v2psf/full/base/work
+      echo "$(date) done ${D}_v2psf rc $rc"
+    done ;;
+  v2psf_figs)
+    N=${NAME:-m1809v2}
+    for P in D Dexp; do
+      $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf --model $N
+      $PY analysis/papersim/fig_gtfrc.py --prefix $P --suffix _v2psf --model $N --ref ''
+      $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf --model $N
+    done ;;
+  *) sed -n 2,28p "$0"; exit 1 ;;
 esac

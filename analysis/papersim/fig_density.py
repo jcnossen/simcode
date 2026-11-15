@@ -61,7 +61,8 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     a3.bar(range(len(ks)), [R['methods'][k]['jaccard_end'] for k in ks], color=[COL[k] for k in ks]); a3.set_title(f'Jaccard 10 nm ({R["nframes"] // 1000}k frames)', fontsize=8); a3.set_ylim(0, 1)
     for a in (a2, a3): a.set_xticks(range(len(ks))); a.set_xticklabels([LAB[k].split(' (')[0].replace('SIMCODE ', 'SC ') + (' GTp' if k == 'sf_gtp' else '') for k in ks], rotation=60, fontsize=6)
     a4.set_ylim(0, 1); a4.set_xlabel('frames (x1000)'); a4.set_title('Jaccard vs frames (10 nm, 120 bins)', fontsize=8)
-    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, averaged 1809/2 PSF; v2 net set {model}; crop corner {CROP[0]} px, {w} px', fontsize=9)
+    psfn = 'in-situ PSF v2 of 1809/2 (heights 0-0.40 um), v2 camera' if suffix == '_v2psf' else ('Gaussian 1.3 px PSF' if suffix == '_gauss' else 'averaged 1809/2 PSF')
+    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, {psfn}; v2 net set {model}; crop corner {CROP[0]} px, {w} px', fontsize=9)
     plt.tight_layout(); fn = os.path.join(C.OUT, f'fig_density_{prefix}{d:g}{suffix}_{model}' + ('' if sub == 'full' else f'_{sub}') + '.png'); plt.savefig(fn, dpi=110); plt.close(fig)
     return R
 
@@ -69,7 +70,9 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
     a = ap.parse_args()
-    rows = []; md_lines = [f'# Density sweep, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
+    if a.suffix == '_v2psf':      # v2-PSF sets (2026-11-15): 'decode' = the DECODE retrained for the v2 PSF and these conditions
+        LAB['decode'] = 'DECODE (retrained dec_sim1809v2)'
+    rows = []; md_lines = [f'# Density sweep {a.prefix}{a.suffix}, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
                            '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm | GT-FRC nm | frames to 40 / 30 / 20 nm GT-FRC | σ-Jaccard | ghost | coverage CV excess |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for d in [float(v) for v in a.densities.split(',')]:
         try:

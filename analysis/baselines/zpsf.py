@@ -104,11 +104,12 @@ def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01,
                      meta=dict(focus_um=float(c['focus_um'])))
 
 
-def load(spec, device='cuda', z_fit=None):
+def load(spec, device='cuda', z_fit=None, zmax=0.2):
+    """zmax: top of the knot stack of a calib json (um; default 0.2; the v2-PSF DECODE LUT up to 0.40 um uses 0.4)"""
     if spec.startswith('gauss:'):
         return GaussPSF(float(spec.split(':', 1)[1]), device)
     if spec.endswith('.json'):
-        p = render_calib(spec, device)
+        p = render_calib(spec, device, zmax=zmax)
     elif spec.endswith('.npz'):
         d = np.load(spec, allow_pickle=True)
         zf = float(d['emitter_z_um']) if 'emitter_z_um' in d.files else 0.055

@@ -31,7 +31,7 @@ def main():
     D = DP.D
     mdir = f'{D.SPD}/lutpsf/{a.name}'
     pj = json.load(open(f'{mdir}/psf.json'))
-    DP.setup_psf(pj['psf'], pj['halo'])
+    DP.setup_psf(pj['psf'], pj['halo'], pj.get('zmax_um', DP.ZMAX))
     mf = f'{mdir}/model_final.pt'
     inst = D.load_trained(a.name, pj.get('variant_name', 'sum6p'), model_file=mf if os.path.exists(mf) else None)
     tif = os.path.join(md, 'movie.tif')

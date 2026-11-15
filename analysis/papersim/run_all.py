@@ -32,6 +32,8 @@ def main():
     ap.add_argument('--gt_diag', type=int, default=1, help='v2: also the GT-pattern pass-2 diagnostic (0 = skip, ~40 %% of the v2 time)')
     ap.add_argument('--tag', default='', help="suffix of the v2 output and of the metrics name, e.g. '_3d': v2 -> <run>/v2_<model>_3d, "
                     'metrics -> <run>/metrics_<model>_3d.json (a rerun of v2 with new networks next to the earlier one)')
+    ap.add_argument('--name', default='', help="name of the v2 output / metrics instead of --model (needed when --model is a model folder), "
+                    "e.g. --model out/psf_v2/eval/m1809v2/model_m1809 --name m1809v2 -> <run>/v2_m1809v2, metrics_m1809v2.json")
     ap.add_argument('--ref', default='', help="gtfrc: also the v2 table of this metrics name (e.g. m1809 = the earlier v2) as 'v2sig_ref'")
     a = ap.parse_args()
     sys.path.insert(0, REPO)
@@ -43,8 +45,9 @@ def main():
     nf = a.nframes or g['nframes']
     run = os.path.abspath(a.run or os.path.join(md, 'full' if nf == g['nframes'] else f'cut{nf}'))
     os.makedirs(os.path.join(run, 'logs'), exist_ok=True)
-    v2dir = os.path.join(run, f'v2_{a.model}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}') + a.tag)
-    mname = a.model + a.tag                 # name of the metrics / hollow outputs (metrics.py reads <run>/v2_<mname>)
+    nm = a.name or a.model
+    v2dir = os.path.join(run, f'v2_{nm}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}') + a.tag)
+    mname = nm + a.tag                 # name of the metrics / hollow outputs (metrics.py reads <run>/v2_<mname>)
     py = sys.executable; S = os.path.join(HERE, '{}')
     mf = [] if nf == g['nframes'] else ['--maxframes', str(nf)]
     steps = {

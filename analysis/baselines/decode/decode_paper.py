@@ -21,7 +21,9 @@ s = 0 only); frame = window start. x / y: DECODE px (pixel centre = integer, x =
 
 usage:
   train: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/decode/decode_paper.py train --psf <spec> --name <model>
-             [--epochs 400] [--max_hours 6] [--pseudo 8192] [--halo 0]
+             [--epochs 400] [--max_hours 6] [--pseudo 8192] [--halo 0] [--zmax_um 0.2 --z_nm 10,150 --e_per_adu 0.56]
+             (2026-11-15 opt-in for the v2-PSF sims: --zmax_um 0.4 --z_nm 0,400 = LUT and emitter heights 0-0.40 um,
+             --e_per_adu 0.4256 = the v2 camera gain; inference reads zmax_um from psf.json)
   infer: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/decode/decode_paper.py infer <1809_2|2.5nM_2|20nM_2> --name <model>
              --out <locs.npz> [--maxframes N] [--starts 0,3]
   models: out/paper2/decode/lutpsf/<model>/ (param_train.yaml, model_final.pt / checkpoint, psf.json)"""
@@ -49,7 +51,7 @@ ZMAX = 0.2
 def psf_luts(spec, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
     """DECODE LUT [lz, ls+1, ls+1, R, R] of a zpsf PSF: lut[iz, iy, ix] = image of an emitter at (fx, fy) = (ix, iy) / ls - 0.5
     px from the centre pixel R // 2, height z = iz / (lz - 1) zmax um"""
-    psf = zpsf.load(spec, dev)
+    psf = zpsf.load(spec, dev, zmax=max(zmax, 0.2))
     sub = torch.arange(ls + 1, device=dev, dtype=torch.float32) / ls - 0.5
     out = torch.zeros(lz, ls + 1, ls + 1, R, R, device=dev)
     FY, FX = torch.meshgrid(sub, sub, indexing='ij'); FX, FY = FX.reshape(-1), FY.reshape(-1)
@@ -61,22 +63,25 @@ def psf_luts(spec, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
     return out, psf.desc
 
 
-def setup_psf(spec, halo):
-    lut, desc = psf_luts(spec)
-    D._LUTS = ([lut], ZMAX, float(halo))
+def setup_psf(spec, halo, zmax=ZMAX):
+    """zmax (um): top of the LUT (default ZMAX = 0.2; 10 nm planes); the v2-PSF model (2026-11-15) uses 0.40 (psf.json zmax_um)"""
+    lut, desc = psf_luts(spec, lz=int(round(zmax / 0.01)) + 1, zmax=zmax)
+    D._LUTS = ([lut], zmax, float(halo))
     return desc
 
 
 def train(a):
     if a.vover:   # test overrides of the variant's sim ranges, e.g. '{"dens": [12, 45]}'
         D.VARIANTS[a.variant] = {**D.VARIANTS[a.variant], **{k: tuple(v) if isinstance(v, list) else v for k, v in json.loads(a.vover).items()}}
-    desc = setup_psf(a.psf, a.halo)
+    desc = setup_psf(a.psf, a.halo, a.zmax_um)
     torch.manual_seed(11); np.random.seed(11)
     p = D.make_param(a.variant, epochs=a.epochs, pseudo=a.pseudo)
-    p.Simulation.emitter_extent = [[-0.5, 39.5], [-0.5, 39.5], [10.0, 150.0]]; p.Simulation.psf_extent = p.Simulation.emitter_extent
+    z0, z1 = (float(v) for v in a.z_nm.split(','))
+    p.Simulation.emitter_extent = [[-0.5, 39.5], [-0.5, 39.5], [z0, z1]]; p.Simulation.psf_extent = p.Simulation.emitter_extent
+    if a.e_per_adu: p.Camera.e_per_adu = a.e_per_adu
     inst = D.LutDecodeInstance(p, a.name, a.variant)
     param_io.save_params(f'{inst.model_dir}/param_train.yaml', inst.param)
-    json.dump(dict(psf=a.psf, desc=desc, halo=a.halo, variant_name=a.variant, variant=D.VARIANTS[a.variant]), open(f'{inst.model_dir}/psf.json', 'w'), indent=1)
+    json.dump(dict(psf=a.psf, desc=desc, halo=a.halo, zmax_um=a.zmax_um, z_nm=a.z_nm, e_per_adu=a.e_per_adu or 0.56, variant_name=a.variant, variant=D.VARIANTS[a.variant]), open(f'{inst.model_dir}/psf.json', 'w'), indent=1)
     inst.setup_trainer()
     if os.path.exists(inst.chkpt_path):
         try: inst.load_checkpoint(); print('resumed from checkpoint', flush=True)
@@ -102,7 +107,7 @@ def frames(tif, start, maxframes):
 def infer(a):
     mdir = f'{D.SPD}/lutpsf/{a.name}'
     pj = json.load(open(f'{mdir}/psf.json'))
-    setup_psf(pj['psf'], pj['halo'])
+    setup_psf(pj['psf'], pj['halo'], pj.get('zmax_um', ZMAX))
     mf = f'{mdir}/model_final.pt'
     inst = D.load_trained(a.name, pj.get('variant_name', 'sum6p'), model_file=mf if os.path.exists(mf) else None)
     rel, camf = DATASETS[a.dataset]
@@ -143,6 +148,8 @@ if __name__ == '__main__':
     ap.add_argument('--psf'); ap.add_argument('--name', required=True)
     ap.add_argument('--epochs', type=int, default=400); ap.add_argument('--max_hours', type=float, default=6.0)
     ap.add_argument('--pseudo', type=int, default=8192); ap.add_argument('--halo', type=float, default=0.0)
+    ap.add_argument('--zmax_um', type=float, default=ZMAX); ap.add_argument('--z_nm', default='10,150')
+    ap.add_argument('--e_per_adu', type=float, default=None)
     ap.add_argument('--variant', default='sum6p'); ap.add_argument('--vover', default=None); ap.add_argument('--out'); ap.add_argument('--maxframes', type=int, default=None); ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('decode')     # recognizable name in nvidia-smi / ps

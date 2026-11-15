@@ -22,6 +22,8 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='D'); ap.add_argument('--suffix', default='')
     ap.add_argument('--model', default='m1809_3d'); ap.add_argument('--ref', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4')
     a = ap.parse_args()
+    if a.suffix == '_v2psf':      # v2-PSF sets (2026-11-15)
+        LAB.update(decode='DECODE (retrained dec_sim1809v2)', v2sig='SIMCODE v2 (PSF v2 networks), σ <= 12 nm', v2sig_ref=f'SIMCODE v2 ({a.ref}), σ <= 12 nm')
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     dens = [float(v) for v in a.densities.split(',')]
     fig, ax = plt.subplots(2, len(dens), figsize=(4.2 * len(dens), 7.6), squeeze=False)
@@ -64,9 +66,11 @@ def main():
         B = ax[1, j]; B.axhline(1 / 7, color='grey', ls='--', lw=0.8); B.set_xlim(0, 0.08); B.set_ylim(-0.05, 1)
         B.set_xlabel('1/nm'); B.set_title('FRC(reconstruction, ground truth), 60k frames', fontsize=8); B.legend(fontsize=5.5)
     ax[0, 0].legend(fontsize=6, loc='upper right')
-    psf = 'Gaussian 1.3 px PSF' if a.suffix == '_gauss' else 'measured 1809/2 PSF'
+    psf = 'Gaussian 1.3 px PSF' if a.suffix == '_gauss' else ('in-situ PSF v2 of 1809/2, v2 camera' if a.suffix == '_v2psf' else 'measured 1809/2 PSF')
     cond = '1809/2 photons and background, on-time 20' if a.prefix == 'Dexp' else 'preprint condition (500 ph / window, bg 2.5)'
-    fig.suptitle(f'Time to fidelity: GT-FRC (reconstruction vs ground truth, 1/7) on the first N frames; {psf}, {cond}; v2 {a.model}, dashed grey = v2 {a.ref} (13 Nov)', fontsize=9)
+    if a.suffix == '_v2psf': cond += ' (v2 photon units)'
+    refl = f', dashed grey = v2 {a.ref}' + ('' if a.suffix == '_v2psf' else ' (13 Nov)') if a.ref else ''
+    fig.suptitle(f'Time to fidelity: GT-FRC (reconstruction vs ground truth, 1/7) on the first N frames; {psf}, {cond}; v2 {a.model}{refl}', fontsize=9)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     base = os.path.join(C.OUT, f'{{}}_{a.prefix}{a.suffix}_{a.model}')
     plt.savefig(base.format('ttf') + '.png', dpi=110); plt.close(fig)

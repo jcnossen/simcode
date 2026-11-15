@@ -7,7 +7,11 @@ per 6 frames, background 2.5 photons / px / frame, pitch 224 nm, depth 0.9, angl
 at the calib's emitter plane, pattern step order [[0,1,2],[3,4,5]], camera written as ADU (gain 1, offset 100; Poisson only).
 See common.py.
 
-usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/gen_density.py --density 1 [--nframes 60000] [--out out/papersim/D1]
+v2-PSF set (2026-11-15, --psf v2; common.py "v2-PSF movie sets"): the same GT points, events (same seeds) and photon / bg
+numbers, rendered with the in-situ PSF v2 of 1809/2 at one height per GT point (v2 calibration rule, 0-0.40 um) and the v2 camera
+(gain 0.4256, offset map, read noise); out/papersim/D<d>_v2psf. The 500 photons / 2.5 bg are kept as the nominal (preprint)
+condition in photons (see STATUS.md 2026-11-15 v2 PSF).
+usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/gen_density.py --density 1 [--nframes 60000] [--out out/papersim/D1] [--psf v2]
 outputs (<out>): movie.tif (uint16 ADU), gt.npz (pts = GT point set [N,3] px, knots, events: id / x / y / t0 / t1 frames,
 pattern), calib_sim.json + camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
 import argparse, hashlib, json, os, sys, time
@@ -26,7 +30,8 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--out', default=None)
     ap.add_argument('--block', type=int, default=600)
-    ap.add_argument('--psf', default='vectorial', help="'vectorial' (default) or e.g. 'gauss1.3' (control: the preprint's PSF; calib_sim.json still names the vectorial PSF)")
+    ap.add_argument('--psf', default='vectorial', help="'vectorial' (default) or e.g. 'gauss1.3' (control: the preprint's PSF; calib_sim.json still names the vectorial PSF) "
+                    "or 'v2' (in-situ PSF v2 + v2 camera + heights from the v2 calibration)")
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-gen')
     import torch
@@ -51,18 +56,25 @@ def main():
     x = pts[ids[ev], 0]; y = pts[ids[ev], 1]
     ph = a.intensity / 6 * C.illum(P, x, y, fr) * onf
     o = np.argsort(fr, kind='stable'); ev, fr, x, y, ph = ev[o], fr[o], x[o], y[o], ph[o]
-    R = C.Renderer(W, W, psf=a.psf)
+    v2 = a.psf == 'v2'
+    if v2:
+        zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
+        zr = zpt[ids[ev]]
+        R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+    else:
+        R = C.Renderer(W, W, psf=a.psf)
     gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(round(a.density * 1000)))
     bounds = np.searchsorted(fr, np.arange(0, a.nframes + a.block, a.block))
 
     def blocks():
         for i, f0 in enumerate(range(0, a.nframes, a.block)):
             nf = min(a.block, a.nframes - f0); s, e = bounds[i], bounds[i + 1]
-            mu = R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], ph[s:e]) + a.bg
+            mu = (R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], zr[s:e], ph[s:e]) if v2 else R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], ph[s:e])) + a.bg
             yield R.adu(mu, gen)
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1], ev_t0=t0e, ev_t1=t1e,
-                        k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z, nframes=a.nframes, W=W)
+                        k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z, nframes=a.nframes, W=W,
+                        **(dict(pts_z_um=zpt) if v2 else {}))
     calib = C.write_sim_calib(d, W, W, P, psf=a.psf)
     C.save_pattern_files(P, a.nframes, d)
     info = dict(kind='density', density=a.density, nframes=a.nframes, W=W, px_nm=C.PX_NM, bg=a.bg, intensity_per_6frames=a.intensity,
@@ -70,7 +82,12 @@ def main():
                 gt_points_md5=hashlib.md5(np.ascontiguousarray(pts).tobytes()).hexdigest(), n_events=int(len(ids)),
                 mean_on_per_frame=float(onf.sum() / a.nframes), expected_on_per_frame=float(a.density * area), z_um=R.z,
                 pattern=dict(angles_deg=P['angles_deg'], pitch_nm=C.PITCH_NM, depth=C.DEPTH, order='[[0,1,2],[3,4,5]]'),
-                camera=dict(gain=C.GAIN, offset=C.OFFSET, read_noise=0), psf=C.PSF_CALIB if a.psf == 'vectorial' else a.psf, calib=calib, seed=a.seed,
+                camera=(dict(gain=C.GAIN_V2, offset='v2 map crop %s of %s' % (C.CAM_V2_CROP, os.path.basename(C.CAM_V2)), read_noise='v2 map (median 0.90 e)') if v2
+                        else dict(gain=C.GAIN, offset=C.OFFSET, read_noise=0)),
+                psf=C.PSF_CALIB_V2 if v2 else (C.PSF_CALIB if a.psf == 'vectorial' else a.psf), calib=calib, seed=a.seed,
+                **(dict(z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
+                        z_rule='v2 calibration emitter_z_quantiles_um (non-pinned fits), clipped to emitter_z_range_um, one height per GT point',
+                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40))) if v2 else {}),
                 gt_source=f'smlmtorch {C.GT_COMMIT} scripts/generate_tubules.py + fig_densities2.py (seed 1)', s=round(time.time() - t0, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)

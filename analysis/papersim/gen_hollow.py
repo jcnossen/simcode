@@ -17,7 +17,12 @@ windows; photons in the PSF model's units = the units of this simulator):
 Kinetics: the preprint's Markov blinking (common.blink_events) with avg_on_time 20 frames (the real movies: linked disjoint windows
 3.5 / 2.0 sums mean, a lower bound; the preprint sims' 6 frames are much shorter), density 1 emitter ON / um^2 / frame (real
 1809/2: 8.2 detected emitters per 40 x 40 px per 6-sum; this movie ~ 1.3 x that), pitch 224 nm, m 0.9, PSF / z / camera as common.py.
-usage: CUDA_VISIBLE_DEVICES=2 python analysis/papersim/gen_hollow.py --radius_nm 25 --phot_scale 1 [--cond 1809_2] [--nframes 30000]
+v2-PSF set (2026-11-15, --v2psf 1; common.py "v2-PSF movie sets"; the Dexp<d>_v2psf movies = --radius_nm 0 --density d --nframes 60000):
+  the measured real-data statistics above are in the old photon units (gain 0.56 e/ADU, stored offset map) and are converted to
+  the v2 camera units: photons x 0.76 (= 0.4256 / 0.56; median 817 -> 621 per window, log-sd unchanged), the >= 300 photon
+  threshold of the brightness fit -> 228, background per 6-sum b -> (b / 0.56 - 6 x 4.6256 ADU) x 0.4256 = 0.76 b - 11.81
+  (median 30.8 -> 11.6 per 6-sum = 1.94 photons / px / frame); PSF v2 at one height per GT point (v2 calibration rule), v2 camera.
+usage: CUDA_VISIBLE_DEVICES=2 python analysis/papersim/gen_hollow.py --radius_nm 25 --phot_scale 1 [--cond 1809_2] [--nframes 30000] [--v2psf 1]
 outputs (out/papersim/hollow/<cond>_R<r>_x<s>/): movie.tif, gt.npz (pts = tube points, centre = centreline points, tub = tubule id,
 events with ev_I6), calib_sim.json, camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
 import argparse, hashlib, json, os, sys, time
@@ -92,6 +97,7 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--block', type=int, default=600)
     ap.add_argument('--out', default=None)
+    ap.add_argument('--v2psf', type=int, default=0, help='1 = the v2-PSF set: PSF v2, v2 camera, heights from the v2 calibration, real-data statistics converted to v2 units')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-hollow')
     import torch
@@ -99,6 +105,11 @@ def main():
     os.makedirs(d, exist_ok=True)
     t00 = time.time()
     S = json.load(open(STATS))[a.cond]
+    thr = 300.0
+    if a.v2psf:      # real-data statistics (old units) -> v2 camera units (module doc)
+        S = dict(S, photons_sum6={k: v * C.PHOT_V2 for k, v in S['photons_sum6'].items()},
+                 bg_sum6_per_px={k: float(C.bg_v2(v, 6)) for k, v in S['bg_sum6_per_px'].items()})
+        thr = 300.0 * C.PHOT_V2
     W = 40
     centre, knots = C.preprint_tubules()
     tub = tube_ids(centre)
@@ -108,7 +119,7 @@ def main():
     rng = np.random.default_rng([a.seed, 77])
     area = (W * C.PX_NM / 1000) ** 2
     ids, t0e, t1e = C.blink_events(len(pts), a.nframes, a.avg_on_time, a.density * area / len(pts), rng)
-    bf = fit_brightness(t0e, t1e, a.nframes, S['photons_sum6']['0.5'], S['log_photons_sd'], np.random.default_rng([a.seed, 78]))
+    bf = fit_brightness(t0e, t1e, a.nframes, S['photons_sum6']['0.5'], S['log_photons_sd'], np.random.default_rng([a.seed, 78]), thr=thr)
     I6 = bf['med0'] * np.exp(bf['sd0'] * np.random.default_rng([a.seed, 78]).standard_normal(len(ids))) * a.phot_scale
     bgq = quantile_sampler(S['bg_sum6_per_px'])
     bg6 = bgq(np.random.default_rng([a.seed, 79]).uniform(0.01, 0.99, a.nframes // 6 + 1)) / 6     # per frame, per 6-frame block
@@ -121,7 +132,12 @@ def main():
     x = pts[ids[ev], 0]; y = pts[ids[ev], 1]
     ph = I6[ev] / 6 * C.illum(P, x, y, fr) * onf
     o = np.argsort(fr, kind='stable'); fr, x, y, ph = fr[o], x[o], y[o], ph[o]
-    R = C.Renderer(W, W)
+    if a.v2psf:
+        zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
+        zr = zpt[ids[ev[o]]]
+        R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+    else:
+        R = C.Renderer(W, W)
     gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(a.radius_nm * 10) * 31 + int(a.phot_scale * 100))
     bounds = np.searchsorted(fr, np.arange(0, a.nframes + a.block, a.block))
     bgt = torch.as_tensor(np.repeat(bg6, 6)[:a.nframes], device='cuda', dtype=torch.float32)
@@ -129,22 +145,29 @@ def main():
     def blocks():
         for i, f0 in enumerate(range(0, a.nframes, a.block)):
             nf = min(a.block, a.nframes - f0); s, e = bounds[i], bounds[i + 1]
-            mu = R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], ph[s:e]) + bgt[f0:f0 + nf, None, None]
+            mu = (R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], zr[s:e], ph[s:e]) if a.v2psf else R.expected(f0, nf, fr[s:e], x[s:e], y[s:e], ph[s:e])) \
+                + bgt[f0:f0 + nf, None, None]
             yield R.adu(mu, gen)
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     wp = window_photons(t0e, t1e, I6, a.nframes)
+    xtra = dict(pts_z_um=zpt) if a.v2psf else {}
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, centre=centre, tub=tub, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1],
                         ev_t0=t0e, ev_t1=t1e, ev_I6=I6, bg6=bg6, k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z,
-                        nframes=a.nframes, W=W, radius_px=a.radius_nm / C.PX_NM)
-    calib = C.write_sim_calib(d, W, W, P)
+                        nframes=a.nframes, W=W, radius_px=a.radius_nm / C.PX_NM, **xtra)
+    calib = C.write_sim_calib(d, W, W, P, psf='v2' if a.v2psf else 'vectorial')
     C.save_pattern_files(P, a.nframes, d)
     info = dict(kind='hollow', cond=a.cond, radius_nm=a.radius_nm, phot_scale=a.phot_scale, density=a.density, nframes=a.nframes, W=W,
                 px_nm=C.PX_NM, avg_on_time=a.avg_on_time, n_gt_points=int(len(pts)), n_events=int(len(ids)),
-                brightness_fit=bf, window_photons_ge300=dict(zip(['p5', 'p50', 'p95'], np.percentile(wp[wp >= 300], [5, 50, 95]).round(1).tolist())),
+                brightness_fit=bf, window_photons_ge300=dict(zip(['p5', 'p50', 'p95'], np.percentile(wp[wp >= thr], [5, 50, 95]).round(1).tolist())),
+                window_threshold=thr,
                 window_photons_all=dict(zip(['p5', 'p50', 'p95'], np.percentile(wp, [5, 50, 95]).round(1).tolist())),
                 bg_per_frame=dict(mean=float(bg6.mean()), p1=float(np.percentile(bg6, 1)), p99=float(np.percentile(bg6, 99))),
                 real_stats=dict(photons_sum6=S['photons_sum6'], log_photons_sd=S['log_photons_sd'], bg_sum6_per_px=S['bg_sum6_per_px']),
-                mean_on_per_frame=float(onf.sum() / a.nframes), z_um=R.z, psf=C.PSF_CALIB, calib=calib, seed=a.seed,
+                mean_on_per_frame=float(onf.sum() / a.nframes), z_um=R.z, psf=C.PSF_CALIB_V2 if a.v2psf else C.PSF_CALIB, calib=calib, seed=a.seed,
+                **(dict(v2psf=1, units='v2 camera photons (old real-data statistics converted: photons x %.4f, bg per 6-sum (b / 0.56 - 6 x %.4f) x 0.4256)' % (C.PHOT_V2, C.OFFSET_SHIFT_V2),
+                        camera=dict(gain=C.GAIN_V2, offset='v2 map crop %s of %s' % (C.CAM_V2_CROP, os.path.basename(C.CAM_V2)), read_noise='v2 map (median 0.90 e)'),
+                        z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
+                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40))) if a.v2psf else {}),
                 gt_points_md5=hashlib.md5(np.ascontiguousarray(pts).tobytes()).hexdigest(), s=round(time.time() - t00, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)

@@ -21,7 +21,23 @@ every deviation):
             frame, k_off = 1 / (avg_on_time x 10), k_on = k_off (1 - p_off) / p_off, p_off = 1 - on_fraction, initial state
             Bernoulli(on_fraction); per-frame on-fraction = on sub-steps / 10. Sampled here exactly as alternating geometric
             run lengths (same distribution, vectorised); the random stream differs from the preprint's.
-Coordinates everywhere: px, pixel centre = integer, x = column (simcode / smlmtorch / fastpsf / DECODE convention)."""
+Coordinates everywhere: px, pixel centre = integer, x = column (simcode / smlmtorch / fastpsf / DECODE convention).
+
+v2-PSF movie sets (2026-11-15, opt-in psf='v2'; the default above is unchanged): see V2 below.
+  PSF       in-situ PSF v2 of 1809/2 (models/insitu/calib_1809_2_psf_v2.json: vectorial Zernike 5-21, focus 0.20 um, no blur, default
+            dipole model, so no per-angle terms), rendered on a 41 x 41 px ROI (as the training simulator AcquisitionSim; the
+            21 x 21 ROI of the old movies holds only 87-94 % of the v2 PSF's light) with LUT planes every 10 nm over 0-0.40 um
+            (linear in z, bilinear sub-pixel, 32 sub-steps).
+  heights   one height per GT point (a labelling site does not move): the v2 calibration rule of the training simulator
+            (simcode.simulate.acquisition.height_quantiles: piecewise-linear inverse CDF of emitter_z_quantiles_um = the
+            non-pinned fitted heights of the held-out spots, clipped to emitter_z_range_um = [0, 0.40] um); no TIRF factor.
+  photons   the intensity parameter of the PSF model (as before and as the training simulator / torch_psf): an emitter of
+            I photons at height z gives I x (PSF sum at z) detected photons; the vectorial PSF collects 0.96 / 0.72 / 0.54
+            of them at z = 0 / 0.116 / 0.40 um (supercritical-angle light decays with z).
+  camera    the v2 camera of 1809/2 on a fixed 40 x 40 crop (rows / cols 40-80 of models/insitu/camera_maps_1809_2_v2.npz):
+            gain 0.4256 e/ADU, offset map (fixed pattern + 103.93 ADU, sd 1.69 ADU), per-pixel Gaussian read noise
+            (median 0.90 e, rms 1.34 e); ADU = round((Poisson(mu) + N(0, rn^2)) / gain + offset). calib_sim.json /
+            camera_sim.npz carry exactly these maps (the pipelines know the camera, as in the old sims)."""
 import ast, json, math, os, subprocess, sys
 import numpy as np
 
@@ -39,6 +55,35 @@ SMLMTORCH = os.path.expanduser('~/smlmtorch')
 GT_COMMIT = '5a4fda9'
 MOVING_COMMIT = '5f7fdcb'        # fig_moving_tubules.py: last change 93c3e2a; identical at 5f7fdcb (the server's head)
 DENSITIES = [0.5, 1, 2, 4]
+# v2-PSF movie sets (2026-11-15)
+PSF_CALIB_V2 = os.path.join(REPO, 'models', 'insitu', 'calib_1809_2_psf_v2.json')
+CAM_V2 = os.path.join(REPO, 'models', 'insitu', 'camera_maps_1809_2_v2.npz')
+CAM_V2_CROP = (40, 40)            # top-left (row, col) of the 40 x 40 crop of the v2 camera maps
+GAIN_OLD, GAIN_V2 = 0.56, 0.4256
+OFFSET_SHIFT_V2 = 4.6256          # v2 offset map - stored 1809/2 offset map (ADU, constant over the sensor ROI)
+PHOT_V2 = GAIN_V2 / GAIN_OLD      # photons (intensity) old units -> v2 units: x 0.76
+
+
+def bg_v2(b_old, nframes=1):
+    """background old photon units -> v2 units (photons / px over nframes summed frames): (b / 0.56 - nframes x 4.6256 ADU) x 0.4256
+    = 0.76 b - nframes x 1.969"""
+    return (np.asarray(b_old, float) / GAIN_OLD - nframes * OFFSET_SHIFT_V2) * GAIN_V2
+
+
+def heights_v2(n, rng, calib=PSF_CALIB_V2):
+    """[n] emitter heights (um) by the v2 calibration rule (simcode.simulate.acquisition.height_quantiles / draw_z, numpy draw)"""
+    from simcode.simulate.acquisition import height_quantiles
+    c = json.load(open(calib))
+    P, Z = (t.cpu().numpy().astype(np.float64) for t in height_quantiles(c))
+    z = np.interp(rng.random(n), P, Z)
+    lo, hi = c['emitter_z_range_um']
+    return np.clip(z, lo, hi)
+
+
+def camera_v2():
+    """(gain, offset_adu [40,40], readnoise_e [40,40]) of the v2-PSF movies"""
+    m = np.load(CAM_V2); r, c = CAM_V2_CROP
+    return float(m['gain']), m['offset_adu'][r:r + 40, c:c + 40].astype(np.float32), m['readnoise_e'][r:r + 40, c:c + 40].astype(np.float32)
 
 
 def z_um():
@@ -143,6 +188,8 @@ def write_sim_calib(d, H, W, P, psf='vectorial'):
     """calib_sim.json (the PSF that rendered the movie + the simulated camera) and camera_sim.npz in movie dir d.
     psf 'vectorial' = the averaged 1809/2 PSF; 'gauss1.3' = models/insitu/calib_gauss1.3.json (pixel-integrated Gaussian,
     psf_gauss_sigma_um), so SIMCODE v2's head template and solve use the movie's PSF"""
+    if psf == 'v2':
+        return _write_sim_calib_v2(d, H, W, P)
     c = json.load(open(GAUSS_CALIB if psf.startswith('gauss') else PSF_CALIB))
     if psf.startswith('gauss'):
         assert abs(c['psf_gauss_sigma_um'] / c['pixelsize_um'] - float(psf[5:])) < 1e-3, 'calib_gauss sigma != movie sigma'
@@ -157,6 +204,61 @@ def write_sim_calib(d, H, W, P, psf='vectorial'):
     p = os.path.join(d, 'calib_sim.json')
     json.dump(c, open(p, 'w'), indent=1)
     return p
+
+
+def _write_sim_calib_v2(d, H, W, P):
+    """calib_sim.json of a v2-PSF movie: the v2 calibration (PSF, emitter-height keys) with the movie's camera (camera_v2 crop)"""
+    assert (H, W) == (40, 40)
+    c = json.load(open(PSF_CALIB_V2))
+    g, off, rn = camera_v2()
+    np.savez(os.path.join(d, 'camera_sim.npz'), offset_adu=off, readnoise_e=rn, gain=np.float32(g))
+    c['source'] = ('papersim simulated movie (v2 PSF set): PSF of ' + os.path.basename(PSF_CALIB_V2) + '; camera = the v2 1809/2 camera '
+                   'on the 40 x 40 crop at (row, col) %s of %s: gain %.4f e/ADU, offset map, per-pixel read noise' % (CAM_V2_CROP, os.path.basename(CAM_V2), g))
+    c['camera'] = dict(gain_e_per_adu=g, offset_adu=float(np.median(off)), readnoise_e=float(np.median(rn)), maps='camera_sim.npz',
+                       note='simulated: Poisson + per-pixel Gaussian read noise (readnoise_e map), offset map; = the maps that rendered the movie')
+    c['pattern'] = dict(k_rad_per_px=P['k'].tolist(), pitch_nm=[PITCH_NM, PITCH_NM], depth=P['m'].tolist(), phase=P['phi'].tolist(),
+                        note='ground truth of the simulation (the pipeline never reads this entry)')
+    p = os.path.join(d, 'calib_sim.json')
+    json.dump(c, open(p, 'w'), indent=1)
+    return p
+
+
+class RendererV2:
+    """v2-PSF movies: rows (frame, x, y, z, photons) -> expected images with the v2 PSF LUT (41 x 41 px, 0-0.40 um), + bg,
+    Poisson + read noise, ADU with the v2 camera crop (see the module doc)"""
+    def __init__(self, H, W, dev='cuda'):
+        import torch
+        from simcode.simulate.simulator import Simulator
+        self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
+        self.sim = Simulator(PSF_CALIB_V2, H=H, W=W, T=6, device=dev, psf_roi=41, psf_lut_z=41, psf_lut_sub=32, zmin=0.0, zmax=0.40)
+        self.R = self.sim.R
+        g, off, rn = camera_v2()
+        self.gain = g; self.off = torch.tensor(off, device=self.dev); self.rn = torch.tensor(rn, device=self.dev)
+
+    def expected(self, f0, nf, fr, x, y, z, ph):
+        torch = self.t; dev = self.dev; H, W, R = self.H, self.W, self.R; hr = R // 2
+        pad = R + 1
+        img = torch.zeros(nf, H + 2 * pad, W + 2 * pad, device=dev)
+        x = torch.as_tensor(x, device=dev, dtype=torch.float32); y = torch.as_tensor(y, device=dev, dtype=torch.float32)
+        z = torch.as_tensor(z, device=dev, dtype=torch.float32)
+        keep = (x > -hr) & (x < W + hr - 1) & (y > -hr) & (y < H + hr - 1)
+        if keep.any():
+            fr = torch.as_tensor(fr, device=dev).long()[keep] - f0; ph = torch.as_tensor(ph, device=dev, dtype=torch.float32)[keep]
+            x = x[keep]; y = y[keep]; z = z[keep]
+            oy, ox = torch.meshgrid(torch.arange(R, device=dev), torch.arange(R, device=dev), indexing='ij')
+            Hp, Wp = img.shape[-2:]
+            for s in range(0, len(x), 8000):
+                sl = slice(s, s + 8000)
+                psf = self.sim.render_psf(x[sl], y[sl], z[sl])
+                cx = torch.round(x[sl]).long() - hr + pad; cy = torch.round(y[sl]).long() - hr + pad
+                lin = fr[sl, None] * Hp * Wp + ((cy[:, None, None] + oy) * Wp + cx[:, None, None] + ox).reshape(len(psf), -1)
+                img.view(-1).index_add_(0, lin.reshape(-1), (ph[sl, None, None] * psf).reshape(-1))
+        return img[:, pad:pad + H, pad:pad + W]
+
+    def adu(self, mu, gen):
+        torch = self.t
+        e = torch.poisson(mu, generator=gen) + self.rn * torch.randn(mu.shape, device=self.dev, generator=gen)
+        return torch.round(e / self.gain + self.off).clamp(0, 65535).to(torch.int32).cpu().numpy().astype(np.uint16)
 
 
 # ------------------------------------------------------------------------------------------------ renderer
