@@ -42,8 +42,15 @@ def cur(D, key, meth, mode, metric):
 def fmt(v): return '-' if v is None else f'{v:,.0f}'
 
 
-def setx(ax, xmax=2e6):
-    ax.set_xscale('log'); ax.set_xlim(900, xmax); ax.set_xlabel('frames')
+XAX = {1800000: (1e6, [0, 0.5e6, 1.0e6, 1.5e6], 'frames (10$^6$)', '{:.1f}'), 684000: (1e3, [0, 2e5, 4e5, 6e5], 'frames (10$^3$)', '{:.0f}'),
+       30000: (1e3, [0, 1e4, 2e4, 3e4], 'frames (10$^3$)', '{:.0f}')}
+
+
+def setx(ax, T=1800000):
+    """linear frames axis 0 .. T (MT 1.8 M, NPC 684 000, simulation 30 000)"""
+    u, ticks, lab, f = XAX[T]
+    ax.set_xscale('linear'); ax.set_xlim(0, T * 1.03); ax.set_xticks(ticks)
+    ax.set_xticklabels([f.format(t / u) if t else '0' for t in ticks]); ax.set_xlabel(lab)
 
 
 def targets(ax, ts=TARGETS):
@@ -108,15 +115,13 @@ def main(res):
                 k = f'{meth}_{mode}_{metric}'
                 if k not in D[key]: continue
                 N, r = cur(D, key, meth, mode, metric)
-                ax.plot(N, r, color=COL[meth], ls=LS[mode], lw=LW[mode])
-        ax.set_yscale('log'); ax.set_ylim(*ylim); setx(ax)
+                ax.plot(N, r, color=COL[meth], ls=LS[mode], lw=LW[mode], marker='o' if mode == 'ind' else None, ms=1.3)
+        ax.set_yscale('log'); ax.set_ylim(*ylim); setx(ax, D[key]['T'])
         ax.set_yticks([10, 15, 20, 25, 35, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '35', '50', '100', '200'])
         ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-        ax.axvline(30000, color='0.75', lw=0.5, zorder=0)
         ax.set_title(title, fontsize=6.5, pad=3)
 
     ax = axs[0, 0]; frc_panel(ax, 'mt_dense', 'xy', title='MT, densest 7.7 × 7.7 µm region'); targets(ax); ax.set_ylabel('FRC x-y (nm)'); letter(ax, 'a')
-    ax.text(30000 * 1.1, 8.6, 'length of the\nsimulated movies', fontsize=5, color='0.5', va='bottom')
     ax = axs[0, 1]; frc_panel(ax, 'mt_dense', 'xz', title='MT, densest region, x-z sections'); targets(ax, (35, 30, 25)); ax.set_ylabel('FRC x-z sections (nm)'); letter(ax, 'b')
     ax = axs[0, 2]
     s = S['mt_dense']
@@ -124,45 +129,42 @@ def main(res):
         for mode in ('ind', 'spread'):
             ax.plot(s['grid'], s[f'{meth}_{mode}']['3'], color=COL[meth], ls=LS[mode], lw=LW[mode])
     setx(ax); ax.set_ylim(0, 1.02); ax.set_ylabel('skeleton covered\n(≥ 3 locs within ±30 nm)'); ax.set_title('MT, densest region, coverage', fontsize=6.5, pad=3); letter(ax, 'c')
-    ax.axvline(30000, color='0.75', lw=0.5, zorder=0)
 
     ax = axs[1, 0]
     for meth in ('net', 'cl'):
         for metric, ls in (('xy', '-'), ('xz', (0, (4, 1.5)))):
-            N, r = cur(D, 'mt_box0', meth, 'ind', metric); ax.plot(N, r, color=COL[meth], ls=ls, lw=1.0)
+            N, r = cur(D, 'mt_box0', meth, 'ind', metric); ax.plot(N, r, color=COL[meth], ls=ls, lw=1.0, marker='o', ms=1.2)
         N, r = cur(D, 'mt_field', meth, 'ind', 'xy'); ax.plot(N, r, color=COL[meth], ls=(0, (1, 1.2)), lw=0.8)
     ax.set_yscale('log'); ax.set_ylim(8, 200); setx(ax); targets(ax)
     ax.set_yticks([10, 15, 20, 25, 35, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '35', '50', '100', '200']); ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    ax.axvline(30000, color='0.75', lw=0.5, zorder=0)
     ax.set_ylabel('FRC (nm)'); ax.set_title('MT, box 0 and 21 × 11 µm field', fontsize=6.5, pad=3); letter(ax, 'd')
     ax.legend(handles=[Line2D([], [], color='0.3', lw=1.0, ls='-', label='box 0, x-y'), Line2D([], [], color='0.3', lw=1.0, ls=(0, (4, 1.5)), label='box 0, x-z sections'),
-                       Line2D([], [], color='0.3', lw=0.8, ls=(0, (1, 1.2)), label='field, x-y')], loc='lower left', frameon=False, handlelength=2.2)
+                       Line2D([], [], color='0.3', lw=0.8, ls=(0, (1, 1.2)), label='field, x-y')], loc='upper right', frameon=False, handlelength=2.2)
 
     ax = axs[1, 1]
     for meth in ('net', 'cl'):
         for metric, ls in (('xy', '-'), ('xz', (0, (4, 1.5)))):
-            N, r = cur(D, 'npc_center', meth, 'ind', metric); ax.plot(N, r, color=COL[meth], ls=ls, lw=1.0)
+            N, r = cur(D, 'npc_center', meth, 'ind', metric); ax.plot(N, r, color=COL[meth], ls=ls, lw=1.0, marker='o', ms=1.2)
         N, r = cur(D, 'npc_center', meth, 'spread', 'xy'); ax.plot(N, r, color=COL[meth], ls=(0, (1, 1.2)), lw=0.8)
-    ax.set_yscale('log'); ax.set_ylim(8, 200); setx(ax, 8e5); targets(ax)
+    ax.set_yscale('log'); ax.set_ylim(8, 200); setx(ax, 684000); targets(ax)
     ax.set_yticks([10, 15, 20, 25, 35, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '35', '50', '100', '200']); ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    ax.axvline(30000, color='0.75', lw=0.5, zorder=0)
     ax.set_ylabel('FRC (nm)'); ax.set_title('NPC, central 10 × 10 µm', fontsize=6.5, pad=3); letter(ax, 'e')
     ax.legend(handles=[Line2D([], [], color='0.3', lw=1.0, ls='-', label='x-y'), Line2D([], [], color='0.3', lw=1.0, ls=(0, (4, 1.5)), label='x-z sections'),
-                       Line2D([], [], color='0.3', lw=0.8, ls=(0, (1, 1.2)), label='x-y, spread')], loc='lower left', frameon=False, handlelength=2.2)
+                       Line2D([], [], color='0.3', lw=0.8, ls=(0, (1, 1.2)), label='x-y, spread')], loc='upper right', frameon=False, handlelength=2.2)
 
     ax = axs[1, 2]; s = S['npc']
     for meth in ('net', 'cl'):
         for mode in ('ind', 'spread'):
             ax.plot(s['grid'], s[f'{meth}_{mode}']['corners_ge1'], color=COL[meth], ls=LS[mode], lw=LW[mode])
-    setx(ax, 8e5); ax.set_ylim(0, 8.2); ax.set_yticks(range(0, 9, 2)); ax.set_ylabel('corners seen per pore (of 8)')
-    ax.set_title(f"NPC ring completeness ({s['n_pores']:,} pores)", fontsize=6.5, pad=3); letter(ax, 'f'); ax.axvline(30000, color='0.75', lw=0.5, zorder=0)
+    setx(ax, 684000); ax.set_ylim(0, 8.2); ax.set_yticks(range(0, 9, 2)); ax.set_ylabel('corners seen per pore (of 8)')
+    ax.set_title(f"NPC ring completeness ({s['n_pores']:,} pores)", fontsize=6.5, pad=3); letter(ax, 'f')
 
     ax = axs[2, 0]; key = 'sim_mtc_d03'
     for meth in ('net', 'cl'):
         g = D[key]['gt'][meth]; ax.plot(g['N'], g['xy_runmin'], color=COL[meth], lw=2.2, alpha=0.35, solid_capstyle='butt')
         for mode in ('ind', 'blk'):
             N, r = cur(D, key, meth, mode, 'xy'); ax.plot(N, r, color=COL[meth], ls=LS[mode], lw=LW[mode])
-    ax.set_yscale('log'); ax.set_ylim(8, 200); ax.set_xscale('log'); ax.set_xlim(900, 32000); ax.set_xlabel('frames'); targets(ax)
+    ax.set_yscale('log'); ax.set_ylim(8, 200); setx(ax, 30000); targets(ax)
     ax.set_yticks([10, 15, 20, 25, 35, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '35', '50', '100', '200']); ax.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
     ax.set_ylabel('FRC x-y (nm)'); ax.set_title('simulation, 0.84× densest real region', fontsize=6.5, pad=3); letter(ax, 'g')
     ax.legend(handles=[Line2D([], [], color='0.3', lw=2.2, alpha=0.35, label='ground-truth FRC'), Line2D([], [], color='0.3', lw=LW['ind'], ls='-', label='half-split, independent halves'),
@@ -174,11 +176,11 @@ def main(res):
             L = D[key]['lag'][meth]; e = np.array(L['lag_edges_windows'], float); c = np.sqrt(e[:-1] * e[1:]) * 6
             r = np.array(L['ratio']); ok = np.array(L['pairs_r8']) >= 20
             ax.plot(c[ok], r[ok], color=COL[meth], ls=ls, lw=0.9, marker='o', ms=1.5)
-    ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlim(5, 2e6); ax.set_ylim(0.5, 60); ax.set_xlabel('time lag (frames)'); ax.set_ylabel('pairs < 8 nm / pairs at 8-24 nm\n(per area)')
-    ax.axvline(3000, color='0.6', lw=0.5, ls=(0, (2, 2))); ax.text(2800, 0.55, '500\nwindows', fontsize=5, color='0.4', va='bottom', ha='right')
+    ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlim(5, 2e6); ax.set_ylim(0.2, 60); ax.set_xlabel('time lag (frames)'); ax.set_ylabel('pairs < 8 nm / pairs at 8-24 nm\n(per area)')
+    ax.axvline(3000, color='0.6', lw=0.5, ls=(0, (2, 2))); ax.text(2800, 30, '500\nwindows', fontsize=5, color='0.4', va='bottom', ha='right')
     ax.set_title('same-molecule correlation vs lag', fontsize=6.5, pad=3); letter(ax, 'h')
     ax.legend(handles=[Line2D([], [], color='0.3', lw=0.9, ls='-', label='MT'), Line2D([], [], color='0.3', lw=0.9, ls=(0, (4, 1.5)), label='NPC'),
-                       Line2D([], [], color='0.3', lw=0.9, ls=(0, (1, 1.2)), label='simulation 0.84×')], loc='upper right', frameon=False, handlelength=2.2)
+                       Line2D([], [], color='0.3', lw=0.9, ls=(0, (1, 1.2)), label='simulation 0.84×')], loc='lower left', frameon=False, handlelength=2.2)
 
     # (i) frames to 25 / 20 / 15 nm (x-y, independent halves)
     ax = axs[2, 2]
@@ -189,14 +191,15 @@ def main(res):
             y = i + (0.15 if meth == 'net' else -0.15)
             for t in TARGETS:
                 v = V['regions'][key][f'{meth}_ind_xy']['frames_to'][str(t)]
-                if v is not None: ax.plot(v, y, marker=mk[t], color=COL[meth], ms=3.2, ls='none', mfc=COL[meth] if t == 15 else 'w', mew=0.8)
+                if v is not None: ax.plot(v / D[key]['T'], y, marker=mk[t], color=COL[meth], ms=3.2, ls='none', mfc=COL[meth] if t == 15 else 'w', mew=0.8)
             sat = V['regions'][key][f'{meth}_ind_xy']['saturation_frames_10pct']
-            if sat: ax.plot([sat, sat], [y - 0.1, y + 0.1], color=COL[meth], lw=1.4)
+            if sat: ax.plot([sat / D[key]['T']] * 2, [y - 0.1, y + 0.1], color=COL[meth], lw=1.4)
     ax.set_yticks(range(len(rows))); ax.set_yticklabels([r[1] for r in rows]); ax.set_ylim(-0.6, len(rows) - 0.4)
-    ax.set_xscale('log'); ax.set_xlim(900, 2e6); ax.set_xlabel('frames'); ax.spines['left'].set_visible(False); ax.tick_params(axis='y', length=0)
+    ax.set_xlim(0, 1.03); ax.set_xticks([0, 0.25, 0.5, 0.75, 1.0]); ax.set_xticklabels(['0', '0.25', '0.5', '0.75', '1'])
+    ax.set_xlabel('fraction of the acquisition', labelpad=1); ax.spines['left'].set_visible(False); ax.tick_params(axis='y', length=0)
     ax.set_title('frames to reach x-y FRC', fontsize=6.5, pad=3); letter(ax, 'i')
     ax.legend(handles=[Line2D([], [], marker=mk[t], color='0.3', ls='none', ms=3.2, mfc='0.3' if t == 15 else 'w', label=f'{t} nm') for t in TARGETS]
-              + [Line2D([], [], color='0.3', lw=1.4, label='within 10 % of final')], loc='upper left', frameon=False, ncol=1, handlelength=1.2)
+              + [Line2D([], [], color='0.3', lw=1.4, label='within 10 % of final')], loc='upper right', frameon=False, ncol=1, handlelength=1.2)
 
     fig.legend(handles=[Line2D([], [], color=COL['net'], lw=1.2, label=LAB['net']), Line2D([], [], color=COL['cl'], lw=1.2, label=LAB['cl']),
                         Line2D([], [], color='0.3', lw=LW['ind'], ls=LS['ind'], label='first N frames, independent halves'),
@@ -224,13 +227,13 @@ def caption(V, D):
          "split into two halves, x-y histograms with 4 nm pixels over a fixed region (x-z: (x, z) histograms with 5 nm pixels in 250 nm y-slabs, "
          "+-300 nm about the median z, correlation pooled over the slabs, as the simulation's ground-truth x-z FRC), 5-ring smoothing, 1/7 threshold, "
          "crossing interpolated between rings where the curve stays below 1/7 for 0.01 /nm (the rule of si_4pi_sim e); raw values per N (no running "
-         "best). Three ways of taking N frames and splitting them: solid, the first N frames, halves = alternating blocks of min(500, N / 12) "
+         "best); N = 1000 x 2^(k/4) and every 1/20 of the series (dots on the solid curves), linear frames axes (the simulated movies are 30 000 frames long, 1.7 % of the MT series). Three ways of taking N frames and splitting them: solid, the first N frames, halves = alternating blocks of min(500, N / 12) "
          "six-frame windows (two halves below 6000 frames, 500-window blocks = the figures' FRC from 6000 frames on; independent halves); "
          "dotted, the same blocks spread evenly over the whole series (frames from the whole series instead of its start); thin dashed (a, b, g), "
          "the first N frames with short alternating blocks (>= 10 blocks, min(500, N / 60) windows), which put the repeated detections of one "
          "binding event into both halves. "
          "(a, b) Microtubules, the densest 7.7 x 7.7 um region of the cell (the density reference of si_4pi_sim; 100 files, 1.8 M frames), x-y and "
-         "x-z sections; grey vertical line: 30 000 frames, the length of the simulated movies. (c) Microtubule skeleton coverage in that region: "
+         "x-z sections. (c) Microtubule skeleton coverage in that region: "
          "fraction of the skeleton (20 nm pixels, skeleton of both full tables together, "
          f"{St['mt_dense']['ref']['skeleton_um']:.0f} um of tube) with >= 3 localizations within +-30 nm. "
          "(d) Box 0 (the region of si_4pi_mt b; x-y solid, x-z sections dashed) and the 21 x 11 um field around boxes 0 and 1 (x-y, dotted). "
@@ -241,7 +244,7 @@ def caption(V, D):
          "(h) Same-molecule correlation versus time lag: pairs of localizations closer than 8 nm in x-y relative to pairs 8-24 nm apart "
          "(per area; ~1 = only the structure; MT: densest region, NPC: central region, simulation 0.84x). "
          "(i) Frames until the x-y FRC stays at or below 25 / 20 / 15 nm (open circle / open square / filled diamond; first N frames, independent "
-         "halves) and from which it stays within 10 % of its all-frames value (bar).",
+         "halves) and from which it stays within 10 % of its all-frames value (bar), as a fraction of the whole acquisition (MT 1.8 M, NPC 684 000 frames).",
          '',
          'NUMBERS (si_4pi_frc_vs_frames_values.json)',
          "Frames until the x-y FRC stays <= 25 / 20 / 15 nm (first N frames, independent halves):",
@@ -277,20 +280,21 @@ def caption(V, D):
          'READING',
          "1. Short blocks measure precision, not the image: with blocks shorter than the same-molecule correlation time (h: repeated detections "
          "of one binding event and rebinding stay correlated for ~100-300 windows on these data, much longer than in the simulation) the half-split "
-         "FRC of the first 1000 frames is 13 nm on MT, better than with all 1.8 M frames. Only independent halves (>= 500-window blocks) give a "
+         f"FRC of the first 1000 frames is {at('mt_dense', 'net_blk_xy', 1000):.0f} nm on MT, better than with all 1.8 M frames. Only independent halves (>= 500-window blocks) give a "
          "usable timeline. 2. With independent halves the MT curves fall over the whole series (no plateau: within 10 % of the all-frames value "
          "only after ~1.1-1.4 M of 1.8 M frames), with a step where the curve passes the hollow-tube spectral dip; the NPC curves flatten after "
-         "~0.2 M of 0.68 M frames. 3. Frames from across the series agree less than consecutive frames (dotted vs solid; MT 25 nm after 0.38 M "
-         "instead of 0.13 M frames). Two causes, not separable here: adjacent 500-window blocks still share some correlated detections across their "
-         "boundaries (h: at 300-1000 windows the MT ratio is 1.7 against 1.3 at long lags), and files far apart are less consistent with each other "
+         "~0.2 M of 0.68 M frames. 3. Frames from across the series agree less than consecutive frames (dotted vs solid; MT densest region 25 nm "
+         f"after {R['mt_dense']['net_spread_xy']['frames_to']['25'] / 1e3:.0f}k instead of {R['mt_dense']['net_ind_xy']['frames_to']['25'] / 1e3:.0f}k frames). Two causes, not separable here: adjacent 500-window blocks still share some correlated detections across their "
+         f"boundaries (h: at 300-1000 windows the MT ratio is {lag('mt_dense', 'net', 6):.1f} against {lag('mt_dense', 'net', 9):.1f} at long lags), and files far apart are less consistent with each other "
          "(per-file 4Pi registration and in-situ calibration, residual drift); there is no sign that the late frames themselves are worse (the "
          "spread curves end at the same value). The first-N curves are therefore somewhat optimistic for a shorter acquisition. 4. The half-split FRC is a much stricter and different quantity than the simulation's "
          "ground-truth FRC: in the simulation at 0.84x the densest real region (g) the ground-truth FRC reaches 25 nm after 11 000 frames and "
-         "18 nm at 30 000 frames, while the half-split FRC of the same localizations is still 82 nm (both halves must sample the same sites; "
+         f"{Sm['sim_mtc_d03']['net_gt_xy_runmin']['final_nm']:.0f} nm at 30 000 frames, while the half-split FRC of the same localizations is still {Sm['sim_mtc_d03']['net_ind_xy']['final_nm']:.0f} nm (both halves must sample the same sites; "
          "the ground truth is complete). The simulation's 'faithful image after ~11 000 frames' therefore cannot be checked with the real data's "
          "half-split FRC, and the real timelines are not a test of it. 5. Structure completeness saturates much earlier than the FRC: the MT "
-         "skeleton is 99 % covered (>= 3 4Pi-SIMCODE localizations within +-30 nm) after ~0.2 M frames (4Pi-SIMFLUX: 90 % after 0.63 M), and "
-         "4Pi-SIMCODE sees 95 % of the NPC corners after ~27 000 frames (4Pi-SIMFLUX ~96 000). 6. The NPC two-ring valley / peak of the "
+         f"skeleton is 99 % covered (>= 3 4Pi-SIMCODE localizations within +-30 nm) after {cov('mt_dense', 'net_ind_ge3', 0.99)} frames (4Pi-SIMFLUX: 90 % after "
+         f"{cov('mt_dense', 'cl_ind_ge3', 0.9)}), and 4Pi-SIMCODE sees 95 % of the NPC corners after {fmt(St['npc']['net_ind_corners_ge1']['frames_to_95pct_of_final'])} frames "
+         f"(4Pi-SIMFLUX {fmt(St['npc']['cl_ind_corners_ge1']['frames_to_95pct_of_final'])}). 6. The NPC two-ring valley / peak of the "
          "4Pi-SIMCODE rows is best at ~0.13-0.26 M frames and worsens with the later files (z consistency between files), so the NPC 3D result "
          "would not suffer from stopping at about a third of the series.",
          '',

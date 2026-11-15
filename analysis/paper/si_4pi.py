@@ -5,8 +5,9 @@
                two-ring z histogram, ring metrics vs number of localizations kept, FRC resolution vs frames (g).
   si_4pi_mt    real 4Pi-SIMFLUX microtubule movie, 100 files: network overview of the cell, box-0 region coloured by z, a
                crossing zoom, y-z section through overlapping tubes, FRC resolution vs frames (f), tube cross-section (14 isolated
-               segments) + profiles. FRC timelines cached in cache_si_4pi/frc_timeline_{npc,mt}.json (~10 / 20 min to make);
-               the full analysis (x-z, spread, structure, simulation) is si_4pi_frc.py -> si_4pi_frc_vs_frames.
+               segments) + profiles. The FRC values (titles) and FRC-vs-frames panels of both figures are read from
+               cache_si_4pi/frc_vs_frames.json: run si_4pi_frc.py compute first (the one FRC estimator of the 4Pi figures,
+               also behind si_4pi_frc_vs_frames).
   si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
                emitters / um^2 / frame: renders per density (network, one sigma selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
@@ -61,47 +62,21 @@ FRC_YMAX = 300.0
 
 
 def frc_timeline(T, box, n_frames, name):
-    """FRC (the figures' FRC curve: x-y, 4 nm pixels, 5-ring smoothing, 1/7; simcode/evaluation/frc.py) of the localizations in box
-    from the FIRST N frames, N = 1000 * 2^(k/2) .. all; halves = alternating blocks of min(500, N / 12) six-frame windows (two halves
-    of N / 2 below 6000 frames, the figures' 500-window blocks from 6000 frames on). Two read-outs of the same curve: 'frc' = the
-    interpolated crossing by the sustained rule of si_4pi_sim e (the curve stays below 1/7 for 0.01 / nm; the structural dips of the
-    ring / tube spectrum are not taken as the resolution), 'frc_first' = the first crossing of the titles (last point = the titles' FRC).
-    Cached in cache_si_4pi/frc_timeline_<name>.json (keyed by the row counts and the box)."""
-    from simcode.evaluation.frc import frc as _frc
-    fn = f'{CACHE}/frc_timeline_{name}.json'
-    key = {k: int(len(U['x'])) for k, U in T.items()}
-    if os.path.exists(fn):
-        c = json.load(open(fn))
-        if c.get('rows') == key and c.get('box') == list(map(float, box)) and 'frc_first' in c: return c
-    grid = [int(round(1000 * 2 ** (k / 2))) for k in range(60) if 1000 * 2 ** (k / 2) < n_frames] + [int(n_frames)]
-    out = dict(rows=key, box=list(map(float, box)), N=grid, frc={}, frc_first={}, n={})
+    """FRC resolution vs frames of the three analyses in box, read from the ONE estimator of si_4pi_frc.py (cache_si_4pi/frc_vs_frames.json,
+    region npc_center / mt_box0, first N frames, independent halves = alternating blocks of min(500, N / 12) six-frame windows,
+    N = 1000 * 2^(k/4) .. all; x-y FRC of simcode/evaluation/frc.py, 4 nm pixels, 5-ring smoothing, 1/7; 'frc' = interpolated crossing
+    by the sustained rule (the value in the titles = the last point), 'frc_first' = first crossing). Checks that the json was made from
+    the same rows (counts in the box) as this figure."""
+    D = json.load(open(f'{CACHE}/frc_vs_frames.json'))[{'npc': 'npc_center', 'mt': 'mt_box0'}[name]]
+    assert np.allclose(D['box'], box), (D['box'], box)
     for k, U in T.items():
-        m0 = inrect(U['x'], U['y'], box); x, y, w = U['x'][m0], U['y'][m0], U['frame'][m0] // 6
-        r, r1, n = [], [], []
-        for N in grid:
-            b = int(min(500, max(1, N // 6 // 2))); m = w < N // 6; h = (w[m] // b) % 2 == 0
-            ok = h.sum() >= 50 and (~h).sum() >= 50
-            if ok:
-                v1, f, c = _frc(x[m][h], y[m][h], x[m][~h], y[m][~h], px=4.0, units='nm', return_curve=True); vs = crossing_sustained(f, c)
-            else: v1 = vs = float('nan')
-            r.append(float(vs)); r1.append(float(v1)); n.append(int(m.sum()))
-        out['frc'][k] = r; out['frc_first'][k] = r1; out['n'][k] = n
-        lg(f'FRC vs frames {name} {k}: ' + ' '.join(f'{N}:{v:.0f}' for N, v in zip(grid, r)))
-    json.dump(out, open(fn, 'w'), indent=1)
+        n = int(inrect(U['x'], U['y'], box).sum())
+        assert D['n_rows'][k] == n, (name, k, D['n_rows'][k], n)                     # same rows as the figure
+        assert D['T'] == n_frames
+    out = dict(box=list(map(float, box)), N=None, frc={}, frc_first={}, n={}, source=f'{CACHE}/frc_vs_frames.json')
+    for k in T:
+        c = D[f'{k}_ind_xy']; out['N'] = c['N']; out['frc'][k] = c['sus']; out['frc_first'][k] = c['first']; out['n'][k] = c['n']
     return out
-
-
-def crossing_sustained(f, c, start=3, width=0.01, thr=1 / 7):
-    """interpolated 1/7 crossing, sustained rule (analysis/fourpi_sim/sweep4pi_ttf_fp.crossing_interp; si_4pi_sim e)"""
-    f = np.asarray(f); c = np.asarray(c)
-    if len(c) <= start: return float('nan')
-    w = max(int(width / max(f[1] - f[0], 1e-12)), 1)
-    for i in range(start, len(c)):
-        if (c[i:min(i + w, len(c))] < thr).all():
-            if i == start or c[i - 1] < thr: return float(1 / f[i])
-            u = (c[i - 1] - thr) / (c[i - 1] - c[i])
-            return float(1 / (f[i - 1] + u * (f[i] - f[i - 1])))
-    return float(1 / f[-1])
 
 
 def frames_to(N, r, t):
@@ -128,12 +103,14 @@ def timeline_summary(F, targets=(25, 20, 15)):
 def frc_timeline_panel(ax, F, keys, xmax):
     for k in keys:
         r = np.array(F['frc'][k], float); r[r > FRC_YMAX] = np.nan
-        ax.plot(F['N'], r, marker='o', ms=1.8, lw=0.9 if k == 'net' else 1.0, ls='--' if k == 'net' else '-', color=COL[k], label=LAB[k])
+        ax.plot(F['N'], r, marker='o', ms=1.4, lw=0.9 if k == 'net' else 1.0, ls='--' if k == 'net' else '-', color=COL[k], label=LAB[k])
     for t in (25, 20, 15): ax.axhline(t, color='0.6', lw=0.4, ls=':', zorder=0)
-    ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlim(800, xmax * 1.25); ax.set_ylim(8, FRC_YMAX)
+    u, ticks, lab, f = (1e6, [0, 0.5e6, 1.0e6, 1.5e6], 'frames (10$^6$)', '{:.1f}') if xmax > 1e6 else (1e3, [0, 2e5, 4e5, 6e5], 'frames (10$^3$)', '{:.0f}')
+    ax.set_yscale('log'); ax.set_xlim(0, xmax * 1.03); ax.set_ylim(8, FRC_YMAX)
+    ax.set_xticks(ticks); ax.set_xticklabels([f.format(t / u) if t else '0' for t in ticks])
     ax.set_yticks([10, 15, 20, 25, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '50', '100', '200'])
     ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
-    ax.set_xlabel('frames', labelpad=1); ax.set_ylabel('FRC resolution (nm)', labelpad=1); ax.grid(alpha=0.25, lw=0.4, which='major')
+    ax.set_xlabel(lab, labelpad=1); ax.set_ylabel('FRC resolution (nm)', labelpad=1); ax.grid(alpha=0.25, lw=0.4, which='major')
 
 
 def timeline_caption(S, region, total):
@@ -142,7 +119,8 @@ def timeline_caption(S, region, total):
     return (f"FRC resolution versus the number of frames ({region}; the first N frames of the series; two halves = alternating blocks of "
             "min(500, N / 12) six-frame windows, i.e. the two halves of the N frames below 6000 frames and the titles' 500-window blocks from "
             f"6000 frames on; otherwise the FRC of the titles, so the last point (all {total:,} frames) is the titles' value; the sustained crossing "
-            "rule keeps the timeline from jumping at the dips of the structure's own spectrum (ring / tube size)). Values above 300 nm not drawn; "
+            "rule keeps the timeline from jumping at the dips of the structure's own spectrum (ring / tube size); dots = the computed N, 1000 x 2^(k/4) "
+            "and every 1/20 of the series, linear frames axis; one estimator with si_4pi_frc_vs_frames). Values above 300 nm not drawn; "
             "dotted: 25 / 20 / 15 nm. "
             "Frames until the FRC stays at or below 25 / 20 / 15 nm: "
             + '; '.join(f"{LAB[k]} {s(k, 25)} / {s(k, 20)} / {s(k, 15)} (within 10 % of its all-frames value from {w10(k)} frames)" for k in K3)
@@ -514,7 +492,7 @@ def fig_mt(a):
         ax.set_title(f"{LAB[k]}\n({int(m.sum()):,} locs)", fontsize=6.3, pad=2, color=COL[k])
     # (f) FRC resolution vs frames (box 0 = the region of the zoom-1 FRC values)
     ax = fig.add_axes([0.755, ye, 0.23, 0.205]); frc_timeline_panel(ax, FT, K3, FT['N'][-1])
-    ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
+    ax.legend(loc='upper right', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
     ax.set_title('box 0, first N frames', fontsize=6.3, pad=2); letter(ax, 'f', -0.12)
     TS = timeline_summary(FT)
     # (g) tube cross-sections + (h) profiles

@@ -3,11 +3,12 @@ simulation's ground-truth FRC timeline (si_4pi_sim e). CPU only; reads the cache
 npc.npz: drift corrected, z drift removed, registered; '4Pi-SIMCODE' = the standard selection (good, N >= 1000, sigma cuts),
 '4Pi-SIMFLUX' = the published-style table) and, for the simulation, the sweep's region rows ($P4/sweep4pi/<tag>/locs_*.npz).
 
-Estimator (one for the real data and the simulation): half-split FRC of the localizations of N frames;
-  x-y: histograms with 4 nm pixels over the fixed region (si_4pi_npc / si_4pi_mt FRC settings); x-z sections: (x, z)
-  histograms with 5 nm pixels in 250 nm y-slabs, z window +-300 nm around the median (sim +-450), correlation pooled over the
-  slabs before normalisation (= the simulation's GT-FRC x-z estimator); rings of width 1 / (largest side), 5-ring moving
-  average, 1/7 threshold; resolution = the INTERPOLATED crossing by the sustained rule (first frequency after which the curve
+Estimator (ONE for the real data, the simulation and the FRC values / timeline panels of si_4pi_npc and si_4pi_mt, which read
+their curves from this script's output): half-split FRC of the localizations of N frames, N = 1000 * 2^(k/4) and every T / 20 up to all T;
+  x-y: simcode/evaluation/frc.py (4 nm pixels on the square grid of the data, integer rings, 5-ring smoothing), all rows of the
+  figure tables in the region (no z window); x-z sections: (x, z) histograms with 5 nm pixels in 250 nm y-slabs over
+  +-300 nm around the median z, correlation pooled over the slabs before normalisation (= the simulation's GT-FRC x-z
+  estimator; rings of width 1 / (largest side), 5-ring smoothing); 1/7 threshold; resolution = the INTERPOLATED crossing by the sustained rule (first frequency after which the curve
   stays below 1/7 for 0.01 / nm; the rule of all 4Pi figures); the first-crossing value is stored too. Raw values per N
   (no running minimum). Three ways to choose the N frames and the two halves:
   blk     first N frames; halves = alternating blocks of b six-frame windows, b = min(500, max(1, N / 6 / 10)) (>= 10 blocks
@@ -93,10 +94,12 @@ def hist2(u, v, u0, u1, v0, v1, pix):
     return np.histogram2d(v, u, bins=(nv, nu), range=((v0, v0 + nv * pix), (u0, u0 + nu * pix)))[0]
 
 
-def frc_xy(x, y, h, box):
-    a = hist2(x[h], y[h], *box, PIX_XY); b = hist2(x[~h], y[~h], *box, PIX_XY)
-    f, c = _curve(_pool(a, b, PIX_XY, None))
-    return crossing_sustained(f, c), crossing_first(f, c)
+def frc_xy(x, y, h, box=None):
+    """the figures' x-y FRC curve (simcode/evaluation/frc.py: 4 nm pixels on the square grid of the data, integer rings, 5-ring smoothing)
+    -> (sustained interpolated crossing = the value of all 4Pi figures, first crossing)"""
+    from simcode.evaluation.frc import frc as _frc
+    first, f, c = _frc(x[h], y[h], x[~h], y[~h], px=PIX_XY, units='nm', return_curve=True)
+    return crossing_sustained(f, c), float(first)
 
 
 def frc_xz(x, y, z, h, box, zc):
@@ -158,8 +161,9 @@ def _job(arg):
 
 
 def grid_of(T):
-    g = [int(round(1000 * 2 ** (k / 4))) for k in range(80) if 1000 * 2 ** (k / 4) < T]
-    return g + [int(T)]
+    """N = 1000 * 2^(k/4) and every T / 20 (dense enough at large N for a linear frames axis), up to T"""
+    g = {int(round(1000 * 2 ** (k / 4))) for k in range(80) if 1000 * 2 ** (k / 4) < T} | {int(round(T * k / 20)) for k in range(1, 21)}
+    return sorted(g)
 
 
 def load_real():
@@ -168,9 +172,12 @@ def load_real():
     regions = {}
     mt = {k: dict(x=Z[f'{k}_x'].astype(np.float64), y=Z[f'{k}_y'].astype(np.float64), z=Z[f'{k}_z'].astype(np.float64),
                   w=(Z[f'{k}_frame'] // 6).astype(np.int64)) for k in ('net', 'cl')}
-    zc = float(np.median(mt['net']['z']))
-    for k in mt:                                                                     # same z window for both tables
-        ok = np.abs(mt[k]['z'] - zc) <= ZH; mt[k] = {q: v[ok] for q, v in mt[k].items()}
+    zc = float(np.median(mt['net']['z']))                                            # x-y: all rows of the figure tables; x-z: zc +- ZH (histogram range)
+    # matched count as si_4pi.fig_mt: the most precise network rows (combined reported sigma), as many in boxes 0 + 1 as 4Pi-SIMFLUX keeps
+    cores = J['info']['cores_nm']; inreg = lambda U: inrect(U['x'], U['y'], cores[0]) | inrect(U['x'], U['y'], cores[1])
+    comb = np.sqrt((Z['net_sx'] * PX) ** 2 + (Z['net_sy'] * PX) ** 2 + (Z['net_sz'].astype(np.float64) * 1000) ** 2)
+    n_m = int(inreg(mt['cl']).sum()); thr = float(np.sort(comb[inreg(mt['net'])])[n_m - 1])
+    mt['net_m'] = {q: v[comb <= thr] for q, v in mt['net'].items()}
     big = (float(Z['net_x'].min()) + 500, float(Z['net_x'].max()) - 500, float(Z['net_y'].min()) + 500, float(Z['net_y'].max()) - 500)
     boxes = dict(mt_dense=(o[0] * PX, o[0] * PX + s, o[1] * PX, o[1] * PX + s), mt_box0=tuple(J['info']['cores_nm'][0]), mt_field=big)
     for nm, b in boxes.items():
@@ -181,8 +188,7 @@ def load_real():
                    w=(Zn[f'{k}_frame'] // 6).astype(np.int64)) for k in ('net', 'cl')}
     fb = Zn['fb']; cx, cy = 0.5 * (fb[0] + fb[1]), 0.5 * (fb[2] + fb[3]); b = (cx - 5000, cx + 5000, cy - 5000, cy + 5000)
     zcn = float(np.median(npc['net']['z'][inrect(npc['net']['x'], npc['net']['y'], b)]))
-    for k in npc:
-        ok = np.abs(npc[k]['z'] - zcn) <= ZH; npc[k] = {q: v[ok] for q, v in npc[k].items()}
+    npc['net_m'] = {q: v[Zn['net_matched']] for q, v in npc['net'].items()}         # matched count of si_4pi_npc
     regions['npc_center'] = dict(box=b, zc=zcn, Tw=114000, T=684000,
                                  **{k: {q: v[inrect(T['x'], T['y'], b)] for q, v in T.items()} for k, T in npc.items()})
     return regions, (Z, J, Zn)
@@ -196,8 +202,6 @@ def load_sim():
             L = np.load(f'{P4}/sweep4pi/{tag}/locs_{fn}.npz')
             r[meth] = dict(x=L['x'].astype(np.float64), y=L['y'].astype(np.float64), z=L['z'].astype(np.float64), w=L['w'].astype(np.int64))
         zc = float(np.median(r['net']['z']))
-        for meth in r:
-            ok = np.abs(r[meth]['z'] - zc) <= 450; r[meth] = {q: v[ok] for q, v in r[meth].items()}
         out[f'sim_{tag}'] = dict(box=(SIM_LO, SIM_HI, SIM_LO, SIM_HI), zc=zc, Tw=5000, T=30000, **r)
     return out
 
@@ -305,9 +309,10 @@ def compute(a):
                     for metric in ('xy', 'xz'):
                         if key == 'mt_field' and metric == 'xz' and mode != 'ind': continue
                         jobs.append((key, meth, N, mode, metric))
+                if meth == 'net' and 'net_m' in R and key in ('npc_center', 'mt_box0'): jobs.append((key, 'net_m', N, 'ind', 'xy'))   # si_4pi_npc g / si_4pi_mt f
     jobs.sort(key=lambda j: -(len(_D[j[0]][j[1]]['x']) * (3 if j[4] == 'xz' else 1) * min(j[2], 3e5)))
     lg(f'{len(jobs)} FRC jobs')
-    out = {key: dict(box=list(R['box']), zc=R['zc'], T=R['T'], grid=grid_of(R['T']), n_rows={m: int(len(R[m]['x'])) for m in ('net', 'cl')})
+    out = {key: dict(box=list(R['box']), zc=R['zc'], T=R['T'], grid=grid_of(R['T']), n_rows={m: int(len(R[m]['x'])) for m in ('net', 'net_m', 'cl') if m in R})
            for key, R in regions.items()}
     with get_context('fork').Pool(a.procs) as pool:
         for i, (arg, r) in enumerate(pool.imap_unordered(_job, jobs, chunksize=1)):
