@@ -533,17 +533,41 @@ def simcode_pattern_rows(run, ep=0):
                 files=[f'{run}/locs_p1.hdf5', f'{run}/pattern_est.pt'])
 
 
+def cached_rows(meth, ds, ep, outdir):
+    """simflux_pattern_rows / simcode_pattern_rows with an npz cache in <outdir>/cache_si_pattern/ (keyed on the input files'
+    mtimes, so a rerun for the layout does not re-read the tables)"""
+    cfg = DS[ds]
+    fn = (lambda: simflux_pattern_rows(cfg['base'], ep)) if meth == 'SIMFLUX' else (lambda: simcode_pattern_rows(cfg['run'], ep))
+    cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
+    cf = os.path.join(cd, f'{ds}_{meth}_p{ep}.npz')
+    if os.path.exists(cf):
+        z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
+        if all(os.path.exists(f) and abs(os.path.getmtime(f) - t) < 1e-3 for f, t in M['mtimes'].items()):
+            R = {k: z[k] for k in z.files if k != 'meta'}; R.update(M['scalars'])
+            r0, dep, sc = R['relint'], R['depth'], R['sin_conv']
+            R['curve'] = (lambda t: r0 * (1 + dep * np.sin(t))) if sc else (lambda t: r0 * (1 + dep * np.cos(t)))
+            return R
+    R = fn()
+    arr = {k: v for k, v in R.items() if isinstance(v, np.ndarray)}
+    sca = {k: v for k, v in R.items() if not isinstance(v, np.ndarray) and not callable(v)}
+    np.savez(cf, meta=json.dumps(dict(mtimes={f: os.path.getmtime(f) for f in R['files'] if os.path.exists(f)}, scalars=sca)), **arr)
+    return R
+
+
 def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_pattern_plots'):
-    """preprint layout: rows SIMFLUX / SIMCODE, one column per dataset, pattern ep (default 0 = angle 0, step 0)"""
+    """A (SIMFLUX) | B (SIMCODE) side by side, one row per dataset (2026-11-15 layout request: page aspect h / w ~0.8 with
+    two datasets); pattern ep (default 0 = angle 0, step 0)"""
     nd = len(datasets)
-    fig, axs = plt.subplots(2, nd, figsize=(5.4 * nd + 0.4, 9.2), squeeze=False, gridspec_kw=dict(hspace=0.32, wspace=0.28))
+    W = 10.0; H = 0.8 * W if nd > 1 else 0.5 * W
+    fig, axs = plt.subplots(nd, 2, figsize=(W, H), squeeze=False,
+                            gridspec_kw=dict(hspace=0.36, wspace=0.22, left=0.12 if nd > 1 else 0.09, right=0.98,
+                                             top=0.93 if nd > 1 else 0.88, bottom=0.15 if nd > 1 else 0.22))
     rng = np.random.default_rng(seed)
-    V = dict(pattern=ep, n_show_per_class=n_show, seed=seed, panels={})
-    for ci, ds in enumerate(datasets):
+    V = dict(pattern=ep, n_show_per_class=n_show, seed=seed, panels={}, layout='A SIMFLUX | B SIMCODE; rows = datasets')
+    for ri, ds in enumerate(datasets):
         cfg = DS[ds]
-        for ri, (meth, fn) in enumerate((('SIMFLUX', lambda: simflux_pattern_rows(cfg['base'], ep)),
-                                         ('SIMCODE', lambda: simcode_pattern_rows(cfg['run'], ep)))):
-            R = fn(); ax = axs[ri, ci]
+        for ci, meth in enumerate(('SIMFLUX', 'SIMCODE')):
+            R = cached_rows(meth, ds, ep, outdir); ax = axs[ri, ci]
             P = dict(files=R['files'], rule=R['rule'], n=R['n'], n_included=R['n_inc'], frac_included=R['n_inc'] / R['n'],
                      depth=R['depth'], relint=R['relint'], pitch_nm=R['pitch_nm'])
             for key, msk, col, lab in (('included', R['inc'], INC_COLOR, 'Included (method filter)'),
@@ -561,16 +585,20 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
             ax.plot(tt, R['curve'](tt), 'k', lw=2.5, label='Illumination pattern')
             ax.set_xlim(0, 2 * np.pi); ax.set_ylim(0, 0.5)
             ax.set_xticks([0, np.pi, 2 * np.pi]); ax.set_xticklabels(['0', '$\\pi$', '2$\\pi$'])
-            ax.set_title(meth, fontsize=15)
-            ax.set_ylabel('Normalized intensity', fontsize=13)
-            if ri == 1: ax.set_xlabel('Phase [radians]', fontsize=13)
-            ax.text(-0.2, 1.08, 'ABCD'[ri * nd + ci] if nd == 2 else 'AB'[ri], transform=ax.transAxes, fontsize=20, weight='bold')
+            if ri == 0:
+                ax.set_title(meth, fontsize=15)
+                ax.text(-0.16, 1.04, 'AB'[ci], transform=ax.transAxes, fontsize=20, weight='bold')
+            if ci == 0:
+                ax.set_ylabel(('' if nd == 1 else cfg['title'].replace(' (', '\n(') + '\n') + 'Normalized intensity', fontsize=12)
+            else:
+                ax.set_ylabel('Normalized intensity', fontsize=12)
+            if ri == nd - 1: ax.set_xlabel('Phase [radians]', fontsize=13)
             V['panels'][f'{ds}_{meth}'] = P
-        axs[0, ci].annotate(cfg['title'], xy=(0.5, 1.22), xycoords='axes fraction', ha='center', fontsize=15)
-    h, l = axs[1, 0].get_legend_handles_labels()
-    fig.legend(h, l, loc='upper center', ncol=1, fontsize=12, markerscale=3, frameon=True, bbox_to_anchor=(0.5, 0.04))
+    if nd == 1: fig.suptitle(DS[datasets[0]]['title'], fontsize=15, y=0.995)
+    h, l = axs[-1, 0].get_legend_handles_labels()
+    fig.legend(h, l, loc='lower center', ncol=3, fontsize=12, markerscale=3, frameon=True, bbox_to_anchor=(0.5, 0.0))
     save(fig, outdir, name)
-    V['datasets'] = datasets
+    V['datasets'] = datasets; V['figsize_in'] = [W, H]
     json.dump(V, open(f'{outdir}/{name}_values.json', 'w'), indent=1, default=float)
     open(f'{outdir}/{name}_caption.txt', 'w').write(caption_pattern_preprint(V))
     return V
@@ -580,8 +608,7 @@ def caption_pattern_preprint(V):
     P = V['panels']; ds = V['datasets']
     L = ['DRAFT CAPTION',
          'Localizations and their intensities mapped onto one period of the illumination pattern (pattern 0: orientation 0, '
-         'phase step 0), for SIMFLUX (' + ('A, B' if len(ds) == 2 else 'A') + ') and SIMCODE (' + ('C, D' if len(ds) == 2 else 'B') +
-         '), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movies. Intensities are normalized per '
+         'phase step 0), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
          'localization by the sum of the 6 intensities of its window, I_k / sum_6 I. SIMFLUX: per-frame intensities of the SMLM '
          'ROI fit, phase from the SMLM (2D Gaussian) position; included (blue) = modulation error < 0.1, the filter that selects '
          'the SIMFLUX input. SIMCODE v2: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
