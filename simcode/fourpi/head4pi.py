@@ -40,9 +40,11 @@ class Head4Pi(nn.Module):
         nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)
 
     def forward(self, img, doff):
-        """img [n,6,4,P,P] e (offset-corrected), doff [n,4,2] sub-pixel (x, y) offset of each channel's patch"""
+        """img [n,6,4,P,P] e (offset-corrected), doff [n,4,2] sub-pixel (x, y) offset of each channel's patch; inputs on another
+        device than the network (patches kept in host memory) are moved to the network's device"""
+        dev = self.cin.weight.device
+        img, doff = img.to(dev), doff.to(dev)
         n, T, C, P, _ = img.shape
-        dev = img.device
         border = torch.cat([img[..., 0, :], img[..., -1, :], img[..., 1:-1, 0], img[..., 1:-1, -1]], -1)
         b0 = border.median(-1).values                                            # [n,6,4]
         o = torch.arange(P, device=dev, dtype=torch.float32) - P // 2

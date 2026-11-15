@@ -48,8 +48,12 @@ class Head4PiW(nn.Module):
         return self
 
     def forward(self, img, doff, learned=True, nbr=None):
-        """nbr [n,4,P,P]: map of the OTHER candidates of the window in each channel patch (Gaussian sd 0.7 px stamps), frame-symmetric"""
-        n, T, C, P, _ = img.shape; dev = img.device; K = self.K; lut = self.lut
+        """nbr [n,4,P,P]: map of the OTHER candidates of the window in each channel patch (Gaussian sd 0.7 px stamps), frame-symmetric;
+        inputs on another device than the network (patches kept in host memory) are moved to the network's device"""
+        dev = self.cin.weight.device
+        img, doff = img.to(dev), doff.to(dev)
+        if nbr is not None: nbr = nbr.to(dev)
+        n, T, C, P, _ = img.shape; K = self.K; lut = self.lut
         with torch.set_grad_enabled(self.train_prior and self.training):
             op = self.prior(img, doff)
         dxy_o, z_o, ls_o = op['dxy'], op['z'], op['ls']
