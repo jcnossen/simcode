@@ -5,7 +5,7 @@ import json, os, sys
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep')
 XY_T, XZ_T, FR_MAX, GH_MAX, CV_MAX = 25, 35, 0.02, 0.07, 0.2
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']

@@ -9,7 +9,7 @@ PolyMap: fwd(c, x, y) -> ch0 coords; inv(c, x0, y0) -> ch c coords (separately f
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import os, sys, json
 import numpy as np
 import torch
@@ -19,10 +19,8 @@ from dc import Dcimg, crops, bead_align_file
 from quickloc import affine_maps
 from mle import GaussAstig, lm_fit
 
-from simcode.fourpi.setup import GAIN
-
-
-from simcode.fourpi.front import PolyMap, feats  # noqa (the registration map class lives in the package)
+from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
+from simcode.channels.registration import PolyMap  # noqa (the registration map class lives in the package)
 
 
 def fit_poly(src, dst, order, w=None):

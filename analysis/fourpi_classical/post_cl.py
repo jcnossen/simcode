@@ -10,7 +10,7 @@ import argparse, glob, json, os, subprocess, sys
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 OUT = f'{P4}/classical/real'
 FIRST = {'MT': 0, 'NPC': 2}
 KEYS = ('w', 'x', 'y', 'z', 'sx', 'sy', 'sz', 'N', 'x0', 'y0', 'z_ast', 'sz_ast', 'xp', 'yp', 'zp', 'sxp', 'syp', 'szp', 'keep', 'keep_pix',

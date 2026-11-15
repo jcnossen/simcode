@@ -19,12 +19,12 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'fourpi'))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
-from simcode.fourpi import insitu as SR
-from simcode.fourpi.insitu import repattern_xy
+from simcode.config import root; P4 = root('fourpi')
+from simcode.processing import fourpi_pattern_phase as SR
+from simcode.processing.fourpi_pattern_phase import repattern_xy
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.solve4pi import kin_starts, best_of
-from simcode.fourpi.solvek4pi import SolveK
+from simcode.solve.fourpi import kin_starts, best_of
+from simcode.solve.fourpi import FourPiSolve
 from simcode.fourpi.linread4pi import linear_readout, border_bg
 
 WINS = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))
@@ -111,7 +111,7 @@ def main():
         # full 2D wave vector in the solve; pattern_psi's psi already holds -k . (cx, cy)
         sv.k2 = tuple(tuple(patf[f'angle{i}']['k']) for i in range(2))
         return ps, m
-    sv = SolveK(lut, WINS, delta=(0.0, math.radians(meta['delta_deg']))); sv.tab_lim = None
+    sv = FourPiSolve(lut, WINS, delta=(0.0, math.radians(meta['delta_deg']))); sv.tab_lim = None
     psi, m = setpat(patf)
     idx = torch.arange(n, device=dev)
     # ---- 4Pi phase field

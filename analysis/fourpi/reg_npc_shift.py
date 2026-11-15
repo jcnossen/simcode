@@ -3,7 +3,7 @@ isolated emitters in frames 0-7200 of file 10 (per-channel independent Gaussian 
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import sys, os, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from register import *

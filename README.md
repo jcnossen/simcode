@@ -215,13 +215,14 @@ recipe of a model). The models are defined in `simcode/models.json`.
 ## 4Pi
 
 ```bash
-python -m simcode.fourpi.run --cell NPC --files 10 --head v10 --coh 1.56                # 4Pi-SIMCODE (network), one file
-GPUS=1,2 bash analysis/fourpi/run_full_w4pi.sh MT v10 1.56                               # a whole movie, one worker per GPU
+python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT --gpus 1,2   # 4Pi-SIMCODE (network): registration, every file, report
+python -m simcode.processing.fourpi <out>/config_resolved.json --files 10              # one file of an acquisition (the process stage's worker)
 python analysis/fourpi_classical/full_cl.py --stage read --cells NPC                    # classical 4Pi-SIMFLUX: reader ...
 python analysis/fourpi_classical/full_cl.py --stage fit --cells NPC                     # ... and fitter(s)
 ```
 Both read the dcimg files through `simcode/io/movie.py` and run their files through `simcode/io/work.py`
-(skip finished files, atomic outputs, claims). Paths and the constants of the data set: `simcode/fourpi/setup.py`.
+(skip finished files, atomic outputs, claims). The acquisitions (paths, channel layout, camera, settings):
+`simcode/pipeline/configs/fourpi.py`, read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT')`).
 Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.py`, `showcase_real_mt.py`,
 `select_curve_{mt,npc}.py`; `analysis/fourpi_classical/post_cl.py`, `fig_cl.py`.
 
@@ -232,7 +233,8 @@ Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.
 and their trainers; `solve/` the explicit pattern solve and z after it; `pattern/` the illumination inputs; `processing/` the
 per-chunk fronts and the pattern estimation; `simulate/` the acquisition simulator and the training batches; `benchmark/`
 the gate suite; `calibration/` the in-situ calibration; `pipeline/` the automatic per-acquisition pipeline; `io/` readers and
-work driver; `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi pipeline. Besides it: `analysis/` scripts that use
+work driver; `channels/` multi-channel layout, registration and front end; `setups/` the set-ups of the pipeline (widefield,
+fourpi); `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi networks, PSF and simulators. Besides it: `analysis/` scripts that use
 it (baselines, paper figures and simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks), `models/`
 calibrations and model folders, `tests/`, `docs/`.
 

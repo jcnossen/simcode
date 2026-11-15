@@ -18,9 +18,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from cl4pi import Classic4Pi, wrap
-from simcode.fourpi.insitu import refine_k, slot_z, phase_field
+from simcode.processing.fourpi_pattern_phase import refine_k, slot_z, phase_field
 
-from simcode.fourpi.setup import PX_NM
+from simcode.setups.fourpi import acquisition; PX_NM = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 FILTERS = dict(R_max=0.2, MD=(0.6, 1.2), N_min=1000.0, sxy_max_nm=10.0, llr_max=500.0 * 225 / 169, C=(0.4, 1.6), chi2px_max=4.0)
 
 

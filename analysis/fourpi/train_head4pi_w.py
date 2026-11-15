@@ -12,14 +12,14 @@ import torch
 import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.fourpi.sim4pi import Sim4Pi
 from simcode.fourpi.head4pi import nll_prior
 from simcode.fourpi.windows4pi import WINS_K
 from simcode.fourpi.head4pi_w import Head4PiW
-from simcode.fourpi.solvek4pi import SolveK
+from simcode.solve.fourpi import FourPiSolve
 from simcode.fourpi.solveloss4pi import solve_loss
 
 OUT = f'{P4}/models'
@@ -52,7 +52,7 @@ def main():
     elif a.init_v10: load_v10(net, ld(a.init_v10))
     elif a.init_v3: net.prior.load_state_dict(ld(a.init_v3))
     net.train()
-    sv = SolveK(lut, WINS_K); sv.tab_lim = None
+    sv = FourPiSolve(lut, WINS_K); sv.tab_lim = None
     opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps, pct_start=0.05)
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')

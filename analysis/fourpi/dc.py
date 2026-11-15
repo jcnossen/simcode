@@ -1,5 +1,6 @@
 """4Pi-SIMFLUX raw data I/O for the analysis scripts: the dcimg reader (simcode/io/movie.DcimgMovie), the channel
-crops of the data set and its file lists (simcode/fourpi/setup.py, simcode/fourpi/datasets.json).
+crops of the data set and its file lists (the 4Pi acquisition configs simcode/pipeline/configs/fourpi.py through
+simcode/setups/fourpi.py).
 
 Channels: 4 crop windows of 360 x 200 px at x0 = 217, 652, 1420, 1855 (the stored crop windows of the data set);
 channels 2 and 3 (0-based) are mirrored left-right so that all four overlay. Channel c pixel (row y, col x) in the
@@ -9,17 +10,33 @@ import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 import numpy as np
-from simcode.io.movie import DcimgMovie as Dcimg, crops as _crops
-from simcode.fourpi.setup import DATA4 as ROOT, LAYOUT, FRAME_DT_S, movie_files, file_index, zstack_files, bead_align_file  # noqa
+import glob
+from simcode.io.movie import DcimgMovie as Dcimg
+from simcode.setups.fourpi import FourPiSetup, acquisition, file_index  # noqa
 
-X0 = LAYOUT['x0']
-CW, CH = LAYOUT['cw'], LAYOUT['ch']
-MIRROR = LAYOUT['mirror']
+_S = FourPiSetup()
+_LAYOUT = _S.layout(acquisition('MT'))                      # the same channel layout for MT and NPC
+X0 = [c.crop[0] for c in _LAYOUT.channels]
+CW, CH = _LAYOUT.W, _LAYOUT.H
+MIRROR = [c.mirror != 'none' for c in _LAYOUT.channels]
+FRAME_DT_S = acquisition('MT')['fourpi']['frame_dt_s']
+
+
+def movie_files(cell):
+    return _S.movie_files(acquisition(cell))
+
+
+def zstack_files(cell):
+    return sorted(glob.glob(acquisition(cell)['fourpi']['zstack']))
+
+
+def bead_align_file(cell):
+    return acquisition(cell)['fourpi']['bead_align']
 
 
 def crops(a):
-    """raw frames [..., 200, 2304] -> [..., 4, 200, 360] (float32, channel 2/3 mirrored)"""
-    return _crops(a, LAYOUT)
+    """raw frames [n, 200, 2304] -> [n, 4, 200, 360] (float32, channel 2/3 mirrored)"""
+    return _LAYOUT.split(a)
 
 
 def zstack(cell):

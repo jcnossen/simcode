@@ -17,7 +17,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
 from simcode.fourpi.lut4pi import LUT4Pi
 

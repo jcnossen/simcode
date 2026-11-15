@@ -27,7 +27,7 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import showcase_real_mt as SR
 from showcase_real_mt import FC, PX, FPF, OUTD, inrect, lg
 import matplotlib.pyplot as plt

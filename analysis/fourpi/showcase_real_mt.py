@@ -34,12 +34,12 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
 sys.path.insert(0, f'{REPO}/analysis/figures')
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import fig_cl as FC                     # read-only: zdrift_struct, em2, fwhm (none of these write files)
 from zoompick import pick_crossings
 from skel import skeletonize
 FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
-from simcode.fourpi.setup import PX_NM as PX
+from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 FPF = 18000                              # frames per file
 OUTD = f'{P4}/fig'
 METH = [('net', '4Pi-SIMCODE (network)'), ('cl', 'classical 4Pi-SIMFLUX,\npublished-style'),

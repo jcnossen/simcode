@@ -5,7 +5,7 @@
 # Usage: CUDA_VISIBLE_DEVICES=0 HEAD=$P4/models/head4pi_hd1/head4pi_hd1.pt NAME=hd1 OUTROOT=$P4/models/head4pi_hd1/sweep \
 #        TAGS="mtc_d03 mtc_d075" bash analysis/fourpi_sim/hd_run.sh
 cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH
-O4=$(python -c "from simcode.fourpi.setup import P4; print(P4)")
+O4=$(python -c "from simcode.config import root; print(root('fourpi'))")
 for t in ${TAGS:-mtc_d03 mtc_d075 mtc_d15 mtc_d05 mtc_d01}; do
   M=$O4/simmovie/$t; O=$OUTROOT/$t; mkdir -p $O; echo "== $NAME $t $(date +%H:%M)"
   NM=("iter field iter$NAME"); [ "${NETB:-0}" = 1 ] && NM+=("oracle oracle oracle${NAME}_phiO")

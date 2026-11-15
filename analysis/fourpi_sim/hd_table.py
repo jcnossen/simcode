@@ -9,7 +9,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, HERE)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from sweep4pi_table import XY_T, XZ_T, FR_MAX, GH_MAX, CV_MAX, TAGS, f, ft
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/hd_head')
 SELS = ['net_all', 'net_base', 'net_chi16', 'net_sig0', 'net_sig1', 'net_sig2', 'net_bound_base']

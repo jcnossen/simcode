@@ -7,13 +7,13 @@ import numpy as np
 import yaml
 from scipy import ndimage as ndi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dc import crops, ROOT
+from dc import crops, bead_align_file
 
-from simcode.fourpi.setup import GAIN        # (dc.py above puts the repository on sys.path)
+from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
 
 
 def affine_maps(cell):
-    y = f'{ROOT}/{"MT/Cell01_beads_align" if cell == "MT" else "NPC/beads_align"}/mappings_astig_fit.yaml'
+    y = os.path.join(os.path.dirname(bead_align_file(cell)), 'mappings_astig_fit.yaml')
     mp = yaml.safe_load(open(y))
     return [np.array(mp[f'image_{i}']['T_inv']) for i in range(1, 4)], [np.array(mp[f'image_{i}']['T_fwd']) for i in range(1, 4)]
 

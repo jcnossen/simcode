@@ -5,7 +5,7 @@ Outputs out/4pi/smlm/psf/<cell>_<tag>.json (+ _knots.npz with --knots 1).
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import os, sys, json, argparse, time, glob
 import numpy as np
 import torch

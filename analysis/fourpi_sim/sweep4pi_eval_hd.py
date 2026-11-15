@@ -38,7 +38,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simeval4pi import gt_units, match
 
 GTFRC = os.environ.get('GTFRC', os.path.join(REPO, 'analysis', 'papersim', 'gtfrc.py'))

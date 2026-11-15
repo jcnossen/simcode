@@ -17,7 +17,7 @@ from scipy.ndimage import gaussian_filter, convolve
 from skimage.morphology import skeletonize
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 NM = 128.0
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep')
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']

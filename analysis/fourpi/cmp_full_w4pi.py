@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import fig_cl as FC
 
 

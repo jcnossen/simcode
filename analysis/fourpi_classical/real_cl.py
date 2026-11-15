@@ -3,7 +3,7 @@
 Sources (same candidates as the network either way):
   --src patches : out/4pi/patches/<cell>/patches_<file>.npy + meta_<file>.npz (v3 pass-1 candidates; README there),
                   camera offset map out/4pi/patches/camera_<cell>.npz; streamed (mmap), read twice (stage A, stage B).
-  --src dcimg   : a short direct read (--nframes) through simcode/fourpi/front.Front (identical detection and
+  --src dcimg   : a short direct read (--nframes) through simcode/channels/front.ChannelFront (identical detection and
                   patch cut as the network's pass 1); patches kept in RAM.
 Per file: stage A (summed fit, per-frame counts, moment phase) -> pattern from the data -> SIMFLUX two-step ->
 4Pi phase field (cubic XY polynomial + tile residual + block drift) -> z_4pi -> z_ast scale check (regression of z_ast
@@ -17,9 +17,19 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.fourpi.setup import P4, DELTA, GAIN, P, LAYOUT, movie_file, movie_files, file_index
+from simcode.config import root
+from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
+P4 = root('fourpi'); S4 = FourPiSetup()
+GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
+DELTA = {c: S4.delta(acquisition(c))[1] for c in ('MT', 'NPC')}
+movie_file = lambda cell, fi: S4.movie_file(acquisition(cell), fi)
+movie_files = lambda cell: S4.movie_files(acquisition(cell))
+
+
+def front(cell, dev):
+    """the front end of the classical tables: the whole-series map <4Pi work dir>/smlm/reg/reg_insitu_<cell>.json"""
+    return S4.front(acquisition(cell), dev=dev, map_file=f'{P4}/smlm/reg/reg_insitu_{cell}.json')
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.io.movie import DcimgMovie
 from simcode.io.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
@@ -75,8 +85,7 @@ class PatchSource:
 
 class DcimgSource:
     def __init__(self, cell, fi, nframes, dev, chunk=600):
-        from simcode.fourpi.front import Front
-        fr = Front(cell, dev); d = DcimgMovie(movie_file(cell, fi), layout=LAYOUT)
+        fr = front(cell, dev); d = S4.reader(acquisition(cell), movie_file(cell, fi))
         imgs, doffs, ws, cxs, cys = [], [], [], [], []
         for a0 in range(0, nframes, chunk):
             with torch.no_grad():

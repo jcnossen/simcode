@@ -11,10 +11,8 @@ from scipy.spatial import cKDTree
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
-from simcode.fourpi.setup import PX_NM as PX
-
-
+from simcode.config import root; P4 = root('fourpi')
+from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 def pairs(w, x, y, r=0.35):
     out_i, out_j = [], []
     order = np.argsort(w, kind='stable'); ws = w[order]

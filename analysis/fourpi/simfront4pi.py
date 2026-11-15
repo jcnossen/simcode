@@ -12,15 +12,13 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
-from simcode.fourpi.front import blur
+from simcode.config import root; P4 = root('fourpi')
+from simcode.channels.front import blur
 from simmovie4pi import reg_map, GAIN, OFF
 from simcode.fourpi.head4pi import Head4Pi
 from simcode.fourpi.lut4pi import LUT4Pi
 
-from simcode.fourpi.setup import P
-
-
+from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
 def detect(E, grid, border, noise='mad', k=8.0, nms=7, s1=1.5):
     nW = E.shape[0] // 6; H, W = E.shape[-2:]
     S6 = E[:nW * 6].reshape(nW, 6, 4, H, W).sum(1)

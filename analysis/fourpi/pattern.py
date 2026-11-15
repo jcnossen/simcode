@@ -25,7 +25,7 @@ def cmean(a, w=None):
     return np.average(e, weights=w) if w is not None else e.mean()
 
 
-from simcode.fourpi.insitu import slot_z, refine_k, emitter_phase  # noqa (the estimator lives in the package)
+from simcode.processing.fourpi_pattern_phase import slot_z, refine_k, emitter_phase  # noqa (the estimator lives in the package)
 
 
 def emitter_phase_err(I3, sI3, psi, nsim=1, rng=None):

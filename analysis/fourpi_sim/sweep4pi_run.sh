@@ -5,7 +5,7 @@
 # Outputs: movies / front / locs in $P4/simmovie/<tag>, classical + eval in $P4/sweep4pi/<tag> (P4 = simcode.fourpi.setup.P4).
 # Usage: CUDA_VISIBLE_DEVICES=0 TAGS="mtc_d03" STAGES="movie front net cl eval" bash analysis/fourpi_sim/sweep4pi_run.sh
 cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH
-O4=$(python -c "from simcode.fourpi.setup import P4; print(P4)"); D=$O4/models/det4pi/final.pt; NF=${FRAMES:-30000}
+O4=$(python -c "from simcode.config import root; print(root('fourpi'))"); D=$O4/models/det4pi/final.pt; NF=${FRAMES:-30000}
 mkdir -p $O4/sweep4pi/logs
 declare -A DENS=([mtc_d01]=0.1 [mtc_d05]=0.5 [mtc_d03]=0.3 [mtc_d075]=0.75 [mtc_d15]=1.5)
 for t in ${TAGS:-mtc_d03 mtc_d075 mtc_d15 mtc_d01}; do

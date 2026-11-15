@@ -24,7 +24,7 @@ import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.lut4pi import LUT4Pi
 
 PX = 0.128

@@ -9,16 +9,14 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.lut4pi import LUT4Pi
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
 from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-from simcode.fourpi.setup import P
-
-
+from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
 def patches(d, meta, F, dev):
     H, W = meta['H'], meta['W']; h = P // 2
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')

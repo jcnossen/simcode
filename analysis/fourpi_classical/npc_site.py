@@ -5,7 +5,7 @@ usage: python analysis/fourpi_classical/npc_site.py [n_sites]"""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import sys, os, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg')
@@ -14,7 +14,7 @@ from scipy.ndimage import gaussian_filter, maximum_filter, convolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from simcode.fourpi.zdrift import zdrift_struct
-from simcode.fourpi.setup import PX_NM as PX
+from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 OUT = f'{P4}/classical'
 nshow = int(sys.argv[1]) if len(sys.argv) > 1 else 6
 C = np.load(f'{OUT}/real/cl_NPC_wv_all.npz')

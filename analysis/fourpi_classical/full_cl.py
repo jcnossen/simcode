@@ -23,10 +23,15 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.fourpi.setup import P4, GAIN, XLIM, P, LAYOUT, movie_file, movie_files, file_index
-from simcode.fourpi.front import Front
+from simcode.config import root
+from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
+P4 = root('fourpi'); S4 = FourPiSetup()
+GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
+XLIM = tuple(acquisition('MT')['fourpi']['xlim'])
+movie_file = lambda cell, fi: S4.movie_file(acquisition(cell), fi)
+movie_files = lambda cell: S4.movie_files(acquisition(cell))
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.io.movie import DcimgMovie, Prefetch
+from simcode.io.movie import Prefetch
 from simcode.io.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
@@ -125,7 +130,7 @@ def tmp_size_gb():
 
 def read_file(cell, fi, fr, a, dev):
     """reader stage: read, detect, cut -> temporary uint16 patches + meta on the SSD (marker .ready when complete)"""
-    d = DcimgMovie(movie_file(cell, fi), layout=LAYOUT); nfr = (a.nframes or d.n) // 6 * 6
+    d = S4.reader(acquisition(cell), movie_file(cell, fi)); nfr = (a.nframes or d.n) // 6 * 6
     plan = [(a0, min(a0 + a.chunk_frames, nfr)) for a0 in range(0, nfr, a.chunk_frames)]
     pf = Prefetch(d, plan)
     acc = {k: [] for k in ('w', 'cx', 'cy', 'doff', 'corner', 'adu', 'score', 'thr')}
@@ -214,7 +219,7 @@ def main():
             disk_guard(TMP, a.min_free_gb)
             while tmp_size_gb() > a.tmp_max_gb:
                 time.sleep(60)
-            if cell not in frs: frs[cell] = Front(cell, dev)
+            if cell not in frs: frs[cell] = RC.front(cell, dev)
             try:
                 read_file(cell, fi, frs[cell], a, dev)
             except Exception as e:
@@ -240,7 +245,7 @@ def main():
             time.sleep(a.poll_s); continue
         cell, fi = claimed
         if cell not in c4s:
-            c4s[cell] = Classic4Pi(lut, delta=(0.0, RC.DELTA[cell]), dev=dev); frs[cell] = Front(cell, dev)
+            c4s[cell] = Classic4Pi(lut, delta=(0.0, RC.DELTA[cell]), dev=dev); frs[cell] = RC.front(cell, dev)
         boxes = [dict(b, id=i) for i, b in enumerate(reg['boxes']) if b.get('save')] if cell == 'MT' else []
         try:
             fit_file(cell, fi, c4s[cell], frs[cell], boxes, a, dev)

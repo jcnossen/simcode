@@ -9,7 +9,7 @@ usage: python zcal.py  (both stacks)
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 import os, sys, json
 import numpy as np
 import torch
@@ -22,9 +22,7 @@ from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
 OUT = f'{P4}/smlm/zcal'
-from simcode.fourpi.setup import GAIN
-
-
+from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
 def astig_curve(p, z):
     s0, c, d, A, B = p
     u = (z - c) / d

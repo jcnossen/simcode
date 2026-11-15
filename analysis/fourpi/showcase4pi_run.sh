@@ -4,7 +4,7 @@
 # cl (classical published-style + pixel MLE, analysis/fourpi_classical/sim_cl.py, outputs under out/4pi/showcase/cl),
 # eval (GT metrics, astigmatism-only baseline, FRC, tube profiles; showcase4pi_eval.py).
 # Usage: CUDA_VISIBLE_DEVICES=1 TAGS="sc_d01 sc_d03" STAGES="front net cl eval" bash analysis/fourpi/showcase4pi_run.sh
-cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH; O4=$(python -c "from simcode.fourpi.setup import P4; print(P4)"); D=$O4/models/det4pi/final.pt
+cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH; O4=$(python -c "from simcode.config import root; print(root('fourpi'))"); D=$O4/models/det4pi/final.pt
 for t in ${TAGS:-sc_d01 sc_d03 sc_d1 sc_d2 sc_d4}; do
   M=$O4/simmovie/$t; echo "== $t $(date +%H:%M)"
   for s in ${STAGES:-front net cl eval}; do

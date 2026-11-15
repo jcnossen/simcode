@@ -9,11 +9,11 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.setup import P4
+from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.fourpi.sim4pi import Sim4Pi
-from simcode.fourpi.solve4pi import psi_from_eps
-from simcode.fourpi.solvek4pi import SolveK
+from simcode.solve.fourpi import psi_from_eps
+from simcode.solve.fourpi import FourPiSolve
 from simcode.fourpi.loadhead import load_head
 
 EDGES = (1000, 2000, 4000, 8000, 16000)
@@ -39,7 +39,7 @@ def main():
     ap.add_argument('--nb_max', type=int, default=3)
     a = ap.parse_args(); K = a.ksum
     net, ck = load_head(a.head); lut = net.lut
-    sv = SolveK(lut, net.wins); sv.tab_lim = None
+    sv = FourPiSolve(lut, net.wins); sv.tab_lim = None
     sc = torch.tensor([128.0, 128.0, 1000.0], device=dev)
     out = dict(head=a.head, it=ck.get('it'))
     # ---- set A
