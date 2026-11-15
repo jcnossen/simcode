@@ -37,11 +37,39 @@ def parse(spec):
     return seed, dx, dy
 
 
-def make(spec):
-    """-> dict(pts [N,3] px (z = 0), mt [N], wsm_z_nm [N], centre (list of [n,2] px centrelines), stats, zoom_crop)"""
+def simulate(spec, W=W):
     import mt_cells as MC
     seed, dx, dy = parse(spec)
-    r = MC.simulate(seed=seed, fov_um=(FOV_UM, FOV_UM), offset_um=(dx, dy), focus_nm=FOCUS_NM, z_range_nm=ZR_NM, label_efficiency=LABEL_EFF)
+    fov = W * C.PX_NM / 1000
+    return MC.simulate(seed=seed, fov_um=(fov, fov), offset_um=(dx, dy), focus_nm=FOCUS_NM, z_range_nm=ZR_NM, label_efficiency=LABEL_EFF)
+
+
+def chains(spec, W=50, spacing=0.05, min_len=1.0):
+    """the moving-microtubule sim (gen_moving.py --gt wsm): the webSMLM microtubule centrelines of a W x W px field as point
+    chains (px, z = 0) at `spacing` px (the preprint's linedensity 20 / px), the parts inside the field and inside the optical
+    section (focus +- range) only, runs shorter than min_len px dropped -> list of [n,3] arrays, stats"""
+    r = simulate(spec, W)
+    out = []
+    for m in r['centrelines']:
+        x = m[:, 0] / C.PX_NM - 0.5; y = m[:, 1] / C.PX_NM - 0.5
+        ok = (x >= -0.5) & (x < W - 0.5) & (y >= -0.5) & (y < W - 0.5) & (np.abs(m[:, 2] - FOCUS_NM) < ZR_NM)
+        e = np.diff(np.r_[0, ok.astype(int), 0]); st, en = np.nonzero(e == 1)[0], np.nonzero(e == -1)[0]
+        for a, b in zip(st, en):
+            px, py = x[a:b], y[a:b]
+            if len(px) < 2: continue
+            sarc = np.r_[0, np.cumsum(np.hypot(np.diff(px), np.diff(py)))]
+            if sarc[-1] < min_len: continue
+            q = np.arange(0, sarc[-1], spacing)
+            out.append(np.c_[np.interp(q, sarc, px), np.interp(q, sarc, py), np.zeros(len(q))])
+    L = sum(len(t) for t in out) * spacing
+    return out, dict(spec=str(spec), W=W, n_chains=len(out), n_points=int(sum(len(t) for t in out)), length_px=float(L),
+                     length_um=float(L * C.PX_NM / 1000), spacing_px=spacing, focus_nm=FOCUS_NM, z_range_nm=ZR_NM)
+
+
+def make(spec):
+    """-> dict(pts [N,3] px (z = 0), mt [N], wsm_z_nm [N], centre (list of [n,2] px centrelines), stats, zoom_crop)"""
+    seed, dx, dy = parse(spec)
+    r = simulate(spec)
     xyz = r['xyz']
     # px, pixel centre = integer: x_px = x_nm / px - 0.5 (field [0, 4333) nm -> [-0.5, 39.5) px, as the preprint GT)
     pts = np.c_[xyz[:, 0] / C.PX_NM - 0.5, xyz[:, 1] / C.PX_NM - 0.5, np.zeros(len(xyz))]
