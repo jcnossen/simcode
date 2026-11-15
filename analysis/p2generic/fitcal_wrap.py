@@ -1,4 +1,4 @@
-"""Run a calibration-fit script (analysis/nanoruler/ev_fitcal.py or analysis/p2generic/fit_cal_gen.py) with simcode.solve.solve.solve_emitters
+"""Run a calibration-fit script (archive-2026-11-15:analysis/nanoruler/ev_fitcal.py or analysis/p2generic/fit_cal_gen.py) with simcode.solve.solve.solve_emitters
 accepting a calibration without 'sig_ph' (factor 1), as before the 2026-11-14 options clean-up made the key mandatory: plib.fit_cal
 solves once with the partial calibration (kap_bins, prior_off set; sig_ph not yet) to fit sig_ph itself. In memory only.
 usage: python fitcal_wrap.py <script.py> <its arguments>"""

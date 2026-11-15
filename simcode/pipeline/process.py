@@ -3,7 +3,6 @@ through simcode/pipeline/run_with_overrides.py for the instrument overrides of d
 detector batch, the model of stage e). With the DMD-SIMFLUX defaults the wrapper changes nothing, so the run is the
 same as a plain simcode.run with the same arguments."""
 import json, os
-import numpy as np
 
 
 def model_of(ds):
@@ -32,7 +31,6 @@ def argv(ds, out, calib=None, nframes=None, chunk_list=None, model=None):
     if n: a += ['--nframes', n]
     cl = p['chunk_list'] if chunk_list is None else chunk_list
     if cl: a += ['--chunk_list', cl]
-    if p['sig_u']: a += ['--sig_u', p['sig_u']]
     return a + [str(v) for v in p['extra']]
 
 
@@ -58,15 +56,14 @@ def wrap(ds, model):
 
 
 def cycle_subset(out):
-    """rows of windows that start at a cycle boundary (frame % 6 == 0): for interleaved acquisitions the windows at 6c + 3
-    mix two acquisition cycles (assumption 1)"""
+    """row counts of the windows that start at a cycle boundary (frame % 6 == 0): for interleaved acquisitions the windows at
+    6c + 3 mix two acquisition cycles (assumption 1); the rows are selected at load (LocalizationPipeline.dataset_pass1 / 2)"""
+    from simcode.dataset import Dataset
     r = {}
-    for n in ('locs_p1', 'locs_p2'):
-        f = os.path.join(out, n + '.npz')
-        if not os.path.exists(f): continue
-        T = np.load(f); k = (T['frame'] % 6) == 0
-        np.savez(os.path.join(out, n + '_cyc.npz'), **{c: T[c][k] for c in T.files if T[c].shape[:1] == k.shape})
-        r[n] = int(k.sum())
+    for n, p in (('locs_p1', 1), ('locs_p2', 2)):
+        try: L = Dataset.from_run(out, pass_=p, info=False)
+        except FileNotFoundError: continue
+        r[n] = int((L['frame'] % 6 == 0).sum())
     return r
 
 

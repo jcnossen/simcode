@@ -206,9 +206,9 @@ Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run 
 
 | stage | what | output (in `<out>/<stage>/`) | checks |
 |---|---|---|---|
-| `order` | only for `frame_order != blocked`: writes the movie with every complete 6-frame cycle permuted to the blocked order (as `analysis/nanoruler/reorder_any.py`), or verifies an existing `pattern.cache` (frame count, first-cycle checksum against the permutation) | `movie_blocked.tif` (on the data disk) | frame count = 6 x cycles; per-slot mean level |
-| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `calibration/camera_gain.py` generalised: quantile bins of the per-pixel MEAN level (integer-valued movies), the 10 % noisiest pixels excluded); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
-| `spots` (c1) | pattern-free Gaussian SMLM on `sum`-frame moving sums (window start every frame; as the SIMCODE-pipeline smlm table): smoothed difference to the per-pixel temporal median, local maxima > thr x noise, Poisson LM fit of x, y, I, bg, sigma (`analysis/nanoruler/quick_smlm.py` as a function); good-fit filter (chi2, snr, sigma range from the optics) | `spots.hdf5` (Picasso-style `locs`), `spots_good.hdf5` | spots per frame; median sigma vs the diffraction estimate 0.21 lambda / NA (+-25 %); median photons |
+| `order` | only for `frame_order != blocked`: writes the movie with every complete 6-frame cycle permuted to the blocked order (as `archive-2026-11-15:analysis/nanoruler/reorder_any.py`), or verifies an existing `pattern.cache` (frame count, first-cycle checksum against the permutation) | `movie_blocked.tif` (on the data disk) | frame count = 6 x cycles; per-slot mean level |
+| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `archive-2026-11-15:simcode/calibration/camera_gain.py` generalised: quantile bins of the per-pixel MEAN level (integer-valued movies), the 10 % noisiest pixels excluded); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
+| `spots` (c1) | pattern-free Gaussian SMLM on `sum`-frame moving sums (window start every frame; as the SIMCODE-pipeline smlm table): smoothed difference to the per-pixel temporal median, local maxima > thr x noise, Poisson LM fit of x, y, I, bg, sigma (`archive-2026-11-15:analysis/nanoruler/quick_smlm.py` as a function); good-fit filter (chi2, snr, sigma range from the optics) | `spots.hdf5` (Picasso-style `locs`), `spots_good.hdf5` | spots per frame; median sigma vs the diffraction estimate 0.21 lambda / NA (+-25 %); median photons |
 | `cammaps` (a2) | per-pixel offset deviation and read-noise maps (`python -m simcode.calibration.camera_maps`, masked by `spots_good.hdf5`) | `camera_maps.npz` | corr(offset_dev, loc density) < 0.05; read-noise median |
 | `tracks` (c2) | isolated emitter tracks from `spots_good.hdf5` (`python -m simcode.calibration.extract_tracks`: link <= 0.8 px with 1-frame gaps, >= 6 frames, isolation radius, cut into T = 12 frame samples) | `tracks.npz` | number of samples >= 2 x psf.nsamples |
 | `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.beads` = torch_psf.ZStackEstimator with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
@@ -222,7 +222,7 @@ Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run 
 
 The in-situ recipe up to now used the SIMCODE-pipeline `smlm.hdf5` of each movie to find isolated emitters and to mask
 emitters out of the camera maps. Stage c replaces it by a built-in Gaussian SMLM on 6-frame moving sums (one window per frame
-start; `simcode/pipeline/spots.py` = `analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
+start; `simcode/pipeline/spots.py` = `archive-2026-11-15:analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
 is enough for both uses: the track extraction needs positions to 0.8 px and the isolation test, the camera-map mask
 positions to ~1 px. The pass-1 detector of an existing model is the other option; it is not the default because a new
 instrument has no set yet.
@@ -296,7 +296,7 @@ against the fitted z (section 9).
 ## 6. Stage e: model (recipe of `runs/psfmatch/chain2.sh` + `eval.sh`)
 
 Trainers (unchanged entry points, run through `simcode/pipeline/run_with_overrides.py`, which patches `simcode.simulate.acquisition.PRESETS` in
-memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `analysis/nanoruler/nrwrap.py`):
+memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `archive-2026-11-15:analysis/nanoruler/nrwrap.py`):
 
 Quick mode (`--quick`): `train.quick_steps` (30) steps per trainer, the detector starts from the template set's detector
 (det_m1809; from scratch it detects nothing after 30 steps), gate scenes iso + rs05qm with seeds 202 / 301 and 400 targets;
@@ -329,12 +329,12 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
 
 | # | assumption (where) | resolution |
 |---|---|---|
-| 1 | 6-frame cycle, blocked order, angle = frame % 6 // 3 (`processing/pattern_estimation.py`, `processing/common.pattern_frames`, `processing/front*.py` (ws + t) % 6 // 3, `calibration/*`, `psf` per-angle PSF, `simulate/*`) | `pattern.frame_order`: stage `order` writes a blocked-order cache; every later stage reads the cache. For interleaved data the windows starting at 6c + 3 mix two cycles: `process.cycle_aligned_only` keeps windows with frame % 6 == 0 in the selections. 4-step or 3-orientation schemes: refused by the config check (needs P1) |
+| 1 | 6-frame cycle, blocked order, angle = frame % 6 // 3 (`processing/pattern_estimation.py`, `processing/common.pattern_frames`, `processing/front*.py` (ws + t) % 6 // 3, `calibration/*`, `psf` per-angle PSF, `simulate/*`) | `pattern.frame_order`: stage `order` writes a blocked-order cache; every later stage reads the cache. For interleaved data the windows starting at 6c + 3 mix two cycles: `process.cycle_aligned_only`: `dataset_pass1()` / `dataset_pass2()` keep the windows with frame % 6 == 0. 4-step or 3-orientation schemes: refused by the config check (needs P1) |
 | 2 | 2 orientations classified by |kx| > |ky| (`solve/pattern.angle_index`, `pattern/illumination.angle_of`, `solve/solve`) | config check: the two fitted k (stage d pattern) must lie in different 45-degree sectors; otherwise stop with an explanation (P2) |
-| 3 | pitch search 1.6-2.8 px (`pattern_est.estimate_k(pitch_px=...)`) | stage f sets the default of `estimate_k` in memory to `pattern.pitch_px` (as `analysis/nanoruler/ev_run.py`; P3) |
+| 3 | pitch search 1.6-2.8 px (`pattern_est.estimate_k(pitch_px=...)`) | stage f sets the default of `estimate_k` in memory to `pattern.pitch_px` (as `archive-2026-11-15:analysis/nanoruler/ev_run.py`; P3) |
 | 4 | strict CROP fixed to (5, 5, 110) (`table.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `table.CROP` and the bound defaults of `tile_of` / `tile_rank` / `in_crop` in memory (P4) |
 | 5 | detector batch 64 windows (`run_uncalibrated --det_batch`, not exposed by `run.py`); 400 x 400 px needs > 12 GB | `process.det_batch` is set as the argparse default in memory |
-| 6 | optics / camera constants in `calibration/fit_psf_tracks.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/pipeline/psf_fit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
+| 6 | optics / camera constants in `archive-2026-11-15:simcode/calibration/fit_psf_tracks.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `archive-2026-11-15:simcode/calibration/camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/pipeline/psf_fit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
 | 7 | `simulate/acquisition.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in the acquisition simulator / plib / sigcal | stage e: in-memory preset patch (`simcode/pipeline/run_with_overrides.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
 | 8 | gate photon settings hard-coded in `benchmark/gate.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
@@ -363,7 +363,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
 Scripts and logs: `out/auto/val/` (`t_*.py`), `analysis/auto/cmp_calib.py`; work directories `out/auto/<name>` ->
 `/mnt/data/dmdsf/simcode2_out/auto/<name>`.
 
-### 9.1 Stage d code against fit_psf_tracks
+### 9.1 Stage d code against fit_psf_tracks (archived 2026-11-15: `archive-2026-11-15:simcode/calibration/fit_psf_tracks.py`)
 - `psf_fit.fit` on the reference tracks with the reference start: bit-identical to `out/psf3d/final/m1809_bl` (Zernikes,
   focus, blur, residual variance) and, with photoselection, to `m1809_blps3` (gamma / zeta differ by 3e-8).
 - Spline-table mode: section 4 (1.24x / 1.56x, parameters within 0.0007 waves, 4 nm focus, 5e-5 gamma / zeta).
@@ -406,7 +406,7 @@ selection 18.84 nm / 126 618 rows with the final auto calibration (thr 3.5), 18.
 | camera maps | offset corr 0.998 (rms 0.07 ADU), read noise corr 0.9998 (rms 0.009 e) |
 | pattern (track intensities) | k (-0.00236, 1.85712), (1.86051, 0.00184) rad/px vs reference (-0.0024, 1.8572), (1.8605, 0.0019); pitch 3.383 / 3.377 px; phases 0.73, -1.33, 2.80 / 2.37, 0.47, -1.62 vs 0.82, -1.38, 2.81 / 2.28, 0.42, -1.50 |
 | PSF | Zernike rms 0.00018 waves (max 0.0004), focus 69 vs 72 nm, blur ~0 vs 0.012 px^2, gamma 0.154 vs 0.151, zeta 0.385 vs 0.384, dipole tensors within 0.002, images rms 0.08 % of the peak, CRLB within 0.2 %; held-out photoselection z -20 (reference -23.6) |
-| stage f | chunk 0 (1500 frames, nr80 set, reference calibration): `pass1_0.npz` bit-identical to `out/nanoruler/runs/real_p1` (made with `analysis/nanoruler/ev_run.py`); with the auto calibration (3000 frames): pitch 3.383 / 3.377 px found, 108 447 rows, 54 459 cycle-aligned |
+| stage f | chunk 0 (1500 frames, nr80 set, reference calibration): `pass1_0.npz` bit-identical to `out/nanoruler/runs/real_p1` (made with `archive-2026-11-15:analysis/nanoruler/ev_run.py`); with the auto calibration (3000 frames): pitch 3.383 / 3.377 px found, 108 447 rows, 54 459 cycle-aligned |
 
 ### 9.5 Cost of a full run (GPU-hours on an idle RTX 3090; measured here on shared GPUs unless noted)
 | stage | 1809_2 (120 x 120 px, 120k frames) | nanoruler (400 x 400 px, 30k frames) |

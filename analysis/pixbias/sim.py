@@ -10,6 +10,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pblib as B
 from simcode import table as SP
+from simcode.dataset import Dataset
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 
 PS = os.path.join(B.REPO, 'out', 'papersim')
@@ -58,9 +59,9 @@ def papersim(D):
     run = os.path.join(PS, D, 'full'); d = os.path.join(run, 'v2_m1809')
     gt = dict(np.load(os.path.join(PS, D, 'gt.npz'))); nframes = int(gt['nframes'])
     out = {}
-    for ps, tag, tab in (('P1', 'est', 'locs_p1_sim.npz'), ('P2', 'est2', 'locs_p2_sim.npz')):
+    for ps, tag, pn in (('P1', 'est', 1), ('P2', 'est2', 2)):
         keys = ['wstart', 'x_hy0', 'y_hy0', 'x_prior', 'y_prior', 'phot', 'p', 'sx_cal', 'sy_cal'] + (['x_det', 'y_det'] if ps == 'P2' else [])
-        E = B.load_rows(d, tag, keys); T = np.load(os.path.join(d, tab))
+        E = B.load_rows(d, tag, keys); T = Dataset.from_run(d, pass_=pn, info=False).columns()
         assert len(T['x']) == len(E['x_hy0']), (len(T['x']), len(E['x_hy0']))
         if ps == 'P1':
             E['x_det'], E['y_det'] = B.join_p1_det(B.load_pass1(d), E)

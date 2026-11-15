@@ -16,7 +16,8 @@ for kv in filter(None, pover.strip('-').split(',')):
 for kv in filter(None, sover.strip('-').split(',')):
     k, v = kv.split('='); GA.SOVER[k] = v if k == 'bgmode' else bool(int(v))
 print('overrides', GA.POVER, GA.SOVER, flush=True)
-F = dict(s1='s1=det_m1809.pt:hd_m1809.pt', s2='s2=p2det_m1809.pt:p2headL_m1809.pt')
+# the 2D m1809 of the ablation (archive_2d/m1809: byte-identical to the files it was run with)
+F = dict(s1='s1=archive_2d/m1809/det_m1809.pt:archive_2d/m1809/hd_m1809.pt', s2='s2=archive_2d/m1809/p2det_m1809.pt:archive_2d/m1809/p2headL_m1809.pt')
 sys.argv = ['dump', '--scen', sc, '--seeds', seeds, '--fronts', ','.join(F[f] for f in fr.split(',')), '--ntarget', nt, '--out', out, '--tag', tag]
 from simcode.processing import gate_dump
 gate_dump.main()

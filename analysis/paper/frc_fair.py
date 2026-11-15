@@ -33,16 +33,18 @@ BLK = 300                 # FRC halves: alternating 300-frame blocks
 CROP = EP.CROP            # (x0, y0, size) px
 
 
-def load(kind, path):
+def load(kind, path, v2_sigma_max=None):
     """-> dict x, y (px, sensor, pixel centre = integer, x = column), f (window start), sx, sy (px), photons.
-    Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package)."""
+    Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package). v2: a run directory or table
+    file of simcode.run; its rows sel, or with v2_sigma_max (nm) the paper's selection at that threshold (Dataset.select)."""
     from simcode.dataset import Dataset
     if kind in ('smlm', 'sf'):
         L = Dataset.load(path, window=GRID)
     elif kind == 'decode':
         L = Dataset.from_decode(path, window=GRID)
     elif kind == 'v2':
-        L = Dataset.load_npz(path, columns=('sx', 'sy', 'photons', 'sel'), info=False); L = L[L.sel]
+        L = Dataset.load(path)
+        L = L.select(v2_sigma_max) if v2_sigma_max is not None else L[L.sel]
     else:
         raise ValueError(kind)
     F = L.numpy(); f8 = lambda v: v.astype(np.float64)

@@ -1,6 +1,6 @@
 """Stage c1 (spots): pattern-free Gaussian SMLM on moving frame sums, the spot finder of the automatic pipeline
 (docs/AUTO_PIPELINE.md section 3). The same kind of input as the SIMCODE-pipeline smlm table that the earlier in-situ recipe
-used (6-frame moving sums, one window per frame start); the procedure is analysis/nanoruler/quick_smlm.py as a function:
+used (6-frame moving sums, one window per frame start); the procedure is archive-2026-11-15:analysis/nanoruler/quick_smlm.py as a function:
 smoothed (sigma 1.5 px) difference to the per-chunk temporal median of the sums, local maxima (7 x 7) above thr x robust
 noise, Poisson Levenberg-Marquardt fit of x, y, I, bg, sigma of a pixel-integrated Gaussian on an R x R ROI.
 Coordinates: x = column, y = row, pixel centres at integers (as the pipeline and simcode/calibration).
@@ -109,7 +109,7 @@ def write_hdf5(L, path):
 
 
 def good(L, chi2_max=3.6, snr_min=8.0, sigma_range=(0.75, 1.35)):
-    """good-fit filter (as analysis/nanoruler/insitu_any.sh): chi2, snr, sigma within a range around the median sigma of
+    """good-fit filter (as archive-2026-11-15:analysis/nanoruler/insitu_any.sh): chi2, snr, sigma within a range around the median sigma of
     the bright fits. Returns (mask, median sigma)"""
     b = L['snr'] > snr_min
     s_med = float(np.median(L['sx'][b])) if b.any() else float('nan')

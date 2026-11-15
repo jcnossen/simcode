@@ -1,4 +1,4 @@
-"""Real-data comparison of the network pipeline (real_w4pi.py tables) with the classical 4Pi-SIMFLUX tables of the same
+"""Real-data comparison of the network pipeline (tables of python -m simcode.fourpi.run) with the classical 4Pi-SIMFLUX tables of the same
 file (out/4pi/classical/real/cl_<cell>_<file>_wv.npz; read only): adjacent-window precision (DAFL) on the SAME emitters.
 
 Same emitter = network 'good' row and classical kept row in the same window within 64 nm. DAFL: the same emitter in two

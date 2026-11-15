@@ -1,8 +1,8 @@
 """psf3d retrain (2026-11-11), item 2: selection-aware sigma rescale (the model's sig_u) against the winner's curse of a
 sigma-ranked selection. sigma' = sigma * g(u), u = the per-10-px-tile sigma rank quantile among the rows with p >= 0.63 inside the
 run's crop (simcode.table.tile_rank, as simcode.table.build_table computes it for the rescale), g = the robust zcal of the
-matched rows per u bin, fitted on sim movies with GT. u is computed here from the table's sx, sy: the fit / test tables must be
-built WITHOUT a sig_u rescale (then u equals the u of the table build); only the reported sx, sy change. zcal = 1.4826 median |e / sigma| per axis on rows with |e| < 50 nm (robust),
+matched rows per u bin, fitted on sim movies with GT. u is computed here from the table's sx, sy: the fit / test tables are
+built here from the run's chunk files WITHOUT a sig_u rescale (then u equals the u of the table build); only the reported sx, sy change. zcal = 1.4826 median |e / sigma| per axis on rows with |e| < 50 nm (robust),
 e = position - GT (window rows matched one-to-one within 1 px to GT event windows, evaluation/metrics.match_fast; the median error of
 the matched set, a global gauge offset, is removed per movie).
   fit:  python sigcal.py fit <out.json> <run_dir>:<sim_dir>:<tag est|est2>:<f_lo>:<f_hi> [...]
@@ -14,6 +14,7 @@ import json, os, sys
 import numpy as np
 from simcode.evaluation import metrics as E
 from simcode import table as SP
+from simcode.dataset import Dataset
 
 PX = 108.33
 UE = [0.0, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 1.0]
@@ -22,7 +23,7 @@ rob = lambda v: float(1.4826 * np.median(np.abs(v))) if len(v) else np.nan
 
 def load(spec):
     run, sim, tag, flo, fhi = spec.split(':'); flo, fhi = int(flo), int(fhi)
-    T = dict(np.load(f'{run}/locs_p{1 if tag == "est" else 2}.npz'))
+    T = SP.build_table(run, tag, sig_u=None)[0]                     # the run's rows without a sigma rescale (built from the chunk files)
     G = dict(np.load(f'{sim}/sim_gt.npz', allow_pickle=True))
     G['nf'] = int(G['nf'])
     GW = E.gt_windows_fast(G, grid=3)
@@ -57,7 +58,7 @@ def cmp(sim, tag, A, B):
     GW = E.gt_windows_fast(G, grid=3); gid = {}
     print(f'# {sim} {tag}: A = {A}, B = {B}; GT target windows {int(GW[:, 5].sum())}')
     for nm, run in (('A', A), ('B', B)):
-        T = dict(np.load(f'{run}/locs_p{1 if tag == "est" else 2}.npz')); k = T['good'].astype(bool)
+        T = Dataset.from_run(run, pass_=1 if tag == 'est' else 2, info=False).columns(); k = T['good'].astype(bool)
         gi = E.match_fast(GW, T['frame'][k].astype(np.int64), T['x'][k], T['y'][k], r=1.0)
         e = np.c_[T['x'][k] - GW[np.maximum(gi, 0), 2], T['y'][k] - GW[np.maximum(gi, 0), 3]]; e[gi < 0] = np.nan
         e -= np.nanmedian(e, 0); s_ = np.c_[T['sx'][k], T['sy'][k]]

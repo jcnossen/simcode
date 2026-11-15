@@ -25,7 +25,7 @@ the command and settings per table. How each metric is defined, and what it can 
 
 FRC std (nm) = 1/7 threshold, alternating 300-frame halves, 5-nm render, on the drift-corrected set. Smaller is better.
 All rows of the table use one protocol (the covpool protocol): common window grid (G3 at 0.5 / 2.5 nM, G6 at 20 nM), own
-DME v2 drift, 5–115 px crop after the correction. Sources: `<out>/evalproto/covpool_real*.txt` and, for the published row, `analysis/results/evalproto/frc_published_real*.txt` (`analysis/evalproto/frc_published.py`,
+DME v2 drift, 5–115 px crop after the correction. Sources: `<out>/evalproto/covpool_real*.txt` and, for the published row, `analysis/results/evalproto/frc_published_real*.txt` (`archive-2026-11-15:analysis/evalproto/frc_published.py`,
 recomputed for critic 40 from the published `sfhd-ndi.hdf5`, read-only).
 
 | set | 0.5 nM | 2.5 nM | 20 nM |
@@ -119,7 +119,7 @@ are out of recipe relative to the training generator.
 
   - That is −10…−15 % for p1 and −19…−22 % for p2L. Tile stratification costs ≤ 2 % RMS.
   - Every error component is lower for ours (dynamic, event, site).
-- **Gate scenes against the multi-emitter CRLB** (`analysis/gate/run_gate.sh`): iso p1 RMS / CRLB_SF_multi 1.17
+- **Gate scenes against the multi-emitter CRLB** (`archive-2026-11-15:analysis/gate/run_gate.sh`): iso p1 RMS / CRLB_SF_multi 1.17
   [1.14, 1.20]. Per photon bin, 200–400 / 400–700 / 700–1200 / 1200–2000 / > 2000: 1.38 / 1.26 / 1.17 / 1.13 / 1.28. Paired
   vs SIMCODE ni6_3 on the same targets, 200–2000: 1.09 vs 1.15 (iso), 1.19 vs 1.32 (pair2), 1.39 vs 1.46 (rs05qm).
 
@@ -312,7 +312,7 @@ SIMCODE's zero/one-FP operating points on rs05qm (p2L 0.19 vs 0.31) and m05r (p1
 
 Scripts are in `analysis/` (run with `PYTHONPATH=<repo>`). Text snapshots of the development outputs they reproduce are in
 `analysis/results/` (its README gives each source). Real-data scripts take a `datasets.py` json spec
-(`analysis/evalproto/example_real05.json`, `example_real20.json`, `example_sim.json`): per set the output dir, the tag
+(`archive-2026-11-15:analysis/evalproto/example_real05.json`, `example_real20.json`, `example_sim.json`): per set the output dir, the tag
 (`est` = pass 1, `est2` = pass 2), and the set's own drift.
 
 **Real movies** (data root): `0.5nM/cover1/1/simflux_5.5ms_500mW.tif` (90k frames), `2.5nM/2/cover1_600mW_5.5ms_cf660.tif`
@@ -334,12 +334,12 @@ python -m simcode.run --movie <tif> --calib insitu/calib_0.5nM.json | insitu/cal
   exactly coverage-matched q (`--strict_q` 0.283 / 0.124 / 0.127 for p1, 0.252 / 0.121 / 0.099 for p2L, the covpool tileq
   values). The default (density) q is checked with `analysis/evalproto/strictq.py` (section 5).
 
-**SIMCODE (b), sign-fixed** (`analysis/baselines/run_simcode_real.py`; paper camera gain 0.56 / offset 106.34; checkpoint 3):
+**SIMCODE (b), sign-fixed** (`archive-2026-11-15:analysis/baselines/run_simcode_real.py`; paper camera gain 0.56 / offset 106.34; checkpoint 3):
 
 ```bash
-python analysis/baselines/run_simcode_real.py net <cache.npy> --movie <tif> --model sf_conv_g1.3_tio2_L64_ni6_3 --ckpt 3   # 0.5 nM
+python archive-2026-11-15:analysis/baselines/run_simcode_real.py net <cache.npy> --movie <tif> --model sf_conv_g1.3_tio2_L64_ni6_3 --ckpt 3   # 0.5 nM
 #                                                     --model sf_conv_g1.3_L64_5 --ckpt 3          # 2.5 and 20 nM
-python analysis/baselines/run_simcode_real.py ndi <cache.npy> sc_b.npz --fix_sign 1
+python archive-2026-11-15:analysis/baselines/run_simcode_real.py ndi <cache.npy> sc_b.npz --fix_sign 1
 ```
 
 **Drift: DME v2** (the `dme` package, `github.com/jcnossen/drift-estimation`, through `simcode/util/drift.py`; 'v3e' in file and method names is its development name). Each method gets its own drift, at time = window start + 3, with
@@ -347,7 +347,7 @@ crlb = its own σ and crlb < 1 px. Ours uses the disjoint rows (window start % 6
 separately; SIMCODE uses all its rows.
 
 - `analysis/baselines/dme_drift.py <locs_p1.npz | locs_p2.npz | sc_b.npz> <drift.npy>`, or
-- `analysis/dme/dme_splithalf.py run <spec> <sets>`, which also does the split halves (v3e / grid_fpb20 / grid_fpb10; at
+- `archive-2026-11-15:analysis/dme/dme_splithalf.py run <spec> <sets>`, which also does the split halves (v3e / grid_fpb20 / grid_fpb10; at
   20 nM crlb_min_pos).
 
 **Grid and crop.** G3 at 0.5 / 2.5 nM, G6 at 20 nM. Crop 5–115 px after drift correction.
@@ -355,41 +355,41 @@ separately; SIMCODE uses all its rows.
 **Per section.**
 
 - **§1, coverage-matched FRC:**
-  - `analysis/evalproto/covpool.py <real spec>` (`covpool_real*.txt`)
-  - published row: `analysis/evalproto/frc_published.py` (`frc_published_real*.txt`)
+  - `archive-2026-11-15:analysis/evalproto/covpool.py <real spec>` (`covpool_real*.txt`)
+  - published row: `archive-2026-11-15:analysis/evalproto/frc_published.py` (`frc_published_real*.txt`)
   - spatial neutrality: `envmap.py <spec with movie, camera_maps>`, then `spatial.py <spec with envmap (+ depth_field)>`
 - **§2, identical-row NN:**
-  - `analysis/evalproto/nnlag.py <spec>` (`nnlag_real*.txt`)
+  - `archive-2026-11-15:analysis/evalproto/nnlag.py <spec>` (`nnlag_real*.txt`)
   - event level: `blockphase.py <spec>`
   - NN-proxy validation: `nnlag.py` / `valid.py` on the sim specs
   - GT-free protocol and filters: `realproto.py`, `filt.py`
 - **§3 / §3b, sims.**
   - Movies: `analysis/simreal/recipes.sh m05pd | m25pd | m05pe | m25pe | m05r | m25rc` (m05rb = m05r + `SIM_PSF_BLUR=0.36,0`).
-  - Methods: `analysis/simreal/eval_movie.sh <movie> <out> ni6_3 (m05*) | L64_5 (m25*)`.
+  - Methods: `archive-2026-11-15:analysis/simreal/eval_movie.sh <movie> <out> ni6_3 (m05*) | L64_5 (m25*)`.
     - Ours: the sim calibrations `calib/calib_sc_hd_sc5nbb15_pm_bright.json` (p1 b10) and `calib/calib_p2L_movie_b10.json`,
       with `insitu/calib_0.5nM.json`.
     - SIMCODE: `run_simcode.py --model ni6_3 | L64_5 --cam paper --fix_sign 1`.
   - Identical rows and coverage pools: `nnlag.py`, `covpool.py`, `valid.py <sim spec>`.
   - σ calibration: `zcal.py sim | real`, `zcal_fix.py`.
   - m05r / m25rc paired CIs, recall at FP, zcal / gross:
-    `analysis/simreal/compare_ci_r.py <sim dir> rs05pm | rs25pm <out> ours=<run dir> SC_net=sc_net:<paper_est.npz> SC_mrg_fix=sc_mrg:<paper_fix.npz>`.
+    `archive-2026-11-15:analysis/simreal/compare_ci_r.py <sim dir> rs05pm | rs25pm <out> ours=<run dir> SC_net=sc_net:<paper_est.npz> SC_mrg_fix=sc_mrg:<paper_fix.npz>`.
     For p2L, use a view dir with `pass2_est2_*` linked as `pass2_est_*`.
-  - PSF shape and m05rb: `analysis/psfshape/evalgt.py`.
-  - Gate: `GPU=1 bash analysis/gate/run_gate.sh iso` (expect iso 1.17 [1.14, 1.20]).
+  - PSF shape and m05rb: `archive-2026-11-15:analysis/psfshape/evalgt.py`.
+  - Gate: `GPU=1 bash archive-2026-11-15:analysis/gate/run_gate.sh iso` (expect iso 1.17 [1.14, 1.20]).
     - SIMCODE on the gate: `python -m simcode.eff.simcode_gate --model ni6_3 --scen iso,pair2,rs05qm`.
-    - Paired comparison: `analysis/gate/gate_paired.py _scode_ni6_3 _hd_sc5nbb15pmb10 iso,pair2,rs05qm --offset`.
+    - Paired comparison: `archive-2026-11-15:analysis/gate/gate_paired.py _scode_ni6_3 _hd_sc5nbb15pmb10 iso,pair2,rs05qm --offset`.
     - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `python -m simcode.eff.simcode_gate --model ni6_3 --scen pair1,pair1.5,rs05qm`
-      and `--model L64_5 --scen rs25qm` (gate npz `_scode_<net>` / `_scodenf_<net>`), then `analysis/gate/merged_d1.py` and
-      `analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
+      and `--model L64_5 --scen rs25qm` (gate npz `_scode_<net>` / `_scodenf_<net>`), then `archive-2026-11-15:analysis/gate/merged_d1.py` and
+      `archive-2026-11-15:analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
       (reproduces the snapshots in `analysis/results/gate/` exactly).
-  - m05q / m25q / m05qh / m25qh vs SIMCODE: `analysis/baselines/compare.py`, CRLB_ref = gate rs05pm / rs25pm
+  - m05q / m25q / m05qh / m25qh vs SIMCODE: `archive-2026-11-15:analysis/baselines/compare.py`, CRLB_ref = gate rs05pm / rs25pm
     (`SIMCODE_GATE_DIR`).
-  - m25qh / m20qh (§3b †): `analysis/hd_compare/score.py <spec>`, with ours b22 = `analysis/hd_compare/calib_b22/*`.
+  - m25qh / m20qh (§3b †): `archive-2026-11-15:analysis/hd_compare/score.py <spec>`, with ours b22 = `analysis/hd_compare/calib_b22/*`.
     - Paired CIs: `compare_ci_r.py` with rs25pm.
     - Movies: `analysis/simreal/recipes.sh m25qh | m20qh` (`sim_movie.py` / `sim_movie20.py`; m05qh too). Classical inputs:
-      `analysis/baselines/run_classic.py <sim> <work> classic_<m>.npz` (SMLM + SF, paper pipeline) and
-      `analysis/baselines/run_smlm_tuned.py <sim> <work> smlmt_<m>_r6_m4_dt3.5.npz 6 4`; renders `analysis/hd_compare/render.py <spec>`;
-      gross / merged: `analysis/simreal/merged_gross.py <sim> <out.txt> p1=ours_est:<dir> p2L=ours_p2L:<dir> SC_net=sc_net:<paper_est.npz> SC_mrg_fix=sc_mrg:<paper_fix.npz>`.
+      `archive-2026-11-15:analysis/baselines/run_classic.py <sim> <work> classic_<m>.npz` (SMLM + SF, paper pipeline) and
+      `archive-2026-11-15:analysis/baselines/run_smlm_tuned.py <sim> <work> smlmt_<m>_r6_m4_dt3.5.npz 6 4`; renders `archive-2026-11-15:analysis/hd_compare/render.py <spec>`;
+      gross / merged: `archive-2026-11-15:analysis/simreal/merged_gross.py <sim> <out.txt> p1=ours_est:<dir> p2L=ours_p2L:<dir> SC_net=sc_net:<paper_est.npz> SC_mrg_fix=sc_mrg:<paper_fix.npz>`.
 - **§4, counts / drift / throughput:**
   - Row counts: `realproto.py` header, or `dme_splithalf.py dry`.
   - Split-half: `dme_splithalf.py report <npz>` (reference grid_fpb10; snapshot `analysis/results/dme/splithalf_all.txt`).

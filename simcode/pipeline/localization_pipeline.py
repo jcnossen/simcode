@@ -241,15 +241,20 @@ class LocalizationPipeline:
         if S is None: raise FileNotFoundError(f'{self.c["name"]}: not processed yet ({self.out}/process/summary.json is missing); call process() or run()')
         return S['run']
 
-    def dataset_pass1(self, **kw):
-        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (the paper's selection: ds.select())"""
+    def _dataset(self, pass_, **kw):
         from simcode.dataset import Dataset
-        return Dataset.from_run(self.run_dir(), pass_=1, **kw)
+        L = Dataset.from_run(self.run_dir(), pass_=pass_, **kw)
+        if self.c['process']['cycle_aligned_only']: L = L[L['frame'] % 6 == 0]      # interleaved acquisitions (assumption 1)
+        return L
+
+    def dataset_pass1(self, **kw):
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (the paper's selection: ds.select());
+        with process.cycle_aligned_only only the windows that start at a cycle boundary"""
+        return self._dataset(1, **kw)
 
     def dataset_pass2(self, **kw):
         """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset"""
-        from simcode.dataset import Dataset
-        return Dataset.from_run(self.run_dir(), pass_=2, **kw)
+        return self._dataset(2, **kw)
 
     def _stage(self, name, force=False, redo=False):
         if redo: self._invalidate(name)

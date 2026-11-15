@@ -16,7 +16,7 @@ the 4Pi scripts.
       showcase evaluation and is kept so that those numbers do not change.
   frc_fov(x, y, half, x0, x1, px_nm=108.33, pix_nm=5.0)
       variant on a fixed square field [x0, x1) camera px with 300 radial bins up to Nyquist, crossing counted above
-      1/500 nm (analysis/hd_compare/score.py); kept for the same reason.
+      1/500 nm (archive-2026-11-15:analysis/hd_compare/score.py); kept for the same reason.
 """
 import numpy as np
 

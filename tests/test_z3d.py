@@ -171,8 +171,7 @@ def test_table_pass2_z(tmp_path=None):
     T, info = SP.build_table(d, 'est2', crop=(0, 0, 128))
     assert np.isnan(T['z'][::10]).all() and np.isfinite(np.delete(T['z'], np.s_[::10])).all()
     assert info['n_no_p1'] == n // 10 and 'p1_row' not in T and 'linked pass-1' in info['z']
-    SP.write_table(T, info, os.path.join(d, 'locs_p2'))
-    ds = Dataset.load_npz(os.path.join(d, 'locs_p2.npz'), info=False)
+    ds = Dataset.load_table(SP.write_table(T, info, os.path.join(d, 'locs_p2')), info=False)
     assert ds['pos'].shape == (n, 3) and torch.isnan(ds['pos'][::10, 2]).all()
     img = ds.select(12, 0.63, False).render(pixel_nm=20)
     assert np.isfinite(np.asarray(img)).all()

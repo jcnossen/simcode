@@ -17,7 +17,7 @@ a low detection threshold (0.2), so precision / recall curves are swept offline 
 Front-end: sc = detector (--detector) + emitter network (--emitter) + the explicit pattern solve with the calibration --cal (defaults: the default
 model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
 SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
-Other front-ends (SIMCODE: simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
+Other front-ends (SIMCODE: archive-2026-11-15:simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
 Reports: python -m simcode.benchmark.gate_report_detector_matched --dir <out> --tag <tag> --scen iso,...
 usage: python -m simcode.benchmark.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
 """
@@ -169,7 +169,7 @@ def main():
     T = 6
     sim, rpsf, lut = CD.models(T)
     fronts = a.fronts.split(',')
-    assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE: simcode.benchmark.preprint_gate; pass 2: simcode.processing.gate_dump)'
+    assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE preprint: archive-2026-11-15:simcode/benchmark/preprint_gate.py; pass 2: simcode.processing.gate_dump)'
     from simcode.emitter import model as EM
     from simcode.detector import model as DM
     det_, _ = DM.load(a.detector)

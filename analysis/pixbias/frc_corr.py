@@ -7,12 +7,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pblib as B
 import frc_fair
 from simcode import table as SP
+from simcode.dataset import Dataset
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 
 RES = {}
 for ds in sys.argv[1:]:
     run = {'1809_2': 'v2_matched', '2.5nM_2': 'v2_matched', '20nM_2': 'v2_m25'}[ds]
-    T = np.load(os.path.join(B.REPO, 'out', 'paper2', ds, run, 'locs_p2.npz'))
+    T = Dataset.from_run(os.path.join(B.REPO, 'out', 'paper2', ds, run), pass_=2, info=False).columns()
     m = SP.select(T, crop=SP.run_crop(os.path.join(B.REPO, 'out', 'paper2', ds, run)))
     x, y, ph = T['x'][m], T['y'][m], T['photons'][m].astype(np.float64)
     groups = [b for _, b in B.ph_bin_masks(ph)]

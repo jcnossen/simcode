@@ -22,7 +22,7 @@ DEFAULTS = {
                   init=dict(detector=None, emitter='hd_sc5nb.pt'), extra=dict(detector='', emitter='', pass2=''),
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), real_mult_from='m1809'),
     'process': dict(model=None, calib=None, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,
-                    cycle_aligned_only=False, sig_u='', extra=[]),
+                    cycle_aligned_only=False, extra=[]),
     'gpus': [1, 2],
 }
 BEAD_DEFAULTS = dict(stacks=[], dz_um=0.010, sign=1.0, offset_adu=None, gain_e_per_adu=None, holdout=0, iters=300, roi=26)

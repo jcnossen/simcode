@@ -6,6 +6,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pblib as B
 from simcode import table as SP
+from simcode.dataset import Dataset
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 
 RUN = {'1809_2': 'v2_matched', '2.5nM_2': 'v2_matched', '20nM_2': 'v2_m25'}
@@ -14,10 +15,10 @@ RUN = {'1809_2': 'v2_matched', '2.5nM_2': 'v2_matched', '20nM_2': 'v2_m25'}
 def v2_sets(ds):
     d = os.path.join(B.REPO, 'out', 'paper2', ds, RUN[ds])
     S = {}
-    for ps, tag, tab in (('P1', 'est', 'locs_p1.npz'), ('P2', 'est2', 'locs_p2.npz')):
+    for ps, tag, pn in (('P1', 'est', 1), ('P2', 'est2', 2)):
         keys = ['wstart', 'x_hy0', 'y_hy0', 'x_prior', 'y_prior', 'phot', 'p', 'sx_cal', 'sy_cal'] + (['x_det', 'y_det'] if ps == 'P2' else [])
         E = B.load_rows(d, tag, keys)
-        T = np.load(os.path.join(d, tab))
+        T = Dataset.from_run(d, pass_=pn, info=False).columns()
         assert len(T['x']) == len(E['x_hy0']) and np.allclose(T['x'][:1000], E['x_hy0'][:1000]), (ps, len(T['x']), len(E['x_hy0']))
         if ps == 'P1':
             P1 = B.load_pass1(d)

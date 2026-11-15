@@ -7,11 +7,12 @@ filter_photons, filter_crlb, filter_frames; in-place variants with a trailing _)
 drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), render, frc, info, and the files: save / load
 (.hdf5 = the torch-psf format, .csv = ThunderSTORM), save_picasso / load_picasso. This module adds:
 
-  loaders   Dataset.load(path)  a run directory (from_run), .npz (load_npz: a v2 table of simcode.run / simcode.table, a
-                                subset file, a file of the earlier SIMCODE Dataset.save_npz, or the paper's DECODE table:
+  loaders   Dataset.load(path)  a run directory (from_run), .hdf5 (load_table: a table of simcode.run / simcode.table, the
+                                torch-psf format), .npz (load_npz: a table of a run before 2026-11-15, a subset file of
+                                that time, a file of the earlier SIMCODE Dataset.save_npz, or the paper's DECODE table:
                                 from_decode), .npy (load_npy: the preprint code's Dataset / SFDataset file), else
                                 torch_psf's load (.hdf5: this format or Picasso, e.g. the paper's sf.hdf5; .csv: ThunderSTORM)
-            from_run(run_dir, pass_=2), load_npz, from_decode, from_smlmtorch(ds), load_npy
+            from_run(run_dir, pass_=2), load_table, from_columns, load_npz, from_decode, from_smlmtorch(ds), load_npy
             window=<frames>: frames per localization (the n_frames field) for files that do not record it (the paper's
             SMLM / SIMFLUX tables of summed 6-frame windows: window=6)
   select    select(max_precision_nm=12, min_score=0.63, in_region=True) = simcode.table.select on this table: the paper's
@@ -20,7 +21,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
             mask(...) is the boolean row mask.
 
     from simcode.dataset import Dataset
-    ds = Dataset.load('out/run1')                     # a run directory (locs_p2.npz, else locs_p1.npz) or a table file
+    ds = Dataset.load('out/run1')                     # a run directory (locs_p2.hdf5, else locs_p1.hdf5) or a table file
     sel = ds.select()                                 # the paper's selection
     ds.estimate_drift(rows=ds.good & ds.disjoint)     # DME v2 (the dme package: simcode.util.drift.dme_package())
     sel = ds.select().apply_drift(ds.drift)
@@ -32,7 +33,7 @@ Fields of a v2 table (simcode/table.py) in this layout (docs/DATASET_FORMAT.md o
   pos [n, 3] = (x, y, z) with z in px of the lateral pixel relative to the PSF calibration's focal plane, crlb [n, 3], cov
   [n, 3] = (xy, xz, yz) px^2; frame = window start, n_frames = 6 (window length), photons, score = p (detector probability), intensities [n, 6] = I (network per-frame intensities), and the other
   columns under their names (t, q_dof, kin, dnll, x_prior, y_prior, good, sel, disjoint, x_dc, y_dc, strict_u, strict).
-  Metadata: pixel_nm (px_nm of the table), crop, sigma_max, info (the table's info json), run_config, model, n_frames,
+  Metadata: pixel_nm (px_nm of the table), crop, tag, info (the table's info json), run_config, model, n_frames,
   image_size, pass, source, format.
 Other sources: DECODE phot -> photons, sphot -> crlb_photons, prob -> score, z (nm) kept as the field z; the preprint code's
 estim.pos / crlb.pos -> pos / crlb, estim.ibg -> intensities, intensities_bg, chisq, group, roi_id, roipos as fields (a z
@@ -61,8 +62,9 @@ class Dataset(_TorchPSFDataset):
 
     # ------------------------------------------------------------------ loaders
     @classmethod
-    def _from_columns(cls, C, meta, window, drift=None, drift_applied=False):
-        """columns x, y, frame (+ sx, sy, z, sz and others) -> pos / crlb layout"""
+    def from_columns(cls, C, meta, window=6, drift=None, drift_applied=False):
+        """table columns x, y, frame (+ sx, sy, z, sz and the others of simcode.table.build_table) -> this layout (pos / crlb /
+        cov, score, intensities; metadata px_nm -> pixel_nm)"""
         C = dict(C)
         F = dict(pos=np.stack([np.asarray(C.pop('x'), np.float64), np.asarray(C.pop('y'), np.float64)], 1),
                  frame=np.asarray(C.pop('frame')))
@@ -84,7 +86,7 @@ class Dataset(_TorchPSFDataset):
 
     @classmethod
     def load_npz(cls, path, columns=None, info=True, window=6):
-        """A v2 table file (locs_p1.npz / locs_p2.npz / a subset file / a file of the earlier SIMCODE Dataset.save_npz), or the
+        """A table file of a run before 2026-11-15 (locs_p1.npz / locs_p2.npz / a subset file of that time / a file of the earlier SIMCODE Dataset.save_npz), or the
         paper's DECODE table (from_decode). columns: load only these (x, y, frame always; a 660 MB production table takes a
         few seconds in full). info: also read <table>_info.json, and summary.json / run_config.json of the directory when
         they exist (crop, model, frame count, image size, the run record)."""
@@ -103,41 +105,57 @@ class Dataset(_TorchPSFDataset):
                 meta[k] = v.item() if v.dtype.kind in 'fiub' else str(v)
             elif len(v) == n:
                 C[k] = v
-        if info:
-            d = os.path.dirname(os.path.abspath(path)); base = os.path.splitext(os.path.abspath(path))[0]
-            I = _read_json(base + '_info.json')
-            if I is not None:
-                meta.setdefault('info', I)
-                if 'crop' in I: meta.setdefault('crop', [float(v) for v in I['crop']])
-            if 'crop' not in meta and os.path.exists(os.path.join(d, 'pass1_0.npz')):          # tables made before the info json had it
-                meta['crop'] = [float(v) for v in SP.run_crop(d)]
-            S = _read_json(os.path.join(d, 'summary.json')) or {}
-            R = _read_json(os.path.join(d, 'run_config.json'))
-            if R is not None:
-                meta.setdefault('run_config', R); mv = R.get('movie') or {}
-                nf = mv.get('frames_processed') or mv.get('n_frames')
-                if nf: meta.setdefault('n_frames', int(nf))
-                if mv.get('frame_shape'): meta.setdefault('image_size', [int(v) for v in mv['frame_shape']])
-                m = R.get('model'); m = m.get('name') if isinstance(m, dict) else m
-                if m: meta.setdefault('model', m)
-            m = S.get('model')
-            if isinstance(m, str): meta.setdefault('model', m)
-        return cls._from_columns(C, meta, meta.get('window', window), drift, applied)
+        if info: cls._run_meta(path, meta)
+        return cls.from_columns(C, meta, meta.get('window', window), drift, applied)
+
+    @staticmethod
+    def _run_meta(path, meta):
+        """metadata of a table file of a run directory: <table>_info.json, summary.json / run_config.json of the directory (crop,
+        model, frame count, image size, the run record)"""
+        d = os.path.dirname(os.path.abspath(path)); base = os.path.splitext(os.path.abspath(path))[0]
+        I = _read_json(base + '_info.json')
+        if I is not None:
+            meta.setdefault('info', I)
+            if 'crop' in I: meta.setdefault('crop', [float(v) for v in I['crop']])
+        if 'crop' not in meta and os.path.exists(os.path.join(d, 'pass1_0.npz')):          # tables made before the info json had it
+            meta['crop'] = [float(v) for v in SP.run_crop(d)]
+        S = _read_json(os.path.join(d, 'summary.json')) or {}
+        R = _read_json(os.path.join(d, 'run_config.json'))
+        if R is not None:
+            meta.setdefault('run_config', R); mv = R.get('movie') or {}
+            nf = mv.get('frames_processed') or mv.get('n_frames')
+            if nf: meta.setdefault('n_frames', int(nf))
+            if mv.get('frame_shape'): meta.setdefault('image_size', [int(v) for v in mv['frame_shape']])
+            m = R.get('model'); m = m.get('name') if isinstance(m, dict) else m
+            if m: meta.setdefault('model', m)
+        m = S.get('model')
+        if isinstance(m, str): meta.setdefault('model', m)
+
+    @classmethod
+    def load_table(cls, path, info=True):
+        """a table file of simcode.run / simcode.table (<name>.hdf5, the torch_psf format with SIMCODE's fields) with the run's
+        metadata (info: _run_meta)"""
+        L = cls.load_hdf5(path); L.meta['format'] = 'simcode hdf5'
+        if info: cls._run_meta(path, L.meta)
+        return L
 
     @classmethod
     def from_run(cls, run_dir, pass_=2, table=None, **kw):
-        """The localization table of a run directory of simcode.run: pass_ = 2 (locs_p2.npz, the pattern-aware pass, the
-        default) or 1 (locs_p1.npz); pass_ None: pass 2 if it exists, else pass 1; table: another base name instead
-        (e.g. 'locs_p2_sig12'). meta['pass'] records the pass. Keywords as load_npz (columns=..., info=...). This is what
-        the pipeline's dataset_pass1() / dataset_pass2() return; the paper's selection: ds.select()."""
+        """The localization table of a run directory of simcode.run: pass_ = 2 (locs_p2.hdf5, the pattern-aware pass, the
+        default) or 1 (locs_p1.hdf5); pass_ None: pass 2 if it exists, else pass 1; table: another base name instead.
+        Runs made before 2026-11-15 have locs_p<pass>.npz instead (load_npz; keywords columns=, info=). meta['pass'] records the
+        pass. This is what the pipeline's dataset_pass1() / dataset_pass2() return; the paper's selection: ds.select()."""
         names = [table] if table else [f'locs_p{int(pass_)}'] if pass_ is not None else ['locs_p2', 'locs_p1']
         for n in names:
-            f = os.path.join(run_dir, n if n.endswith('.npz') else n + '.npz')
-            if os.path.exists(f):
-                L = cls.load_npz(f, **kw); b = os.path.basename(f)
+            n = os.path.splitext(n)[0] if n.endswith(('.npz', '.hdf5')) else n
+            for ext in ('.hdf5', '.npz'):
+                f = os.path.join(run_dir, n + ext)
+                if not os.path.exists(f): continue
+                L = cls.load_table(f, info=kw.get('info', True)) if ext == '.hdf5' else cls.load_npz(f, **kw)
+                b = os.path.basename(f)
                 if b.startswith('locs_p') and b[6:7].isdigit(): L.meta.setdefault('pass', int(b[6]))
                 return L
-        raise FileNotFoundError(f'no {" / ".join(names)} (.npz) in {run_dir}')
+        raise FileNotFoundError(f'no {" / ".join(names)} (.hdf5 / .npz) in {run_dir}')
 
     @classmethod
     def from_decode(cls, path, window=6):
@@ -148,7 +166,7 @@ class Dataset(_TorchPSFDataset):
         C = {ren.get(k, k): z[k] for k in z.files if z[k].ndim and len(z[k]) == n}
         meta = dict(source=os.path.abspath(path), format='decode npz')
         if 'info' in z.files and z['info'].ndim == 0: meta['info'] = str(z['info'])
-        return cls._from_columns(C, meta, window)
+        return cls.from_columns(C, meta, window)
 
     @classmethod
     def from_smlmtorch(cls, ds, window=1, px_nm=SP.PX_NM_DEFAULT):
@@ -166,7 +184,7 @@ class Dataset(_TorchPSFDataset):
         if 'sigma' in e.dtype.names: C.update(psf_sx=e['sigma'][:, 0], psf_sy=e['sigma'][:, 1])
         meta = dict(format='smlmtorch', pixel_nm=float(px_nm))
         if hasattr(ds, 'imgshape'): meta['image_size'] = [int(v) for v in ds.imgshape]
-        return cls._from_columns({k: np.ascontiguousarray(v) for k, v in C.items()}, meta, window)
+        return cls.from_columns({k: np.ascontiguousarray(v) for k, v in C.items()}, meta, window)
 
     @classmethod
     def load_npy(cls, path, window=1, px_nm=SP.PX_NM_DEFAULT):
@@ -190,9 +208,27 @@ class Dataset(_TorchPSFDataset):
         if ext == '.npz': return cls.load_npz(path, window=window or 6, **kw)
         if ext == '.npy': return cls.load_npy(path, window=window or 1, **kw)
         L = super().load(path, **kw)
+        if ext in ('.hdf5', '.h5') and 'tag' in L.meta and 'info' in L.meta: cls._run_meta(path, L.meta)   # a table of simcode.run
         L.meta.setdefault('pixel_nm', SP.PX_NM_DEFAULT)
         if window is not None: L['n_frames'] = torch.full((len(L),), int(window), dtype=torch.int32)
         return L
+
+    def columns(self):
+        """this dataset as the table columns of simcode.table.build_table (numpy): x, y (z), sx, sy (sz), cov_xz, cov_yz, p,
+        I and the other fields under their names, + px_nm and crop of the metadata (the dict simcode.table.select reads)"""
+        F = self.numpy(); T = {}
+        T['x'], T['y'] = F['pos'][:, 0], F['pos'][:, 1]
+        if F['pos'].shape[1] > 2: T['z'] = F['pos'][:, 2]
+        if 'crlb' in F:
+            T['sx'], T['sy'] = F['crlb'][:, 0], F['crlb'][:, 1]
+            if F['crlb'].shape[1] > 2: T['sz'] = F['crlb'][:, 2]
+        if 'cov' in F: T['cov_xz'], T['cov_yz'] = F['cov'][:, 1], F['cov'][:, 2]
+        back = {v: k for k, v in _RENAME.items()}
+        for k, v in F.items():
+            if k not in ('pos', 'crlb', 'cov', 'n_frames'): T[back.get(k, k)] = v
+        T['px_nm'] = self.pixel_nm
+        if self.meta.get('crop') is not None: T['crop'] = np.array(self.meta['crop'], np.float64)
+        return T
 
     # ------------------------------------------------------------------ the paper's selection
     def _table(self):

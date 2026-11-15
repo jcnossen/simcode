@@ -4,14 +4,16 @@ render, FRC, files, is tested in torch-psf). No models, no raw data; the tests o
 skipped when the files / the dme package / a GPU are not available.
 Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
   v2 table   built from a fake run directory with simcode.table: field layout (pos, crlb, frame, n_frames = 6, score,
-             intensities, the other columns), metadata, from_run(pass_), columns=, subset files; select / mask equal
-             table.select; the subclass survives indexing and the filters
+             intensities, the other columns), metadata, from_run(pass_) of the HDF5 tables and of the npz tables of runs
+             before 2026-11-15 (columns=); select / mask equal table.select; columns(); the subclass survives indexing and
+             the filters
   hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata; select after the round trip
   old files  the earlier SIMCODE npz save (metadata, drift, applied flag), the preprint code's .npy, the paper's DECODE npz,
              Picasso (the paper's sf.hdf5)
   drift      apply at the window centre (frame + 3); estimate (DME v2) close to simcode.util.drift.drift_of_table
   frc        Dataset.frc = simcode.evaluation.frc.frc_halves
-  real       out/paper2/1809_2/v2_matched/locs_p2.npz: counts of the info json; FRC of a subset = analysis/paper/frc_fair.py
+  real       out/paper2/1809_2/v2_matched/locs_p2.npz (a run before 2026-11-15): counts of the info json; FRC of a subset =
+             analysis/paper/frc_fair.py
 """
 import json, os, sys, tempfile
 import numpy as np
@@ -59,12 +61,12 @@ def _check_layout(L, T):
 def test_v2_table_select():
     with tempfile.TemporaryDirectory() as d:
         T, info = _table(d)
-        L = Dataset.load(d)                                                     # run directory -> locs_p2.npz
+        L = Dataset.load(d)                                                     # run directory -> locs_p2.hdf5
         assert type(L) is Dataset and len(L) == 3000 and L.n_dims == 2 and L.pixel_nm == SP.PX_NM_DEFAULT
         _check_layout(L, T)
-        assert L.meta['sigma_max'] == SP.SIGMA_MAX_NM and L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2
+        assert L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2 and L.meta['format'] == 'simcode hdf5'
         assert L.meta['info']['n_main'] == info['n_main'] and (L.center_frame == L.frame + 3).all()
-        Tz = np.load(f'{d}/locs_p2.npz')
+        Tz = L.columns(); assert all(np.array_equal(Tz[k], T[k], equal_nan=T[k].dtype.kind == 'f') for k in T)
         for kw in ({}, dict(max_precision_nm=8.0), dict(min_score=0.8), dict(in_region=False), dict(max_precision_nm=None, min_score=None, in_region=False)):
             m = SP.select(Tz, **kw)
             assert np.array_equal(L.mask(**kw).numpy(), m), kw
@@ -78,14 +80,20 @@ def test_v2_table_select():
         for A in (L[L.good], L[10:20], L.filter_photons(500), L.crop(20, 30, 60, 70), L.filter_frames(300, 600), L + L[:5]):
             assert type(A) is Dataset and A.meta['crop'] == L.meta['crop'] and len(A.select(in_region=False)) <= len(A)
         assert len(L.filter_crlb(max_nm=10)) == (np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT <= 10).sum()
-        # from_run(pass_), columns=, subset files of strict
-        T1, i1 = SP.build_table(d, 'est2', sigma_max=10.0); SP.write_table(T1, i1, f'{d}/locs_p1')
-        assert Dataset.from_run(d, pass_=1).meta['sigma_max'] == 10.0 and Dataset.from_run(d, pass_=1).meta['pass'] == 1
+        # from_run(pass_); Dataset.load of the table file
+        SP.write_table(T, info, f'{d}/locs_p1')
+        assert Dataset.from_run(d, pass_=1).meta['pass'] == 1 and len(Dataset.load(f'{d}/locs_p1.hdf5').select()) == info['n_main']
         try: Dataset.from_run(d, pass_=3); raise AssertionError('a missing pass must raise')
         except FileNotFoundError: pass
+    with tempfile.TemporaryDirectory() as d:
+        # the npz table of a run made before 2026-11-15 (as its table stage wrote it)
+        _run_dir(d, n=3000); T, info = SP.build_table(d, 'est2')
+        np.savez(f'{d}/locs_p2.npz', **T, px_nm=np.array(info['px_nm']), sigma_max=np.array(12.0))
+        json.dump(info, open(f'{d}/locs_p2_info.json', 'w'), default=str)
+        L = Dataset.from_run(d); _check_layout(L, T)
+        assert L.meta['format'] == 'simcode npz' and L.meta['crop'] == [5.0, 5.0, 110.0] and len(L.select()) == info['n_main']
         P = Dataset.load_npz(f'{d}/locs_p2.npz', columns=('sx', 'sy'))
         assert set(P.keys()) == {'pos', 'crlb', 'frame', 'n_frames', 'id', } and P.meta['sigma_max'] == 12.0
-        S = Dataset.load(SP.write_subset(T, f'{d}/locs_p2')); assert len(S) == info['n_main'] and S.meta['sigma_max'] == 12.0 and S.sel.all()
 
 
 def test_hdf5_roundtrip():

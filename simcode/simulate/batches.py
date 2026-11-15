@@ -42,7 +42,7 @@ from simcode.pattern import illumination as IL
 dev = 'cuda'
 # emitter heights of the training data (um above the coverslip). From the calibrations of the paper data (TIRF depth 82 nm,
 # emitter median 55 nm): at 0.3 um the excitation is exp(-(0.3 - 0.055) / 0.082) = 5 % of the median emitter's and the
-# collected PSF fraction 0.58 of the one at the coverslip (analysis/z3d/psf_zscan.py), i.e. < 40 photons per window for the
+# collected PSF fraction 0.58 of the one at the coverslip (archive-2026-11-15:analysis/z3d/psf_zscan.py), i.e. < 40 photons per window for the
 # paper's photon distribution: no detectable emitter lies above, so the network's z range is [0, 0.3] um.
 Z_RANGE_UM = (0.0, 0.3)
 Z_UNIF = 0.5

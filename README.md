@@ -44,7 +44,7 @@ the config key `models` points to); `models/README.md` lists the files of each m
 Dependencies:
 
 - numpy, scipy, tifffile, torch (CUDA GPU required); matplotlib for the calibration / figure scripts; h5py for
-  `--format hdf5` and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
+  the table files (`locs_p*.hdf5`) and for reading Picasso hdf5 locs in the in-situ calibration; triton optional (`torch.compile`)
 - torch-psf (MIT, https://github.com/jcnossen/torch-psf, pinned in pyproject.toml): the PSF models (vectorial PSF,
   convolutional 3D spline, Gaussian), the calibration json reader, the bead and in-situ PSF fits (variable projection)
   and the TIFF movie reader. `simcode/psf/__init__.py` is the only module that imports it (the rest of SIMCODE imports from `simcode.psf`) and holds the SIMCODE-specific glue (per-pattern-angle PSF terms, the
@@ -77,17 +77,20 @@ What every run does (= the paper's settings; the options that switched these wer
 - the fixed-c real-data solve calibrations of the model (`--cal_kind sim` for simulated movies)
 - stored-candidate cut p ≥ 0.3 (`simcode/processing/common.CAND_PMIN`)
 - the fast code path, with a compiled solve step when available
-- the model's selection-aware sigma rescale (`--sig_u set`) and the subset file `locs_p2_sig12.npz` (`--subset 12`; a list
-  of thresholds in nm, e.g. `--subset 12,14`)
-- the paper's selection (since 2026-11-13): a global threshold on the calibrated precision, max(σx, σy) ≤ σ_max on the rows
-  with score p ≥ 0.63 inside the crop, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of its own;
-  `simcode.table.select(table, max_precision_nm=12, min_score=0.63, in_region=True)` = `Dataset.select()`); the column
-  `sel` (phase-calibrated detection selection) is the recommended full output for renders and drift. (The per-tile rule
-  "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
+- the model's selection-aware sigma rescale (always; a model without one has an empty `sig_u`)
+- the output region: `--crop x0,y0,size` (px); default the whole frame (square sensors; else the largest top-left square);
+  the paper datasets carry their crop (5,5,110) in `models.json` `_production`
+- the tables `locs_p1.hdf5`, `locs_p2.hdf5` in the torch_psf Dataset format (CSV / Picasso: exports of the loaded Dataset)
+- the paper's selection (since 2026-11-13) is applied when a table is loaded, nothing is stored for it: a global threshold
+  on the calibrated precision, max(σx, σy) ≤ 12 nm on the rows with score p ≥ 0.63 inside the crop
+  (`Dataset.from_run(<out>).select()` = `simcode.table.select(table, max_precision_nm=12, min_score=0.63, in_region=True)`;
+  another threshold: `select(14)`); the column `sel` (phase-calibrated detection selection) is the recommended full output
+  for renders and drift. (The per-tile rule "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
 
-`--dataset <name>` takes movie, calibration and model of a paper dataset from the `_production` entry of `models.json`.
+`--dataset <name>` takes movie, calibration, model and crop of a paper dataset from the `_production` entry of `models.json`.
 The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`, `--compile`, `--netset`, `--det` ...,
-`--u_max`, `--strict_q`) no longer exist (`docs/CLEANUP_LOG.md`).
+`--u_max`, `--strict_q`) and on 2026-11-15 (`--format`, `--subset`, `--sigma_max`, `--prefetch` (always on), `--sig_u`
+(always the model's)) no longer exist (`docs/CLEANUP_LOG.md`).
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -104,21 +107,20 @@ Other options:
 - `--chunk_list 12000` processes only the chunk of frames 12000–18000.
 - `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) adds the
   drift-corrected columns `x_dc, y_dc`; the selection region and the tiles of the sigma rescale then use them.
-- `--format npz,csv,hdf5` sets the table formats.
 
 Outputs in `--out`:
 
 | file | content |
 |---|---|
-| `locs_p1.npz`, `locs_p2.npz` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), see below |
-| `locs_p*_info.json` | counts, crop, sigma_max and the size of the selection (`n_main`), column list |
-| `locs_p2_sig12.npz` (and the same for pass 1; `--subset`) | the rows of the selection as a small table (x, y, frame, sx, sy, photons), the input format of the FRC and figure scripts |
+| `locs_p1.hdf5`, `locs_p2.hdf5` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), torch_psf Dataset format (`docs/DATASET_FORMAT.md`), see below |
+| `locs_p*_info.json` | counts, crop and the size of the paper's selection (`n_main`), column list |
 | `run_config.json`, `run_config.yaml` | the complete record of the run: fully resolved settings, file hashes, code and environment, pattern and selection outcome (section "Run record") |
 | `summary.json` | settings, model, per-stage timing |
 | `command.txt` | plain log of the commands run on the directory |
 | `pass1_<f0>.npz`, `pattern_est.pt/.json`, `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
 
-Table columns:
+Table columns (as built by `simcode.table`; in the file as Dataset fields: `pos` = (x, y), `crlb` = (sx, sy), `score` = p,
+`intensities` = I, the others under their names; `Dataset.columns()` gives them back under these names):
 
 - `frame` (window start), `t` (time centroid)
 - `x, y` (final, sensor px, not drift corrected), `sx, sy` (calibrated σ, px)
@@ -126,19 +128,19 @@ Table columns:
 - `p` (detector), `q_dof`, `kin`, `dnll`, `x_prior, y_prior`
 - `good` (p ≥ 0.63), `sel` (phase-calibrated selection: the recommended full output for renders and drift), `disjoint`
   (frame % 6 == 0)
-- the stored `sigma_max` (12 nm) and `px_nm`; with `--drift`: `x_dc, y_dc`
-- tables made before 2026-11-14 also have `strict_u` (per-tile σ rank) and `strict` (strict product) and the scalar
-  `u_max`; nothing uses them now (they go in the dataset-format pass)
+- the metadata `pixel_nm`, `crop`, `tag`, `info`; with `--drift`: `x_dc, y_dc`
+- runs made before 2026-11-15 have `.npz` tables (and subset files `locs_p*_sig12.npz`); `Dataset.from_run` reads them too;
+  `python -m simcode.table <out> --tag est / est2` writes the `.hdf5` tables of such a run from its chunk files
 
 The table can be rebuilt at any time with
-`python -m simcode.table <out> [--tag est2] [--drift drift.npy] [--sigma_max 12] [--subset 12,14] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
+`python -m simcode.table <out> [--tag est2] [--drift drift.npy] [--crop x0,y0,size]` (the sigma rescale of the run's model).
 The crop of the selection and of the sigma-rescale tiles is the output region of the run (`--crop` of the run; read from its chunk files).
 
 Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
 
-The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--pass2_mode solve|networks`, `--stages`,
-`--ref_pattern` for a comparison solve with a given pattern, batch sizes).
+The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--stages pass1,pattern,pass1_solve,pass2`,
+the networks and calibrations, batch sizes).
 
 Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. Pass 2
 adds about 25 s per chunk.

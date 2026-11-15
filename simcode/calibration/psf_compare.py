@@ -1,4 +1,4 @@
-"""(2026-11-11 in-situ 3D PSF) Compare psf_heldout outputs on the SAME held-out samples.
+"""(2026-11-11 in-situ 3D PSF) Compare psf_heldout outputs (archive-2026-11-15:simcode/calibration/psf_heldout.py) on the SAME held-out samples.
 Per model: paired held-out NLL difference vs the first (reference) file (total, per sample, z = total / SE), and the residual
 second moments ddM = dM(data) - dM(model) (dM = Mxx - Myy, px^2; ratio of sums over samples, bootstrap SE over samples)
 overall / per pattern angle / per aperture, the angle contrast (angle 1 - angle 0), the radial width ratio W/S data / model, and a

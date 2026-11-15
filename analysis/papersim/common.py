@@ -117,7 +117,7 @@ def illum(P, x, y, frames):
 
 
 def save_pattern_files(P, nframes, d):
-    """gt_pattern.pt (simcode common pattern format, for --ref_pattern / compare_pattern) and mp_gt.pickle (smlmtorch
+    """gt_pattern.pt (simcode common pattern format, for the GT-pattern diagnostic of run_simcode.py) and mp_gt.pickle (smlmtorch
     ModulationPattern, sin convention: phase_smlmtorch = phi - pi / 2, relint 1/6, pattern_frames [[0,1,2],[3,4,5]])"""
     import torch
     G = dict(k=torch.tensor(P['k'], dtype=torch.float32), phi=torch.tensor(P['phi'], dtype=torch.float32),

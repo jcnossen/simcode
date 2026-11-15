@@ -9,8 +9,9 @@ Zoom AOIs: the preprint's (paper_common.ZOOMS) for 1809/2 and 2.5 nM/2; 20 nM/2:
 on the union of the 4 methods' sets (the same boxes for every method; written to <out>_values.json).
 
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM_2|20nM_2> [--nframes N] [--tag t]
-          [--smlm p] [--sf p] [--decode p] [--v2 p] [--aoi auto]
-  defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz, v2/locs_p2.npz}; output out/paper2/fig/<ds>[_<tag>].*"""
+          [--smlm p] [--sf p] [--decode p] [--v2 <run dir or table>] [--v2_sigma_max nm] [--aoi auto]
+  defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz, v2 (run directory: locs_p2)}; v2 rows: sel, or with
+  --v2_sigma_max the paper's selection at that threshold (Dataset.select); output out/paper2/fig/<ds>[_<tag>].*"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -66,11 +67,12 @@ def main():
     ap.add_argument('--v1', default=None, help="opt-in 5th method: the preprint's SIMCODE localizations (merged table, e.g. "
                     "out/paper/<ds>/published/sfhd-ndi+smlm.hdf5), through the same fair protocol; v2 is then labelled 'SIMCODE v2'")
     ap.add_argument('--note', default='', help='extra footnote line (e.g. a provisional marker)')
+    ap.add_argument('--v2_sigma_max', type=float, default=None, help="nm: v2 rows = the paper's selection at this threshold (default: the rows sel)")
     ap.add_argument('--aoi', default=None, help="'auto' = zoompick crossings (default for 20nM_2)")
     a = ap.parse_args()
     S = SETS[a.dataset]; F = a.nframes or S['nframes']
     dflt = dict(smlm=f'{P2}/{a.dataset}/smlm/smlm.npy', sf=f'{P2}/{a.dataset}/sf/sf.hdf5',
-                decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2/locs_p2.npz')
+                decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2')
     paths = {k: getattr(a, k) or dflt[k] for k in KINDS}       # the 4 reprocessed methods
     name = a.dataset + (f'_{a.tag}' if a.tag else '')
     out = f'{P2}/fig/{name}'; os.makedirs(f'{P2}/fig', exist_ok=True)
@@ -80,7 +82,7 @@ def main():
     NM = len(LABELS)
     res, dsets = [], []
     for lab, k in zip(LABELS, KINDS):
-        T = FF.load('sf' if k == 'v1' else k, paths[k])
+        T = FF.load('sf' if k == 'v1' else k, paths[k], **(dict(v2_sigma_max=a.v2_sigma_max) if k == 'v2' else {}))
         keep = T['f'] + 6 <= F
         T = {kk: v[keep] for kk, v in T.items()}
         R = FF.evaluate(T, F, drift_cache=f'{out}_{k}_drift.npy')

@@ -7,8 +7,8 @@ px (pixel centres at integers, x = column; z in px of the lateral pixel size), `
 `n_frames` = frames covered, `photons`, `bg`, `id`, any further field [n, ...]; metadata `pixel_nm`, `image_size`,
 `n_frames`, ...; `ds.save('x.hdf5')` / `Dataset.load('x.hdf5')`.
 
-`simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories, the v2 table `.npz` of `simcode.run` /
-`simcode.table`, the earlier SIMCODE npz save, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
+`simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories; the tables of `simcode.run` / `simcode.table` are files of
+this format, `locs_p*.hdf5`, with the metadata `pixel_nm`, `crop`, `tag`, `info`; the `.npz` tables of runs before 2026-11-15, the earlier SIMCODE npz save, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
 selection `select()` (docs/USAGE.md). A selection is not stored: it is computed when needed.
 
 ## SIMCODE's fields and metadata
@@ -35,7 +35,7 @@ A v2 table (SIMCODE v2, `simcode/table.py`) in this layout:
 | `strict_u`, `strict` | | [n] | tables before 2026-11-14 only; unused |
 
 Metadata added by the loaders: `pixel_nm` (the table's px_nm), `crop` [x0, y0, size] (output region of the run; the
-selection's region), `sigma_max` (the run's selection threshold, nm), `info` (the table's info json), `run_config` (the run
+selection's region), `sigma_max` (npz tables before 2026-11-15: the run's selection threshold, nm), `tag` (est / est2), `info` (the table's info json), `run_config` (the run
 record), `model`, `pass` (1 / 2), `n_frames`, `image_size`, `source`, `format`; `selection` after `select()`.
 
 Other sources:

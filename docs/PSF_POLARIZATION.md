@@ -185,7 +185,7 @@ So the per-axis PSF matters for simulation realism (network training, PSF-shape 
 or the position bias of a fit.
 
 **Intensity side (the pattern information of SIMFLUX / SIMCODE).** This compares the per-axis PSFs with their average. Script:
-`analysis/psf3d/intensity.py`; results in `out/psf3d/intensity/{m1809,m25}.json`. All numbers are on expected (noise-free) data with
+`archive-2026-11-15:analysis/psf3d/intensity.py`; results in `out/psf3d/intensity/{m1809,m25}.json`. All numbers are on expected (noise-free) data with
 Poisson MLE. The grid is the sub-pixel grid above, z 0.02 / 0.06 / 0.12 µm, 8×8 and 11×11 ROIs, 1000 and 300 ph/frame, bg 10.
 
 1. **Per-frame intensity CRLB** (position known; I and bg free), per-axis truth vs average:

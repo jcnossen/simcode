@@ -19,7 +19,7 @@ directory were calculated. Written by simcode.run at the start (status 'running'
   pattern       summary of the estimated pattern (pitch, angle, depth, phases, drift range) + sha256 of pattern_est.pt
   selection     per table (locs_p1, locs_p2): the rule and the counts per rule
   counts, timing
-  outputs       table and subset files: size, arrays_sha256 (hash of the array contents: an .npz holds zip time stamps, so
+  outputs       table files: size, arrays_sha256 (hash of the array contents: an .npz holds zip time stamps, so
                 the file hash differs between identical runs), written_by ('run' or 'steps[i]')
   steps         later work on the directory, appended by its tool (simcode.table: table / selection rebuild with its settings)
 
@@ -45,8 +45,7 @@ REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
                'windows of 6 frames starting every 3 frames')
 # arguments of simcode.run that define the results (the others: out, claim, redo, config)
-RERUN_KEYS = ('movie', 'calib', 'model', 'cal_kind', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'sigma_max', 'subset', 'format',
-              'sig_u', 'prefetch', 'min_free_gb')
+RERUN_KEYS = ('movie', 'calib', 'model', 'cal_kind', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb')
 
 
 def now():
@@ -82,8 +81,15 @@ def sha256(path, cache=True):
 
 
 def arrays_sha256(path):
-    """hash of the contents of an .npz (keys sorted; name, dtype, shape, bytes): equal for identical tables, unlike the file hash"""
+    """hash of the contents of an .npz, or of the /localizations fields of a table .hdf5 (keys sorted; name, dtype, shape,
+    bytes): equal for identical tables, unlike the file hash"""
     h = hashlib.sha256()
+    if path.endswith('.hdf5'):
+        import h5py
+        with h5py.File(path, 'r') as f:
+            for k in sorted(f['localizations']):
+                a = np.ascontiguousarray(f['localizations'][k][...]); h.update(f'{k}|{a.dtype.str}|{a.shape}|'.encode()); h.update(a.data)
+        return h.hexdigest()
     with np.load(path, allow_pickle=False) as d:
         for k in sorted(d.files):
             a = np.ascontiguousarray(d[k]); h.update(f'{k}|{a.dtype.str}|{a.shape}|'.encode()); h.update(a.data)
@@ -102,8 +108,9 @@ def file_record(path, hash=True):
 
 
 def output_record(path, written_by='run'):
-    r = file_record(path, hash=not path.endswith('.npz'))
-    if path.endswith('.npz') and not r.get('missing'): r['arrays_sha256'] = arrays_sha256(path)
+    tab = path.endswith(('.npz', '.hdf5'))
+    r = file_record(path, hash=not tab)
+    if tab and not r.get('missing'): r['arrays_sha256'] = arrays_sha256(path)
     r['written_by'] = written_by
     return r
 
@@ -290,7 +297,8 @@ def selection_summary(info):
     """locs_p*_info.json -> the selection outcome: rule + counts per rule"""
     g = info.get
     return dict(base='rows with score p >= 0.63 inside the crop', crop=g('crop'), px_nm=g('px_nm'),
-                main=dict(rule='p >= 0.63, inside the crop, max(sx, sy) * px_nm <= sigma_max', sigma_max_nm=g('sigma_max'), n=g('n_main')),
+                main=dict(rule='p >= 0.63, inside the crop, max(sx, sy) * px_nm <= 12 nm (applied at load: Dataset.select)',
+                          sigma_max_nm=g('sigma_max', 12.0), n=g('n_main')),
                 sel=dict(rule='phase-calibrated detection selection', n=g('n_sel')),
                 counts=dict(n_rows=g('n_rows'), n_good=g('n_good'), n_good_crop=g('n_good_crop')),
                 sig_u=g('sig_u') or '', drift=g('drift') or '', tag=g('tag'))
@@ -303,7 +311,7 @@ def results(out, written_by='run'):
     for name in ('locs_p1', 'locs_p2'):
         f = os.path.join(out, name + '_info.json')
         if os.path.exists(f): R['selection'][name] = selection_summary(json.load(open(f)))
-        for q in sorted(glob.glob(os.path.join(out, name + '*.npz')) + glob.glob(os.path.join(out, name + '.csv')) + glob.glob(os.path.join(out, name + '.hdf5'))):
+        for q in sorted(glob.glob(os.path.join(out, name + '.hdf5'))):
             R['outputs'][os.path.basename(q)] = output_record(q, written_by)
     try:
         RT = json.load(open(os.path.join(out, 'runtime.json')))
@@ -382,7 +390,7 @@ def update(out, fn):
 
 def _inputs_key(R):
     """what defines the results of a record: result settings, fixed values, overrides, file hashes"""
-    S = {k: R.get('settings', {}).get(k) for k in RERUN_KEYS if k not in ('prefetch', 'min_free_gb', 'format', 'subset')}
+    S = {k: R.get('settings', {}).get(k) for k in RERUN_KEYS if k != 'min_free_gb'}
     H = {k: v.get('sha256') for k, v in R.get('model', {}).get('files', {}).items()}
     H['calib'] = R.get('calib', {}).get('sha256'); H['maps'] = (R.get('calib', {}).get('camera_maps') or {}).get('sha256')
     return json.dumps([S, R.get('fixed'), R.get('overrides'), H], sort_keys=True, default=str)
@@ -460,14 +468,11 @@ def append_step(out, step, outputs=None, selection=None):
 def rerun_argv(R):
     """the simcode.run arguments that reproduce a record (without --out, --claim, --redo)"""
     S = dict(R['settings']); a = []
-    if S.get('subset'):
-        # records made before 2026-11-14 name the subsets by rule ('main,u,strict'); the rules u and strict no longer exist
-        sm = S.get('sigma_max') if S.get('sigma_max') is not None else 12.0
-        t = [f'{float(sm):g}' if v == 'main' else v for v in str(S['subset']).split(',') if v and v not in ('u', 'strict', 'sel', 'good', 'all')]
-        S['subset'] = ','.join(t)
+    # settings of earlier records that are no longer options (2026-11-15: format, subset, sigma_max, prefetch, sig_u = the
+    # model's) are not passed; an earlier record's crop is (its default 5,5,110 was written into the record)
     for k in RERUN_KEYS:
         v = S.get(k)
-        if v is None or (v == '' and k != 'sig_u' and k != 'subset') or (k in ('nframes',) and not v): continue
+        if v is None or v == '' or (k in ('nframes',) and not v): continue
         a += ['--' + k, str(v)]
     return a
 
@@ -518,8 +523,9 @@ def _old_run_args(argv):
     from simcode import run as RUN, table as SP
     ap = RUN.build_parser()
     for k in ('--det', '--head', '--cal', '--p2_det', '--p2_head', '--p2_cal', '--netset', '--autoc', '--autoc_fast', '--cand_pmin', '--fast',
-              '--compile', '--compile_head', '--strict_q', '--u_max'):
+              '--compile', '--compile_head', '--strict_q', '--u_max', '--format', '--prefetch', '--subset', '--sigma_max'):
         ap.add_argument(k, default='')
+    ap.add_argument('--sig_u', default='set')
     ap.add_argument('--pass2', action='store_true')
     a = ap.parse_known_args(argv)[0]
     a.model = a.model or a.netset
@@ -532,8 +538,6 @@ def _old_run_args(argv):
         setattr(a, r, getattr(a, old) or N[r])
     a.cal_pass2 = a.p2_cal or N[f'cal_{a.cal_kind}_pass2']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
-    if a.sigma_max is None: a.sigma_max = SP.SIGMA_MAX_NM
-    if a.subset is None: a.subset = f'{a.sigma_max:g}'
     return a, N, config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
 
 
@@ -565,7 +569,9 @@ def backfill(out, write_file=True):
                      emitter_pass2=RTJ['p2']['head'], cal_pass2=RTJ['p2']['cal'])
         steps = []; sel = {}
         for t, g, mod, av in stricts:
-            sa = SP.build_parser().parse_known_args(av)[0]         # (options of that time that no longer exist are ignored)
+            sp = SP.build_parser()                                 # (options of that time that no longer exist are ignored)
+            for k in ('--sig_u', '--format', '--sigma_max', '--subset'): sp.add_argument(k, default='')
+            sa = sp.parse_known_args(av)[0]
             su = config.resolve(sa.sig_u) if sa.sig_u else ''
             steps.append(dict(step='strict', time=t, command=f'python -m {mod} ' + shlex.join(av), reconstructed=True,
                               settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, format=sa.format, crop=sa.crop),
@@ -638,7 +644,7 @@ def show(R):
          f'calib   {(R.get("calib") or {}).get("path")}  sha256 {str((R.get("calib") or {}).get("sha256"))[:12]}',
          f'model   {M.get("name")}' + ('' if M.get('files_are_the_models', True) else '  (files overridden)')]
     L += [f'  {k:9s} {v.get("path")}  sha256 {str(v.get("sha256"))[:12]}' for k, v in M.get('files', {}).items()]
-    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")} sigma_max {S.get("sigma_max")} sig_u {S.get("sig_u")!r}',
+    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")} sig_u {S.get("sig_u")!r}',
           f'code    {c.get("package")} {c.get("version")} git {str(c.get("git_commit") or c.get("git_commit_inferred"))[:10]} dirty {c.get("git_dirty")}; '
           f'torch {e.get("torch")} cuda {e.get("cuda")} gpu {e.get("gpu")} host {e.get("host")}']
     for n, s in (R.get('selection') or {}).items():

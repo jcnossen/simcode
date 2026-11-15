@@ -16,12 +16,12 @@ for k in smlm sf decode; do
 done
 cp -n $F/1809_2_fig3_matched_u045_internal_v1_drift.npy $F/1809_2_fig3_matched_${T}_internal_v1_drift.npy
 cp -n $F/2.5nM_2_fig4_internal_v1_drift.npy $F/2.5nM_2_fig4_matched_${T}_internal_v1_drift.npy
-python analysis/paper/fig_exp_new.py 1809_2 --tag fig3_matched_$T --v2 out/paper2/1809_2/v2_matched/locs_p2_$T.npz --note "$N"
+python analysis/paper/fig_exp_new.py 1809_2 --tag fig3_matched_$T --v2 out/paper2/1809_2/v2_matched --v2_sigma_max $S --note "$N"
 cp $F/1809_2_fig3_matched_${T}_v2_drift.npy $F/1809_2_fig3_matched_${T}_internal_v2_drift.npy
-python analysis/paper/fig_exp_new.py 1809_2 --tag fig3_matched_${T}_internal --v2 out/paper2/1809_2/v2_matched/locs_p2_$T.npz \
+python analysis/paper/fig_exp_new.py 1809_2 --tag fig3_matched_${T}_internal --v2 out/paper2/1809_2/v2_matched --v2_sigma_max $S \
   --v1 out/paper/1809_2/published/simflux_5.5ms_500mW/sfhd-ndi+smlm.hdf5 --note "$NI"
-python analysis/paper/fig_exp_new.py 2.5nM_2 --tag fig4_matched_$T --v2 out/paper2/2.5nM_2/v2_matched/locs_p2_$T.npz --note "$N"
+python analysis/paper/fig_exp_new.py 2.5nM_2 --tag fig4_matched_$T --v2 out/paper2/2.5nM_2/v2_matched --v2_sigma_max $S --note "$N"
 cp $F/2.5nM_2_fig4_matched_${T}_v2_drift.npy $F/2.5nM_2_fig4_matched_${T}_internal_v2_drift.npy
-python analysis/paper/fig_exp_new.py 2.5nM_2 --tag fig4_matched_${T}_internal --v2 out/paper2/2.5nM_2/v2_matched/locs_p2_$T.npz \
+python analysis/paper/fig_exp_new.py 2.5nM_2 --tag fig4_matched_${T}_internal --v2 out/paper2/2.5nM_2/v2_matched --v2_sigma_max $S \
   --v1 out/paper/2.5nM_2/published/sfhd-ndi+smlm.hdf5 --note "$NI"
 echo FIGS DONE

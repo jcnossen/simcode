@@ -1,5 +1,5 @@
 """
-Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated --pass2_mode solve; the
+Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated stages pass1, pass1_solve; the
 pipeline runs the fast versions in front_fast.py, these are the test oracle). No linear-intensity stage anywhere: no
 pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
 

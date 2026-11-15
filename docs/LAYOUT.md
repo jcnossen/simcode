@@ -38,8 +38,8 @@ simcode/
   config.py                   all paths (models, data, outputs, 4Pi work directory and data, external DME) from SIMCODE_* variables / simcode.json / defaults; model_set(name or model folder)
   models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
                               cal_sim_pass2, cal_real_pass2, sig_u, psf), the default model, the paper's datasets (_production)
-  dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
-  table.py                    localization table of a run directory (with the model's sigma rescale), the paper's selection select(), subset files; CLI simcode-table
+  dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
+  table.py                    localization table of a run directory (with the model's sigma rescale), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
   detector/
     __init__.py               package doc
     model.py                  Detector: the U-Net detector of pass 1 and pass 2 (illum=True: + illumination inputs, zero-initialised from pass 1); load() of every detector checkpoint
@@ -69,8 +69,6 @@ simcode/
     front_fast.py             the pipeline's code path: queued fixed-size batches for pass 1 / pass 2 (Pass1FrontFast, Pass2FrontFast) and the chunk-wide pattern solve
     pattern_estimation.py     the illumination pattern from the pass-1 rows (k, per-step phases, depth, relative intensities, per-angle phase drift)
     pattern_field.py          per-cell phase map and smooth depth field on top of the global pattern (analysis only)
-    compare_pattern.py        an estimated pattern against a reference pattern, in rad and nm
-    dedup.py                  output modes for overlapping windows (disjoint windows, merged chains)
     gate_dump.py              raw network outputs of pass 1 / pass 2 on the gate scenes (input of a model's calibration fit): python -m simcode.processing.gate_dump
   simulate/
     __init__.py               package doc
@@ -80,26 +78,17 @@ simcode/
     simulator.py              Simulator: the calibrated physical model (PSF LUT rendering, calibration json, camera)
     crlb.py                   scene generator and multi-emitter CRLB of the benchmark scenes
     gate_layouts.py           emitter layouts of the gate scenes (grids, pairs, Poisson scenes, wide brightness) and the pattern-estimate error model
-    emitters.py               emitter lists with DNA-PAINT kinetics on the crlb scene model (the first detector training data)
     psf_perturbation.py       bank of perturbed PSF LUTs (width, aberrations, focus) and camera errors
   benchmark/
     __init__.py               package doc
     gate.py                   the gate suite: fixed simulated scenes (isolated, pairs, realistic) through a front end: python -m simcode.benchmark.gate
     gate_report.py            detection, precision and intensity metrics of gate outputs
     gate_report_detector_matched.py  gate report with the precision targets matched on the detector position
-    crlb_nuisance.py          multi-emitter CRLB with intensity nuisance parameters for the gate scenes
-    preprint_gate.py          the preprint's SIMCODE model on the gate scenes (comparison)
   calibration/
     __init__.py               default input / output locations of the in-situ calibration
-    README.md                 the in-situ calibration recipe
     extract_tracks.py         isolated emitter tracks (raw regions over consecutive frames)
-    fit_psf_tracks.py         stage A: PSF from the tracks (intensities and bg in closed form)
-    fit_pattern.py            stage B: illumination pattern from the track intensities
-    fit_psf_sums.py           PSF refit on bright multi-frame sums
-    camera_gain.py            camera gain and read noise from the movie
     camera_maps.py            per-pixel offset and read-noise maps from the movie
-    psf_heldout.py            held-out evaluation of a fitted PSF
-    psf_compare.py            several PSF fits compared on the same samples
+    psf_compare.py            several PSF fits compared on the same samples (analysis/psf3d/summary.py)
   pipeline/
     __init__.py               the automatic per-acquisition pipeline (LocalizationPipeline, ConfigDict)
     __main__.py               python -m simcode.pipeline <config>
@@ -109,7 +98,7 @@ simcode/
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
-    psf_fit.py                in-situ PSF fit of stage psf (fit_psf_tracks as a function; spline-table fit)
+    psf_fit.py                in-situ PSF fit of stage psf (torch_psf.insitu.fit_tracks with the sample selection and camera conversion; spline-table fit)
     psf_stage.py              stage psf: multi-start in-situ PSF, line blur, photoselection, held-out, calibration files
     training.py               stage train: a PSF-matched model with the recipe of models/README.md, gate dumps, calibrations, acceptance, model.json
     acceptance.py             stage train acceptance on the gate dumps (sigma calibration, pass-2 vs pass-1 RMS / CRLB)
@@ -161,7 +150,6 @@ simcode/
     cfgdict.py                ConfigDict: nested settings with attribute access, deep merge, freeze, yaml / json / Python loading
     proctitle.py              recognizable process names in nvidia-smi / ps
     spatial_hash.py           GPU / CPU neighbour search (pattern estimation, autoc, pass-1 linking)
-    neighbours.py             small nearest-neighbour helper
 ```
 
 ## Checkpoints
@@ -186,15 +174,17 @@ heads give bit-identical outputs with the code before and after the 2026-11-15 r
   - `fourpi/`: 4Pi calibration chain, the v10 trainers and gates, post-processing, real-data comparisons, the simulated showcase.
   - `fourpi_classical/`: the classical 4Pi-SIMFLUX pipeline (published-style detection and fits, pixel MLE).
   - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF files).
-  - `gate/`, `figures/`, `evalproto/`, `hd_compare/`, `simreal/`, `tput/`, `dme/`, `psfshape/`, `z3d/`, `p2generic/`, `nanoruler/`: benchmarks and development studies; `results/` holds text snapshots of their outputs.
+  - `pixbias/`, `crlbcmp/`, `ablation_cov/`, `p2generic/`, `selection_global/`: the pixel-bias, CRLB, ablation, generic-pass-2 and selection analyses of the paper / SI; `simreal/`: the benchmark sim movies (sigma-rescale fits); `z3d/`: 3D models (acceptance, model-folder swap); `figures/`: zoom picking and skeletons of the figures; `auto/`: calibration comparison of the automatic pipeline; `results/`: text snapshots cited by docs/RESULTS.md
+  - `maintenance/`: `rename_model_keys.py` (model.json key names), `cleanup_outputs.py` (out/ + models/ clean-up, dry run by default)
+  - archived on 2026-11-15 (git tag `archive-2026-11-15`, `docs/ARCHIVE.md`): nanoruler, tput, hd_compare, evalproto, gate, dme, psfshape, most of figures, the development parts of baselines / papersim / simreal / psf3d / z3d / fourpi; deleted: zimflux.
 - `models/`: calibrations (`calib/`, `insitu/`), model folders (`model.json`, calibrations, README); network weights are not in git (`models/README.md`).
 - `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_cfgdict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
-- `docs/`: this file, method, evaluation, results, usage, dataset format, automatic pipeline, PSF polarization note, the cleanup plan and log.
+- `docs/`: this file, method, evaluation, results (development phase), usage, dataset format, automatic pipeline, PSF polarization note, the cleanup log, the cleanup candidate list and the archive index (`ARCHIVE.md`).
 
 ## Renamed (2026-11-15)
 
 No aliases or old names remain. Checkpoint files are unchanged (read by format readers); run records, model.json files and
-CLI flags use the new names; run-output file names (pass1_<f0>.npz, pass2_est2_<f0>.npz, locs_p*.npz) and the gate-dump
+CLI flags use the new names; run-output file names (pass1_<f0>.npz, pass2_est2_<f0>.npz; the tables locs_p*.npz became locs_p*.hdf5 on 2026-11-15) and the gate-dump
 column names are unchanged.
 
 | before | now |
@@ -206,7 +196,7 @@ column names are unchanged.
 | `core.py`, `hd/msolve.py`, `hd/msolve_fast.py`, `autoc.py`, `hd/sc.py` (sc_solve, z conditioning) | `solve/pattern.py`, `solve/solve.py` (solve_emitters), `solve/solve_fast.py` (solve_emitters_fast), `solve/autoc.py`, `solve/z_conditioning.py` |
 | `p2/illum.py` | `pattern/illumination.py` |
 | `hd/realsim.py` RealSim, `hd/data.py` Gen + `p2/data.py` Gen2 + `det/up2.batch`, `det/data.py`, `det/psfpert.py`, `sim/` | `simulate/acquisition.py` AcquisitionSim, `simulate/batches.py` TrainingBatches (emitter_batch, illumination_batch, detector_batch), `simulate/targets.py`, `simulate/emitters.py`, `simulate/psf_perturbation.py`, `simulate/simulator.py`, `simulate/crlb.py`, `simulate/gate_layouts.py` (simtools.py) |
-| `hd/gate*.py`, `eff/crlb_nuis.py`, `eff/simcode_gate.py` | `benchmark/gate*.py`, `benchmark/crlb_nuisance.py`, `benchmark/preprint_gate.py` |
+| `hd/gate*.py`, `eff/crlb_nuis.py`, `eff/simcode_gate.py` | `benchmark/gate*.py`, `benchmark/crlb_nuisance.py`, `benchmark/preprint_gate.py` (the last two removed 2026-11-15, `docs/ARCHIVE.md`) |
 | `insitu/`, `evalproto/` (lib.py), `nn/`, `fileio/`, `fastutil.py`, `strict.py` | `calibration/`, `evaluation/` (metrics.py), `layers/`, `io/`, `util/compile.py`, `table.py` |
 | `fourpi/realsim4pi.py` RealSim4Pi | `fourpi/acquisition4pi.py` AcquisitionSim4Pi |
 | Pass1SC, Pass1SCFast, Pass2P2, Pass2P2Fast, run_chunk_pass2 | Pass1Front, Pass1FrontFast, Pass2Front, Pass2FrontFast, run_chunk_pattern_solve |
@@ -215,11 +205,11 @@ column names are unchanged.
 | `simcode-strict` | `simcode-table` |
 | model definition keys (models.json, model.json) `det`, `head`, `p2_det`, `p2_head`, `p2_cal_sim`, `p2_cal_real`; `config.DET` / `HEAD` / `P2_DET` / `P2_HEAD` / `CAL_P1_*` / `CAL_P2_*` | `detector`, `emitter`, `detector_pass2`, `emitter_pass2`, `cal_sim_pass2`, `cal_real_pass2`; `config.DETECTOR` / `EMITTER` / `DETECTOR_PASS2` / `EMITTER_PASS2` / `CAL_REAL` / `CAL_SIM` / `CAL_REAL_PASS2` / `CAL_SIM_PASS2` / `CAL_AUTOC*` (files with the old keys are refused; `analysis/maintenance/rename_model_keys.py` rewrites them) |
 | run record keys (settings / model files) `det`, `head`, `p2_det`, `p2_head`, `p2_cal`, `sig_u_p1/2`; format `simcode.run_config/1` | `detector`, `emitter`, `detector_pass2`, `emitter_pass2`, `cal_pass2`, `sig_u_pass1/2`; format `simcode.run_config/2` (format-1 records are converted when read, `util/runconfig.upgrade`) |
-| `run_uncalibrated --frontend sc / sc2p`, `--sc_det`, `--sc_head`, `--sc_cal`, `--p2_det`, `--p2_head`, `--p2_cal`, `--head_batch` | `--pass2_mode solve / networks`, `--detector`, `--emitter`, `--cal`, `--detector_pass2`, `--emitter_pass2`, `--cal_pass2`, `--emitter_batch` |
+| `run_uncalibrated --frontend sc / sc2p` (2026-11-15: stages `pass1_solve` / `pass2` instead), `--sc_det`, `--sc_head`, `--sc_cal`, `--p2_det`, `--p2_head`, `--p2_cal`, `--head_batch` | `--pass2_mode solve / networks`, `--detector`, `--emitter`, `--cal`, `--detector_pass2`, `--emitter_pass2`, `--cal_pass2`, `--emitter_batch` |
 | `simcode.benchmark.gate --det`, `--sc`, `--sccal`; `simcode.emitter.train --det` | `--detector`, `--emitter`, `--cal`; `--detector` |
 | front constructors `Pass1Front(calib, head=, det=)` (attributes `.head`, `.det`), `QueuedFront(det, heads)`; `emitter.model.head_z` | `Pass1Front(calib, emitter=, detector=)` (`.emitter`, `.detector`), `QueuedFront(detector, emitters)`; `emitter_z` |
 | pipeline training stages det, hd, p2det, p2det_c, p2head, p2headL, p2headL2 (`train.steps` / `init` / `extra` keys) | detector, emitter, detector_pass2, detector_pass2_cont, emitter_pass2, emitter_pass2_long, emitter_pass2_final (`extra`: detector, emitter, pass2) |
 | batch keys `patt_p2`, `illum_p2` | `patt_input`, `illum_input` |
 | checkpoint architecture tag `'sc4n'` | `'emitter_net'` in new checkpoints (`emitter.model.ARCH`; the stored `'sc4n'` is read through `ARCH_TAGS`); new detector checkpoints carry `'detector'` |
-| `calibration/fit_insitu2.py`, `benchmark/gate_report_xdet.py` | `calibration/fit_psf_tracks.py`, `benchmark/gate_report_detector_matched.py` |
+| `calibration/fit_insitu2.py`, `benchmark/gate_report_xdet.py` | `calibration/fit_psf_tracks.py` (archived 2026-11-15), `benchmark/gate_report_detector_matched.py` |
 | output paths `<out>/sc4/heldout{4,5}.pt`, `<out>/p2/fe`, `<out>/p2/long` | `<out>/emitter_heldout/heldout{4,5}.pt`, `<out>/gate_dumps`, `<out>/pass2_gate/long` |

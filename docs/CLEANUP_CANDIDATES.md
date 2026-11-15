@@ -1,4 +1,21 @@
-# Cleanup candidates (2026-11-15; nothing deleted yet)
+# Cleanup candidates (2026-11-15)
+
+**Decided and done (user, 2026-11-15).** Code, docs and git-tracked files: done on branch `rename` (archived files are in
+the git tag `archive-2026-11-15`, index `docs/ARCHIVE.md`; log `docs/CLEANUP_LOG.md`, section "2026-11-15: processing options
+and clean-up"). out/ and the models directory: `python analysis/maintenance/cleanup_outputs.py` (dry run; `--apply` after the
+merge). The decisions on top of the categories below:
+
+- zimflux: code and outputs deleted (raw data stay)
+- temporary / development outputs (category delete): deleted
+- nanoruler: raw data kept; code and outputs archived (not deleted); `mkmodel.py` and the SIMCODE part of `ev_p12sim.py`
+  moved to `analysis/p2generic/` (`mkmodel.py`, `pass12_sim.py`), which still needs them
+- tput: archived
+- uncertain items: `selection_global/run_papersim.sh` keep; compare / hd_compare / simreal / evalproto archived together
+  (the simreal items of category archive; the kept simreal files `sim_movie_r.py`, `recipes.sh`, the field files stay);
+  `docs/RESULTS.md` 'Reproduce' paths point to the archive tag; the nr80 recipe archived
+- the categories below as listed otherwise (keep / archive / delete)
+
+The list as it was written follows (nothing in it is changed).
 
 Candidate list for the clean-up after the package reorganisation. Criterion: needed for
 (a) the SIMCODE v2 paper figures and tables (real-data figures 1809_2, 2.5 nM, 20 nM; simulation figures; the CRLB /

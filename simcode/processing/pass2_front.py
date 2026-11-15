@@ -1,5 +1,5 @@
 """
-Pipeline pass 2 with the pattern-aware networks (run_uncalibrated --pass2_mode networks). Pass 1 (pattern-free detector + emitter
+Pipeline pass 2 with the pattern-aware networks (run_uncalibrated stage pass2). Pass 1 (pattern-free detector + emitter
 network) and the pattern estimation are unchanged (simcode/processing/front.py, pattern_estimation.py on the network
 intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   illumination maps of the ESTIMATED pattern (pattern_est.pt -> processing.common.pattern_frames, loaded-region coordinates)

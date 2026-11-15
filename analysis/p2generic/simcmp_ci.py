@@ -5,6 +5,7 @@ windows by good rows (A - B with CI); also the 'fully on' windows (all 6 frames 
 usage: python simcmp_ci.py <sim_dir> <est|est2> <run A> <run B> [px_nm=108.33]"""
 import sys
 import numpy as np
+from simcode.dataset import Dataset
 from simcode.evaluation import metrics as E
 from simcode.util.proctitle import set_title
 set_title('p2gen-simcmp')
@@ -13,7 +14,7 @@ G = dict(np.load(f'{sim}/sim_gt.npz', allow_pickle=True)); G['nf'] = int(G['nf']
 GW = E.gt_windows_fast(G, grid=3); tg = GW[:, 5] > 0
 R = {}
 for nm, run in (('A', A), ('B', B)):
-    T = dict(np.load(f'{run}/locs_p{1 if tag == "est" else 2}.npz')); k = T['good'].astype(bool)
+    T = Dataset.from_run(run, pass_=1 if tag == 'est' else 2, info=False).columns(); k = T['good'].astype(bool)
     gi = E.match_fast(GW, T['frame'][k].astype(np.int64), T['x'][k], T['y'][k], r=1.0)
     e = np.c_[T['x'][k] - GW[np.maximum(gi, 0), 2], T['y'][k] - GW[np.maximum(gi, 0), 3]]; e[gi < 0] = np.nan
     e -= np.nanmedian(e, 0)

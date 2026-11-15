@@ -4,10 +4,10 @@ Rows per method ('full' = what each method outputs, as the preprint scored it):
   smlm    <run>/base/smlm/smlm.npy (chi^2-filtered, a window at every frame)
   sf      <run>/base/sf/sf.hdf5 (pattern estimated from SMLM)      sf_gtp  <run>/base/sf_gtp/sf.hdf5 (ground-truth pattern)
   decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6)
-  v2sig   <run>/v2_<model>/locs_p2_sim.npz, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
+  v2sig   <run>/v2_<model>/locs_p2.hdf5, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
           p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.table.SIGMA_MAX_NM
           (simcode.table.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
-          (run_simcode.py --gt_diag, locs_p2gt_sim.npz; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
+          (run_simcode.py --gt_diag, gt_pattern/locs_p2.hdf5; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
           (Removed 2026-11-14: the strict-subset row v2, the u <= 0.45 row v2q45 and the strict GT diagnostic v2gt.)
   v1      <run>/v1/locs.npz: the preprint's SIMCODE, merged 'sfhd-ndi+smlm' rows (run_simcode_v1.py), its MVU sigma
 Metrics:
@@ -82,24 +82,16 @@ def load_method(kind, path):
         return dict(x=z['mrg_x'].astype(np.float64), y=z['mrg_y'].astype(np.float64), f=z['frame'][i].astype(np.int64),
                     sx=z['mrg_sx'].astype(np.float64), sy=z['mrg_sy'].astype(np.float64), photons=z['ndi_photons'].astype(np.float64))
     if kind in ('v2sel', 'v2sig', 'v2siggt'):
-        z = np.load(path)
-        if kind == 'v2sel': m = z['sel'].astype(bool)
-        else:                     # user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the field
-            from simcode import table as SP
-            m = SP.select(z, SP.SIGMA_MAX_NM, crop=v2_crop(path))
+        from simcode.dataset import Dataset
+        L = Dataset.load_table(path)
+        # v2sig: the paper's selection (user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the
+        # field = the run's crop (0, 0, W)); v2sel: the rows sel
+        L = L[L['sel']] if kind == 'v2sel' else L.select()
+        z = L.columns(); m = np.ones(len(z['x']), bool)
         return dict(x=z['x'][m].astype(np.float64), y=z['y'][m].astype(np.float64), f=z['frame'][m].astype(np.int64),
                     sx=z['sx'][m].astype(np.float64), sy=z['sy'][m].astype(np.float64), photons=z['photons'][m].astype(np.float64))
     import frc_fair
     return frc_fair.load({'sf_gtp': 'sf', 'decode_sim': 'decode', 'decode_pre': 'decode'}.get(kind, kind), path)
-
-
-def v2_crop(path):
-    """output region (x0, y0, size) of a papersim v2 table: the crop of its run (run_simcode.py: (0, 0, W)), from
-    locs_sim_info.json next to it, else the run's pass-1 files"""
-    from simcode import table as SP
-    d = os.path.dirname(os.path.abspath(path)); f = os.path.join(d, 'locs_sim_info.json')
-    if os.path.exists(f) and json.load(open(f)).get('crop'): return tuple(float(v) for v in json.load(open(f))['crop'])
-    return SP.run_crop(d)
 
 
 def u_all(x, y, sig, base, tile=10.0):
@@ -119,12 +111,12 @@ def u_all(x, y, sig, base, tile=10.0):
 def method_paths(run, model='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
              decode=f'{run}/decode/locs.npz')
-    P['v2sig'] = f'{run}/v2_{model}/locs_p2_sim.npz'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
+    P['v2sig'] = f'{run}/v2_{model}/locs_p2.hdf5'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
     P['v1'] = f'{run}/v1/locs.npz'
     P['decode_sim'] = f'{run}/decode_sim/locs.npz'
     P['decode_pre'] = f'{run}/decode_pre/locs.npz'      # the preprint's own DECODE model (decode-3f-g1.3), Gaussian-PSF reproduction      # DECODE retrained for the simulation ranges (dec_sim1809)
     P['v1gt'] = f'{run}/v1gt/locs.npz'           # diagnostic: preprint SIMCODE given the GT pattern
-    P['v2siggt'] = f'{run}/v2_{model}/locs_p2gt_sim.npz'      # diagnostic: pass 2 on the ground-truth pattern
+    P['v2siggt'] = f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
     return {k: v for k, v in P.items() if os.path.exists(v)}
 
 
@@ -282,7 +274,7 @@ def density_metrics(run, md, nframes, model, timebins=120, only=None):
 
 
 def moving_metrics(run, md, nframes, model, bs=1000, thr_nm=(10, 20, 40), only=None):
-    g = json.load(open(os.path.join(md, 'gen.json'))); W = g['W']
+    g = json.load(open(os.path.join(md, 'gen.json')))
     traj = np.load(os.path.join(md, 'traj.npy'), mmap_mode='r'); tstep = int(g['traj_step'])
     nb = nframes // bs
     R = dict(run=run, movie=md, nframes=nframes, blocks=nb, block=bs, traj_step=tstep, thresholds_nm=list(thr_nm), methods={})

@@ -96,19 +96,6 @@ def n_params(m):
     return sum(p.numel() for p in m.parameters())
 
 
-def conv_flops(m, H, W, T=6):
-    """multiply-accumulates x 2 of all conv layers for one [1,T,H,W] window (hooks)."""
-    tot = [0]
-    def hook(mod, inp, out):
-        tot[0] += 2 * out.numel() * (mod.in_channels // mod.groups) * mod.kernel_size[0] * mod.kernel_size[1]
-    hs = [mm.register_forward_hook(hook) for mm in m.modules() if isinstance(mm, nn.Conv2d)]
-    dev = next(m.parameters()).device
-    with torch.no_grad():
-        m(torch.zeros(1, T, H, W, device=dev), torch.zeros(1, 2 * T, H, W, device=dev) if m.illum else None)
-    for h_ in hs: h_.remove()
-    return tot[0]
-
-
 def build(args=None, illum=False):
     """a new detector with the channel widths of the training arguments (defaults if absent)"""
     args = args or {}

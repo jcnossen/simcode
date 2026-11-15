@@ -3,8 +3,8 @@
 This is the protocol behind every cross-method statement in `RESULTS.md`. It was built and validated against ground truth
 on punctate repeated-site sims.
 
-- Code: `simcode/evaluation/metrics.py` (library), `analysis/evalproto/{nnlag,blockphase,covpool}.py` (scripts), and
-  `analysis/evalproto/datasets.py` (dataset spec).
+- Code: `simcode/evaluation/metrics.py` (library), `archive-2026-11-15:analysis/evalproto/{nnlag,blockphase,covpool}.py` (scripts, archived), and
+  `archive-2026-11-15:analysis/evalproto/datasets.py` (dataset spec).
 - Every script takes a dataset json that names, per set, a simcode output dir or a SIMCODE npz plus its drift; see the
   `datasets.py` docstring.
 - On the real 0.5 nM data, `nnlag.py` and `blockphase.py` reproduce the development numbers exactly.
@@ -61,11 +61,11 @@ on punctate repeated-site sims.
 ## Running it
 
 ```bash
-# dataset spec: see analysis/evalproto/datasets.py (paths to the simcode output dirs, the SIMCODE npz, the DME drifts)
-python analysis/evalproto/nnlag.py      my_dataset.json [out_dir]   # identical-row NN, lags 12-36
-python analysis/evalproto/blockphase.py my_dataset.json [out_dir]   # event-level gap300, 4 block phases, +3 nm sensitivity
-python analysis/evalproto/covpool.py    my_dataset.json [out_dir]   # coverage-matched / tile-stratified pools
+# dataset spec: see archive-2026-11-15:analysis/evalproto/datasets.py (paths to the simcode output dirs, the SIMCODE npz, the DME drifts)
+python archive-2026-11-15:analysis/evalproto/nnlag.py      my_dataset.json [out_dir]   # identical-row NN, lags 12-36
+python archive-2026-11-15:analysis/evalproto/blockphase.py my_dataset.json [out_dir]   # event-level gap300, 4 block phases, +3 nm sensitivity
+python archive-2026-11-15:analysis/evalproto/covpool.py    my_dataset.json [out_dir]   # coverage-matched / tile-stratified pools
 ```
 
 Sim datasets (`"mode": "sim"`, `"gt": <sim_gt.npz>`) add the GT decomposition. The benchmark movies come from
-`analysis/simreal/recipes.sh`, and the methods are run with `analysis/simreal/eval_movie.sh`.
+`analysis/simreal/recipes.sh`, and the methods are run with `archive-2026-11-15:analysis/simreal/eval_movie.sh`.

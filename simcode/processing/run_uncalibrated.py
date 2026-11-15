@@ -6,12 +6,14 @@ is `python -m simcode.run`, which calls this module's stages with the production
            pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/front[_fast].py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
            network intensities alone                                                (simcode/processing/pattern_estimation.py)
-  pass2    --pass2_mode solve:    the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz)
-           --pass2_mode networks: the pattern-aware pass 2 (pass-2 detector + emitter network fed the estimated pattern, then
-                                  the same solve; pass2_est2_<f0>.npz, network-prior variant pass2_est2b_<f0>.npz); the
-                                  pass-1 solve is the --pass2_mode solve stage (simcode.run runs both)
-Only the camera maps and the PSF are taken from --calib (in-situ calibration json). Optional --ref_pattern: the solve is
-repeated with that pattern on the same detections (tag 'ref' / 'ref2'; for comparisons only).
+  pass1_solve  the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz, table tag est)
+  pass2    the pattern-aware pass 2 (pass-2 detector + emitter network fed the estimated pattern, then the same solve;
+           pass2_est2_<f0>.npz, table tag est2; network-prior variant pass2_est2b_<f0>.npz)
+The stages run in this order (--stages, default all); each uses the files of the earlier ones (pattern_est.pt: the pattern of
+pass1_solve and pass2).
+Only the camera maps and the PSF are taken from --calib (in-situ calibration json).
+Output region --crop x0,y0,size (px): default the region of the run's pass-1 files if they exist, else the whole frame
+(square sensors; otherwise the largest top-left square).
 
 Code path: the fast front-ends (simcode/processing/front_fast.py: queued detector -> head batching, 2 CUDA streams) and the
 fast solve (simcode/solve/solve_fast.py, torch.compile of its LM step when available); the reference implementations
@@ -23,11 +25,11 @@ chunk starts (--min_free_gb), and each chunk leaves a small record (pass1_<f0>.j
 With --claim 1 several copies of the same command (one per GPU, python -m simcode.io.launch) share the chunks of the
 pass-1 and pass-2 stages; the pattern stage then runs in one of them, after all pass-1 chunks exist.
 
-usage: python -m simcode.processing.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir> [--pass2_mode solve|networks]
-       [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000] [--claim 1]
+usage: python -m simcode.processing.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir>
+       [--stages pass1,pattern,pass1_solve,pass2] [--crop x0,y0,size] [--nframes N] [--chunk 6000] [--claim 1]
 Outputs in --out: pass1_<f0>.npz, pattern_est.pt / pattern_est.json, pass2_<tag>_<f0>.npz, runtime.json, log.txt
 """
-import argparse, hashlib, json, os, time
+import argparse, glob, hashlib, json, os, time
 import numpy as np, torch
 from simcode import config
 
@@ -44,25 +46,22 @@ def build_parser():
     ap.add_argument('--movie', required=True)
     ap.add_argument('--calib', required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--ref_pattern', default='')
-    ap.add_argument('--stages', default='pass1,pattern,pass2')
-    ap.add_argument('--crop', default='5,5,110')
+    ap.add_argument('--stages', default='pass1,pattern,pass1_solve,pass2')
+    ap.add_argument('--crop', default='')
     ap.add_argument('--margin', type=int, default=5)
     ap.add_argument('--chunk', type=int, default=6000)
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--nn_min', type=float, default=3.0)
     ap.add_argument('--min_phot', type=float, default=300.0)
     ap.add_argument('--redo', type=int, default=0)
-    ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); prefetch is off then
+    ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); no prefetch then
     ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
-    # stage pass2: 'solve' = the pattern solve of the pass-1 rows; 'networks' = the pattern-aware pass 2
-    ap.add_argument('--pass2_mode', default='solve', choices=['solve', 'networks'])
     ap.add_argument('--emitter', default=config.EMITTER)         # pass-1 networks and their solve calibration
     ap.add_argument('--detector', default=config.DETECTOR)
     ap.add_argument('--cal', default=config.CAL_REAL)
-    # --pass2_mode networks (simcode/processing/pass2_front.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter
-    # network fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve) and pass2_est2b_<f0>.npz (variant b:
-    # the pass-2 network prior); with --ref_pattern also est2 / est2b on that pattern ('ref2')
+    # stage pass2 (simcode/processing/pass2_front.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter network
+    # fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve) and pass2_est2b_<f0>.npz (variant b: the
+    # pass-2 network prior)
     ap.add_argument('--detector_pass2', default=config.DETECTOR_PASS2)
     ap.add_argument('--emitter_pass2', default=config.EMITTER_PASS2)
     ap.add_argument('--cal_pass2', default=config.CAL_REAL_PASS2)
@@ -70,22 +69,19 @@ def build_parser():
     ap.add_argument('--det_batch', type=int, default=64)
     ap.add_argument('--emitter_batch', type=int, default=1024)
     ap.add_argument('--solve_batch', type=int, default=16384)
-    ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) read the next chunk's frames in a background thread
-                                                        # (io/movie.Prefetch; identical data); 0 = synchronous reads
     return ap
 
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
     from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
-    for k in ('calib', 'emitter', 'detector', 'cal', 'detector_pass2', 'emitter_pass2', 'cal_pass2', 'ref_pattern'):
+    for k in ('calib', 'emitter', 'detector', 'cal', 'detector_pass2', 'emitter_pass2', 'cal_pass2'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')
     from simcode.processing.common import load_calib, load_pass1_rows, chunk_read_plan
     from simcode.io.movie import open_movie, Prefetch
     from simcode.io.work import Units, atomic_json, atomic_torch_save
     os.makedirs(a.out, exist_ok=True)
-    crop = tuple(int(v) for v in a.crop.split(','))
     rt_path = f'{a.out}/runtime.json'
     RT = json.load(open(rt_path)) if os.path.exists(rt_path) else {}
     log = open(f'{a.out}/log.txt', 'a')
@@ -98,13 +94,21 @@ def main(argv=None):
         if U is not None: RT.setdefault(stage, {}).update({str(k): v for k, v in U.records(chunks).items()})
         atomic_json(rt_path, RT, indent=1)
     movie = open_movie(a.movie)
+    if a.crop: crop = tuple(int(v) for v in a.crop.split(','))
+    elif glob.glob(f'{a.out}/pass1_*.npz'):
+        from simcode.table import run_crop
+        crop = tuple(int(v) for v in run_crop(a.out))                       # the region of the run's pass-1 files
+    else:
+        crop = (0, 0, int(min(movie.shape)))                                 # the whole frame
     nf = min(movie.n, a.nframes) if a.nframes else movie.n
     chunks = list(range(0, nf, a.chunk))
     if a.chunk_list: chunks = [int(v) for v in a.chunk_list.split(',')]
     t0 = time.time(); cal = load_calib(a.calib); RT['setup_psf_s'] = time.time() - t0
     say(f'movie {a.movie}: {movie.n} frames ({len(movie.parts)} parts), processing {nf} in {len(chunks)} chunks')
     stages = a.stages.split(',')
-    prefetch = a.prefetch and not a.claim
+    bad = set(stages) - {'pass1', 'pattern', 'pass1_solve', 'pass2'}
+    if bad: raise SystemExit(f'unknown stages {sorted(bad)} (pass1, pattern, pass1_solve, pass2)')
+    prefetch = not a.claim                       # the next chunk's frames are read in a background thread (io/movie.Prefetch)
 
     if 'pass1' in stages:
         t0 = time.time()
@@ -151,9 +155,9 @@ def main(argv=None):
             atomic_torch_save(P, f'{a.out}/pattern_est.pt')
             save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
 
-    if 'pass2' in stages and a.pass2_mode == 'solve':
-        # the pattern solve of the pass-1 rows (pass2_est); --pass2_mode networks runs only the pattern-aware pass 2
-        pats = [('est', f'{a.out}/pattern_est.pt')] + ([('ref', a.ref_pattern)] if a.ref_pattern else [])
+    if 'pass1_solve' in stages:
+        # the pattern solve of the pass-1 rows (pass2_est)
+        pats = [('est', f'{a.out}/pattern_est.pt')]
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})
@@ -168,14 +172,14 @@ def main(argv=None):
                 U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
-    if 'pass2' in stages and a.pass2_mode == 'networks':
+    if 'pass2' in stages:
         from simcode.processing.pass2_front import direct_view
         from simcode.processing.front_fast import Pass2FrontFast
         t0 = time.time()
         p2 = Pass2FrontFast(a.calib, emitter=a.emitter_pass2, detector=a.detector_pass2, compile=COMPILE)
         torch.cuda.synchronize(); RT['setup_p2_s'] = time.time() - t0
         RT['networks_pass2'] = dict(detector=a.detector_pass2, emitter=a.emitter_pass2, cal=a.cal_pass2)
-        pats = [('est2', f'{a.out}/pattern_est.pt')] + ([('ref2', a.ref_pattern)] if a.ref_pattern else [])
+        pats = [('est2', f'{a.out}/pattern_est.pt')]
         for tag, pf in pats:
             Pt = torch.load(pf)
             RT.setdefault(f'pass2_{tag}', {})

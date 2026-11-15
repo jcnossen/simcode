@@ -16,14 +16,14 @@ per-position pattern phase field phi_a(r) and depth factor f_a(r) are injected i
 (il = rel (1 + m f_a(r) cos(k.r - phase - phi_a(r)))); no extra random draws (same seed = same events / noise as the
 field-free movie). The true field is saved as <out>/true_field.pt.
 
-Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --pass2_mode solve).
+Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated).
 rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
 jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,
 angle = step // 3, eps(t) random walk). 120 x 120 px (the real sensor crop; camera maps of the 0.5 nM calibration),
 uint16 ADU multi-page TIFF. Rendering in 60-frame blocks.
 Outputs: <out>/sim_movie.tif, <out>/sim_gt.npz (events, pattern per frame), <out>/gt_pattern.pt (common pattern format,
-for --ref_pattern).
+for the GT-pattern diagnostics, e.g. analysis/papersim/run_simcode.py --gt_diag).
 usage: CUDA_VISIBLE_DEVICES=1 python sim_movie.py <out_dir> [n_frames] [seed]
 Optional env overrides (2026-11-09, SIMCODE-baseline worker; defaults unchanged): SIM_PRESET ('0.5nM' | '2.5nM', AcquisitionSim
 preset + paper_bright preset), SIM_MED / SIM_SD (paper_bright med0 / log-sd, e.g. label-unit brightness 1280 / 0.45).

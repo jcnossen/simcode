@@ -53,7 +53,7 @@ def main():
     grid = [n for n in (250, 500, 1000, 2000, 4000, 8000, 15000, 30000, 45000, 60000) if n < nf] + [nf]
     P = M.method_paths(run, a.model)
     if a.ref:
-        rp = f'{run}/v2_{a.ref}/locs_p2_sim.npz'
+        rp = f'{run}/v2_{a.ref}/locs_p2.hdf5'
         if os.path.exists(rp): P['v2sig_ref'] = rp
     R = dict(run=run, movie=md, nframes=nf, model=a.model, ref=a.ref, pixel_nm=PIXEL_NM, segment_nm=SEG_NM, k_sigma=K,
              rows='FRC set of metrics.py (disjoint windows, max sigma < 0.15 px, inside [0, W))', methods={},

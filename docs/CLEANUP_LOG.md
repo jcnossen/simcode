@@ -1,6 +1,6 @@
 # Cleanup log (branch `cleanup`, started 2026-11-12 from 60cc637)
 
-Execution of `docs/CLEANUP_PLAN.md` with the user decisions of 2026-11-12 (keep only the two comparisons; rename the
+Execution of `docs/CLEANUP_PLAN.md` (archived 2026-11-15: `git show archive-2026-11-15:docs/CLEANUP_PLAN.md`) with the user decisions of 2026-11-12 (keep only the two comparisons; rename the
 package; source-only repository; one file handling for both pipelines; audit items). Done in an isolated worktree; the
 main tree (`/home/jc/simcode2`) was not touched. One section per step: what changed, the commit, the check and its result.
 
@@ -729,3 +729,40 @@ gate npz / dump columns and front labels (sc_*, s1 / s2 / p1 / p2L), checkpoint 
 studies (out/p2generic, out/z3d, ...). simcode/fourpi/ is left for the 4Pi refactor.
 Checks: every checkpoint bit-identical (973 tensors, tests/check_model_outputs.py), simcode.run --dataset 1809_2 --nframes
 2000 bit-identical to the code before, pytest, tests/test_fast_paths.py, tests/check_imports.py.
+
+## 2026-11-15: processing options and clean-up (user decisions)
+
+Processing options (`simcode.run`, `simcode.processing.run_uncalibrated`, `simcode.table`):
+
+- `--format` removed: the table output is the torch_psf Dataset HDF5 per pass, `locs_p1.hdf5` / `locs_p2.hdf5` (fields
+  `docs/DATASET_FORMAT.md`; metadata pixel_nm, crop, tag, info). CSV / Picasso are exports of the loaded Dataset.
+  `simcode.table.write_table(T, info, base)` writes it; `Dataset.load_table` / `Dataset.from_run` read it, `Dataset.columns()`
+  gives the table columns back (x, y, sx, sy, p, I, ...). The `.npz` tables of earlier runs are still read (`from_run` tries
+  `.hdf5`, then `.npz`); `python -m simcode.table <out> --tag est|est2` writes the `.hdf5` table of such a run from its chunks.
+- `--subset` / `--sigma_max` removed: no selection files; the paper's selection is applied at load (`Dataset.select()`,
+  `select(14)` for another threshold). `info['n_main']` still counts the 12-nm selection. `analysis/paper/fig_exp_new.py`
+  and `frc_fair.py` take the run directory / table and `--v2_sigma_max`.
+- `--prefetch` removed (always on, off only with `--claim 1`); `--sig_u` removed (always the model's own sigma rescale; the
+  table CLI reads it from the run record's model).
+- run_uncalibrated `--pass2_mode solve|networks` replaced by the stage names `--stages pass1,pattern,pass1_solve,pass2`
+  (default all; `simcode.run` calls them in that order).
+- `--crop` default: the whole frame (square sensors; on a non-square sensor the largest top-left square, a limitation of the
+  square output region); the paper datasets carry `"crop": "5,5,110"` in `models.json` `_production`, the paper scripts pass
+  their crop explicitly. run_uncalibrated without `--crop` takes the crop of existing pass-1 files.
+- `--ref_pattern` removed from run_uncalibrated: the GT-pattern diagnostic of the simulations is in
+  `analysis/papersim/run_simcode.py` (`gt_pattern_pass2`: pass 2 with the GT pattern in `<run>/gt_pattern/`).
+- old run records rerun through `--config` (the removed keys are dropped by `util/runconfig.rerun_argv`; the backfill
+  parser still reads the old flags of old command logs).
+
+Clean-up (decisions in `docs/CLEANUP_CANDIDATES.md`): archive mechanism = git tag `archive-2026-11-15` (the state before
+the removal) + removal from the tree, index `docs/ARCHIVE.md` (an archive/ directory would hold scripts whose imports no
+longer resolve). 284 files archived, 30 deleted (zimflux and the delete category; also in the tag). Mentions in the
+documents are written `archive-2026-11-15:<path>` (tests/check_imports.py skips them). Model-weight paths of the kept
+p2generic / ablation scripts point to the model folders (`archive_2d/<set>/`, `archive_p2generic/`). out/ and models/:
+`analysis/maintenance/cleanup_outputs.py` (dry run with sizes; `--apply` after the merge, then the model.json keys).
+
+Checks: `simcode.run --dataset 1809_2 --nframes 2000`: chunk files bit-identical to the code before; `locs_p1/p2.hdf5`
+equal to the old `locs_p*.npz` in every column, `select()` = the old `locs_p*_sig12.npz` rows (31424 / 35149);
+`simcode.run --config <record of the code before>` (settings with subset / sigma_max / format / sig_u / prefetch):
+identical chunk files and tables; `simcode.table` CLI = the run's table; 973 network tensors identical
+(tests/check_model_outputs.py); pytest; tests/check_imports.py; pyflakes (no new undefined names).

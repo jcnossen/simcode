@@ -3,7 +3,7 @@ CPU tests of the localization table and the evaluation helpers on synthetic rows
 Run: python tests/test_tables.py (or pytest tests).
   strict   table columns (no strict_u / strict); select(table) = p >= 0.63, inside the crop, max(sx, sy) * px_nm <= 12 nm
            (max_precision_nm / min_score / in_region / crop / px_nm); the crop of the run is read from its pass-1 file and
-           moves the selection region and the sigma-rescale tiles; subset files hold exactly the selected rows
+           moves the selection region and the sigma-rescale tiles; the HDF5 table file round trips and the selection is applied at load
   drift    row selection of the drift estimate (simcode/util/drift.drift_rows; DME itself is not run)
   FRC      identical sets never drop below 1/7; block halves; a blurred point pattern resolves near its blur
 """
@@ -40,26 +40,23 @@ def test_strict_table():
         assert np.array_equal(T['good'], T['p'] >= SP.P_GOOD) and info['n_good_crop'] == int(inc.sum())
         prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
         main = inc & (prec <= SP.SIGMA_MAX_NM)
-        assert np.array_equal(SP.select(T), main) and info['sigma_max'] == SP.SIGMA_MAX_NM and info['n_main'] == int(main.sum())
+        assert np.array_equal(SP.select(T), main) and 'sigma_max' not in info and info['n_main'] == int(main.sum())
         assert 0 < main.sum() < inc.sum()                                               # the fixture straddles the threshold
         assert np.array_equal(SP.select(T, 8.0), inc & (prec <= 8.0))
         assert np.array_equal(SP.select(T, max_precision_nm=8.0, px_nm=100.0), inc & (prec / SP.PX_NM_DEFAULT * 100 <= 8.0))
         assert np.array_equal(SP.select(T, min_score=0.8), (T['p'] >= 0.8) & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115) & (prec <= 12))
         assert np.array_equal(SP.select(T, in_region=False), T['good'] & (prec <= 12))
         assert SP.select(T, None, None, False).all()
-        T2, i2 = SP.build_table(d, 'est2', sigma_max=12.5)
-        assert i2['sigma_max'] == 12.5 and i2['n_main'] == int((inc & (prec <= 12.5)).sum())
-        # table and subset files
-        files = SP.write_table(T, info, f'{d}/locs_p2'); fn = SP.write_subset(T, f'{d}/locs_p2')
-        assert os.path.basename(fn) == f"locs_p2_sig{SP.SIGMA_MAX_NM:g}.npz" and files == [f'{d}/locs_p2.npz']
-        L = np.load(f'{d}/locs_p2.npz'); S = np.load(fn)
-        assert 'u_max' not in L.files and float(L['sigma_max']) == SP.SIGMA_MAX_NM and float(L['px_nm']) == SP.PX_NM_DEFAULT
-        assert np.array_equal(SP.select(L), main)
-        assert os.path.basename(SP.write_subset(L, f'{d}/t2', 12.5)) == 't2_sig12p5.npz'
-        assert S['sel'].all() and np.array_equal(S['x'], T['x'][main]) and np.array_equal(S['frame'], T['frame'][main]) and float(S['sigma_max']) == SP.SIGMA_MAX_NM
-        assert SP.subset_name(10.0) == 'sig10' and SP.subset_name(12.5) == 'sig12p5'
-        assert SP.subset_thresholds(None) == [12.0] and SP.subset_thresholds('') == [] and SP.subset_thresholds('12,14') == [12.0, 14.0]
-    print('  ok strict table: columns, select (max_precision_nm, min_score, in_region), sigma_max, subset files')
+        # the table file: torch_psf Dataset HDF5; the selection at load
+        fn = SP.write_table(T, info, f'{d}/locs_p2')
+        assert fn == f'{d}/locs_p2.hdf5' and not [f for f in os.listdir(d) if 'sig' in f]       # no selection files
+        from simcode.dataset import Dataset
+        L = Dataset.load_table(fn, info=False); C = L.columns()
+        assert L.meta['crop'] == [5.0, 5.0, 110.0] and L.pixel_nm == SP.PX_NM_DEFAULT and L.meta['tag'] == 'est2'
+        eq = lambda k: np.array_equal(C[k], T[k], equal_nan=T[k].dtype.kind == 'f')
+        assert all(eq(k) for k in T), [k for k in T if not eq(k)]
+        assert np.array_equal(SP.select(C), main) and np.array_equal(L.mask().numpy(), main)
+    print('  ok table: columns, select (max_precision_nm, min_score, in_region), HDF5 table file, selection at load')
 
 
 def test_strict_crop():

@@ -1,6 +1,6 @@
 """Stage 'order': movies whose frame order is not the blocked 6-frame cycle [a0s0 a0s1 a0s2 a1s0 a1s1 a1s2] are written once as
 a blocked-order cache (every complete cycle permuted; an incomplete last cycle dropped), the input of every later stage
-(docs/AUTO_PIPELINE.md section 7, assumption 1). As analysis/nanoruler/reorder_any.py, for Andor multi-part TIFF
+(docs/AUTO_PIPELINE.md section 7, assumption 1). As archive-2026-11-15:analysis/nanoruler/reorder_any.py, for Andor multi-part TIFF
 (movie.tif, movie_X1.tif, ...) and Micro-Manager multi-part OME-TIFF (name.ome.tif, name_1.ome.tif, ...)."""
 import glob, os, re, time
 import numpy as np

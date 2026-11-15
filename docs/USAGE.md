@@ -16,7 +16,7 @@ python -m simcode.run --movie movie.tif --calib insitu/calib_1809_2_psf3d.json -
 ```python
 from simcode.dataset import Dataset
 
-ds = Dataset.from_run('out/run1', pass_=2)      # locs_p2.npz + its info json (+ run_config.json when the run has one)
+ds = Dataset.from_run('out/run1', pass_=2)      # locs_p2.hdf5 + its info json (+ run_config.json when the run has one)
 ds = Dataset.load('out/run1')                   # the same (pass 2 if it exists, else pass 1); also takes a table file
 print(ds)                                       # rows, frames, pixel size, median precision and photons, drift, fields
 ds.pos, ds.crlb, ds['score'], ds.keys()         # fields (tensors); ds.meta holds the metadata; ds.numpy(): dict of arrays

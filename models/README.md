@@ -13,7 +13,7 @@ The small calibration json files are in git.
 |---|---|
 | `calib/calib_sc_hd_<set>.json`, `calib_sc_hd_<set>_real.json` | pass-1 solve calibration of a model: sigma table from the gate scenes (`_real`: with the real-data mismatch multiplier) |
 | `calib/calib_p2L_<set>.json`, `calib_p2L_<set>_real.json` | the same for pass 2 |
-| `calib/sigu/sigu_p1_<set>.json`, `sigu_p2_<set>.json` | selection-aware sigma rescale per pass (`simcode.table --sig_u`; fitted by `analysis/psf3d_nets/sigcal.py`) |
+| `calib/sigu/sigu_p1_<set>.json`, `sigu_p2_<set>.json` | selection-aware sigma rescale per pass (applied by `simcode.run` / `simcode.table`; fitted by `analysis/psf3d_nets/sigcal.py`) |
 | `calib/calib_sc_hd_sc5nbb15_pm*.json`, `calib_p2L.json`, `calib_p2L_b10_real.json`, `calib_p2L_movie_b10.json`, `calib_autoc_r*.json`, `sigu/sigu_p*_cur.json` | calibrations of the earlier default head (hd_sc5nb / p2_head_long). Still used: as the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`), and as the sigma table of the automatic-c estimator `simcode/solve/autoc.py` (analysis only) |
 | `insitu/calib_<movie>*.json` | in-situ PSF + camera calibration per movie (`_psf3d`: per-axis PSF; `_psf3d_avg`: averaged over the two pattern axes = the PSF a model is trained on; `calib_gauss1.3.json`: Gaussian sigma 1.3 px, the preprint's simulation PSF) |
 | `insitu/camera_maps_<movie>.npz` | per-pixel offset and read-noise maps of the four movies (85-130 kB each). Binary, kept in git for now because every calibration json refers to one; **to be decided** whether they move out with the weights |

@@ -7,7 +7,7 @@ Run dir default: <movie dir>/full (all frames) or <movie dir>/cut<N> (first N fr
   decode   run_decode.py                                                               -> <run>/decode/locs.npz
   v1       run_simcode_v1.py: the preprint's SIMCODE (paper defaults)                  -> <run>/v1/locs.npz
   v1gt     the same with the ground-truth pattern (diagnostic)                     -> <run>/v1gt/locs.npz
-  v2       run_simcode.py (network set --model; + the GT-pattern diagnostic)           -> <run>/v2_<model>/locs_p2_sim.npz
+  v2       run_simcode.py (network set --model; + the GT-pattern diagnostic)           -> <run>/v2_<model>/locs_p2.hdf5
   hollow   hollow_analysis.py (hollow-tube movies only): cross-section profiles, dip ratio, two-line vs one-line fit
   metrics  metrics.py (density: FRC, Jaccard vs frames, counts, GT match; moving: block Jaccard) -> <run>/metrics_<model>.json
   gtfrc    gtfrc_run.py (density): GT-FRC, time to fidelity, sigma-gated Jaccard, ghosts, coverage (+ the v2 of --ref)

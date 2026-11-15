@@ -96,11 +96,11 @@ def run(ds):
             if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_sel', 'median_photons')}])
         parts.append('<h2>Processing</h2>' + _tab(rows))
         last = 'locs_p2' if 'locs_p2' in S else 'locs_p1'
-        f = os.path.join(pr['run'], last + '.npz')
+        f = os.path.join(pr['run'], last + '.hdf5')
         if os.path.exists(f):
             from simcode.dataset import Dataset
             try:
-                L = Dataset.load_npz(f); sel = L.mask().numpy()
+                L = Dataset.load_table(f); sel = L.mask().numpy()
                 v, dr, D = frc_of(L, sel)
                 R['frc'] = dict(table=last, selection='max(sx, sy) <= 12 nm, p >= 0.63, inside the crop', n=int(sel.sum()), frc_nm=v, drift=dr)
                 parts.append(_tab([['FRC (selection <= 12 nm, 300-frame block halves)', f'{v:.2f} nm, {int(sel.sum())} rows, drift {dr}']]))

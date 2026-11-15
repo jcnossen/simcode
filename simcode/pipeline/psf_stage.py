@@ -1,5 +1,5 @@
 """Stage d (psf) of the automatic pipeline: in-situ PSF from the stage-c tracks (docs/AUTO_PIPELINE.md section 2).
-  1. base   Zernike 5-21 + focus                       (= fit_psf_tracks defaults; held-out reference)
+  1. base   Zernike 5-21 + focus                       (= the defaults of archive-2026-11-15:simcode/calibration/fit_psf_tracks.py; held-out reference)
   2. bl     + line blur (stage 1 of out/psf3d/run_final.sh); its per-frame intensities -> pattern (k, phases)
   3. ps3    bl frozen + photoselection 3 (gamma, zeta; e_a perpendicular to the fitted k_a; run_final_ps.sh)
   4. held-out: 1-3 refitted on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit), paired NLL

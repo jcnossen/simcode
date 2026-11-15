@@ -31,12 +31,12 @@ the real-output statistics realstats.json with the development scripts realstats
 pattern-free + hybrid (pixel-fit) front-end on real and simulated windows; that front-end is not part of simcode, so the
 tuning check is not reproducible here. Snapshots of its statistics and of the final sim-vs-real tables:
 analysis/results/realism/ (realstats.json, validate_{0.5,2.5}nM_final.txt). The realism check against the simcode front-end
-itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is analysis/figures/scorecard.py
+itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is archive-2026-11-15:analysis/figures/scorecard.py
 (-> realism_scorecard.png).
 API: AcquisitionSim(preset, H, W, T).scene(nb, em=None, **overrides) -> dict as crlb_dense.make_scene (+ patt_est,
 illum_est, shift_est, bg_static); .emitters(nb, **kw) -> em dict.
 (2026-11-10/11 critic 37 #2, opt-in; absent keys = unchanged, no extra random draws) smooth illumination envelope across the
-FOV, measured on the real movies (<out>/evalproto/envmap.py): keys env_x0 / env_y0 (centre px), env_s1 / env_s2
+FOV, measured on the real movies (archive-2026-11-15:analysis/evalproto/envmap.py): keys env_x0 / env_y0 (centre px), env_s1 / env_s2
 (Gaussian sd px along the principal axes), env_th (angle rad of axis 1) -> AcquisitionSim.envelope(x, y) = exp(-0.5 q) normalized to
 geometric mean 1 over the 5-115 px crop (multiply emitter brightness by it); env_bg = fraction of the static bg that follows
 the envelope (background(): st x (1 - env_bg + env_bg En), En = envelope normalized to mean 1 over the crop; FOV-mean bg kept).

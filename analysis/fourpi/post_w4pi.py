@@ -1,4 +1,4 @@
-"""Post-processing of the learned-window 4Pi pipeline tables (real_w4pi.py): merge the files of a movie, selection,
+"""Post-processing of the learned-window 4Pi pipeline tables (python -m simcode.fourpi.run): merge the files of a movie, selection,
 lateral drift by DME v2 (analysis/baselines/dme_drift.py, subprocess), sample z drift (structure-based estimator of the
 classical worker, analysis/fourpi_classical/fig_cl.zdrift_struct, imported read-only; per 500-window block), sigma
 multipliers from adjacent-window pairs (DAFL; precision only), render, summary json.

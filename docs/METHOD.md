@@ -143,7 +143,7 @@ seeds 301–303: `analysis/calib/dump_fe.py`, then `fit_cal.py`. The pass-2 equi
 (`fit_cal`). The real-data rescale uses the real M4 zcal × the sim (true / M4) ratio.
 
 The in-situ calibration itself (bead fit → camera maps → tracks → stage A → stage B → `calib_<movie>.json`) is described
-in `simcode/calibration/README.md`.
+in `archive-2026-11-15:simcode/calibration/README.md`.
 
 Only the camera maps and the PSF of the in-situ calibration are used by the pipeline. Its pattern entry is never used:
 the pattern is always estimated from the data.

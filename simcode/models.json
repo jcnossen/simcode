@@ -2,24 +2,26 @@
  "_doc": "SIMCODE v2 models (the shipped models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = simulation sigma calibrations (no real-data mismatch multiplier); cal_real / cal_real_pass2 = the ones used on real movies; sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
  "_default": "m1809",
  "_production": {
-  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --model of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sig_u rescale, the subset files of the selections, sigma_max 12 nm). Movies are relative to the data root.",
+  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --model and --crop of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root.",
   "cal_kind": "real",
-  "selection": "sig12",
-  "_selection_doc": "main selection (user decision 2026-11-13): rows with a per-tile rank (p >= 0.63, inside the crop) and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select(table), SIGMA_MAX_NM; subset file locs_p2_sig12.npz). Until 2026-11-13 it was the per-tile rule u <= 0.45 ('u045', rule 'u', still written as locs_p2_u045.npz). Study: analysis/selection_global, out/selection_global.",
+  "_selection_doc": "main selection (user decision 2026-11-13): rows with p >= 0.63 inside the crop and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select, Dataset.select, SIGMA_MAX_NM; since 2026-11-15 applied when a table is loaded, no subset files). Until 2026-11-13 it was the per-tile rule u <= 0.45. Study: analysis/selection_global, out/selection_global.",
   "datasets": {
    "1809_2": {
     "movie": "1809/cover1/2/simflux_5.5ms_500mW.tif",
     "calib": "insitu/calib_1809_2_psf3d.json",
+    "crop": "5,5,110",
     "model": "m1809"
    },
    "2.5nM_2": {
     "movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif",
     "calib": "insitu/calib_2p5nM_m2_psf3d.json",
+    "crop": "5,5,110",
     "model": "m25"
    },
    "20nM_2": {
     "movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif",
     "calib": "insitu/calib_20nM_m2_psf3d.json",
+    "crop": "5,5,110",
     "model": null,
     "_doc": "no PSF-matched model was trained for this movie; a model must be chosen if it enters the paper"
    }

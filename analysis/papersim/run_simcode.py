@@ -4,9 +4,10 @@ output region, and a model (--model: a name of simcode/models.json or a model fo
 realistic-PSF simulations). Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the model, fixed c)
 or real (the real-movie calibrations the production runs used).
 
-After the run, the localization tables are rebuilt by simcode/table.py on the simulation's FOV (build_table crop = (0, 0, W):
-the selection region and the sigma-rescale tiles). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as table.py
-(p, sel, ...; the selection = simcode.table.select(T, crop=(0, 0, W))), and <out>/locs_sim_info.json (with the crop).
+The run's own tables are the output: <out>/locs_p2.hdf5 (+ locs_p1.hdf5), torch_psf Dataset format with the crop (0, 0, W)
+(the selection region and the sigma-rescale tiles); the selection = Dataset.load_table(...).select().
+--gt_diag 1 (diagnostic, not the method): pass 2 with the GROUND-TRUTH pattern fed to the pass-2 networks and the solve, in
+<out>/gt_pattern/ (the run's pass-1 files, gt_pattern.pt as the pattern) -> <out>/gt_pattern/locs_p2.hdf5.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--model m1809] [--cal_kind sim|real]
           [--nframes N] [--out <movie dir>/v2_<model>] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess
@@ -21,19 +22,25 @@ def model(name):
     return config.model_set(name)
 
 
-def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
-    import simcode.table as SP
-    crop = (0.0, 0.0, float(W))
-    su = (sig_u.split(',') + [''])[:2] if sig_u else ['', '']
-    from simcode import config
-    info_all = {}
-    for (tag, name), s in zip([('est', 'locs_p1_sim'), ('est2', 'locs_p2_sim')][:2 if pass2 else 1], su):
-        T, info = SP.build_table(out, tag, px_nm, sig_u=config.resolve(s) if s else None, crop=crop)
-        SP.write_table(T, info, os.path.join(out, name), ('npz',))
-        info_all[name] = {k: v for k, v in info.items() if k != 'columns'}
-        print(name, json.dumps(info_all[name], default=str), flush=True)
-    json.dump(dict(crop=crop, **info_all), open(os.path.join(out, 'locs_sim_info.json'), 'w'), indent=1, default=str)
-    return info_all
+def gt_pattern_pass2(out, md, W, N, cal_kind, nframes=0):
+    """pass 2 (and its table) with the ground-truth pattern: a directory <out>/gt_pattern with links to the run's pass-1 chunk
+    files, gt_pattern.pt as its pattern_est.pt and the run's record, then run_uncalibrated --stages pass2 and simcode.table"""
+    import glob, shutil
+    d = os.path.join(out, 'gt_pattern'); os.makedirs(d, exist_ok=True)
+    for f in glob.glob(os.path.join(out, 'pass1_*')):
+        t = os.path.join(d, os.path.basename(f))
+        if not os.path.exists(t): os.symlink(f, t)
+    shutil.copyfile(os.path.join(md, 'gt_pattern.pt'), os.path.join(d, 'pattern_est.pt'))
+    shutil.copyfile(os.path.join(out, 'run_config.json'), os.path.join(d, 'run_config.json'))     # the model (sigma rescale)
+    ucmd = [sys.executable, '-m', 'simcode.processing.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
+            '--calib', os.path.join(md, 'calib_sim.json'), '--out', d, '--crop', f'0,0,{W}',
+            '--detector', N['detector'], '--emitter', N['emitter'], '--cal', N[f'cal_{cal_kind}'],
+            '--detector_pass2', N['detector_pass2'], '--emitter_pass2', N['emitter_pass2'], '--cal_pass2', N[f'cal_{cal_kind}_pass2'],
+            '--stages', 'pass2']
+    if nframes: ucmd += ['--nframes', str(nframes)]
+    subprocess.run(ucmd, check=True, cwd=REPO)
+    subprocess.run([sys.executable, '-m', 'simcode.table', d, '--tag', 'est2', '--crop', f'0,0,{W}'], check=True, cwd=REPO)
+    return os.path.join(d, 'locs_p2.hdf5')
 
 
 def main():
@@ -44,8 +51,7 @@ def main():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--out', default=None)
     ap.add_argument('--redo', type=int, default=0)
-    ap.add_argument('--tables_only', action='store_true')
-    ap.add_argument('--gt_diag', type=int, default=1, help='1: also pass 2 on the ground-truth pattern (diagnostic, locs_p2gt_sim.npz)')
+    ap.add_argument('--gt_diag', type=int, default=1, help='1: also pass 2 on the ground-truth pattern (diagnostic, gt_pattern/locs_p2.hdf5)')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-v2')
     md = os.path.abspath(a.movie_dir)
@@ -58,34 +64,12 @@ def main():
            '--out', out, '--crop', f'0,0,{W}', '--model', a.model, '--cal_kind', a.cal_kind, '--redo', str(a.redo)]
     if a.nframes: cmd += ['--nframes', str(a.nframes)]
     t0 = time.time()
-    if not a.tables_only:
-        with open(os.path.join(out, 'command.txt'), 'a') as f: f.write(time.ctime() + ': ' + ' '.join(cmd) + '\n')
-        subprocess.run(cmd, check=True, cwd=REPO)
+    with open(os.path.join(out, 'command.txt'), 'a') as f: f.write(time.ctime() + ': ' + ' '.join(cmd) + '\n')
+    subprocess.run(cmd, check=True, cwd=REPO)
     T = time.time() - t0
-    info = strict_tables(out, W, g['px_nm'], N['sig_u'])
-    # the pass-2 table (locs_p2_sim, crop (0, 0, W)) also in the torch-psf Dataset format: final.hdf5 (all rows; the paper's
-    # selection = Dataset.load(...).select())
-    from simcode.dataset import Dataset
-    print('written', Dataset.load_npz(os.path.join(out, 'locs_p2_sim.npz')).save(os.path.join(out, 'final.hdf5')), flush=True)
     if a.gt_diag:
-        # diagnostic (not the method): pass 2 with the GROUND-TRUTH pattern fed to the pass-2 networks and the solve
-        # (run_uncalibrated --ref_pattern -> pass2_ref2_*.npz); table with the same crop and sigma rescale
         t1 = time.time()
-        ucmd = [sys.executable, '-m', 'simcode.processing.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
-                '--calib', os.path.join(md, 'calib_sim.json'), '--out', out, '--crop', f'0,0,{W}',
-                '--detector', N['detector'], '--emitter', N['emitter'], '--pass2_mode', 'networks', '--cal', N[f'cal_{a.cal_kind}'],
-                '--detector_pass2', N['detector_pass2'], '--emitter_pass2', N['emitter_pass2'], '--cal_pass2', N[f'cal_{a.cal_kind}_pass2'],
-                '--stages', 'pass2',
-                '--ref_pattern', os.path.join(md, 'gt_pattern.pt')]
-        if a.nframes: ucmd += ['--nframes', str(a.nframes)]
-        subprocess.run(ucmd, check=True, cwd=REPO)
-        import simcode.table as SP
-        from simcode import config
-        su = (N['sig_u'].split(',') + [''])[:2][1]
-        Tg, ig = SP.build_table(out, 'ref2', g['px_nm'], None, sig_u=config.resolve(su) if su else None, crop=(0.0, 0.0, float(W)))
-        SP.write_table(Tg, ig, os.path.join(out, 'locs_p2gt_sim'), ('npz',))
-        print('locs_p2gt_sim (GT pattern, diagnostic)', json.dumps({k: v for k, v in ig.items() if k != 'columns'}, default=str), flush=True)
-        print('gt_diag s', round(time.time() - t1, 1), flush=True)
+        print('GT-pattern diagnostic ->', gt_pattern_pass2(out, md, W, N, a.cal_kind, a.nframes), 'in', round(time.time() - t1, 1), 's', flush=True)
     json.dump(dict(model=a.model, nets=N, cal_kind=a.cal_kind, nframes=a.nframes, run_s=T, cmd=cmd), open(os.path.join(out, 'papersim_run.json'), 'w'), indent=1)
     print('done', round(T, 1), 's', flush=True)
 
