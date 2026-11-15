@@ -25,7 +25,7 @@ usage:
              (2026-11-15 opt-in for the v2-PSF sims: --zmax_um 0.4 --z_nm 0,400 = LUT and emitter heights 0-0.40 um,
              --e_per_adu 0.4256 = the v2 camera gain; inference reads zmax_um from psf.json)
   infer: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/decode/decode_paper.py infer <1809_2|2.5nM_2|20nM_2> --name <model>
-             --out <locs.npz> [--maxframes N] [--starts 0,3]
+             --out <locs.npz> [--maxframes N] [--starts 0,3] [--camera old|v2]
   models: out/paper2/decode/lutpsf/<model>/ (param_train.yaml, model_final.pt / checkpoint, psf.json)"""
 import os, sys, json, time, math, argparse
 import numpy as np, torch
@@ -111,6 +111,7 @@ def infer(a):
     mf = f'{mdir}/model_final.pt'
     inst = D.load_trained(a.name, pj.get('variant_name', 'sum6p'), model_file=mf if os.path.exists(mf) else None)
     rel, camf = DATASETS[a.dataset]
+    if a.camera == 'v2': camf = camf.replace('.npz', '_v2.npz')     # camera v2 (gain 0.4256 + v2 offset map): the v3 models' units
     tif = f'/mnt/data/dmdsf/bn_dnapaint/{rel}'
     cam = np.load(f'{REPO}/models/insitu/{camf}')
     gain, off = float(cam['gain']), cam['offset_adu'].astype(np.float32)
@@ -150,6 +151,7 @@ if __name__ == '__main__':
     ap.add_argument('--pseudo', type=int, default=8192); ap.add_argument('--halo', type=float, default=0.0)
     ap.add_argument('--zmax_um', type=float, default=ZMAX); ap.add_argument('--z_nm', default='10,150')
     ap.add_argument('--e_per_adu', type=float, default=None)
+    ap.add_argument('--camera', default='old', choices=['old', 'v2'], help="infer: 'v2' = models/insitu/camera_maps_<ds>_v2.npz (models trained in camera-v2 units: dec_m1809v3, dec_m25v3)")
     ap.add_argument('--variant', default='sum6p'); ap.add_argument('--vover', default=None); ap.add_argument('--out'); ap.add_argument('--maxframes', type=int, default=None); ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('decode')     # recognizable name in nvidia-smi / ps
