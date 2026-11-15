@@ -20,13 +20,15 @@ from simcode.psf import has_angle_psf, render
 
 class Simulator:
     def __init__(self, calib_path, H=64, W=64, T=12, device='cuda', psf_roi=21, psf_lut_z=21, psf_lut_sub=32,
-                 zmax=0.2, tirf_depth=None):
+                 zmax=0.2, tirf_depth=None, zmin=0.0):
         from simcode.config import resolve
         calib_path = resolve(calib_path)
         self.c = json.load(open(calib_path))
         self.H, self.W, self.T = H, W, T
         self.dev = torch.device(device)
-        self.zmax = zmax
+        # LUT heights zmin .. zmax um (zmin < 0: below the coverslip, the analytic continuation of the vectorial model that an
+        # in-situ PSF fit can return as a spot's best height; used when the calibration's fitted heights reach there)
+        self.zmin, self.zmax = zmin, zmax
         self.tirf = tirf_depth or self.c['tirf_depth_um']
         self.R = psf_roi
         # calibrated PSF (torch_psf.PSF.load of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
@@ -36,7 +38,7 @@ class Simulator:
         self.focus = self.c['focus_um']
         # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
         self.lz, self.ls = psf_lut_z, psf_lut_sub
-        zs = torch.linspace(0, zmax, psf_lut_z, device=self.dev)
+        zs = torch.linspace(zmin, zmax, psf_lut_z, device=self.dev)
         sub = (torch.arange(psf_lut_sub + 1, device=self.dev) / psf_lut_sub) - 0.5     # -0.5 .. 0.5 inclusive
         Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
         pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
@@ -84,7 +86,7 @@ class Simulator:
         tx = (fx + 0.5) * self.ls; ty = (fy + 0.5) * self.ls
         ix = tx.floor().long().clamp(0, self.ls - 1); iy = ty.floor().long().clamp(0, self.ls - 1)
         wx = (tx - ix)[:, None, None]; wy = (ty - iy)[:, None, None]
-        tz = (z / self.zmax).clamp(0, 1) * (self.lz - 1)
+        tz = ((z - self.zmin) / (self.zmax - self.zmin)).clamp(0, 1) * (self.lz - 1)
         iz = tz.floor().long().clamp(0, self.lz - 2); wz = (tz - iz)[:, None, None]
         def at(dz, dy, dx):
             return self.lut[iz + dz, iy + dy, ix + dx]

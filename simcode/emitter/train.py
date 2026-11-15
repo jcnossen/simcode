@@ -211,10 +211,11 @@ def train_pass1(a):
     a.hold = a.hold or HOLD
     args = dict(vars(a), arch=ARCH, paper=1, bright_tail=','.join(f'{v:g}' for v in BRIGHT_TAIL))
     args.update(z3d=1, z_range_um=list(Z_RANGE_UM), z_unif=Z_UNIF)
-    os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     det, _ = load_det(a.detector)
     gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
+    args.update(heights=gen.heights())
+    os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     head = EmitterNet(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
     if a.init:      # a 2D init (e.g. hd_sc5nb.pt) gets the zero z rows (pad_out): it starts at exactly its 2D outputs
         head.load_state_dict(pad_out(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'], head))

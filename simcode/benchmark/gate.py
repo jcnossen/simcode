@@ -67,7 +67,7 @@ def gen(sc, it, seed, T=6):
             n = len(em['x']) // 2
             tot = torch.exp(math.log(300.0) + (math.log(5000.0) - math.log(300.0)) * torch.rand(n, device=dev))
             em['bright'] = torch.cat([tot, tot]) / T
-        em['z'] = (rs.p['z_med'] * torch.exp(rs.p['z_sd'] * torch.randn(len(em['x']), device=dev))).clamp(0, rs.zmax)
+        em['z'] = rs.draw_z(len(em['x']))     # the presets' lognormal (same draws as before), or the calibration's heights
         o = rs.scene(nb, em=em, **dict(exact, bgmode='flat'))
     else:
         pre = {'rs05': '0.5nM', 'rs25': '2.5nM'}[sc[:4]]

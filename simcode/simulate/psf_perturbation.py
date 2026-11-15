@@ -33,7 +33,7 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle
             z = torch.tensor(c['zernike_waves'], device=dev, dtype=torch.float32) + zern_delta
             c['zernike_waves'] = z.tolist()
         psf = spsf.PSF.load(c, roisize=sim.R, oversample=3, device=dev, angle=angle)
-    zs = torch.linspace(0, zmax, sim.lz, device=dev)
+    zs = torch.linspace(getattr(sim, 'zmin', 0.0), zmax, sim.lz, device=dev)
     sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
     Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
     pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
@@ -58,7 +58,7 @@ class PertBank:
 
     def use(self, i):
         it = self.items[i]
-        self.sim.lut = it['lut']; self.sim.zmax = it['zmax']; self.sim.zs = torch.linspace(0, it['zmax'], self.sim.lz, device=dev)
+        self.sim.lut = it['lut']; self.sim.zmax = it['zmax']; self.sim.zs = torch.linspace(self.sim.zmin, it['zmax'], self.sim.lz, device=dev)
         return it
 
     def reset(self):

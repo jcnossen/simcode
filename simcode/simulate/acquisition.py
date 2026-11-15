@@ -19,6 +19,9 @@ editing it. Everything is taken from existing calibration / summary files only (
             4.3 px, lag-1 0.5) -- scaled for the 0.5 nM presets
   emitters  Poisson DNA-PAINT events (ON density per frame per px), on-time lognormal (median tau), z lognormal
             (median ~50 nm, clipped 0-200 nm), brightness lognormal x TIRF exp(-z / 82 nm), per-emitter angle factor
+            [2026-11-15: a calibration with fitted spot heights (emitter_z_quantiles_um, in-situ PSF v2) sets z instead:
+            piecewise-linear inverse CDF of its quantiles (height_quantiles), LUT range widened to it (below 0 if the
+            fit placed spots there), no TIRF factor (tirf_factor); the read-noise map is the calibration's camera map]
             (log-sd 0.18), per-emitter per-step factor (sd 0.05), per-frame multiplicative jitter (sd 0.03);
             geometry: uniform or microtubule-like smooth filaments (fraction per preset)
 Ground truth gt['phot'] [N,T] = the actual per-frame photons (all factors included).
@@ -155,19 +158,54 @@ def smooth_field(n, H, W, sig):
     return (x - x.mean((1, 2), keepdim=True)) / x.std((1, 2), keepdim=True).clamp(min=1e-6)
 
 
+def height_quantiles(c):
+    """emitter-height distribution of a calibration dict (2026-11-15 rule: the training heights come from the calibration when it
+    has them): its emitter_z_quantiles_um {'q05': z, ...} (fitted heights of the in-situ PSF spots, um) as the nodes
+    (probabilities [m], heights [m]) of a piecewise-linear inverse CDF, extended to probability 0 and 1 with the slope of the
+    outer segments (so q05 / q95 are not point masses). None without quantiles."""
+    q = c.get('emitter_z_quantiles_um')
+    if not q: return None
+    pz = sorted((float(k[1:]) / 100.0, float(v)) for k, v in q.items())
+    P = [a for a, _ in pz]; Z = [b for _, b in pz]
+    if len(P) < 2: raise ValueError(f'emitter_z_quantiles_um needs >= 2 quantiles: {q}')
+    if any(b < a for a, b in zip(Z, Z[1:])): raise ValueError(f'emitter_z_quantiles_um not monotonic: {q}')
+    if P[0] > 0:
+        Z.insert(0, Z[0] - P[0] * (Z[1] - Z[0]) / (P[1] - P[0])); P.insert(0, 0.0)
+    if P[-1] < 1:
+        Z.append(Z[-1] + (1 - P[-1]) * (Z[-1] - Z[-2]) / (P[-1] - P[-2])); P.append(1.0)
+    return torch.tensor(P, device=dev), torch.tensor(Z, device=dev)
+
+
+def interp1(u, P, Z):
+    """piecewise-linear interpolation of the nodes (P, Z) (P increasing, covering [0, 1]) at u"""
+    i = (torch.searchsorted(P, u.contiguous(), right=True) - 1).clamp(0, len(P) - 2)
+    w = (u - P[i]) / (P[i + 1] - P[i]).clamp(min=1e-12)
+    return Z[i] + w * (Z[i + 1] - Z[i])
+
+
 class AcquisitionSim:
     def __init__(self, preset='0.5nM', H=64, W=64, T=6, npsf=4, psf_jitter=True, seed=0, psf_roi=41, zmax=0.2, **over):
         self.p = dict(PRESETS[preset], **over); self.preset = preset
+        # emitter heights from the calibration (2026-11-15): a calibration with fitted spot heights (emitter_z_quantiles_um) sets
+        # the height distribution (height_quantiles / draw_z) and widens the LUT range to it; None = the presets' TIRF draw
+        c = json.load(open(_cfg.resolve(self.p['calib'])))
+        self.zq = height_quantiles(c)
+        zmin = 0.0
+        if self.zq is not None:
+            zmin = min(0.0, math.floor(float(self.zq[1][0]) / 0.01 - 1e-6) * 0.01)
+            zmax = max(zmax, math.ceil(float(self.zq[1][-1]) / 0.01 - 1e-6) * 0.01)
         # PSF rendered on a 41 x 41 ROI (critic review 26 #3: 19 % of the real PSF energy lies outside 11 x 11, 8 % beyond 21 x 21)
         # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (simulate/batches.TrainingBatches) uses Z_RANGE_UM
-        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax,
-                             psf_lut_z=int(round(zmax / 0.01)) + 1)
+        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax, zmin=zmin,
+                             psf_lut_z=int(round((zmax - zmin) / 0.01)) + 1)
         self.H, self.W, self.T = H, W, T
         # pattern draw: None = the SIMCODE (DMD) pattern of the preset (pass-1 training, gate scenes, sim movies); a number in
         # [0, 1) = the generic pass-2 training draw with this share of FOVs keeping the SIMCODE pattern (set by simulate/batches.TrainingBatches)
         self.p_std = None
-        self.zmax = self.sim.zmax; self.focus = self.sim.focus
-        self.rn_map = torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float()
+        self.zmin, self.zmax = self.sim.zmin, self.sim.zmax; self.focus = self.sim.focus
+        # per-pixel read noise: the calibration's camera maps when it has them (2026-11-15, as its gain / offset), else the preset's
+        self.rn_map = (self.sim.rn_map.float() if self.sim.rn_map is not None
+                       else torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float())
         self.luts = [self.sim.lut]
         # (2026-11-11, opt-in per-angle PSF calib) every LUT-bank entry is a tuple (angle-0 LUT, angle-1 LUT); same jitter draws
         ang = self.sim.lut_angle is not None
@@ -268,7 +306,7 @@ class AcquisitionSim:
         Bm = p['bright'] if bright is None else bright
         Bm = torch.as_tensor(Bm, device=dev, dtype=torch.float32)
         Bm = Bm[fov] if Bm.dim() == 1 else Bm
-        br = Bm * torch.exp(p['bright_sd'] * torch.randn(N, device=dev)) * torch.exp(-(z - p['z_med']) / self.sim.tirf)
+        br = Bm * torch.exp(p['bright_sd'] * torch.randn(N, device=dev)) * self.tirf_factor(z)
         out = dict(fov=fov, x=x, y=y, z=z, bright=br, t0=t0, t1=t1, fil_pts=fil_pts, fil_struct=fil_struct)
         if site is not None:
             out['site'] = site; out.update(site_info)
@@ -277,13 +315,25 @@ class AcquisitionSim:
     def draw_z(self, n):
         """emitter heights (um) [n]: lognormal (median z_med, log-sd z_sd) clipped to [0, zmax]; with the key z_unif (the 3D
         training generator simulate/batches.TrainingBatches) that fraction of the emitters is uniform over [0, zmax] instead, so the z output of
-        the head is trained over the whole height range of the TIRF data. The brightness follows from z (TIRF factor)."""
+        the head is trained over the whole height range of the TIRF data. The brightness follows from z (TIRF factor).
+        A calibration with fitted heights (self.zq, height_quantiles) replaces all of this: z = its piecewise-linear inverse CDF
+        at u ~ U(0, 1) (one uniform draw per emitter; z_unif does not apply)."""
         p = self.p
+        if self.zq is not None:
+            return interp1(torch.rand(n, device=dev), *self.zq)
         z = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(n, device=dev))).clamp(0.0, self.zmax)
         fu = float(p.get('z_unif', 0.0))
         if fu > 0:
             z = torch.where(torch.rand(n, device=dev) < fu, self.zmax * torch.rand(n, device=dev), z)
         return z
+
+    def tirf_factor(self, z):
+        """brightness factor of an emitter at height z (um): the TIRF excitation exp(-(z - z_med) / tirf) for the presets' height
+        draw; 1 for heights from the calibration (they are the fitted apparent heights of the measured spots, whose photon
+        distribution the photon ranges already describe: a factor on them would count the height twice)"""
+        if self.zq is not None:
+            return torch.ones_like(z)
+        return torch.exp(-(z - self.p['z_med']) / self.sim.tirf)
 
     def _sites(self, nb, fov, t0, x, y, fil_pts, fil_struct, margin):
         """(2026-11-10/11 evaluation protocol, opt-in via preset key site_ev > 0; never called otherwise) discrete DNA-PAINT

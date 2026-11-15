@@ -31,7 +31,9 @@ in [0, 1) = the pass-2 setup (frame_sd 0.09 and the generic pattern draw in a sh
 recipe's first stages 0.25, models/README.md).
 Emitter height z (3D emitter network, 2026-11-14): Z_UNIF of the emitters uniform over Z_RANGE_UM, the rest the presets'
 lognormal (median 50-55 nm), both with the TIRF brightness factor; z of the GT in px relative to the calibration's focal
-plane: z_target_px.
+plane: z_target_px. A calibration with fitted spot heights (emitter_z_quantiles_um, 2026-11-15) replaces this draw by its own
+height distribution, over its own range, without the TIRF factor (AcquisitionSim.draw_z / tirf_factor; no flag: the
+calibration's heights are used when it has them).
 GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons (gt_set).
 """
 import math
@@ -84,6 +86,14 @@ class TrainingBatches:
                 rs.p['frame_sd'] = 0.09
                 rs.p_std = float(p_std)      # generic pattern draw (simulate/acquisition.AcquisitionSim._generic) in a share 1 - p_std of the FOVs
 
+    def heights(self):
+        """the emitter-height draw per calibration (for the run record): 'presets' or the calibration's quantile nodes (um)"""
+        out = []
+        for r in ([d_['0.5nM'] for d_ in self.rsm] if self.calibs else [self.rs['0.5nM']]):
+            out.append('presets' if r.zq is None else dict(p=[round(float(v), 4) for v in r.zq[0]], z_um=[round(float(v), 4) for v in r.zq[1]],
+                                                           lut_um=[round(r.zmin, 3), round(r.zmax, 3)]))
+        return out
+
     def all_rs(self):
         return [r for d_ in self.rsm for r in d_.values()] if self.calibs else list(self.rs.values())
 
@@ -107,13 +117,13 @@ class TrainingBatches:
         em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_curr=pair_curr)
         N = len(em['fov'])
         per_em = (g(nb) < 0.5)[em['fov']]
-        b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
+        b_em = lu(*(em_photons or photons), N) * rs.tirf_factor(em['z'])
         em['bright'] = torch.where(per_em, b_em, em['bright']).clamp(photons[0] * 0.3, photons[1] * 3)
         if paper:      # iteration 30b (user): paper-matched photons, replaces both draws above
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs)
         if bright_tail is not None and bright_tail[0] > 0:
             sel = torch.rand(N, device=dev) < bright_tail[0]
-            bt = lu(bright_tail[1], bright_tail[2], N) / 6.0 * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
+            bt = lu(bright_tail[1], bright_tail[2], N) / 6.0 * rs.tirf_factor(em['z'])
             em['bright'] = torch.where(sel, bt, em['bright'])
         u = torch.rand(1).item()
         mode = 'flat' if u < 0.2 else ('struct' if u < 0.5 else 'fluct')
@@ -144,7 +154,7 @@ class TrainingBatches:
         em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep)
         N = len(em['fov'])
         per_em = (g(nb) < 0.5)[em['fov']]
-        b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
+        b_em = lu(*(em_photons or photons), N) * rs.tirf_factor(em['z'])
         em['bright'] = torch.where(per_em, b_em, em['bright']).clamp(photons[0] * 0.3, photons[1] * 3)
         u = torch.rand(1).item()
         mode = 'flat' if u < 0.2 else ('struct' if u < 0.5 else 'fluct')
@@ -177,11 +187,11 @@ class TrainingBatches:
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, med0=QMED[pre], sd=0.45)
             if bright_tail is not None and bright_tail[0] > 0:
                 sel = torch.rand(N, device=dev) < bright_tail[0]
-                bt = lu(bright_tail[1], bright_tail[2], N) / 6.0 * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
+                bt = lu(bright_tail[1], bright_tail[2], N) / 6.0 * rs.tirf_factor(em['z'])
                 em['bright'] = torch.where(sel, bt, em['bright'])
         else:      # the detector_batch photon mix
             per_em = (g(nb) < 0.5)[em['fov']]
-            b_em = lu(*det_em, N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
+            b_em = lu(*det_em, N) * rs.tirf_factor(em['z'])
             em['bright'] = torch.where(per_em, b_em, em['bright']).clamp(photons[0] * 0.3, photons[1] * 3)
         u = torch.rand(1).item()
         mode = 'flat' if u < 0.2 else ('struct' if u < 0.5 else 'fluct')
@@ -216,7 +226,7 @@ def paper_bright(pre, nb, fov, z, rs, jitter=(0.7, 1.4), med0=None, sd=None):
     med = m0 * lu(*jitter, nb) if jitter else torch.full((nb,), m0, device=dev)
     N = len(fov)
     W = (med[fov] * torch.exp(sd * torch.randn(N, device=dev))).clamp(*PAPER_CLIP)
-    return W / 6.0 * torch.exp(-(z - rs.p['z_med']) / rs.sim.tirf)
+    return W / 6.0 * rs.tirf_factor(z)
 
 
 def gt_set(gt, H, W, min_on=0.5, min_phot=50.0):
