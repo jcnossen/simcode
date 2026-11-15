@@ -31,6 +31,9 @@ camera.offset_map, optics.pixel_um, channels, registration):
   zstack, bead_align   file globs of the bead z-stack / bead-align recordings of the acquisition (PSF / registration
                 calibration samples; not used by the processing)
   psf           the 4Pi PSF model json (key 'psf': a psf4pi state);  pattern_ref  reference SIM pattern json (k start)
+  lut_psf       '' (default): the processing uses the PSF table of the emitter checkpoint; a PSF json: the network's
+                PSF table (windows, solve) is built from that PSF instead (e.g. an in-situ PSF with a network
+                trained on another PSF)
   detector, emitter    checkpoints of the 4Pi detector and emitter network (emitter: a path or a tag of
                 <4Pi work dir>/models/head4pi_<tag>.pt)
   files         file numbers to process (null: all);  nframes  frames per file (0: all)
@@ -48,7 +51,7 @@ from simcode.setups.base import Setup
 DEFAULTS = dict(frame_dt_s=5.575e-3, xlim=[55, 305], patch=15, window=6, pattern=True, delta_deg=None, z_period_um=0.257, sb=0.2,
                 sig_scale=[1.0, 1.0, 1.0], learned=True, refine=0, refine_keep_best=False, zstarts=[-0.5, 0.0, 0.5],
                 unwrap_r_px=0.0, unwrap_tol=0.12, unwrap_kmax=2, learned_cs=True,
-                file_field=-1, det_batch=20, zstack=None, bead_align=None, psf=None,
+                file_field=-1, det_batch=20, zstack=None, bead_align=None, psf=None, lut_psf='',
                 pattern_ref=None, detector=None, emitter='v10', files=None, nframes=0,
                 chunk=600, p_min=0.5, tile=12.0, tblk=50, dnll=9.21, chi2_max=2.5, coh=1.0, iters=15, batch=1500,
                 min_photons=300.0, regions='', nphi=60000, tag='', claim=0, redo=0, order='fwd', min_free_gb=10.0)
