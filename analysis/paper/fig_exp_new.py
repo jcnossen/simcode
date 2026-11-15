@@ -16,7 +16,9 @@ usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM
   their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
   the same DME v2 drift); --psf <calib json>: PSF panel (psfpanel.py: xy at the plotted v2 set's median height + xz, rms
   aberration, SMLM / SIMFLUX CRLB at that set's median photons, the run's pass-1 background and the camera read noise;
-  psfdata.py), the v2 argument must then be a run directory; --aoi <values.json>: the zoom boxes of an earlier figure"""
+  psfdata.py), the v2 argument must then be a run directory; --aoi <values.json>: the zoom boxes of an earlier figure. PSF panel layout (psf_axes): xy and xz images of the same height,
+  xz at equal nm scale in x and z, tops on the J / K / L axes tops, letter on their baseline; <out>_psf_table.{md,csv} = the SI
+  table of the panel's conditions and CRLBs (psf_table)"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -74,6 +76,56 @@ def jsonable(o):
     if isinstance(o, (np.floating, np.integer)): return o.item()
     if isinstance(o, np.ndarray): return o.tolist()
     return o
+
+
+def psf_axes(fig, cell, axJ, info, gap_in=0.3, right_in=0.5, max_h_frac=0.62):
+    """(2026-11-15) axes of the PSF panel inside the gridspec cell: xy and xz images with the SAME HEIGHT, tops on the top of the
+    FRC axes (the J / K / L axes tops); xy square, xz at equal nm scale in x and z (width = height x the x / z extent ratio of the
+    xz section); gap_in inches between them; right_in inches right of the xz image for its z ticks / label (drawn on the right)."""
+    fw, fh = fig.get_size_inches()
+    cb = cell.get_position(fig); top = axJ.get_position().y1
+    x_ext = info['roi_px'] * info['pixel_nm']
+    z_ext = (info['z_grid_um'][-1] - info['z_grid_um'][0]) * 1e3
+    r = x_ext / z_ext
+    W, Hc = cb.width * fw, (top - cb.y0) * fh
+    h = min((W - gap_in - right_in) / (1 + r), max_h_frac * Hc)
+    x0 = cb.x0 + max(0.0, (W - gap_in - right_in - (1 + r) * h) / 2) / fw
+    axy = fig.add_axes([x0, top - h / fh, h / fw, h / fh])
+    axz = fig.add_axes([x0 + (h + gap_in) / fw, top - h / fh, r * h / fw, h / fh])
+    return axy, axz
+
+
+def psf_table(info, cond, values=None):
+    """(2026-11-15) the SI table of the PSF panel: conditions + single-emitter CRLBs (rows: quantity, value, unit, note); returns
+    (markdown, csv) strings"""
+    c = info['crlb']; p = cond['pattern']; q = cond['z_quantiles_um']
+    rows = [
+        ('PSF model', os.path.basename(cond['calib']), '', 'in-situ vectorial PSF fit (Zernike Noll 5-21)'),
+        ('rms aberration (Noll >= 5)', f"{info['rms_mwaves']:.0f}", 'mλ', ''),
+        ('focal plane', f"{cond['focus_um'] * 1e3:.0f}", 'nm', 'above the coverslip'),
+        ('emitter height, median', f"{cond['z_median_um'] * 1e3:.0f}", 'nm', 'pass-1 z of the plotted SIMCODE v2 set'),
+        ('emitter height, q25-q75', f"{q['q25'] * 1e3:.0f}-{q['q75'] * 1e3:.0f}", 'nm', f"q05-q95 {q['q05'] * 1e3:.0f}-{q['q95'] * 1e3:.0f} nm"),
+        ('rows without z', f"{100 * cond['z_nan_frac']:.2f}", '%', 'no pass-1 partner'),
+        ('signal, median (PSF intensity parameter)', f"{cond['photons_median']:.0f}", 'photons / 6-frame window', 'network photons of the plotted set'),
+        ('collected fraction at the median height', f"{info['collected']:.2f}", '', '41 x 41 px PSF image'),
+        ('signal, median (detected)', f"{info['detected_photons']:.0f}", 'photons / 6-frame window', 'intensity parameter x collected fraction'),
+        ('background, median', f"{cond['bg_px_frame']:.2f}", 'photons / px / frame', 'pass-1 network bg, p >= 0.63, disjoint windows, crop'),
+        ('camera read noise', f"{cond['rn2_e'] ** 0.5:.2f}", 'e- rms', f"mean variance {cond['rn2_e']:.2f} e^2 over the crop"),
+        ('camera gain', f"{cond['gain_e_per_adu']:.4f}", 'e- / ADU', ''),
+        ('pattern pitch', f"{p['pitch_nm']:.0f}", 'nm', 'mean of the 2 orientations'),
+        ('modulation depth', f"{p['depth']:.2f}", '', 'mean of the 2 orientations'),
+        ('pattern', '2 x 3', 'orientations x phase steps', ''),
+    ]
+    for k, lab in (('smlm', 'SMLM'), ('sf', 'SIMFLUX')):
+        r = c[k]
+        rows.append((f'CRLB {lab} x / y / z', f"{r['x']:.1f} / {r['y']:.1f} / {r['z']:.0f}", 'nm', '3D fit (x, y, z, I, bg)'))
+        rows.append((f'CRLB {lab} x / y, z known', f"{r['xy_zfixed'][0]:.1f} / {r['xy_zfixed'][1]:.1f}", 'nm', '2D fit at the emitter height'))
+    if values is not None:
+        rows.append(('SIMCODE v2 rows in the figure (n_frc)', f"{values:,}".replace(',', ' '), '', 'fair-FRC set'))
+    md = ['| quantity | value | unit | note |', '|---|---|---|---|'] + [f'| {a} | {b} | {u} | {n} |' for a, b, u, n in rows]
+    import csv, io
+    s = io.StringIO(); w = csv.writer(s); w.writerow(['quantity', 'value', 'unit', 'note']); w.writerows(rows)
+    return '\n'.join(md) + '\n', s.getvalue()
 
 
 def panel_text(info, cond):
@@ -171,7 +223,7 @@ def main():
     if psf_info is None:
         bot = root[2].subgridspec(1, 3, wspace=0.42, width_ratios=[1, 0.42, 0.42])
     else:
-        bot = root[2].subgridspec(1, 4, wspace=0.42, width_ratios=[1, 0.42, 0.42, 1.0])
+        bot = root[2].subgridspec(1, 4, wspace=0.42, width_ratios=[1, 0.42, 0.42, 1.7])
     styles = ['-', '--', '-.']
     ax = fig.add_subplot(top[:2, :2])
     dsets[-1].renderFigure(axes=ax, title='Overview' + (' (SIMCODE v2)' if a.v1 else ''), **full)
@@ -192,7 +244,7 @@ def main():
     for mi in range(NM): draw_zoom(mid[0, mi], 1, mi)
 
     short = [l.replace(' (preprint)', '\n(preprint)').replace('SIMCODE v2', 'SIMCODE\nv2') for l in LABELS]
-    ax = fig.add_subplot(bot[0])
+    ax = axJ = fig.add_subplot(bot[0])
     ax.axhline(1 / 7, color='grey', linestyle='--')
     for mi, R in enumerate(res):
         sel = (R['freq'] > 0.002) & (R['freq'] < 0.1)
@@ -208,16 +260,21 @@ def main():
     ax.set_title('RSP', fontsize=13); letter(ax, dx=-0.3)
     if psf_info is not None:
         import psfpanel
-        g = bot[3].subgridspec(2, 2, height_ratios=[1.0, 0.3], hspace=0.15, wspace=0.55)  # xy | xz, same size; label below
-        axy, axz, axt = fig.add_subplot(g[0, 0]), fig.add_subplot(g[0, 1]), fig.add_subplot(g[1, :])
+        from matplotlib.transforms import blended_transform_factory
+        axy, axz = psf_axes(fig, bot[3], axJ, psf_info)
         psfpanel.draw(axy, axz, psf_info, fontsize=8)
-        letter(axy, dx=-0.12, dy=1.12)
-        axt.axis('off')
-        axt.text(-0.05, 0.98, panel_text(psf_info, psf_cond), transform=axt.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
+        axz.yaxis.tick_right(); axz.yaxis.set_label_position('right')
+        axy.set_title(f"PSF xy (log)\nz = {psf_info['z_um'] * 1e3:.0f} nm", fontsize=9, pad=2); axz.set_title('PSF xz (log)', fontsize=9, pad=2)
+        # letter M on the baseline of J, K, L (y from the J axes, x left of the xy image)
+        axy.text(-0.25, 1.03, next(letters), transform=blended_transform_factory(axy.transAxes, axJ.transAxes), fontsize=20,
+                 fontweight='bold', ha='right', va='bottom')
+        axy.text(0.0, -0.12, panel_text(psf_info, psf_cond), transform=axy.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     if psf_info is not None:
         open(f'{out}_caption.txt', 'w').write(caption_text(psf_info, psf_cond, foot) + '\n')
+        md, csv_s = psf_table(psf_info, psf_cond, int(res[KINDS.index('v2')]['n_frc']))
+        open(f'{out}_psf_table.md', 'w').write(md); open(f'{out}_psf_table.csv', 'w').write(csv_s)
     else:
         open(f'{out}_caption.txt', 'w').write(foot + '\n')
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):

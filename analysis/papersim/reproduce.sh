@@ -22,6 +22,12 @@
 #                                    name, default m1809 / m1809v2), metrics, GT-FRC; reference = the previous m1809 (old-PSF
 #                                    networks, models/archive_psf_v1/m1809) as v2_m1809psf1 (REF)
 #   v2psf_figs                       overview / fig_density / summaries / time to fidelity of the v2-PSF sets (NAME as above)
+#   moving_v2psf                     (2026-11-15) moving microtubules with the v2 PSF / camera at the experimental photons
+#                                    (gen_moving.py --cond 1809_2 --v2psf 1 -> moving_exp_v2psf): SMLM / SIMFLUX (PSF v2), DECODE
+#                                    dec_sim1809v2, SIMCODE v1, SIMCODE v2 (MODEL / NAME as v2psf), metrics, moving_matched, and the SI
+#                                    figures fig_moving_pp.py (preprint layout) -> out/paper_figs_v2/si_simulated_live_smlm{,_internal}.*
+#                                    and fig_moving_main.py (extended)
+#   s10_v2psf "m1809"                S10 precision vs CRLB on the in-situ PSF v2 (s10.py --psf v2 -> s10_<model>v2) + si_crlb_figure.py (extended) + si_crlb_figure_pp.py (preprint layout)
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
 PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
@@ -87,5 +93,20 @@ case $what in
       $PY analysis/papersim/fig_gtfrc.py --prefix $P --suffix _v2psf --model $N --ref ${REF:-m1809psf1}
       $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf --model $N
     done ;;
-  *) sed -n 2,28p "$0"; exit 1 ;;
+  moving_v2psf)
+    D=$O/moving_exp_v2psf; N=${NAME:-m1809v2}
+    [ -f $D/gen.json ] || $PY analysis/papersim/gen_moving.py --cond 1809_2 --v2psf 1 --out $D > $O/logs/gen_moving_exp_v2psf.log 2>&1
+    $PY analysis/papersim/run_all.py $D --steps base,decode,v1,v2,metrics --psf models/insitu/calib_1809_2_psf_v2.json --decode_name dec_sim1809v2 \
+        --model ${MODEL:-m1809} --name $N --gt_diag 0 >> $O/logs/full_moving_exp_v2psf.log 2>&1
+    $PY analysis/papersim/moving_matched.py $D --model $N
+    $PY analysis/papersim/fig_moving_main.py --movie $D --model $N
+    $PY analysis/papersim/fig_moving_pp.py --movie $D --model $N; $PY analysis/papersim/fig_moving_pp.py --movie $D --model $N --internal 1
+    echo "$(date) done moving_exp_v2psf" ;;
+  s10_v2psf)
+    for NS in $items; do
+      $PY analysis/papersim/s10.py --model $NS --psf v2 --out $O/s10 > $O/logs/s10_${NS}v2.log 2>&1
+      $PY analysis/papersim/si_crlb_figure.py --tag ${NS}v2
+      $PY analysis/papersim/si_crlb_figure_pp.py --tag ${NS}v2
+    done ;;
+  *) sed -n 2,34p "$0"; exit 1 ;;
 esac
