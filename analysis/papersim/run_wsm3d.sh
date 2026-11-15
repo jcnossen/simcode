@@ -5,7 +5,8 @@
 #   gen (CPU render, same random streams as the _wsm movie) -> base (+ SIMFLUX) -> v1, v1gt (preprint SIMCODE, internal only)
 #   -> DECODE (DEC, default dec_sim1809v2; frame fix = main's dec_common) -> SIMCODE v2 (m1809 weights, name m1809v2) -> metrics, gtfrc
 # Movies on the SSD (MOVROOT, default ~/simcode2/out/papersim_ssd), symlinked into out/papersim. GPU steps wait for one of GPUS
-# (default "0 1"; GPU 2 = a long DECODE training) with < 50 % utilisation (mean of 5 samples) and >= 8 GB free.
+# (default "0 1"; never GPU 2 = a long DECODE training): PICK_MODE=share (default since 2026-11-16) = the one with the most free memory
+# (>= NEED_MB + 2 GB), PICK_MODE=wait = < 50 % utilisation and >= 8 GB free.
 # usage: [REPO=<checkout>] [P=Dexp|D] [DEC=dec_sim1809v2] bash analysis/papersim/run_wsm3d.sh "<densities, e.g. 1 4>"
 # DECODE swap later: DEC=<new model> ... and run_all --steps decode --redo decode, then metrics,gtfrc --redo (resumable steps).
 source ~/miniconda3/bin/activate simcode-py311; cd ${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}
@@ -13,15 +14,22 @@ O=/home/jc/simcode2/out/papersim; MOVROOT=${MOVROOT:-/home/jc/simcode2/out/paper
 GPUS=${GPUS:-0 1}; SPEC=wsm3d:11:3:3
 MV2=/home/jc/simcode2/out/psf_v2/eval/m1809v2/model_m1809      # = models.json m1809 (identical weights), as the _wsm runs
 mkdir -p $MOVROOT $O/logs
-pick() {
+pick() {   # PICK_MODE=wait (default before 2026-11-16): a GPU of GPUS with < 50 % utilisation and >= 8 GB free; PICK_MODE=share (coordinator,
+           # 2026-11-16: paper work has priority): the GPU of GPUS with the most free memory, if it leaves >= 2 GB headroom over NEED_MB
   while true; do
     exec 9>/tmp/wsm3d_gpu.lock; flock 9
-    for g in $GPUS; do
-      [ -f /tmp/wsm3d_gpu_$g.last ] && [ $(( $(date +%s) - $(cat /tmp/wsm3d_gpu_$g.last) )) -lt 120 ] && continue
-      u=0; for i in 1 2 3 4 5; do u=$((u + $(nvidia-smi -i $g --query-gpu=utilization.gpu --format=csv,noheader,nounits))); sleep 2; done
-      f=$(nvidia-smi -i $g --query-gpu=memory.free --format=csv,noheader,nounits)
-      if [ $((u / 5)) -lt 50 ] && [ $f -ge 8000 ]; then date +%s > /tmp/wsm3d_gpu_$g.last; flock -u 9; PICK=$g; return; fi
-    done
+    if [ "${PICK_MODE:-share}" = share ]; then
+      best=; bf=0
+      for g in $GPUS; do f=$(nvidia-smi -i $g --query-gpu=memory.free --format=csv,noheader,nounits); [ $f -gt $bf ] && { bf=$f; best=$g; }; done
+      if [ -n "$best" ] && [ $bf -ge $(( ${NEED_MB:-5000} + 2048 )) ]; then flock -u 9; PICK=$best; sleep 5; return; fi
+    else
+      for g in $GPUS; do
+        [ -f /tmp/wsm3d_gpu_$g.last ] && [ $(( $(date +%s) - $(cat /tmp/wsm3d_gpu_$g.last) )) -lt 120 ] && continue
+        u=0; for i in 1 2 3 4 5; do u=$((u + $(nvidia-smi -i $g --query-gpu=utilization.gpu --format=csv,noheader,nounits))); sleep 2; done
+        f=$(nvidia-smi -i $g --query-gpu=memory.free --format=csv,noheader,nounits)
+        if [ $((u / 5)) -lt 50 ] && [ $f -ge 8000 ]; then date +%s > /tmp/wsm3d_gpu_$g.last; flock -u 9; PICK=$g; return; fi
+      done
+    fi
     flock -u 9; sleep 45
   done
 }
