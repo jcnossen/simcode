@@ -1,7 +1,7 @@
 """One-time cache of a real-data chunk for the DECODE progress evaluation (eval_watch.py --real): 1000 non-overlapping 6-frame
 sums (frames 60 000-65 999) of each paper movie, in ADU sums, + the camera-v2 map (gain, 6 x offset) and the SIMCODE crop.
 -> out/decode_checks/v3/cache/real_<ds>.npz   (read once from /mnt/data; the evaluation never touches the raw movies)
-usage: python analysis/decode_checks/v3/cache_real.py [1809_2 2.5nM_2 20nM_2]"""
+usage: python analysis/decode_checks/v3/cache_real.py [1809_2 2.5nM_2]"""
 import os, sys
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -9,7 +9,7 @@ OUT = os.path.join(os.path.expanduser('~/simcode2'), 'out', 'decode_checks', 'v3
 D = '/mnt/data/dmdsf/bn_dnapaint'
 DS = {'1809_2': ('1809/cover1/2/simflux_5.5ms_500mW.tif', 'camera_maps_1809_2_v2.npz'),
       '2.5nM_2': ('dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif', 'camera_maps_2p5nM_m2_v2.npz'),
-      '20nM_2': ('dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif', 'camera_maps_20nM_m2_v2.npz')}
+      }   # 20 nM/2 is not in the paper (user decision 2026-11-15)
 F0, NS = 60000, 1000
 os.makedirs(OUT, exist_ok=True)
 from smlmtorch.util.multipart_tiff import tiff_read_file

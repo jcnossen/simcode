@@ -53,7 +53,7 @@ PRESETS = {
                   # network input / output scaling fixed to dec_sim1809v2's (param_out.yaml), so the arm continued from its
                   # weights sees the same input normalisation (autoset would give input_scale 15.3 for these photons)
                   scaling=dict(input_scale=10.774956268096291, input_offset=18.0, bg_max=36.0, phot_max=8000.0)),
-    # model 2: PSF v2 of 2.5 nM/2 (SIMCODE m25), for 2.5 nM/2 AND 20 nM/2. v2 units: photons median 1088 / 1455, p1-p99
+    # model 2: PSF v2 of 2.5 nM/2 (SIMCODE m25), for 2.5 nM/2 (Fig 4; 20 nM/2 is not in the paper, its stats only widen the ranges). v2 units: photons median 1088 / 1455, p1-p99
     # 403-3642 / 549-5398; bg p1-p99 11.5-33.6 / 14.5-56.2; detected 16.2 / 18.8 per 40 x 40 per sum (true density higher);
     # read noise 1.39 e / frame (sqrt(6) x = 3.39 per 6-sum). Heights 0-0.40 um as SIMCODE m25 (calibration, clipped).
     # -> photons lognormal(median 1200, log-sd 0.7) (p1-p99 235-6100), bg U(8, 70), density U(4, 80), on-time mean 2 sums.
