@@ -362,12 +362,18 @@ def fig_mt(a):
     # (c) zoom 1 (crossing), (d) zoom 2: the three analyses
     wc = 0.108; hc = wc * AR; xc = [0.665 + i * (wc + 0.006) for i in range(3)]
     ZT = dict(net='4Pi-SIMCODE', net_m='matched count', cl='4Pi-SIMFLUX')
+    zoom_matched = []
     for r, (cc, s) in enumerate(zooms):
         y0 = top - hc - r * (hc + 0.05)
+        zr_ = (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)
+        inz = inrect(T['net']['x'], T['net']['y'], zr_); n_cl = int(inrect(T['cl']['x'], T['cl']['y'], zr_).sum())
+        iz = np.nonzero(inz)[0]; iz = iz[np.argsort(comb[iz], kind='stable')[:n_cl]]            # matched WITHIN the zoom
+        Uz = dict(net=T['net'], net_m={q: v[iz] for q, v in T['net'].items()}, cl=T['cl'])
+        zoom_matched.append(dict(zoom=r + 1, n=n_cl, threshold_nm=float(comb[iz].max()) if len(iz) else float('nan')))
         for i, k in enumerate(K3):
-            ax = fig.add_axes([xc[i], y0, wc, hc])
-            ax.imshow(zrgb(T[k]['x'], T[k]['y'], T[k]['z'] - zc, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, (-zh, zh), 1.0)); noaxis(ax)
-            n = int(inrect(T[k]['x'], T[k]['y'], (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
+            ax = fig.add_axes([xc[i], y0, wc, hc]); U = Uz[k]
+            ax.imshow(zrgb(U['x'], U['y'], U['z'] - zc, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, (-zh, zh), 1.0)); noaxis(ax)
+            n = int(inrect(U['x'], U['y'], zr_).sum())
             ax.set_title(f"{ZT[k]}\nzoom {r + 1}: {n:,} locs", fontsize=5.6, pad=2, color=COL[k])
             if r == 1:
                 sec = G['section']
@@ -422,7 +428,7 @@ def fig_mt(a):
         else: ax.set_yticklabels([])
     save(fig, 'si_4pi_mt')
     ref = json.load(open(f'{P4}/fig/MT_selection_curves_v10_full.json'))
-    val = dict(threshold_matched_nm=thr, n_matched=n_m, G={k: G[k] for k in ('box', 'core', 'zoom1', 'zoom2', 'section', 'n_segments', 'zr_nm')},
+    val = dict(threshold_matched_nm=thr, n_matched=n_m, zoom_matched=zoom_matched, G={k: G[k] for k in ('box', 'core', 'zoom1', 'zoom2', 'section', 'n_segments', 'zr_nm')},
                profiles={k: {q: v for q, v in p.items() if q not in ('lat', 'ax')} for k, p in prof.items()},
                n_overview=int(Z['ov_n']), n_rows_region={k: int(inreg(T[k]).sum()) for k in K3}, info=info, lines={k: LAB[k] for k in K3},
                reference_json=f'{P4}/fig/MT_selection_curves_v10_full.json',
@@ -445,7 +451,10 @@ def caption_mt(v):
          f"reported combined precision sqrt(sigma_x^2 + sigma_y^2 + sigma_z^2) <= {v['threshold_matched_nm']:.2f} nm, as many in boxes 0 and 1 as "
          f"4Pi-SIMFLUX keeps, {v['n_matched']:,}); and 4Pi-SIMFLUX, the analysis as published (published-style pipeline with its published rejections). "
          "(a) The whole field, 4Pi-SIMCODE localizations coloured by z. (b) The 6 x 6 um region of box 0 (white box in a), 4Pi-SIMCODE. (c) Zoom 1, "
-         f"a crossing of two microtubules {G['zoom1']['dz_nm']:.0f} nm apart in z, the three analyses. "
+         f"a crossing of two microtubules {G['zoom1']['dz_nm']:.0f} nm apart in z, the three analyses; in the zooms (c, d) the matched count is taken "
+         "WITHIN each zoom (the most precise 4Pi-SIMCODE localizations of that zoom, as many as 4Pi-SIMFLUX has there: "
+         + ' / '.join(f"{q['n']:,} (combined precision <= {q['threshold_nm']:.2f} nm)" for q in v['zoom_matched'])
+         + " for zooms 1 / 2); everywhere else (e-g, numbers) it is the global match over boxes 0 and 1. "
          f"(d) Zoom 2, microtubules overlapping in x-y at different heights; dotted: the {int(G['section']['a1'] - G['section']['a0'])} nm strip of e. "
          f"(e) {G['section']['along']}-z sections along that strip. (f) Tube cross-section pooled over {P['net']['nseg']} isolated straight segments in "
          "boxes 0 and 1 (in-plane offset across the tube x axial offset, each segment's own centre line). (g) Lateral and axial profiles of f with their "
