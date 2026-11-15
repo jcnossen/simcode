@@ -56,7 +56,7 @@ def main():
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     p.add_argument('--name', default=''); p.add_argument('--out', default='')
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-simlin')
+    from simcode.util.proctitle import set_title; set_title('4pi-simlin')
     global SB; SB = 0.2 * math.sqrt(a.ksum)
     d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))

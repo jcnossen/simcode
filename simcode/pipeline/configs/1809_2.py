@@ -1,6 +1,6 @@
 """1809_2.yaml as a Python config (same resolved config; tests/test_cfgdict.py compares the two).
 DMD-SIMFLUX TIRF-SIM (NA 1.49 oil, Zyla 4.2 sCMOS, 642 nm, 108.33 nm px); the paper's low-density movie 1809/cover1/2.
-Reference calibration: models/insitu/calib_1809_2_psf3d.json (+ _avg), camera_maps_1809_2.npz.
+Reference calibration (production): models/insitu/calib_1809_2_psf_v2.json, camera_maps_1809_2_v2.npz.
 
   python -m simcode.pipeline simcode/pipeline/configs/1809_2.py
 """

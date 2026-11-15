@@ -48,13 +48,6 @@ def fringe_shifts(Km, nf=1):
     return torch.linalg.solve(Km[:, None].expand(n, H, 2, 2), nn_[None].expand(n, H, 2)[..., None])[..., 0]
 
 
-def fringe_error(r_est, r_true, pt):
-    """True where the estimate is in a wrong fringe along either pattern direction (|k_a . dr| > pi)."""
-    Km, _ = angle_k(pt)
-    ph = (Km * (r_est - r_true)[:, None, :]).sum(-1)
-    return (ph.abs() > math.pi).any(1)
-
-
 def kinetics_init(I, il0, T):
     """(B, t_on, t_off) start from per-frame intensities I [n,T] and the illumination il0 [n,T] at the start position
     . Boundaries are placed
@@ -74,8 +67,6 @@ def kinetics_init(I, il0, T):
     t_on = torch.where(prev_dark, torch.where(fi - 1 == 0, torch.full_like(B0, -0.5), (fi - 1).float()), t_on)
     t_off = torch.where(next_dark, torch.where(la + 1 == T - 1, torch.full_like(B0, T + 0.5), (la + 2).float()), t_off)
     return B0, t_on, t_off
-
-
 
 
 def chi2_sf(q, dof):

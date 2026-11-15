@@ -66,42 +66,43 @@ python -m simcode.detector.train --out runs/S/det --steps 40000 --batch 16 --siz
 python -m simcode.emitter.train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --detector runs/S/det/final.pt \
     --tau 15,80 --hold <out>/emitter_heldout/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --ckpt_every 6000 --calib $C
-# pass 2 (generic pattern draw, share --p_std of the SIMCODE pattern): detector, then its continuation
+# pass 2: the detector starts DEDICATED (SIMCODE pattern only; --illum 1 from the pass-1 detector), then two fine-tuning stages
+# on the 50 / 50 mix of SIMCODE and generic patterns (the pattern share is fixed in the trainers, see below)
 python -m simcode.detector.train --out runs/S/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
-    --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C --p_std 0.25
-python -m simcode.detector.train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 \
-    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
+    --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C
+python -m simcode.detector.train --out runs/S/p2det_m --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --pass1_ref runs/S/det/final.pt --calib $C
+python -m simcode.detector.train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det_m/final.pt --pass1_ref runs/S/det/final.pt --calib $C
 # pass-2 emitter network: three stages (candidates from the first pass-2 detector runs/S/p2det; a pass-2 --detector makes it a pass-2
 # network, zero-initialised from the pass-1 network runs/S/hd)
 python -m simcode.emitter.train --out runs/S/p2head --detector runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 \
-    --pert_model v1 --calib $C --p_std 0.25
+    --pert_model v1 --calib $C
 python -m simcode.emitter.train --out runs/S/p2headL --detector runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
-    --hold_v1 15 --calib $C --p_std 0.25
+    --hold_v1 15 --calib $C
 python -m simcode.emitter.train --out runs/S/p2headL2 --detector runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 41 --eval_every 5000 --ckpt_every 10000 --no_illum 0 \
-    --hold_v1 0 --calib $C --p_std 0.5
+    --hold_v1 0 --calib $C
 # -> det_S.pt, hd_S.pt = runs/S/det, hd; p2det_S.pt = runs/S/p2det_c; p2headL_S.pt = runs/S/p2headL2 (final.pt)
 ```
-**Pass-2 detector of m25 (2026-11-15, replaces p2det / p2det_c above for m25):** the generic pass-2 cost of m25 / g13 was in the
-generic detector (close-pair recall, false positives; out/generic_mix/STATUS.md), so the detector starts from a DEDICATED one
-(SIMCODE pattern only, `--p_std 1`) and is then fine-tuned on the 50 / 50 pattern mix (`--p_std 0.5`), 40k + 40k:
-```bash
-python -m simcode.detector.train --out runs/S/d2ded --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
-    --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C --p_std 1
-python -m simcode.detector.train --out runs/S/gft1 --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61 \
-    --eval_every 5000 --ckpt_every 10000 --init runs/S/d2ded/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
-python -m simcode.detector.train --out runs/S/gft2 --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71 \
-    --eval_every 5000 --ckpt_every 10000 --init runs/S/gft1/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
-# -> p2det_S.pt = runs/S/gft2/final.pt; the pass-2 emitter network stays the one trained on runs/S/p2det (above); the pass-2
-# calibrations and sigma rescale are fitted with this detector
-```
-On m25 (v2 gate scenes, vs the dedicated d2ded with the same emitter network, out/psf_v2/eval/m25v2/det2/accept_f2_vs_dd.txt):
-RMS/CRLB 200-1e9 iso +0.002, pair1 -0.020, pair2 -0.024, rs25qm -0.012; recall at 0.5 equal or higher on every scene
-(the generic p2det_c: pair1 recall at matched FP below the dedicated one). Recipe scripts: out/psf_v2/train/chain.sh, det2.sh.
+**Pattern share of the pass-2 training (fixed since 2026-11-15, no `--p_std` option; `simulate/batches.P_STD_DEDICATED`,
+`P_STD`):** a pass-2 detector initialised from a pass-1 detector sees the SIMCODE pattern only (share 1, the dedicated
+detector); a pass-2 detector initialised from a pass-2 detector (fine-tuning) and every pass-2 emitter-network stage see the
+SIMCODE pattern in half the FOVs and the generic draw in the other half (share 0.5). The value is stored in each checkpoint
+(`args['p_std']`). Why the detector starts dedicated: the generic pass-2 cost of m25 / g13 was in the generic detector
+(close-pair recall, false positives; out/generic_mix/STATUS.md). On m25 (v2 gate scenes, the fine-tuned detector vs the
+dedicated one with the same emitter network, out/psf_v2/eval/m25v2/det2/accept_f2_vs_dd.txt): RMS/CRLB 200-1e9 iso +0.002,
+pair1 -0.020, pair2 -0.024, rs25qm -0.012; recall at 0.5 equal or higher on every scene (the earlier generic p2det_c: pair1
+recall at matched FP below the dedicated one). Recipe scripts of the shipped models: out/psf_v2/train/chain.sh, det2.sh.
+**History of the shipped models:** the m1809 pass-2 detector (and g13's) comes from the earlier chain p2det (share 0.25, seed 11)
+-> p2det_c (0.5, lr 1e-4, seed 51); the m25 pass-2 detector is the recipe above (out/psf_v2/train/det2.sh: d2ded -> gft1 -> gft2
+= p2det -> p2det_m -> p2det_c); every shipped pass-2 emitter network was trained with the shares 0.25 / 0.25 / 0.5 in
+p2head / p2headL / p2headL2 (now 0.5 in all three stages; the generic share of the emitter network was about neutral,
+out/generic_mix). Retraining those exact networks needs a checkout before the 2026-11-15 cleanup (main 710d34b).
 Pass 2 is trained on generic illumination patterns (since 2026-11-14 the only pass-2 training draw; `simulate/acquisition.AcquisitionSim._generic`,
-out/p2generic): per FOV, with probability 1 - `--p_std`, pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg
+out/p2generic): per FOV, with probability 1 - p_std (above), pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg
 (separation 60-120 deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, per-angle
 depth 0.5-1.0 and per-slot / per-angle power 0.8-1.25; the other FOVs keep the SIMCODE (DMD) pattern. So a model's pass 2
 accepts any measured two-orientation pattern (nanoruler, 4-step, random phases), at 0-2 % cost on SIMCODE patterns vs the

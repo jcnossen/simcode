@@ -59,7 +59,7 @@ def main():
                     "webSMLM microtubule centrelines of a 50 x 50 px field as point chains at the same 20 points / px (wsm_gt.chains)")
     ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-genmov')
+    from simcode.util.proctitle import set_title; set_title('psim-genmov')
     import torch
     d = a.out or C.movie_dir('moving'); os.makedirs(d, exist_ok=True)
     t00 = time.time()

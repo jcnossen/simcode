@@ -77,7 +77,7 @@ def main():
     p.add_argument('--r', type=float, default=0.025, help='label radius um (0.025 antibody, 0.0125 bare tube)')
     p.add_argument('--seed', type=int, default=0); p.add_argument('--fchunk', type=int, default=1500)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-scmovie')
+    from simcode.util.proctitle import set_title; set_title('4pi-scmovie')
     out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     if os.path.exists(f'{out}/meta.json'):
         print('exists', out); return

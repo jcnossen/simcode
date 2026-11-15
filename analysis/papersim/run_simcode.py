@@ -53,7 +53,7 @@ def main():
     ap.add_argument('--redo', type=int, default=0)
     ap.add_argument('--gt_diag', type=int, default=1, help='1: also pass 2 on the ground-truth pattern (diagnostic, gt_pattern/locs_p2.hdf5)')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-v2')
+    from simcode.util.proctitle import set_title; set_title('psim-v2')
     md = os.path.abspath(a.movie_dir)
     g = json.load(open(os.path.join(md, 'gen.json')))
     W = int(g['W'])

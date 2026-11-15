@@ -105,7 +105,7 @@ def main():
     ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     ap.add_argument('--v2psf', type=int, default=0, help='1 = the v2-PSF set: PSF v2, v2 camera, heights from the v2 calibration, real-data statistics converted to v2 units')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-hollow')
+    from simcode.util.proctitle import set_title; set_title('psim-hollow')
     import torch
     d = a.out or os.path.join(HOLLOW, f'{a.cond}_R{a.radius_nm:g}_x{a.phot_scale:g}')
     os.makedirs(d, exist_ok=True)

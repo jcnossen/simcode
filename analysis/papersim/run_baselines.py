@@ -55,7 +55,7 @@ def main():
     ap.add_argument('--iters', type=int, default=50)
     ap.add_argument('--spots_per_bin', type=int, default=SPOTS_PER_BIN_SIM)
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-base')
+    from simcode.util.proctitle import set_title; set_title('psim-base')
     md = os.path.abspath(a.movie_dir)
     out = os.path.abspath(a.out or os.path.join(md, 'base'))
     os.makedirs(out, exist_ok=True)

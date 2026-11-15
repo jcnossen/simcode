@@ -92,7 +92,7 @@ def main():
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--ksum', type=int, default=1, help='K-summed conditions (real dense data by summing K windows): K x background, sqrt(K) read noise; the offset stays one OFF (= the sum with (K - 1) offsets removed)')
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-sim')
+    from simcode.util.proctitle import set_title; set_title('4pi-sim')
     out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     rng = np.random.default_rng(a.seed)
     H, W, T = a.H, a.W, a.frames

@@ -152,5 +152,5 @@ if __name__ == '__main__':
     ap.add_argument('--e_per_adu', type=float, default=None)
     ap.add_argument('--variant', default='sum6p'); ap.add_argument('--vover', default=None); ap.add_argument('--out'); ap.add_argument('--maxframes', type=int, default=None); ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('decode')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('decode')     # recognizable name in nvidia-smi / ps
     train(a) if a.cmd == 'train' else infer(a)

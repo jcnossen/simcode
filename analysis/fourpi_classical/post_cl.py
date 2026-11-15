@@ -22,7 +22,7 @@ def main():
     ap.add_argument('--files', type=int, nargs='*')
     a = ap.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     fs = sorted(glob.glob(f'{OUT}/cl_{a.cell}_[0-9][0-9][0-9]{a.tag}.npz'))
     if a.files: fs = [f for f in fs if int(os.path.basename(f).split('_')[2][:3]) in a.files]
     R = {}

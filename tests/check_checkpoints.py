@@ -1,10 +1,10 @@
 """
 Checkpoint check (CPU, no model is built): for every *.pt under the given directories list the python globals its pickle
 refers to (torch zip format: the GLOBAL / STACK_GLOBAL opcodes of data.pkl) and the 'arch' of its args. A checkpoint that
-refers to a module of this package by name (simcode.*, or the pre-rename simcode2.*) breaks when the package is renamed; state
+refers to a module of this package by name (simcode*.*) breaks when the package is renamed; state
 dicts + plain args dicts refer only to torch / collections / numpy.
 
-  python tests/check_checkpoints.py <dir> [<dir> ...]      exit code 1 if a checkpoint refers to simcode.* / simcode2.*
+  python tests/check_checkpoints.py <dir> [<dir> ...]      exit code 1 if a checkpoint refers to simcode*.*
 """
 import glob, os, pickletools, sys, zipfile
 
@@ -31,8 +31,9 @@ def main(dirs):
         for f in sorted(glob.glob(os.path.join(d, '**', '*.pt'), recursive=True)):
             g = globals_of(f); n += 1
             if g is None: print(f'{f}: not a torch zip checkpoint (skipped)'); continue
-            own = sorted(x for x in g if x.split('.')[0] in ('simcode', 'simcode2', '__main__'))
-            rest = sorted({x.split('.')[0] for x in g} - {'simcode', 'simcode2', '__main__'})
+            mine = lambda x: x.split('.')[0].startswith('simcode') or x.split('.')[0] == '__main__'
+            own = sorted(x for x in g if mine(x))
+            rest = sorted({x.split('.')[0] for x in g if not mine(x)})
             if own: bad += 1
             print(f'{"REFERS " if own else "ok     "}{os.path.relpath(f, d)}: modules {rest}' + (f' OWN {own}' if own else ''))
     print(f'{n} checkpoints, {bad} refer to package classes')

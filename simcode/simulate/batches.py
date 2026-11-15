@@ -27,14 +27,16 @@ one generator class TrainingBatches with three batch kinds:
              others; o['patt_input'] = illumination.perturb(true pattern) (realistic estimation errors), o['illum_input'] =
              illum_maps of it
 TrainingBatches(..., p_std=None) = the pass-1 setup (the presets' intensity noise, the SIMCODE pattern only); p_std = a share
-in [0, 1) = the pass-2 setup (frame_sd 0.09 and the generic pattern draw in a share 1 - p_std of the FOVs; P_STD = 0.5, the
-recipe's first stages 0.25, models/README.md).
+in [0, 1] = the pass-2 setup (frame_sd 0.09 and the generic pattern draw in a share 1 - p_std of the FOVs). The pass-2 recipe
+(fixed in the trainers since 2026-11-15, no option; models/README.md): P_STD_DEDICATED = 1 for the first pass-2 detector stage
+(initialised from a pass-1 detector: SIMCODE pattern only), P_STD = 0.5 for its continuations and for every pass-2 emitter
+network stage.
 Emitter height z (3D emitter network, 2026-11-14): Z_UNIF of the emitters uniform over Z_RANGE_UM, the rest the presets'
 lognormal (median 50-55 nm), both with the TIRF brightness factor; z of the GT in px relative to the calibration's focal
 plane: z_target_px. A calibration with fitted spot heights (emitter_z_quantiles_um, 2026-11-15) replaces this draw by its own
 height distribution, over its own range, without the TIRF factor (AcquisitionSim.draw_z / tirf_factor; no flag: the
 calibration's heights are used when it has them).
-GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons (gt_set).
+GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons.
 """
 import math
 import torch
@@ -51,7 +53,9 @@ Z_UNIF = 0.5
 
 
 QMED = {'0.5nM': 1260.0, '2.5nM': 1890.0}     # illumination_batch 'paper' mix: median window photons in label units
-P_STD = 0.5             # share of FOVs with the SIMCODE pattern (the rest: generic draw); 2026-11-13 out/p2generic g2ss
+# share of FOVs with the SIMCODE pattern (the rest: the generic draw) in the pass-2 training; fixed recipe constants (2026-11-15)
+P_STD_DEDICATED = 1.0   # first pass-2 detector stage (init = a pass-1 detector): the dedicated SIMCODE-pattern detector
+P_STD = 0.5             # pass-2 detector continuations and every pass-2 emitter-network stage (the 50 / 50 mix; out/p2generic g2ss)
 EM_PHOTONS = (40.0, 2500.0)                  # per-emitter photons of the per-emitter half of detector_batch (every model's value)
 BRIGHT_TAIL = (0.1, 2000.0, 20000.0)         # (frac, lo, hi) window photons of the bright-tail draw (emitter_batch bright_tail)
 
@@ -143,7 +147,6 @@ class TrainingBatches:
         return o
 
 
-
     def detector_batch(self, nb, dens=(0.0005, 0.04), photons=(40.0, 6000.0), med_photons=(40.0, 2500.0), em_photons=None,
                        pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0)):
         """detector batches of pass 1 (module doc)"""
@@ -230,7 +233,3 @@ def paper_bright(pre, nb, fov, z, rs, jitter=(0.7, 1.4), med0=None, sd=None):
     return W / 6.0 * rs.tirf_factor(z)
 
 
-def gt_set(gt, H, W, min_on=0.5, min_phot=50.0):
-    tot = gt['phot'].sum(1); on = gt['onf'].sum(1)
-    ins = (gt['x'] > -0.5) & (gt['x'] < W - 0.5) & (gt['y'] > -0.5) & (gt['y'] < H - 0.5)
-    return ins & (on >= min_on) & (tot >= min_phot)

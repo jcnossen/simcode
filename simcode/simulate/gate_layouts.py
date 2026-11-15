@@ -12,27 +12,6 @@ dev = 'cuda'
 S, P, h, R = CD.S, CD.P, CD.h, CD.R
 
 
-def add_pattern_error(o, phase_err=(0.0, 0.05), step_err=0.03, depth_err=0.1):
-    nb = o['nb']; patt = o['patt']; T = patt.shape[1]
-    g = lambda *s: torch.rand(*s, device=dev)
-    ang = (o['steps'] // 3)
-    sig = phase_err[0] + (phase_err[1] - phase_err[0]) * g(nb, 1)
-    e_ang = torch.randn(nb, 2, device=dev) * sig
-    e_ph = e_ang.gather(1, ang) + torch.randn(nb, T, device=dev) * step_err
-    e_m = (patt[..., 3] * (1 + (g(nb, 1) - 0.5) * 2 * depth_err)).clamp(0, 1)
-    pe = patt.clone(); pe[..., 2] = patt[..., 2] + e_ph; pe[..., 3] = e_m
-    # common per-angle phase error = global translation D of the pattern, k_a . D = e_a
-    Km = torch.stack([patt[:, 0, :2] * 0, patt[:, 0, :2] * 0], 1)
-    for a_ in (0, 1):
-        m_ = (ang == a_).float()
-        Km[:, a_] = (patt[..., :2] * m_[..., None]).sum(1) / m_.sum(1).clamp(min=1)[:, None]
-    o['shift_est'] = torch.linalg.solve(Km, e_ang[..., None])[..., 0]
-    yy, xx = torch.meshgrid(torch.arange(S, device=dev, dtype=torch.float32), torch.arange(S, device=dev, dtype=torch.float32), indexing='ij')
-    o['illum_est'] = pe[..., 4, None, None] * (1 + pe[..., 3, None, None] * torch.cos(pe[..., 0, None, None] * xx + pe[..., 1, None, None] * yy - pe[..., 2, None, None]))
-    o['patt_est'] = pe
-    return o
-
-
 def iso_emitters(nb, T, zmax, Brange=(60.0, 1200.0), tau=50.0, min_on=3.0):
     """9 emitters per FOV on an 18 px grid (isolated), brightness log-uniform per emitter, exponential on-times."""
     g = lambda *s: torch.rand(*s, device=dev)
@@ -76,19 +55,6 @@ def nn_dist(G, tg, minphot=100.0):
     D = torch.where((G['fov'][tg][:, None] == G['fov'][None]) & vis[None], D, torch.full_like(D, 1e9))
     D[torch.arange(n, device=dev), tg] = 1e9
     return D.min(1).values
-
-
-def poisson_emitters(nb, dens, T, zmax, tau=50.0, margin=6):
-    """stationary DNA-PAINT scene (as crlb_dense.make_scene): events Poisson in space/time, exponential on-times;
-    dens = mean ON emitters per frame per px. Brightness set later (wide_brightness)."""
-    g = lambda *s: torch.rand(*s, device=dev)
-    area = (S + 2 * margin) ** 2; t_lo = -4 * tau
-    n_ev = torch.poisson(torch.full((nb,), dens * area * (T - t_lo) / tau, device=dev)).long()
-    fov = torch.repeat_interleave(torch.arange(nb, device=dev), n_ev); N = len(fov)
-    t0 = t_lo + (T - t_lo) * g(N); t1 = t0 - torch.log(g(N).clamp(min=1e-9)) * tau
-    keep = t1 > 0; fov, t0, t1 = fov[keep], t0[keep], t1[keep]; N = len(fov)
-    x = -margin + (S + 2 * margin) * g(N); y = -margin + (S + 2 * margin) * g(N)
-    return dict(fov=fov, x=x, y=y, z=zmax * g(N) ** 1.5, bright=torch.ones(N, device=dev), t0=t0, t1=t1)
 
 
 def wide_brightness(em, T, tot=(100.0, 20000.0)):

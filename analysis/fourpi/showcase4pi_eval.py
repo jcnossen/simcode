@@ -87,7 +87,7 @@ def main():
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--chi2_max', type=float, default=4.0)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-sceval')
+    from simcode.util.proctitle import set_title; set_title('4pi-sceval')
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     out = f'{P4}/showcase/{a.tag}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']

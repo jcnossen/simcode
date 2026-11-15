@@ -48,7 +48,7 @@ def main():
     p.add_argument('--save_img', type=int, default=0, help='1: keep the candidate patches [n,6,4,15,15] (e, float16) in the front file (small simulated movies only; for the linear read-out, simlin4pi.py)')
     p.add_argument('--noise', default='low'); p.add_argument('--k', type=float, default=8.0); p.add_argument('--out', default=''); p.add_argument('--nms', type=int, default=7); p.add_argument('--s1', type=float, default=1.5)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-sim')
+    from simcode.util.proctitle import set_title; set_title('4pi-sim')
     d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')

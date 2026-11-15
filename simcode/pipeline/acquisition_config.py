@@ -32,7 +32,7 @@ DEFAULTS = {
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
     'train': dict(model=None, quick=False, quick_steps=30,
-                  steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_cont=40000, emitter_pass2=24000,
+                  steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
                   init=dict(detector=None, emitter='hd_sc5nb.pt'), extra=dict(detector='', emitter='', pass2=''),
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), real_mult_from='m1809'),

@@ -235,7 +235,7 @@ def main():
     ap.add_argument('--order_npc', type=int, default=3); ap.add_argument('--order_mt', type=int, default=1); ap.add_argument('--hours', type=float, default=16)
     a = ap.parse_args()
     if a.follow: return follow(a)
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, DELTA[a.cell]), dev=dev)
@@ -249,7 +249,7 @@ def main():
 
 
 def follow(a):
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=P, dev=dev)

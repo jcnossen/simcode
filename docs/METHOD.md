@@ -131,7 +131,7 @@ rules failed) and was removed on 2026-11-14.
 | `calib/calib_sc_hd_<set>_real.json`, `calib_sc_hd_<set>.json`, `calib_p2L_<set>_real.json`, `calib_p2L_<set>.json`, `sigu/sigu_p{1,2}_<set>.json` | the calibrations of a model (pass-1 / pass-2 solve with real-data or sim σ; selection-aware σ rescale): fitted with `analysis/psfmatch/fit_cal_set.py` on the gate scenes rendered with the model's PSF, templates = the hd_sc5nb files below; `analysis/psf3d_nets/sigcal.py` for the rescale |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright_real.json` | pass-1 solve with fixed c (0.10 + 0.10). The σ table is fitted on the gate tuning seed and rescaled for real data with the real 0.5 nM M4 zcal × the sim (true / M4) ratio. |
 | `calib/calib_sc_hd_sc5nbb15_pm_bright.json` | same, sim σ (gate scenes, sim movies; start point of the autoc fit) |
-| `calib/calib_sc_hd_sc5nbb15_pm_autoc1.json` | σ table for the automatic-c solve (`autoc.make_calib`; analysis only since 2026-11-14) |
+| `calib/calib_sc_hd_sc5nbb15_pm_autoc1.json` | σ table for the automatic-c solve (made by autoc's make_calib, removed 2026-11-15; analysis only since 2026-11-14) |
 | `calib/calib_autoc_r05 / r25 / r20.json` | the automatic-c calibrations of the full real 0.5 / 2.5 / 20 nM runs (θ 0.117 / 0.055, 0.143 / 0, 0.131 / 0) |
 | `calib/calib_p2L_b10_real.json` | pass-2 solve, real σ (production) |
 | `calib/calib_p2L_movie_b10.json`, `calib_p2L.json` | pass-2, sim σ (movie benchmark), gate |

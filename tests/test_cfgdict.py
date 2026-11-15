@@ -166,8 +166,6 @@ def test_schema_of_derived_config():
 def test_example_configs():
     a, b = AC.load(os.path.join(CFG, '1809_2.py')), AC.load(os.path.join(CFG, '1809_2.yaml'))
     assert dict(a, _file=None) == dict(b, _file=None)
-    y = ConfigDict.load(os.path.join(CFG, 'nr80.yaml')); del y['process.pass2']       # key no longer accepted (see nr80.py)
-    assert dict(AC.load(os.path.join(CFG, 'nr80.py')), _file=None) == AC.load(y)
     L = AC.load_all(os.path.join(CFG, 'example_setup.py'))
     assert [(c['name'], c['process']['model'], c['train']['model']) for c in L] == [('1809_2', 'm1809', 'm1809'), ('2.5nM_2', 'm25', 'm25'), ('20nM_2', 'm25', 'm25')]
     assert len({c['movie'] for c in L}) == 3 and all(c['out'].endswith('/' + c['name']) and c['beads']['sign'] == -1 for c in L)

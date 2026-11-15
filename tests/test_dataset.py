@@ -8,7 +8,7 @@ Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
              before 2026-11-15 (columns=); select / mask equal table.select; columns(); the subclass survives indexing and
              the filters
   hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata; select after the round trip
-  old files  the earlier SIMCODE npz save (metadata, drift, applied flag), the preprint code's .npy, the paper's DECODE npz,
+  old files  the preprint code's .npy, the paper's DECODE npz,
              Picasso (the paper's sf.hdf5)
   drift      apply at the window centre (frame + 3); estimate (DME v2) close to simcode.util.drift.drift_of_table
   frc        Dataset.frc = simcode.evaluation.frc.frc_halves
@@ -112,20 +112,6 @@ def test_hdf5_roundtrip():
         N = Dataset.load(f)
         assert type(N) is Dataset and torch.equal(N.mask(), L.mask()) and int(N.mask().sum()) == info['n_main']
         N.apply_drift(); assert torch.allclose(N.pos, L.pos - L.drift[L.center_frame.long()], atol=0, rtol=0)
-
-
-def test_old_simcode_npz():
-    """a file of the earlier SIMCODE Dataset.save_npz (v2 table + locs_meta json + locs_drift + locs_drift_applied)"""
-    with tempfile.TemporaryDirectory() as d:
-        T, info = _table(d)
-        D = np.random.default_rng(2).normal(0, 0.1, (6100, 2)).astype(np.float32)
-        meta = dict(window=6, model='mtest', imgshape=[120, 120], nframes=6100, sigma_max=12.0, crop=[5.0, 5.0, 110.0])
-        np.savez(f'{d}/old.npz', **T, locs_meta=np.array(json.dumps(meta)), locs_drift=D, locs_drift_applied=np.array(True))
-        L = Dataset.load(f'{d}/old.npz')
-        _check_layout(L, T)
-        assert L.drift_applied and np.array_equal(L.drift.numpy(), D) and L.meta['model'] == 'mtest'
-        assert L.meta['image_size'] == [120, 120] and L.num_frames == 6100 and L.pixel_nm == SP.PX_NM_DEFAULT and 'window' not in L.meta
-        assert int(L.mask().sum()) == info['n_main']
 
 
 def test_v1_decode_picasso_files():

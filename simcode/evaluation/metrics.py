@@ -1,6 +1,6 @@
 """Evaluation protocol library (GT-free metrics and their GT validation on punctate sims; docs/EVALUATION.md). CPU only.
-Revisit statistic, block-halves FRC variants (std / adj300 / gap300 / gap600), identical-row pairing, NN proxies (own and
-doubly-shared; lag-averaged over 12-36 frames with an event-block bootstrap), event linking + event-revisit proxy, GT truth
+Revisit statistic, block-halves FRC variants (std / adj300 / gap300 / gap600), identical-row pairing, the own-set NN proxy
+(lag-averaged over 12-36 frames with an event-block bootstrap; the doubly-shared variants were removed 2026-11-15), event linking + event-revisit proxy, GT truth
 decomposition (dyn / event / site), fast GT window table / matching for long sims.
 Coordinates in px (PX nm / px), f = window start (frames)."""
 import numpy as np
@@ -64,10 +64,6 @@ def frc_gap300(x, y, f):   # blocks 300 frames apart: (0 vs 2), (1 vs 3) of each
     return frc_blocks(x, y, f, 4, ((0, 2), (1, 3)))
 
 
-def frc_adj600c(x, y, f):  # control at the gap600 data volume (1/3): adjacent blocks of each 1800
-    return frc_blocks(x, y, f, 6, ((0, 1), (2, 3), (4, 5)))
-
-
 def frc_gap600(x, y, f):   # blocks 600 frames apart: (0 vs 3), (1 vs 4), (2 vs 5) of each 1800
     return frc_blocks(x, y, f, 6, ((0, 3), (1, 4), (2, 5)))
 
@@ -105,21 +101,6 @@ def sig1d(v, R=50.0):
         ll = (h[None] * np.log(np.minimum(w, 1.0) * g + (1 - min(w, 1.0)) / (2 * R) + 1e-300)).sum(1); k = ll.argmax()
         if ll[k] > best[0]: best = (ll[k], sig[k])
     return float(best[1])
-
-
-def nn_proxy_shared(A, B, ia, ib, dt=6):
-    """doubly-shared NN proxy (realgap decomp protocol): pairs (i, i') of shared rows where both methods have the shared row at
-    f + dt that is each one's nearest; sigma per axis from the 1-D differences of each method. Returns (sig_A, sig_B, n)."""
-    ka = -np.ones(len(A['x']), np.int64); ka[ia] = np.arange(len(ia))
-    kb = -np.ones(len(B['x']), np.int64); kb[ib] = np.arange(len(ib))
-    na = nn_next(A['x'], A['y'], A['f'], dt); nb = nn_next(B['x'], B['y'], B['f'], dt)
-    pa = na[ia]; pb = nb[ib]
-    ok = (pa >= 0) & (pb >= 0)
-    ok[ok] &= (ka[pa[ok]] >= 0) & (ka[pa[ok]] == kb[pb[ok]])
-    i0 = np.nonzero(ok)[0]
-    va = np.r_[(A['x'][pa[i0]] - A['x'][ia[i0]]), (A['y'][pa[i0]] - A['y'][ia[i0]])] * PX
-    vb = np.r_[(B['x'][pb[i0]] - B['x'][ib[i0]]), (B['y'][pb[i0]] - B['y'][ib[i0]])] * PX
-    return sig1d(va), sig1d(vb), int(len(i0))
 
 
 # ------------------------------------------------------------------ event linking + event-revisit proxy
@@ -254,7 +235,6 @@ def perturb(x, y, f, a, mode, grid=3):
     return x + d[:, 0], y + d[:, 1]
 
 
-
 RNG = np.random.default_rng(11)
 
 
@@ -294,8 +274,6 @@ def truth(M, idx, e=None):
     return out
 
 
-
-
 # ------------------------------------------------------------------ (critic 37 #4) lag-averaged NN with event-block bootstrap, 0.01-nm grid
 LAGS = (12, 18, 24, 30, 36)
 _HB = 0.1; _HR = 50.0
@@ -329,20 +307,6 @@ def sig1d_fine(v=None, h=None, s0=None, w0=None):
     return float(sg[k[0]]), float(wg[k[1]])
 
 
-def nn_shared_diffs(A, B, ia, ib, dt):
-    """doubly-shared NN pairs at lag dt (as nn_proxy_shared) -> (va, vb, rows of A of the pair starts; x and y stacked)"""
-    ka = -np.ones(len(A['x']), np.int64); ka[ia] = np.arange(len(ia))
-    kb = -np.ones(len(B['x']), np.int64); kb[ib] = np.arange(len(ib))
-    na = nn_next(A['x'], A['y'], A['f'], dt); nb = nn_next(B['x'], B['y'], B['f'], dt)
-    pa = na[ia]; pb = nb[ib]
-    ok = (pa >= 0) & (pb >= 0)
-    ok[ok] &= (ka[pa[ok]] >= 0) & (ka[pa[ok]] == kb[pb[ok]])
-    i0 = np.nonzero(ok)[0]
-    va = np.r_[(A['x'][pa[i0]] - A['x'][ia[i0]]), (A['y'][pa[i0]] - A['y'][ia[i0]])] * PX
-    vb = np.r_[(B['x'][pb[i0]] - B['x'][ib[i0]]), (B['y'][pb[i0]] - B['y'][ib[i0]])] * PX
-    return va, vb, np.r_[ia[i0], ia[i0]]
-
-
 def nn_own_diffs(x, y, f, dt, sel=None):
     """own-set NN pairs at lag dt -> (v (x and y stacked, nm), start row index stacked). sel: bool mask, pairs with both rows in sel"""
     j = nn_next(x, y, f, dt); k = j >= 0
@@ -359,37 +323,6 @@ def _bins(v):
 def _hist_w(b, ev_of_pair, wev):
     k = b >= 0
     return np.bincount(b[k], weights=wev[ev_of_pair[k]], minlength=len(_HC))
-
-
-def lagavg_shared(A, B, ia, ib, grid, lags=LAGS, nboot=200, seed=37):
-    """mean over lags of sig_A / sig_B (doubly-shared NN, identical rows) with an event-block (linked events of A's identical
-    rows) Poisson bootstrap CI. -> dict ratio, lo, hi, sA, sB (lag means), uA, uB (mean uniform weight 1 - w), per-lag values"""
-    rng = np.random.default_rng(seed)
-    Ai = {k: A[k][ia] for k in ('x', 'y', 'f')}
-    ev_i = link_events(Ai['x'], Ai['y'], Ai['f'], grid=grid, r=0.75)
-    ev = -np.ones(len(A['x']), np.int64); ev[ia] = ev_i
-    u, evc = np.unique(ev[ia], return_inverse=True); evmap = -np.ones(len(A['x']), np.int64); evmap[ia] = evc
-    per = []
-    for dt in lags:
-        va, vb, ra = nn_shared_diffs(A, B, ia, ib, dt)
-        ba, bb = _bins(va), _bins(vb); e = evmap[ra]
-        one = np.ones(len(u))
-        sa, wa = sig1d_fine(h=_hist_w(ba, e, one)); sb, wb = sig1d_fine(h=_hist_w(bb, e, one))
-        per.append(dict(dt=dt, sa=sa, sb=sb, wa=wa, wb=wb, n=len(va) // 2, ba=ba, bb=bb, e=e))
-    W = rng.poisson(1.0, (nboot, len(u))).astype(float)
-    R = []
-    for b in range(nboot):
-        rr = []
-        for P in per:
-            sa, _ = sig1d_fine(h=_hist_w(P['ba'], P['e'], W[b]), s0=P['sa'], w0=P['wa'])
-            sb, _ = sig1d_fine(h=_hist_w(P['bb'], P['e'], W[b]), s0=P['sb'], w0=P['wb'])
-            rr.append(sa / sb)
-        R.append(np.mean(rr))
-    R = np.array(R)
-    rat = float(np.mean([P['sa'] / P['sb'] for P in per]))
-    return dict(ratio=rat, lo=float(np.percentile(R, 2.5)), hi=float(np.percentile(R, 97.5)), sA=float(np.mean([P['sa'] for P in per])),
-                sB=float(np.mean([P['sb'] for P in per])), uA=float(1 - np.mean([P['wa'] for P in per])), uB=float(1 - np.mean([P['wb'] for P in per])),
-                n=int(np.mean([P['n'] for P in per])), per=[{k: P[k] for k in ('dt', 'sa', 'sb', 'wa', 'wb', 'n')} for P in per], boot=R.tolist())
 
 
 def lagavg_own(x, y, f, grid, lags=LAGS, nboot=200, seed=37, sel=None):

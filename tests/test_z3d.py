@@ -161,7 +161,7 @@ def _pass2_files(d, n, rng, p1_row=True):
 
 def test_table_pass2_z(tmp_path=None):
     """build_table (est2): the pass-1 z columns, NaN rows without a partner -> Dataset pos [n, 3] (NaN z), selection and render
-    fine; pass-2 files of an earlier run (no p1_row: the pass-2 head z) -> no z columns"""
+    fine; pass-2 files of a run before 2026-11-14 (no p1_row: the pass-2 head z) are refused"""
     import tempfile, numpy as np
     from simcode import table as SP
     from simcode.dataset import Dataset
@@ -176,8 +176,8 @@ def test_table_pass2_z(tmp_path=None):
     img = ds.select(12, 0.63, False).render(pixel_nm=20)
     assert np.isfinite(np.asarray(img)).all()
     d2 = tempfile.mkdtemp(); _pass2_files(d2, n, rng, p1_row=False)
-    T2, info2 = SP.build_table(d2, 'est2', crop=(0, 0, 128))
-    assert 'z' not in T2 and info2['z'].startswith('none')
+    try: SP.build_table(d2, 'est2', crop=(0, 0, 128)); raise AssertionError('pass-2 files without p1_row must be refused')
+    except ValueError: pass
 
 
 def test_table_3d(tmp_path=None):

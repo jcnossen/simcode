@@ -37,7 +37,7 @@ def main():
     ap.add_argument('--gt', default='preprint', help="'preprint' (default) or 'wsm:<seed>:<dx>:<dy>' = the webSMLM microtubule field of wsm_gt.py")
     ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-gen')
+    from simcode.util.proctitle import set_title; set_title('psim-gen')
     import torch
     d = a.out or C.movie_dir(f'D{a.density:g}')
     os.makedirs(d, exist_ok=True)

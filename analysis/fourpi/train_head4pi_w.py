@@ -48,7 +48,7 @@ def main():
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
     if a.acq:
         return main_plain(a)
-    from simcode.util.proctitle import auto; auto('4pi-train-w')
+    from simcode.util.proctitle import set_title; set_title('4pi-train-w')
     torch.manual_seed(a.seed)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
@@ -112,7 +112,7 @@ def main_plain(a):
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from train_det4pi import acquisition, setup_of
-    from simcode.util.proctitle import auto; auto('4pi-train-plain')
+    from simcode.util.proctitle import set_title; set_title('4pi-train-plain')
     c = acquisition(a.acq); t = c['fourpi_train']; S_ = setup_of(c)
     T = c['fourpi']['window']; out = c['fourpi']['emitter']; os.makedirs(os.path.dirname(out), exist_ok=True)
     steps = a.steps if a.steps != 20000 else t['emitter_steps']
