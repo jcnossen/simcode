@@ -28,11 +28,15 @@ One model = four networks, trained on one averaged in-situ PSF, and their calibr
 
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
 |---|---|---|---|
-| `m1809` (default) | `insitu/calib_1809_2_psf3d_avg.json` | the 1809/2 movie; the realistic-PSF paper simulations | `det_m1809.pt` 8da168c18b993a54, `hd_m1809.pt` c12e923724267195, `p2det_m1809.pt` c443106b6d9c10bb, `p2headL_m1809.pt` 71f5b5d1e310dd5a |
-| `m25` | `insitu/calib_2p5nM_m2_psf3d_avg.json` | the 2.5 nM / 2 movie | `det_m25.pt` 96b7d846258d9b9d, `hd_m25.pt` 6da9df67df5f9460, `p2det_m25.pt` 5d052eb228ea53cb, `p2headL_m25.pt` 01e24eacec9abf33 |
-| `g13` | `insitu/calib_gauss1.3.json` | the preprint-condition simulations (Gaussian PSF) | `det_g13.pt` 7a6130f3d34ca111, `hd_g13.pt` 02f4768f849df0a9, `p2det_g13.pt` 065435555ff1ceed, `p2headL_g13.pt` 17a3ba6324da5841 |
+| `m1809` (default) | `insitu/calib_1809_2_psf3d_avg.json` | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `det_m1809.pt` 8da168c18b993a54, `hd_m1809.pt` 75d26a156dcde604, `p2det_m1809.pt` b2610b51ccd07436, `p2headL_m1809.pt` ccfab3f89eec40ba |
+| `m25` | `insitu/calib_2p5nM_m2_psf3d_avg.json` | the 2.5 nM / 2 movie | `m25/`: `det_m25.pt` 96b7d846258d9b9d, `hd_m25.pt` 67ce95e2472a0442, `p2det_m25.pt` b54b2c16b76b0acc, `p2headL_m25.pt` 02acc8187848865a |
+| `g13` | `insitu/calib_gauss1.3.json` | the preprint-condition simulations (Gaussian PSF) | `g13/`: `det_g13.pt` 7a6130f3d34ca111, `hd_g13.pt` cbd17c8b098ccb3e, `p2det_g13.pt` d1037970932898d3, `p2headL_g13.pt` 7e23fbd57c05e2f2 |
 
 Sizes: detector 7.3 MB, head 5.5 MB, pass-2 detector 7.3 MB, pass-2 head 5.6 MB.
+Each model is a folder `<models>/<name>/` (networks, `calib/`, `model.json` with the recipe and sha256 of every file; the json
+files are in git). Since 2026-11-14: pass-1 head with the 3D position prior (z output), GENERIC pass 2 (recipe below);
+the earlier versions are the folders `archive_2d/<name>/` (2D head) and `archive_p2dedicated/<name>/` (3D head, pass 2
+trained on the SIMCODE pattern only), not referenced by any config.
 
 Other weights the kept code can use:
 
