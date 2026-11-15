@@ -541,7 +541,9 @@ def cached_rows(meth, ds, ep, outdir):
     cfg = DS[ds]
     fn = (lambda: simflux_pattern_rows(cfg['base'], ep)) if meth == 'SIMFLUX' else (lambda: simcode_pattern_rows(cfg['run'], ep))
     cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
-    cf = os.path.join(cd, f'{ds}_{meth}_p{ep}.npz')
+    import hashlib
+    src = cfg['base'] if meth == 'SIMFLUX' else cfg['run']
+    cf = os.path.join(cd, f'{ds}_{meth}_p{ep}_{hashlib.md5(src.encode()).hexdigest()[:8]}.npz')     # keyed on the source path too
     if os.path.exists(cf):
         z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
         if all(os.path.exists(f) and abs(os.path.getmtime(f) - t) < 1e-3 for f, t in M['mtimes'].items()):
