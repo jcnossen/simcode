@@ -104,11 +104,13 @@ def raw_grid_count(kind, path, F, smlm_path=None, cache=None):
     window starts f % 6 == 0, the evalproto crop, window end within the F frames; finite x, y) -> int, or None (unknown).
     SMLM / SIMFLUX: every detected ROI with an SMLM fit (the localizer's summed-fit cache next to the smlm table, before the
     chi^2 filter; the same detections feed SIMFLUX); DECODE: every row of its table (the network's own detection output);
-    SIMCODE: every row of the run's table (before the p / sigma selection). cache: json file of earlier counts."""
+    SIMCODE: its reported detections = the run table's rows at its detection threshold p >= 0.63 (simcode.table.P_GOOD; the
+    table's lower-p candidate pool is internal, like DECODE's sub-threshold probability map), before the sigma <= 12 nm cut.
+    cache: json file of earlier counts."""
     import glob, pickle
     from simcode.dataset import Dataset
     src = os.path.abspath(smlm_path if kind in ('smlm', 'sf') else path)
-    key = f'{kind}|{src}|{F}'
+    key = f'{kind}|{src}|{F}' + ('|p>=0.63' if kind == 'v2' else '')
     C = json.load(open(cache)) if cache and os.path.exists(cache) else {}
     if key in C: return C[key]
     if kind in ('smlm', 'sf'):
@@ -119,7 +121,8 @@ def raw_grid_count(kind, path, F, smlm_path=None, cache=None):
         from simcode.dataset import decode_table
         L = Dataset.from_decode(decode_table(src), window=6).numpy()
     elif kind == 'v2':
-        L = Dataset.load(src).numpy()
+        L = Dataset.load(src)
+        L = L[L.mask(max_precision_nm=None, in_region=False)].numpy()        # p >= P_GOOD only
     else:
         return None
     x, y, f = L['pos'][:, 0].astype(np.float64), L['pos'][:, 1].astype(np.float64), np.asarray(L['frame']).astype(np.int64)
@@ -134,7 +137,7 @@ REMOVED = dict(smlm='SMLM: chi^2 > 4 x ROI^2 or max(sigma_x, sigma_y) >= 0.15 px
                sf='SIMFLUX: the SMLM chi^2 filter, modulation error >= 0.1, SIMFLUX fit at a parameter limit or > 0.5 px from its '
                   'SMLM fit, or max(sigma_x, sigma_y) >= 0.15 px',
                decode='DECODE: its predicted max(sigma_x, sigma_y) >= 0.15 px',
-               v2='SIMCODE: detection probability p < 0.63 or calibrated max(sigma_x, sigma_y) > 12 nm')
+               v2='SIMCODE: calibrated max(sigma_x, sigma_y) > 12 nm')
 
 
 def paper_text(s):
@@ -365,8 +368,9 @@ def main():
                + f' ({SEL_RULE}; drift of the uncut sets).' if SEL else '')
             + ' K: per method accepted localizations (solid, the rows of the FRC and the renders; % of the method\'s raw localizations above '
                'the bar) and those removed by its selection (light, hatched), both counted on the disjoint 6-frame windows and the common '
-               'region of the FRC (window starts f % 6 == 0; no window subsampling counted as removed). Raw: SMLM / SIMFLUX every detected ROI with an '
-               'SMLM fit (the same detections), DECODE every row of its output, SIMCODE every detection of the network (its detection threshold p >= 0.3). Removed: '
+               'region of the FRC (window starts f % 6 == 0; no window subsampling counted as removed). Raw = each method\'s reported detections: SMLM / SIMFLUX '
+               'every detected ROI with an SMLM fit (the same detections), DECODE every row of its output, SIMCODE every detection at its '
+               'detection threshold p >= 0.63. Removed: '
                + '; '.join(REMOVED[k] for k in KINDS if k in REMOVED) + '.'
             + (' K, light without hatching (between the two): rows removed by the precision cut.' if SEL else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
