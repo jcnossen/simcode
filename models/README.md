@@ -15,7 +15,7 @@ The small calibration json files are in git.
 | `calib/calib_p2L_<set>.json`, `calib_p2L_<set>_real.json` | the same for pass 2 |
 | `calib/sigu/sigu_p1_<set>.json`, `sigu_p2_<set>.json` | selection-aware sigma rescale per pass (applied by `simcode.run` / `simcode.table`; fitted by `analysis/psf3d_nets/sigcal.py`) |
 | `calib/calib_sc_hd_sc5nbb15_pm*.json`, `calib_p2L.json`, `calib_p2L_b10_real.json`, `calib_p2L_movie_b10.json`, `calib_autoc_r*.json`, `sigu/sigu_p*_cur.json` | calibrations of the earlier default head (hd_sc5nb / p2_head_long). Still used: as the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`), and as the sigma table of the automatic-c estimator `simcode/solve/autoc.py` (analysis only) |
-| `insitu/calib_<movie>*.json` | in-situ PSF + camera calibration per movie (`_psf3d`: per-axis PSF; `_psf3d_avg`: averaged over the two pattern axes = the PSF a model is trained on; `calib_gauss1.3.json`: Gaussian sigma 1.3 px, the preprint's simulation PSF) |
+| `insitu/calib_<movie>*.json` | in-situ PSF + camera calibration per movie (`_psf3d`: per-axis PSF; `_psf3d_avg`: averaged over the two pattern axes = the PSF the pre-v2 models were trained on (archive_psf_v1; the current models use `_psf_v2`); `calib_gauss1.3.json`: Gaussian sigma 1.3 px, the preprint's simulation PSF) |
 | `insitu/calib_<movie>_psf_v2.json`, `insitu/camera_maps_<movie>_v2.npz` (1809_2, 2p5nM_m2, 20nM_m2) | in-situ PSF + camera v2 (2026-11-15; source: `out/psf_v2/calib/`, scripts and results `out/psf_v2/` (`psf_refit.py`, `write_calib.py`, `build_camera.py`, STATUS.md); also in each json's `source` / `psf_v2` keys): vectorial PSF (torch_psf InSituEstimator, Zernike Noll 5-21, focus 0.20 um, no blur, default dipole model), corrected camera (gain 0.4256 e/ADU, offset 103.9 ADU, new offset / read-noise maps; the 2.5 nM offset map without the sample structure), fitted spot heights `emitter_z_median_um` / `emitter_z_quantiles_um` of the fits not pinned at the fit limits, clipped to `emitter_z_range_um` [0, 0.40] (the training height distribution of a model trained on it: `simulate/acquisition.height_quantiles`; pinned fractions in `emitter_z_fit`, `out/psf_v2/zfit_nonpinned.py`, `write_heights.py`) |
 | `insitu/camera_maps_<movie>.npz` | per-pixel offset and read-noise maps of the four movies (85-130 kB each). Binary, kept in git for now because every calibration json refers to one; **to be decided** whether they move out with the weights |
 | `insitu/beads/psf_fit_*.json` | bead z-stack PSF fit (Zernike start of the in-situ fit) |
@@ -29,7 +29,7 @@ One model = four networks, trained on one averaged in-situ PSF, and their calibr
 
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
 |---|---|---|---|
-| `m1809` (default) | `insitu/calib_1809_2_psf3d_avg.json` | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `det_m1809.pt` 8da168c18b993a54, `hd_m1809.pt` 75d26a156dcde604, `p2det_m1809.pt` b2610b51ccd07436, `p2headL_m1809.pt` ccfab3f89eec40ba |
+| `m1809` (default) | `insitu/calib_1809_2_psf_v2.json` (2026-11-15, copy `m1809/calib_1809_2_psf_v2.json`; before: `calib_1809_2_psf3d_avg.json`, folder `archive_psf_v1/m1809/`) | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `det_m1809.pt` 18bd16f99613a67b, `hd_m1809.pt` ddc965bc5bd5a4a4, `p2det_m1809.pt` 92d4487a7fe8ced5, `p2headL_m1809.pt` f341ef1d8de22f0f |
 | `m25` | `insitu/calib_2p5nM_m2_psf_v2.json` (2026-11-15; before: `calib_2p5nM_m2_psf3d_avg.json`, folder `archive_psf_v1/m25/`) | the 2.5 nM / 2 and 20 nM / 2 movies | `m25/`: `det_m25.pt` b3b03b7ee668d6b2, `hd_m25.pt` 81a4ca87744aaf44, `p2det_m25.pt` e7b92a4595681c60, `p2headL_m25.pt` 53a7373811a6c33d |
 | `g13` | `insitu/calib_gauss1.3.json` | the preprint-condition simulations (Gaussian PSF) | `g13/`: `det_g13.pt` 7a6130f3d34ca111, `hd_g13.pt` cbd17c8b098ccb3e, `p2det_g13.pt` d1037970932898d3, `p2headL_g13.pt` 7e23fbd57c05e2f2 |
 
@@ -60,7 +60,7 @@ anything in the tree): the mixture set `psf3dmix` and its close-pair variant, th
 ## How a model is made (m1809 recipe)
 
 ```bash
-C=models/insitu/calib_1809_2_psf3d_avg.json      # the averaged PSF of the model
+C=models/insitu/calib_1809_2_psf_v2.json         # the PSF + camera of the model (PSF v2; training heights from its emitter_z_quantiles_um)
 python -m simcode.detector.train --out runs/S/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 \
     --seed 0 --calib $C
 python -m simcode.emitter.train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --detector runs/S/det/final.pt \

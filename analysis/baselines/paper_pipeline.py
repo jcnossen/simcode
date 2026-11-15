@@ -22,7 +22,12 @@ Changes (documented):
     native EstimateIBg with our PSF images. --fitter fastpsf (gauss: only) runs the original fastpsf code path, as a check.
   * Camera: --camera maps (default) = the movie's in-situ camera calibration (per-pixel offset map, models/insitu/
     camera_maps_<movie>.npz, median 99.3 ADU) + gain 0.56; --camera paper = the paper's scalar offset 106.34 ADU (over-subtracts
-    ~7 ADU = 3.9 e/px/frame, see the calib notes).
+    ~7 ADU = 3.9 e/px/frame, see the calib notes); --camera calib = the camera of the --psf calib json (its 'camera' block:
+    gain_e_per_adu + the offset map of camera.maps next to the json), i.e. camera v2 (gain 0.4256, v2 offset map) for the
+    PSF-v2 calibrations. Only gain + offset enter (Poisson MLE as fastpsf; no read-noise term), as for the other two options.
+  * Fit plane (2026-11-15): --psf_z <um> or --psf_z_run <SIMCODE v2 run dir> = the median pass-1 emitter height of that run
+    (rows p >= 0.63 inside the crop [5, 115) px, z -> focus_um + z * pixelsize_um of the calib, as analysis/paper/psfdata.py);
+    --psf_zmax: top of the rendered knot stack (um, default 0.2; must lie above the fit plane).
   * SIMFLUX initial values (--sf_init fixed, default): smlmtorch's fit_simflux indexes the per-ROI summed fits with the
     filtered dataset's index instead of the ROI id, so the published SIMFLUX started each ROI from ANOTHER ROI's SMLM fit and
     applied |SIMFLUX - SMLM| < 0.5 px against that wrong reference (most fits rejected). Here each ROI starts from its own
@@ -32,7 +37,10 @@ Changes (documented):
 
 usage:
   CUDA_VISIBLE_DEVICES=1 python analysis/baselines/paper_pipeline.py <dataset 1809_2|2.5nM_2|20nM_2> --psf <spec>
-        [--out out/paper2/<dataset>] [--maxframes N] [--camera maps|paper] [--fitter torch|fastpsf] [--steps smlm,sf]
+        [--out out/paper2/<dataset>] [--maxframes N] [--camera maps|paper|calib] [--fitter torch|fastpsf] [--steps smlm,sf]
+        [--psf_z um | --psf_z_run <run dir>] [--psf_zmax um]
+  PSF v2 + camera v2 (Figs 3/4 baselines, 2026-11-15): --psf <models/.../calib_<movie>_psf_v2.json> --camera calib
+        --psf_z_run <the movie's SIMCODE v2 run> --psf_zmax 0.4 --out out/paper2/<dataset>/baselines_psfv2
 outputs: <out>/smlm/smlm.npy (+ .hdf5; SFDataset, as the paper's smlm.npy), mp_smlm.pickle, info.json;
          <out>/sf/sf.hdf5, mp_sf.pickle, info.json; <out>/run.json (settings, PSF, timing)."""
 import os, sys, json, time, argparse, pickle
@@ -336,6 +344,22 @@ def estimate_mp_smlm(smlm_ds, cfg, smlm_spots_per_bin=20000, mod_error_threshold
 # ------------------------------------------------------------------------------------------------
 
 
+def run_height(run_dir, calib, crop=(5.0, 5.0, 110.0), p_min=0.63):
+    """median pass-1 emitter height (um) of a SIMCODE v2 run: pass1_*.npz rows with p >= p_min inside the crop; z (px relative
+    to the calib's focal plane) -> focus_um + z * pixelsize_um (analysis/paper/psfdata.py convention)"""
+    import glob
+    c = json.load(open(calib)); x0, y0, s = crop; z = []
+    files = sorted(glob.glob(os.path.join(run_dir, 'pass1_*.npz')))
+    assert files, f'no pass1_*.npz in {run_dir}'
+    for f in files:
+        with np.load(f) as d:
+            m = (d['p'] >= p_min) & (d['x'] >= x0) & (d['x'] < x0 + s) & (d['y'] >= y0) & (d['y'] < y0 + s)
+            z.append(c['focus_um'] + d['z'][m].astype(np.float64) * c['pixelsize_um'])
+    z = np.concatenate(z); q = np.nanpercentile(z, [25, 50, 75])
+    return float(q[1]), dict(run=os.path.abspath(run_dir), n_chunks=len(files), n_rows=int(len(z)), p_min=p_min, crop=list(crop),
+                             z_median_um=float(q[1]), z_q25_q75_um=[float(q[0]), float(q[2])], z_nan_frac=float(np.mean(~np.isfinite(z))))
+
+
 def crlb_summary(ds, px=108.33):
     c = ds.crlb.pos[:, :2]
     return dict(n=int(len(ds)), median_crlb_nm=(np.median(c, 0) * px).round(2).tolist(),
@@ -349,7 +373,8 @@ def main():
     ap.add_argument('--psf', required=True)
     ap.add_argument('--out', default=None)
     ap.add_argument('--maxframes', type=int, default=None)
-    ap.add_argument('--camera', default='maps', choices=['maps', 'paper'])
+    ap.add_argument('--camera', default='maps', choices=['maps', 'paper', 'calib'],
+                    help="'calib' = the camera block of the --psf calib json (gain + offset map; camera v2 for the PSF-v2 calibs)")
     ap.add_argument('--fitter', default='torch', choices=['torch', 'fastpsf'])
     ap.add_argument('--steps', default='smlm,sf')
     ap.add_argument('--iters_smlm', type=int, default=50)
@@ -360,7 +385,10 @@ def main():
     ap.add_argument('--sf_init', default='fixed', choices=['fixed', 'paper'],
                     help="SIMFLUX initial value / reference: 'fixed' = the ROI's own SMLM fit; 'paper' = smlmtorch's indexing")
     ap.add_argument('--psf_z', type=float, default=None, help='fit plane (um) for a spline PSF; default from the PSF')
+    ap.add_argument('--psf_z_run', default=None, help='SIMCODE v2 run dir: fit plane = its median pass-1 emitter height (run_height)')
+    ap.add_argument('--psf_zmax', type=float, default=0.2, help='top of the knot stack of a calib json PSF (um)')
     a = ap.parse_args()
+    assert not (a.psf_z is not None and a.psf_z_run), '--psf_z and --psf_z_run are exclusive'
     D = DATASETS[a.dataset]
     out = os.path.abspath(a.out or os.path.join(REPO, 'out', 'paper2', a.dataset))
     run = f'{a.fitter}_{a.camera}' + (f'_{a.maxframes}' if a.maxframes else '')
@@ -368,12 +396,25 @@ def main():
     tif = link_movie(D['tif'], os.path.join(REPO, 'out', 'paper2', a.dataset, 'movie'))
     T = {}
     t0 = time.time()
+    cam_src = None
     if a.camera == 'maps':
         cam = np.load(os.path.join(REPO, 'models', 'insitu', D['cam']))
         gain, offset = float(cam['gain']), cam['offset_adu'].astype(np.float32)
+    elif a.camera == 'calib':
+        assert a.psf.endswith('.json'), '--camera calib needs a calib json --psf'
+        cc = json.load(open(a.psf))['camera']; cam_src = os.path.join(os.path.dirname(os.path.abspath(a.psf)), cc['maps'])
+        cam = np.load(cam_src)
+        gain, offset = float(cc['gain_e_per_adu']), cam['offset_adu'].astype(np.float32)
+        assert abs(float(cam['gain']) - gain) < 1e-6, (cam_src, float(cam['gain']), gain)
     else:
         gain, offset = PAPER['gain'], PAPER['offset']
-    psf = zpsf.load(a.psf, z_fit=a.psf_z)
+    height = None
+    if a.psf_z_run:
+        a.psf_z, height = run_height(a.psf_z_run, a.psf)
+        print('fit plane from the run:', json.dumps(height), flush=True)
+    psf = zpsf.load(a.psf, z_fit=a.psf_z, zmax=a.psf_zmax)
+    if getattr(psf, 'z_fit', 0) > a.psf_zmax - 0.02 and not a.psf.startswith('gauss:'):
+        raise SystemExit(f'fit plane {psf.z_fit:.3f} um too close to the knot-stack top --psf_zmax {a.psf_zmax}')
     rel = lambda p: os.path.relpath(p, os.path.dirname(tif))
     kw = dict(pattern_frames=PAPER['pattern_frames'], pixelsize=PAPER['pixelsize'], detection_threshold=PAPER['detection_threshold'],
               roisize=PAPER['roisize'], device='cuda:0', zrange=PAPER['zrange'], gain=gain, offset=offset, maxframes=a.maxframes,
@@ -397,7 +438,8 @@ def main():
     os.makedirs(f'{out}/smlm', exist_ok=True)
     smlm_ds.save(f'{out}/smlm/smlm.npy'); smlm_ds.save(f'{out}/smlm/smlm.hdf5')
     n_fit = len(sfloc.summed_fits) if hasattr(sfloc, 'summed_fits') else None
-    info = dict(dataset=a.dataset, psf=psf.desc, psf_z_fit_um=getattr(psf, 'z_fit', None), camera=a.camera, fitter=a.fitter,
+    info = dict(dataset=a.dataset, psf=psf.desc, psf_z_fit_um=getattr(psf, 'z_fit', None), psf_z_from_run=height,
+                camera=a.camera, camera_maps=cam_src, gain=gain, fitter=a.fitter,
                 maxframes=a.maxframes, numrois=int(sfloc.numrois), n_after_chisq=int(len(smlm_ds)), lm=lm_stats,
                 chisq_per_px_median=float(np.median(smlm_ds.chisq) / PAPER['roisize'] ** 2), **crlb_summary(smlm_ds))
     print('SMLM:', json.dumps(info), flush=True)
@@ -431,7 +473,8 @@ def main():
         print('SIMFLUX:', json.dumps(sinfo), flush=True)
         json.dump(sinfo, open(f'{out}/sf/info.json', 'w'), indent=1)
     T['total_s'] = time.time() - t0
-    json.dump(dict(args=vars(a), timing=T, run=run, gain=gain, offset=a.camera if a.camera == 'maps' else PAPER['offset']),
+    json.dump(dict(args=vars(a), timing=T, run=run, gain=gain, offset=cam_src or (a.camera if a.camera == 'maps' else PAPER['offset']),
+                   psf_z_fit_um=getattr(psf, 'z_fit', None), psf_z_from_run=height),
               open(f'{out}/run.json', 'w'), indent=1)
     print('timing', T, flush=True)
 

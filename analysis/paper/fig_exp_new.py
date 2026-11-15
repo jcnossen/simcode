@@ -16,7 +16,7 @@ usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM
   their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
   the same DME v2 drift); --psf <calib json>: PSF panel (psfpanel.py: xy at the plotted v2 set's median height + xz, rms
   aberration, SMLM / SIMFLUX CRLB at that set's median photons, the run's pass-1 background and the camera read noise;
-  psfdata.py), the v2 argument must then be a run directory"""
+  psfdata.py), the v2 argument must then be a run directory; --aoi <values.json>: the zoom boxes of an earlier figure"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -107,7 +107,8 @@ def main():
                     "out/paper/<ds>/published/sfhd-ndi+smlm.hdf5), through the same fair protocol; v2 is then labelled 'SIMCODE v2'")
     ap.add_argument('--note', default='', help='extra footnote line (e.g. a provisional marker)')
     ap.add_argument('--v2_sigma_max', type=float, default=None, help="nm: v2 rows = the paper's selection at this threshold (default: the rows sel)")
-    ap.add_argument('--aoi', default=None, help="'auto' = zoompick crossings (default for 20nM_2)")
+    ap.add_argument('--aoi', default=None, help="'auto' = zoompick crossings (default for 20nM_2); or the path of an earlier "
+                    "figure's <out>_values.json: its zoom boxes ('aois'), e.g. to keep the 20 nM boxes when a method's table changes")
     ap.add_argument('--outdir', default=None, help='output directory (default out/paper2/fig)')
     ap.add_argument('--reuse_drift', default=None, help='prefix of earlier drift caches for the methods other than v2')
     ap.add_argument('--psf', default=None, help='calib json of the PSF panel (needs --v2 = a run directory)')
@@ -138,7 +139,10 @@ def main():
         res.append(R)
         print(lab, json.dumps(FF.summary(R)), flush=True)
 
-    renders = S['renders'] if (S['renders'] is not None and a.aoi != 'auto') else pick_aois(dsets)
+    if a.aoi and a.aoi.endswith('.json'):
+        renders = [(tuple(c), w, {'scalebar_nm': 500, 'clip_percentile': 98}) for c, w in json.load(open(a.aoi))['aois']]
+    else:
+        renders = S['renders'] if (S['renders'] is not None and a.aoi != 'auto') else pick_aois(dsets)
     shared = dict(zoom=40, clip_percentile=96, scalebar_nm=2000, scalebar_fontsize=20, intensities=False, transpose=False, sigma=2)
     shared.update(S['render_args'] or {})
     full = dict(shared); zoom = 10; full.update(zoom=zoom, scalebar_nm=2000)
