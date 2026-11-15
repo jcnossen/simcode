@@ -15,6 +15,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode.io import movie as MV, work as WK
 from simcode.psf import ArrayMovie
+from simcode.channels.layout import Channel, ChannelLayout, ChannelReader
 
 
 def _tif(path, a):
@@ -53,7 +54,6 @@ def _write_dcimg(path, frames, footer_words=128):
 def test_dcimg_movie():
     rng = np.random.default_rng(1)
     fr = rng.integers(0, 60000, (9, 6, 40)).astype(np.uint16)
-    lay = dict(x0=(2, 12, 22, 31), cw=8, ch=6, mirror=(False, False, True, True))
     with tempfile.TemporaryDirectory() as d:
         _write_dcimg(f'{d}/x.dcimg', fr)
         m = MV.open_movie(f'{d}/x.dcimg')
@@ -61,14 +61,20 @@ def test_dcimg_movie():
         assert np.array_equal(m.raw(2, 5), fr[2:7]) and m.raw(7, 100).shape[0] == 2          # raw frames, clipped at the end
         assert np.array_equal(m.read(0, 9), fr.astype(np.float32))
         assert int(m.footer(4)[0]) == 1004 and abs(m.time_s(4) - (1700000004 + 0.25)) < 1e-6
-        c = MV.DcimgMovie(f'{d}/x.dcimg', layout=lay)
-        assert c.shape == (4, 6, 8)
+        lay = ChannelLayout([Channel(name=f'c{i}', crop=(x0, 0, 8, 6), mirror=m) for i, (x0, m) in enumerate(zip((2, 12, 22, 31), ('none', 'none', 'lr', 'lr')))])
+        c = ChannelReader(MV.DcimgMovie(f'{d}/x.dcimg'), lay)
+        assert c.shape == (4, 6, 8) and c.n == 9
         x = c.read(1, 6)
         assert x.shape == (5, 4, 6, 8) and x.dtype == np.float32
         assert np.array_equal(x[:, 0], fr[1:6, :, 2:10]) and np.array_equal(x[:, 1], fr[1:6, :, 12:20])
         assert np.array_equal(x[:, 2], fr[1:6, :, 22:30][..., ::-1]) and np.array_equal(x[:, 3], fr[1:6, :, 31:39][..., ::-1])   # mirrored
-        assert np.array_equal(MV.crops(fr[1:6], lay), x)
-    print('  ok dcimg reader (header, raw, footer, channel crops + mirror)')
+        assert np.array_equal(lay.split(fr[1:6]), x)
+        # interleaved pages (two-colour TIFFs): channel k = page k of each frame, own crop, up-down mirror
+        l2 = ChannelLayout([Channel(name='a', crop=(0, 0, 8, 6)), Channel(name='b', crop=(30, 0, 8, 6), mirror='ud', page=1)])
+        y = l2.split(fr[2:8])
+        assert y.shape == (3, 2, 6, 8) and np.array_equal(y[:, 0], fr[2:8:2, :, :8]) and np.array_equal(y[:, 1], fr[3:8:2, ::-1, 30:38])
+        assert ChannelReader(ArrayMovie(fr), l2).n == 4
+    print('  ok dcimg reader (header, raw, footer) and the channel layout (crops, mirror, interleaved pages)')
 
 
 def test_array_movie_and_prefetch():

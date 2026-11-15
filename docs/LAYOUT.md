@@ -222,7 +222,7 @@ outputs and the seeded simulator batches are bit-identical to the code before).
 
 | before | now |
 |---|---|
-| `fourpi/run.py` (`python -m simcode.fourpi.run --cell MT --files 5`) | the pipeline: `python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT` (stages registration, process, report); worker `processing/fourpi.py` |
+| `fourpi/run.py` (CLI `--cell MT --files 5 --head v10`) | the pipeline: `python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT` (stages registration, process, report); worker `processing/fourpi.py` |
 | `fourpi/setup.py`, `fourpi/datasets.json` (P4, DATA4, LAYOUT, GAIN, PX_NM, P, XLIM, DELTA, file lists) | `pipeline/configs/fourpi.py` (acquisitions fourpi_MT, fourpi_NPC) read through `setups/fourpi.py` (`acquisition(name)`, `FourPiSetup`); P4 = `config.root('fourpi')`; config `data4pi` has no default |
 | `fourpi/front.py` Front(cell), PolyMap, feats, blur, nn_dist | `channels/front.py` ChannelFront (C channels), `channels/registration.py` PolyMap (+ feats_norm), `FourPiSetup.front(c, fi)` |
 | `DcimgMovie(path, layout=dict)`, `io.movie.crops` | `channels.layout.ChannelReader(DcimgMovie(path), ChannelLayout)`, `ChannelLayout.split` |

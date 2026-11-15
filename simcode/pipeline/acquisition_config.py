@@ -20,9 +20,10 @@ DEFAULTS = {
     'camera': dict(type='scmos', gain_e_per_adu=None, offset_adu=None, offset_map=None, readnoise_e=None, dark=None, readnoise_from=None,
                    map_frames=20000, gain_frames=12000),
     'channels': None,
-    'registration': dict(mode='insitu', map=None, order=2, frames=0, sum=6, chunk=600, calib_frames=1200, roi=13, threshold=8.0,
-                         isolation=6, nms=7, d_um=0.27, z_range=[-0.6, 0.6], k_dev=3.0, max_crlb=0.15, zlim=[-0.5, 0.5],
-                         flips=['none', 'lr', 'ud', 'both'], r1=2.0, k_sigma=4.0, kfold=5),
+    'registration': dict(mode='insitu', map=None, order=2, frames=0, frame0=0, sum=6, chunk=600, calib_frames=1200, calib_n=3000,
+                         calib_p0=[1.2, 1.2, 0.18], astig='auto', roi=13, threshold=8.0, sigma=[1.5, 5.0], isolation=6, nms=7,
+                         d_um=0.27, z_range=[-0.6, 0.6], z_range_sym=[0.03, 0.8], k_dev=3.0, max_crlb=0.15, zlim=[-0.5, 0.5],
+                         zlim_sym=[0.0, 0.75], flips=['none', 'lr', 'ud', 'both'], r1=2.0, k_sigma=4.0, kfold=5),
     'optics': dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
     'pattern': dict(orientations=2, steps=3, frame_order='blocked', cache=None, pitch_px=[1.6, 2.8]),
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
@@ -146,6 +147,7 @@ def validate(c):
     r = c['registration']
     if r['mode'] not in ('insitu', 'file', 'none'): raise ValueError('registration.mode: insitu | file | none')
     if r['mode'] == 'file' and not r['map']: raise ValueError('registration.mode file needs registration.map')
+    if r['astig'] not in ('auto', 'on', 'off', True, False): raise ValueError('registration.astig: auto | on | off')
 
 
 def needs_reorder(c):
