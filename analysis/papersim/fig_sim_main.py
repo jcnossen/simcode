@@ -92,12 +92,12 @@ def main():
     for k in keys:
         lw, ms = (2.4, 6) if k == a.v2key else (1.4, 4.5)
         y = [G[i][k]['gt_frc']['res_nm'] if k in G[i] else np.nan for i in range(len(DENS))]
-        A.plot(DENS, y, '-o', color=COL[k], lw=lw, ms=ms, label=labs[k].replace('\n', ' '))
+        A.plot(DENS, y, '-o', color=COL['v2sig' if k == a.v2key else k], lw=lw, ms=ms, label=labs[k].replace('\n', ' '))
         t = [G[i][k]['ttf']['frames_to'].get('30') if k in G[i] else None for i in range(len(DENS))]
         yt = np.array([np.nan if v is None else max(v, G[i][k]['ttf']['frames'][0]) for i, v in enumerate(t)], float)
-        B.plot(DENS, yt / 1e3, '-o', color=COL[k], lw=lw, ms=ms)
+        B.plot(DENS, yt / 1e3, '-o', color=COL['v2sig' if k == a.v2key else k], lw=lw, ms=ms)
         nr = [i for i, v in enumerate(t) if v is None and k in G[i]]       # not reached in the movie: open marker above the end
-        if nr: B.plot([DENS[i] for i in nr], [fmax / 1e3 * 1.35] * len(nr), 'o', mfc='none', color=COL[k], ms=ms + 1, mew=1.5)
+        if nr: B.plot([DENS[i] for i in nr], [fmax / 1e3 * 1.35] * len(nr), 'o', mfc='none', color=COL['v2sig' if k == a.v2key else k], ms=ms + 1, mew=1.5)
     for X in (A, B):
         X.set_xscale('log', base=2); X.set_xticks(DENS); X.set_xticklabels([f'{d:g}' for d in DENS]); X.minorticks_off()
         X.set_xlabel('emitter density (µm$^{-2}$ frame$^{-1}$)', fontsize=10); X.tick_params(labelsize=9)
