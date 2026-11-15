@@ -72,7 +72,7 @@ def main():
             ok = (fr <= FR_MAX) and (gh <= GH_MAX) and (cv <= CV_MAX)
             if ok and tf is not None and nm.startswith('net') and (t not in best or tf < best[t][1]): best[t] = (nm, tf)
             L.append(f"| {E['dens_fov']:.2f} | {LAB[nm]} | {ft(r['frames_to_last_xy'], str(XY_T))} | {ft(r['frames_to_last_xz'], str(XZ_T))} | "
-                     f"{'> T' if tf is None else f'{tf / 1000:.1f}k ({tf * 0.006:.0f} s)'} | {fr:.3f} | {gh:.3f} | {cv:.2f} | {'yes' if ok else 'no'} |")
+                     f"{'> T' if tf is None else f'{tf / 1000:.1f}k ({tf * 5.575e-3:.0f} s)'} | {fr:.3f} | {gh:.3f} | {cv:.2f} | {'yes' if ok else 'no'} |")
     L += ['', 'Best faithful network selection per density: ' + '; '.join(f"{Es[t]['dens_fov']:.2f}: {LAB[b[0]]} ({b[1] / 1000:.1f}k frames)" for t, b in best.items()), '']
     json.dump({t: dict(selection=b[0], frames=b[1]) for t, b in best.items()}, open(f'{OUT}/best.json', 'w'), indent=1)
     L += ['', '## GT-FRC (last crossing) vs frames, x-y | x-z (nm)', '']

@@ -6,13 +6,15 @@
   si_4pi_mt    real 4Pi-SIMFLUX microtubule movie, 100 files: network overview of the cell, box-0 region coloured by z, a
                crossing zoom, y-z section through overlapping tubes, tube cross-section (14 isolated segments) + profiles.
   si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
-               emitters / um^2 / frame: renders per density (network best selection; classical), x-z sections, GT-FRC vs
+               emitters / um^2 / frame: renders per density (network best selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
 
 Tables (all existing, read-only):
   NPC  out/4pi/net/net_NPC_v10_all.npz (post_w4pi.py), out/4pi/classical/real/cl_NPC_wv_all.npz
   MT   out/4pi/net/net_MT_v10_all.npz, out/4pi/classical/real/cl_MT_wv_all.npz, out/4pi/patches/regions_MT.json
   sim  out/4pi/sweep4pi/<tag>/{eval.json, locs_*.npz}, out/4pi/simmovie/<tag>/gt_sites.npz (sweep4pi_eval.py)
+       panels e / f: out/4pi/sweep4pi/<tag>/ttf_fp.json (analysis/fourpi_sim/sweep4pi_ttf_fp.py: interpolated sustained
+       GT-FRC crossing vs time, false positives incl. one-fringe-off); time axis 5.575 ms / frame (measured frame interval)
 The loading / registration / z-drift / pore and segment finding code is imported from the analysis scripts that made the
 4Pi status numbers (analysis/fourpi/select_curve_npc.py, showcase_real_mt.py), so the numbers are the same recipe.
 
@@ -42,7 +44,7 @@ PX = 128.0                                              # 4Pi pixel (nm), out/4p
 FPF = 18000                                             # frames per file (6-frame windows: 3000 per file)
 ZCMAP = LinearSegmentedColormap.from_list('zdiv', ['#3987e5', '#c3c2b7', '#eb6834'])   # as the 4Pi showcase figures
 COL = dict(net='#2a78d6', net_m='#0b3f8a', cl='#eb6834', clp='#1baf7a', gt='#52514e')
-LAB = dict(net='4Pi-SIMCODE, all kept', net_m='4Pi-SIMCODE, matched count', cl='classical, published-style', clp='classical, pixel MLE')
+LAB = dict(net='4Pi-SIMCODE, all kept', net_m='4Pi-SIMCODE, matched count', cl='4Pi-SIMFLUX', clp='4Pi-SIMFLUX, pixel MLE')
 mpl.rcParams.update({'font.size': 7, 'axes.labelsize': 7, 'axes.titlesize': 7, 'xtick.labelsize': 6, 'ytick.labelsize': 6,
                      'legend.fontsize': 6, 'axes.spines.top': False, 'axes.spines.right': False, 'svg.fonttype': 'none',
                      'axes.linewidth': 0.6, 'xtick.major.width': 0.6, 'ytick.major.width': 0.6, 'xtick.major.size': 2.5,
@@ -168,7 +170,7 @@ def fig_npc(a):
     # (b) zooms, coloured by z, same box
     zlist = [('net', f"4Pi-SIMCODE, all kept\n{int(inrect(T['net']['x'], T['net']['y'], zb).sum()):,} locs"),
              ('net_m', f"4Pi-SIMCODE, matched count\n{int(inrect(T['net_m']['x'], T['net_m']['y'], zb).sum()):,} locs"),
-             ('cl', f"classical, published-style\n{int(inrect(T['cl']['x'], T['cl']['y'], zb).sum()):,} locs")]
+             ('cl', f"4Pi-SIMFLUX\n{int(inrect(T['cl']['x'], T['cl']['y'], zb).sum()):,} locs")]
     x0 = 0.395; wz = 0.195; hz = wz * AR
     for i, (k, t) in enumerate(zlist):
         ax = fig.add_axes([x0 + i * (wz + 0.007), 0.966 - hz, wz, hz])
@@ -223,7 +225,7 @@ def fig_npc(a):
     letter(ax, 'f', -0.12)
     ax = fig.add_axes([xe[2], yb2, w2, h2])
     Cv = ref['curves']
-    for k, sn, lab in (('net', 'combined sigma', '4Pi-SIMCODE'), ('cl', 'combined sigma', 'classical, published-style'), ('clp', 'combined sigma', 'classical, pixel MLE')):
+    for k, sn, lab in (('net', 'combined sigma', '4Pi-SIMCODE'), ('cl', 'combined sigma', '4Pi-SIMFLUX'), ('clp', 'combined sigma', '4Pi-SIMFLUX, pixel MLE')):
         c = Cv[k][sn]; ax.plot([r['n_keep'] / 1e6 for r in c], [r.get('ring_z_sd_nm', np.nan) for r in c], '-o', ms=2, lw=1.0, color=COL[k], label=lab)
     ax.set_xscale('log'); ax.set_xlabel("localizations kept (millions; ranked by\neach method's own reported σ)", labelpad=1); ax.set_ylabel('per-ring z sd (nm)', labelpad=1)
     ax.set_xticks([0.3, 1, 3]); ax.set_xticklabels(['0.3', '1', '3']); ax.xaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
@@ -255,24 +257,24 @@ def caption_npc(v):
          "publication, 38 files of 18 000 frames = 3000 six-frame windows each; 4 camera channels, 128 nm pixels). "
          "(a) Overview of the nucleus, 4Pi-SIMCODE localizations in the validated range (>= 1000 photo-electrons per window, |z| <= 0.3 um), colour = z. "
          "(b) Zoom (white box in a): 4Pi-SIMCODE all kept, 4Pi-SIMCODE at matched count (the localizations with the smallest reported combined "
-         f"precision sqrt(sx^2+sy^2+sz^2) <= {I['thr_matched_nm']:.2f} nm, as many as the classical pipeline keeps), and the classical 4Pi-SIMFLUX pipeline "
+         f"precision sqrt(sx^2+sy^2+sz^2) <= {I['thr_matched_nm']:.2f} nm, as many as the 4Pi-SIMFLUX pipeline keeps), and the 4Pi-SIMFLUX pipeline "
          "(published-style). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
-         f"{I['n_pores']:,} pores found once on the classical table, the same centres for every method. (d) Side views (x-z, |y| < 30 nm) of the "
-         "averaged pore: 4Pi-SIMCODE all kept and at matched count, classical published-style and classical pixel MLE. (e) z histogram of the ring "
+         f"{I['n_pores']:,} pores found once on the 4Pi-SIMFLUX table, the same centres for every method. (d) Side views (x-z, |y| < 30 nm) of the "
+         "averaged pore: 4Pi-SIMCODE all kept and at matched count, 4Pi-SIMFLUX and 4Pi-SIMFLUX pixel MLE. (e) z histogram of the ring "
          "(25 < r < 85 nm) about each pore's mean z: the two Nup96 rings. (f) Radial density. (g) Per-ring z spread versus the number of "
-         "localizations kept when each method's rows are ranked by its own reported combined precision (dotted line: the classical count).",
+         "localizations kept when each method's rows are ranked by its own reported combined precision (dotted line: the 4Pi-SIMFLUX count).",
          '',
          'NUMBERS (si_4pi_npc_values.json; same recipe as out/4pi/fig/NPC_selection_curves_v10.json)',
          f"4Pi-SIMCODE all kept: {f('net')}.",
          f"4Pi-SIMCODE matched count: {f('net_m')}.",
-         f"classical published-style: {f('cl')}.",
-         f"classical pixel MLE: {f('clp')}.",
+         f"4Pi-SIMFLUX: {f('cl')}.",
+         f"4Pi-SIMFLUX pixel MLE: {f('clp')}.",
          f"Localizations in the field (pores' footprint): 4Pi-SIMCODE all kept {v['n_rows']['net']:,}, matched {v['n_rows']['net_m']:,}, "
-         f"classical published-style {v['n_rows']['cl']:,}, pixel MLE {v['n_rows']['clp']:,}; overview rows (validated range) {v['n_overview']:,}.",
+         f"4Pi-SIMFLUX {v['n_rows']['cl']:,}, pixel MLE {v['n_rows']['clp']:,}; overview rows (validated range) {v['n_overview']:,}.",
          f"Adjacent-window precision (DAFL, x / y / z, all pairs): 4Pi-SIMCODE all kept {d(rn)}, matched {d(rm)}, published-style {d(rc)}, pixel MLE {d(rp)}. "
          f"FRC (central 10 x 10 um): {rn['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} / {rp['frc']:.1f} nm. Fringe hops (adjacent windows, |dz| > 80 nm): "
          f"{100 * rn['fringe_hop']:.1f} % / {100 * rm['fringe_hop']:.2f} % / {100 * rc['fringe_hop']:.1f} % / {100 * rp['fringe_hop']:.1f} %.",
-         f"Registration network -> classical on {I['registration']['n_matched']:,} matched emitters (same window, < 64 nm): "
+         f"Registration network -> 4Pi-SIMFLUX on {I['registration']['n_matched']:,} matched emitters (same window, < 64 nm): "
          f"{I['registration']['dx_median_nm']:.1f} / {I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed; "
          f"fringe disagreement {100 * I['registration']['dz_fringe_disagree']:.1f} %.",
          '',
@@ -280,11 +282,11 @@ def caption_npc(v):
          "4Pi-SIMCODE: det4pi detector, emitter network v10 (learned read-out windows, 4 intensities per frame and channel), explicit 4Pi solve "
          "(SIM pattern and 4Pi phase field estimated in situ per file, interference contrast scale 1.56), z from the interferometric phase with the fringe "
          "chosen by the network's astigmatic z prior; rows good and >= 1000 e; lateral drift: own DME; sample z drift: own structure-based estimate. "
-         "Classical (out/4pi/classical/STATUS.md): wavelet detection on the registered 4-channel 6-frame sum (as the published code), Poisson MLE of the "
+         "4Pi-SIMFLUX = our implementation of the published pipeline (out/4pi/classical/STATUS.md): wavelet detection on the registered 4-channel 6-frame sum (as the published code), Poisson MLE of the "
          "24-image sum with the incoherent part of the bead-fitted 4Pi PSF (x, y, astigmatic z), then either the published two-step SIMFLUX lateral "
          "solve + 4Pi z from Gaussian-weighted per-channel moments (phasor), unwrapped against the astigmatic z ('published-style'), or a pixel-wise "
          "MLE of the 24 images with the coherent PSF, the estimated pattern and phase field ('pixel MLE'); pattern and phase field estimated per file; "
-         "the published rejections (keep / keep_pix); classical DME and structure-based z drift. Residual z drift from the fixed pores removed per table "
+         "the published rejections (keep / keep_pix); its own DME and structure-based z drift. Residual z drift from the fixed pores removed per table "
          f"(ptp nm: {', '.join(f'{k} {x:.1f}' for k, x in I['pore_zdrift_ptp_nm'].items())}).",
          'CODE: analysis/paper/si_4pi.py (prep_npc, npc); recipe imported from analysis/fourpi/select_curve_npc.py.']
     return '\n'.join(L) + '\n'
@@ -353,7 +355,7 @@ def fig_mt(a):
         axB.text((cc[0] - s / 2 - core[0]) / 10 + 3, (cc[1] - s / 2 - core[2]) / 10 + 3, str(j + 1), color='w', fontsize=6, va='top')
     scalebar(axB, 1000 / ext, '1 µm'); axB.set_title('4Pi-SIMCODE, all kept (box in a)', fontsize=6.5, pad=2); letter(axB, 'b', 0.0)
     zcbar(fig, [0.40, top - hb - 0.035, 0.2, 0.008], (-zh, zh), 'z (nm), b-d')
-    # (c) zoom 1 (crossing), (d) zoom 2: network all kept | classical published-style
+    # (c) zoom 1 (crossing), (d) zoom 2: network all kept | 4Pi-SIMFLUX
     wc = 0.155; hc = wc * AR; xc = [0.67, 0.67 + wc + 0.01]
     for r, (cc, s) in enumerate(zooms):
         y0 = top - hc - r * (hc + 0.05)
@@ -361,7 +363,7 @@ def fig_mt(a):
             ax = fig.add_axes([xc[i], y0, wc, hc])
             ax.imshow(zrgb(T[k]['x'], T[k]['y'], T[k]['z'] - zc, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, (-zh, zh), 1.0)); noaxis(ax)
             n = int(inrect(T[k]['x'], T[k]['y'], (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
-            ax.set_title(f"{'4Pi-SIMCODE' if k == 'net' else 'classical'}, zoom {r + 1}\n{n:,} locs", fontsize=6.3, pad=2, color=COL[k])
+            ax.set_title(f"{'4Pi-SIMCODE' if k == 'net' else '4Pi-SIMFLUX'}, zoom {r + 1}\n{n:,} locs", fontsize=6.3, pad=2, color=COL[k])
             if r == 1:
                 sec = G['section']
                 for v in (sec['a0'], sec['a1']):
@@ -435,30 +437,30 @@ def caption_mt(v):
          "4Pi-SIMCODE on the 4Pi-SIMFLUX microtubule data (COS-7, DNA-PAINT with a Cy3B imager; data of the original 4Pi-SIMFLUX publication, 100 files "
          "of 18 000 frames). (a) The whole field, 4Pi-SIMCODE localizations coloured by z. (b) The 6 x 6 um region of box 0 (white box in a), "
          "4Pi-SIMCODE, all kept. (c) Zoom 1, a crossing of two microtubules "
-         f"{G['zoom1']['dz_nm']:.0f} nm apart in z: 4Pi-SIMCODE (left) and the classical 4Pi-SIMFLUX pipeline, published-style (right). "
+         f"{G['zoom1']['dz_nm']:.0f} nm apart in z: 4Pi-SIMCODE (left) and the 4Pi-SIMFLUX pipeline (right). "
          f"(d) Zoom 2, microtubules overlapping in x-y at different heights; dotted: the {int(G['section']['a1'] - G['section']['a0'])} nm strip of e. "
-         f"(e) {G['section']['along']}-z sections through zoom 2: 4Pi-SIMCODE, classical published-style, classical pixel MLE. (f) Tube cross-section "
+         f"(e) {G['section']['along']}-z sections through zoom 2: 4Pi-SIMCODE, 4Pi-SIMFLUX, 4Pi-SIMFLUX pixel MLE. (f) Tube cross-section "
          f"pooled over {P['net']['nseg']} isolated straight segments in boxes 0 and 1 (in-plane offset across the tube x axial offset, each segment's own centre "
          f"line): 4Pi-SIMCODE all kept and at matched count (reported combined precision <= {v['threshold_matched_nm']:.2f} nm, as many localizations "
-         f"in boxes 0 and 1 as the classical published-style pipeline, {v['n_matched']:,}), classical published-style and pixel MLE. (g) Lateral and "
+         f"in boxes 0 and 1 as the 4Pi-SIMFLUX pipeline, {v['n_matched']:,}), 4Pi-SIMFLUX and pixel MLE. (g) Lateral and "
          "axial profiles of f with their FWHM (dashed: 4Pi-SIMCODE all kept). Regions, zooms, section strip and segments are chosen automatically on "
-         "the classical published-style table, so they do not favour the network.",
+         "the 4Pi-SIMFLUX table, so they do not favour the network.",
          '',
          'NUMBERS (si_4pi_mt_values.json; reference out/4pi/fig/MT_selection_curves_v10_full.json)',
-         f"Tube FWHM lateral / axial: 4Pi-SIMCODE all kept {p('net')}; matched count {p('net_m')}; classical published-style {p('cl')}; pixel MLE {p('clp')}.",
+         f"Tube FWHM lateral / axial: 4Pi-SIMCODE all kept {p('net')}; matched count {p('net_m')}; 4Pi-SIMFLUX {p('cl')}; pixel MLE {p('clp')}.",
          f"Localizations in boxes 0 + 1: 4Pi-SIMCODE all kept {v['n_rows_region']['net']:,}, matched {v['n_rows_region']['net_m']:,}, "
          f"published-style {v['n_rows_region']['cl']:,}, pixel MLE {v['n_rows_region']['clp']:,}; whole field (a) {v['n_overview']:,}.",
          f"Adjacent-window precision (DAFL x / y / z nm, boxes 0 + 1): 4Pi-SIMCODE all kept {d(ra)}, matched {d(rm)}; published-style {d(rc)}; pixel MLE {d(rp)}. "
          f"Fringe hops: {100 * ra['fringe_hop']:.1f} / {100 * rm['fringe_hop']:.1f} / {100 * rc['fringe_hop']:.1f} / {100 * rp['fringe_hop']:.1f} %. "
          f"FRC (box 0): {ra['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} / {rp['frc']:.1f} nm.",
-         f"Registration network -> classical on {I['registration']['n_matched']:,} matched emitters: {I['registration']['dx_median_nm']:.1f} / "
+         f"Registration network -> 4Pi-SIMFLUX on {I['registration']['n_matched']:,} matched emitters: {I['registration']['dx_median_nm']:.1f} / "
          f"{I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed. Sample z drift {I['zdrift_ptp_nm']:.0f} nm ptp "
-         "(structure-based, classical published-style table), the same curve subtracted from every row.",
+         "(structure-based, 4Pi-SIMFLUX table), the same curve subtracted from every row.",
          '',
          'CONDITIONS',
          "4Pi-SIMCODE: det4pi detector, emitter network v10, explicit 4Pi solve with the in-situ SIM pattern and 4Pi phase field per file; rows good, "
-         ">= 1000 e, sigma_z < 25 nm, sigma_x, sigma_y < 0.12 px, |z - median| <= 300 nm; lateral drift: own DME. Classical: published-style (keep) and "
-         "pixel MLE (keep_pix, computed in boxes 0 and 1 only). Panels b-g: classical rows and the network share the classical z-drift curve and are "
+         ">= 1000 e, sigma_z < 25 nm, sigma_x, sigma_y < 0.12 px, |z - median| <= 300 nm; lateral drift: own DME. 4Pi-SIMFLUX: published-style (keep) and "
+         "pixel MLE (keep_pix, computed in boxes 0 and 1 only). Panels b-g: 4Pi-SIMFLUX rows and the network share the 4Pi-SIMFLUX z-drift curve and are "
          "registered on matched emitters; panel a uses the network table's own drift and z drift.",
          'CODE: analysis/paper/si_4pi.py (prep_mt, mt); recipe imported from analysis/fourpi/showcase_real_mt.py.']
     return '\n'.join(L) + '\n'
@@ -470,6 +472,8 @@ NM = 128.0; LO, HI = 8 * NM, 52 * NM
 DENS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
 SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
 BEST = dict(mtc_d01='net_sig0', mtc_d03='net_sig0', mtc_d05='net_sig1', mtc_d075='net_sig1', mtc_d15='net_sig1')   # sweep STATUS.md
+FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps)
+NMIN_CL = 50                                             # fewer kept 4Pi-SIMFLUX localizations: rates not measurable
 SELTXT = dict(net_sig0='σxy < 7, σz < 16 nm', net_sig1='σxy < 5, σz < 12 nm')
 ZOOM1 = ((3945.0, 3785.0), 1200.0)                       # sweep4pi_fig.ZOOMS[0]: crossing, dz 256 nm
 ZOOM2 = ((4800.0, 2330.0), 1200.0)                       # 4-5 tubes
@@ -531,43 +535,48 @@ def fig_sim(a):
         if j == 0: ax.set_ylabel('z (nm)', labelpad=0); letter(ax, 'd', -0.02)
         else: ax.set_yticklabels([])
     # row labels
-    for yy, hh, t in ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, '4Pi-SIMCODE\nzoom 2'), (yrow[2], hcol, 'classical,\npublished-style\nzoom 2'), (yrow[3], hsec, '4Pi-SIMCODE\nx-z')):
+    for yy, hh, t in ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, '4Pi-SIMCODE\nzoom 2'), (yrow[2], hcol, '4Pi-SIMFLUX\nzoom 2'), (yrow[3], hsec, '4Pi-SIMCODE\nx-z')):
         fig.text(0.008 if hh != hsec else 0.0, yy + hh / 2, t, rotation=90, ha='center', va='center', fontsize=6.5)
     zcbar(fig, [x0 + 0.01, yrow[3] - 0.062, 0.17, 0.007], zr, 'z (nm)')
     # summary panels
     ys = 0.05; hs = 0.15; ws = 0.19
     cm = plt.get_cmap('viridis')
     cols = {t: cm(i / (len(DENS) - 1)) for i, t in enumerate(DENS)}
-    for i, (key, ttl) in enumerate((('ttf_last_xy', 'GT-FRC x-y (nm)'), ('ttf_last_xz', 'GT-FRC x-z sections (nm)'))):
+    TF = {t: json.load(open(f'{SW}/{t}/ttf_fp.json')) for t in DENS}       # analysis/fourpi_sim/sweep4pi_ttf_fp.py
+    from matplotlib.lines import Line2D
+    for i, (key, ttl) in enumerate((('ttf_xy', 'GT-FRC x-y (nm)'), ('ttf_xz', 'GT-FRC x-z sections (nm)'))):
         ax = fig.add_axes([0.075 + i * 0.255, ys, ws, hs])
         for t in DENS:
-            E = Es[t]; g = np.array(E['ttf_grid']) * 6e-3
-            ax.plot(g, E['methods'][BEST[t]][key], color=cols[t], lw=1.2, marker='o', ms=1.6, label=f"{E['dens_fov']:.2f}")
-            if key in E['methods']['cl_pub']: ax.plot(g, E['methods']['cl_pub'][key], color=cols[t], lw=0.8, ls=':')
+            F = TF[t]; g = np.array(F['grid']) * FRAME_S
+            ax.plot(g, F['methods'][BEST[t]][key], color=cols[t], lw=1.2, label=f"{F['dens_fov']:.2f} ON /µm²/frame")
+            c = np.array(F['methods']['cl_pub'][key], float)
+            ax.plot(g, c, color=cols[t], lw=0.9, ls=':')
         ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(15, 250); ax.set_yticks([20, 30, 50, 100, 200]); ax.set_yticklabels(['20', '30', '50', '100', '200'])
         ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.grid(alpha=0.25, lw=0.4, which='both')
         ax.axhline(25 if 'xy' in key else 35, color='0.4', lw=0.6, ls='--')
-        ax.set_xlabel('acquisition time (s, 6 ms frames)', labelpad=1); ax.set_ylabel(ttl, labelpad=1); ax.tick_params(length=2, pad=1)
+        ax.set_xlabel(f'acquisition time (s; {1e3 * FRAME_S:.3f} ms / frame)', labelpad=1, fontsize=6.3); ax.set_ylabel(ttl, labelpad=1); ax.tick_params(length=2, pad=1)
         if i == 0:
             h_, l_ = ax.get_legend_handles_labels()
-            fig.legend(h_, [f'{q} ON /µm²/frame' for q in l_], frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.30, ys + hs + 0.025),
-                       ncol=3, handlelength=1.6, columnspacing=1.0, labelspacing=0.2)
+            h_ += [Line2D([], [], color='k', lw=1.2), Line2D([], [], color='k', lw=0.9, ls=':')]
+            l_ += ['4Pi-SIMCODE (solid)', '4Pi-SIMFLUX (dotted)']
+            fig.legend(h_, l_, frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.27, ys + hs + 0.025),
+                       ncol=4, handlelength=1.8, columnspacing=1.0, labelspacing=0.2)
             letter(ax, 'e', -0.15)
-        else: ax.text(0.03, 0.03, 'solid: 4Pi-SIMCODE; dotted: classical', transform=ax.transAxes, fontsize=5.5)
     ax = fig.add_axes([0.075 + 2 * 0.255 + 0.03, ys, 0.215, hs])
     D = np.array([Es[t]['dens_fov'] for t in DENS])
     def g(t, nm, k):
-        r = Es[t]['methods'][nm]
-        return dict(recall=r['recall'], fp=r['ghost_fixed']['ghost_fraction'], wf=r['wrong_fringe'])[k]
-    for k, ls, lab in (('recall', '-', 'recall'), ('fp', '--', 'false positives'), ('wf', ':', 'wrong fringe')):
+        if k == 'recall': return Es[t]['methods'][nm]['recall']
+        return TF[t]['methods'][nm]['fp_fraction']
+    for k, ls in (('recall', '-'), ('fp', '--')):
         ax.plot(D, [g(t, BEST[t], k) for t in DENS], ls, color=COL['net'], marker='o', ms=2, lw=1.1)
-        ax.plot(D, [g(t, 'cl_pub', k) for t in DENS], ls, color=COL['cl'], marker='s', ms=2, lw=1.1)
+        y = np.array([g(t, 'cl_pub', k) for t in DENS], float)
+        nm_ = np.array([TF[t]['methods']['cl_pub']['n_locs'] < NMIN_CL for t in DENS])     # too few kept: not measurable
+        ax.plot(D[~nm_], y[~nm_], ls, color=COL['cl'], marker='s', ms=2, lw=1.1)
+        for xx in D[nm_]: ax.text(xx, 0.02 if k == 'recall' else 0.06, 'n.m.', color=COL['cl'], fontsize=5, ha='center')
     ax.set_xscale('log'); ax.set_xticks(D); ax.set_xticklabels([f'{v:.2g}' for v in D]); ax.xaxis.set_minor_formatter(plt.NullFormatter())
     ax.set_xlabel('ON emitters / µm² / frame', labelpad=1); ax.set_ylabel('fraction', labelpad=1); ax.set_ylim(0, 0.75); ax.grid(alpha=0.25, lw=0.4); ax.tick_params(length=2, pad=1)
-    from matplotlib.lines import Line2D
-    hl = [Line2D([], [], color=COL['net'], lw=1.1, label='4Pi-SIMCODE'), Line2D([], [], color=COL['cl'], lw=1.1, label='classical'),
-          Line2D([], [], color='k', ls='-', lw=0.9, label='recall'), Line2D([], [], color='k', ls='--', lw=0.9, label='false positives'),
-          Line2D([], [], color='k', ls=':', lw=0.9, label='wrong fringe')]
+    hl = [Line2D([], [], color=COL['net'], lw=1.1, label='4Pi-SIMCODE'), Line2D([], [], color=COL['cl'], lw=1.1, label='4Pi-SIMFLUX'),
+          Line2D([], [], color='k', ls='-', lw=0.9, label='recall'), Line2D([], [], color='k', ls='--', lw=0.9, label='false positives')]
     ax.legend(handles=hl, frameon=False, fontsize=5.3, loc='upper right', handlelength=1.8, labelspacing=0.15)
     letter(ax, 'f', -0.15)
     save(fig, 'si_4pi_sim')
@@ -581,49 +590,78 @@ def fig_sim(a):
                               wrong_fringe=r['wrong_fringe'], lat_rob=r['lat_rob'], ax_rob=r['ax_rob'], gtfrc_last_xy=r['gtfrc_last_xy'], gtfrc_last_xz=r['gtfrc_last_xz'],
                               frames_to_xy25=(r.get('frames_to_last_xy') or {}).get('25'), frames_to_xz35=(r.get('frames_to_last_xz') or {}).get('35'),
                               coverage_excess_cv=r.get('coverage', {}).get('excess_cv'), dip_lat=r.get('tube', {}).get('dip_lat'), dip_ax=r.get('tube', {}).get('dip_ax'))
+            if nm in TF[t]['methods']:
+                q = TF[t]['methods'][nm]
+                val[t][nm].update(false_pos_3d=q['fp_fraction'], false_pos_wrong_fringe_only=q['fp_wrong_fringe_only'],
+                                  frames_to_xy25=q['frames_to_xy'].get('25'), frames_to_xz35=q['frames_to_xz'].get('35'),
+                                  gtfrc_end_xy=q['ttf_xy'][-1], gtfrc_end_xz=q['ttf_xz'][-1])
     json.dump(dict(best=BEST, per_density=val), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
     open(f'{OUT}/si_4pi_sim_caption.txt', 'w').write(caption_sim(val))
 
 
 def caption_sim(V):
     fmt = lambda x, n=0: '-' if x is None else (f'{x:.{n}f}' if np.isfinite(x) else '-')
+    sec = lambda f: '-' if f is None else f'{f * FRAME_S:.0f} s'
     L = ['DRAFT CAPTION',
-         "4Pi-SIMCODE versus the classical 4Pi-SIMFLUX pipeline on simulated 4Pi-SIMFLUX movies of a microtubule cell field at increasing labelling "
+         "4Pi-SIMCODE versus the 4Pi-SIMFLUX pipeline on simulated 4Pi-SIMFLUX movies of a microtubule cell field at increasing labelling "
          "density. Structure: the 'Microtubules (cells)' world model of webSMLM / inSiliScope (flat lamella below the nucleus, 59 microtubules, labels "
-         "24.6 nm from the tube axis, 70 % labelling, heights 0-300 nm, focus at 150 nm). Movies: 30 000 frames (6 ms, 5000 six-frame windows), "
+         "24.6 nm from the tube axis, 70 % labelling, heights 0-300 nm, focus at 150 nm). Movies: 30 000 frames (5000 six-frame windows; time axis "
+         f"with the {1e3 * FRAME_S:.3f} ms frame interval measured on the real 4Pi-SIMFLUX movies), "
          "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
          "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with the best selection per density, see below). "
-         "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and classical published-style (c); numbers = localizations "
-         "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution (last 1/7 crossing) in x-y and in "
-         "x-z sections versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: classical; dashed: the 25 / 35 nm fidelity targets). "
-         "(f) Recall of the ground-truth emitter-windows (>= 300 e), false positives (localizations with no labelling site within 30 / 30 / 75 nm in "
-         "x / y / z) and the wrong-fringe fraction (matched localizations with |dz| > 100 nm, i.e. one 4Pi fringe period off) versus density.",
+         "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = localizations "
+         "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution in x-y and in x-z sections "
+         "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
+         "of the 5-shell smoothed curve, interpolated between shells, taken where the curve stays below 1/7 for 0.01 /nm, best value up to that time. "
+         "The step from ~65 to ~35 nm is the hollow-tube spectrum (Bessel zero at 1/64 nm for 24.6 nm radius): the curve crosses 1/7 before that null "
+         "until the next lobe rises above 1/7. (f) Recall of the ground-truth emitter-windows (>= 300 e) and the false-positive fraction versus density: "
+         "a kept localization is a false positive when no emitter that is on in its own window lies within 30 / 30 / 75 nm in x / y / z; "
+         "a localization placed one 4Pi fringe off in z (|dz| > 100 nm from its laterally matched emitter) is counted as a false positive too "
+         "(false positives / all kept localizations).",
          '',
-         'NUMBERS per density (si_4pi_sim_values.json; full table out/fourpi_sim/sweep/tables.md)']
+         'NUMBERS per density (si_4pi_sim_values.json; full table out/fourpi_sim/sweep/tables.md; e / f from out/4pi/sweep4pi/<tag>/ttf_fp.json)']
     for t, v in V.items():
         b = BEST[t]; n, c = v[b], v['cl_pub']
         L.append(f"{v['dens_fov']:.2f} ON /um^2/frame ({v['dens_region']:.2f} in the evaluation region): 4Pi-SIMCODE ({SELTXT[b]}) {n['n_locs']:,} locs, recall {n['recall']:.2f}, "
-                 f"false positives {100 * n['false_pos_fixed_gate']:.1f} %, wrong fringe {100 * n['wrong_fringe']:.1f} %, robust error lateral / axial "
-                 f"{n['lat_rob']:.1f} / {n['ax_rob']:.1f} nm, GT-FRC x-y / x-z {n['gtfrc_last_xy']:.0f} / {n['gtfrc_last_xz']:.0f} nm, frames to x-y 25 nm "
-                 f"{fmt(n['frames_to_xy25'])}, to x-z 35 nm {fmt(n['frames_to_xz35'])}, coverage excess CV {n['coverage_excess_cv']:.2f}; "
-                 f"classical {c['n_locs']:,} locs, recall {c['recall']:.2f}, false positives {100 * c['false_pos_fixed_gate']:.1f} %, wrong fringe "
-                 f"{100 * c['wrong_fringe']:.1f} %, {c['lat_rob']:.1f} / {c['ax_rob']:.1f} nm, GT-FRC {c['gtfrc_last_xy']:.0f} / {c['gtfrc_last_xz']:.0f} nm.")
+                 f"false positives {100 * n['false_pos_3d']:.1f} % (of which one-fringe-off only {100 * n['false_pos_wrong_fringe_only']:.1f} %), robust error lateral / axial "
+                 f"{n['lat_rob']:.1f} / {n['ax_rob']:.1f} nm, GT-FRC x-y / x-z {n['gtfrc_end_xy']:.0f} / {n['gtfrc_end_xz']:.0f} nm, frames to x-y 25 nm "
+                 f"{fmt(n['frames_to_xy25'])} ({sec(n['frames_to_xy25'])}), to x-z 35 nm {fmt(n['frames_to_xz35'])} ({sec(n['frames_to_xz35'])}), "
+                 f"coverage excess CV {n['coverage_excess_cv']:.2f}; "
+                 f"4Pi-SIMFLUX {c['n_locs']:,} locs, recall {c['recall']:.2f}, false positives {100 * c['false_pos_3d']:.1f} %, "
+                 f"{c['lat_rob']:.1f} / {c['ax_rob']:.1f} nm, GT-FRC {c['gtfrc_end_xy']:.0f} / {c['gtfrc_end_xz']:.0f} nm, frames to 25 / 35 nm "
+                 f"{fmt(c['frames_to_xy25'])} / {fmt(c['frames_to_xz35'])}.")
         if 'net_bound_base' in v:
             q = v['net_bound_base']
-            L.append(f"   bound at this density (4Pi-SIMCODE with the TRUE pattern + 4Pi phase field, no selection): GT-FRC x-y / x-z {q['gtfrc_last_xy']:.0f} / "
+            L.append(f"   bound at this density (4Pi-SIMCODE with the TRUE pattern + 4Pi phase field, no selection): GT-FRC x-y / x-z (last crossing) {q['gtfrc_last_xy']:.0f} / "
                      f"{q['gtfrc_last_xz']:.0f} nm, wrong fringe {100 * q['wrong_fringe']:.1f} %.")
+    both = lambda m: None if (m['frames_to_xy25'] is None or m['frames_to_xz35'] is None) else max(m['frames_to_xy25'], m['frames_to_xz35'])
+    fb = {t: both(V[t][BEST[t]]) for t in V}
+    ok = {t: f for t, f in fb.items() if f is not None}
+    tb = min(ok, key=ok.get) if ok else None
+    cl_any = any(both(V[t]['cl_pub']) is not None for t in V)
+    rd = f"{V[tb]['dens_fov']:.2f}" if tb else '-'
+    t01 = 'mtc_d01'
+    ratio = (fb[t01] / fb[tb]) if (tb and fb.get(t01)) else None
     L += ['',
-          'READING: the classical pipeline keeps 22 % / 7 % / 3 % / 1 % / 0 % of the ground-truth units at 0.11 / 0.33 / 0.55 / 0.82 / 1.64 and never reaches '
-          '25 nm (x-y) and 35 nm (x-z) within 30 000 frames; 4Pi-SIMCODE reaches both after 10 000 frames (60 s) at 0.33 ON /um^2/frame, 2.7x faster '
-          'than at the real-data density (0.11). Above ~0.5 the wrong-fringe fraction (neighbours along the tube bias the astigmatic prior that '
-          'picks the 4Pi fringe) and the holes made by stricter selection prevent a faithful 3D image (out/fourpi_sim/sweep/STATUS.md). The x-z plateau '
-          '(~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
+          'READING: the 4Pi-SIMFLUX pipeline keeps 22 % / 7 % / 3 % / 1 % / 0 % of the ground-truth units at 0.11 / 0.33 / 0.55 / 0.82 / 1.64 and '
+          + ('reaches 25 nm (x-y) and 35 nm (x-z) within 30 000 frames at some density; ' if cl_any else 'never reaches both 25 nm (x-y) and 35 nm (x-z) within 30 000 frames; ')
+          + (f"4Pi-SIMCODE reaches both soonest at {rd} ON /um^2/frame, after {ok[tb]:,.0f} frames ({ok[tb] * FRAME_S:.0f} s)" if tb else '4Pi-SIMCODE does not reach both')
+          + (f", {ratio:.1f}x faster than at the real-data density (0.11: {fb[t01]:,.0f} frames, {fb[t01] * FRAME_S:.0f} s). " if ratio else '. ')
+          + 'At 0.55 and 0.82 the GT-FRC targets are reached as well ('
+          + ', '.join(f"{V[t]['dens_fov']:.2f}: {sec(both(V[t][BEST[t]]))}" for t in ('mtc_d05', 'mtc_d075'))
+          + '), but only with the stricter sigma selection, which leaves holes along the tubes (coverage excess CV '
+          + ' / '.join(f"{V[t][BEST[t]]['coverage_excess_cv']:.2f}" for t in ('mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15'))
+          + ' at 0.33 / 0.55 / 0.82 / 1.64); at 1.64 x-y 25 nm is not reached and '
+          + f"{100 * V['mtc_d15'][BEST['mtc_d15']]['false_pos_3d']:.0f} % of the kept localizations are false positives "
+          '(neighbours along the tube bias the astigmatic prior that picks the 4Pi fringe; out/fourpi_sim/sweep/STATUS.md). '
+          'The x-z plateau (~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
           'CONDITIONS: detector det4pi, emitter network v10 (trained with <= 3 neighbours within 7 px: out of distribution at >= 0.82), explicit solve with '
           'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); selection per density chosen in the sweep (sigma cut; the chi2 '
-          'selection is never the best). Classical: sim_cl.py published-style with its rejections. One structure realisation, one movie per density.',
-          'CODE: analysis/paper/si_4pi.py (sim); data analysis/fourpi_sim/sweep4pi_{movie,run,eval}.py.']
+          f'selection is never the best). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
+          'localizations: none here). One structure realisation, one movie per density.',
+          'CODE: analysis/paper/si_4pi.py (sim); data analysis/fourpi_sim/sweep4pi_{movie,run,eval}.py, panels e / f analysis/fourpi_sim/sweep4pi_ttf_fp.py.']
     return '\n'.join(L) + '\n'
 
 
