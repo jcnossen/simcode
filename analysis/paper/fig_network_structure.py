@@ -240,7 +240,7 @@ def panel_b(cv, b0):
             ('1', 'window mean, linear'),
             ('2', 'coordinate maps (relative to'),
             ('', 'the sub-pixel position)'),
-            ('1', 'neighbour splat (the other'),
+            ('1', 'neighbour map (the other'),
             ('', 'detected emitters)'),
             ('1', 'detection-probability map'),
             ('18', 'channels')]
@@ -511,14 +511,14 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
    - outputs: logit; dxy = 1.5 tanh (px relative to the pixel centre); log_sig = -5 + 6 sigmoid.
    - selection: select_subpixel (greedy NMS on the points pixel + offset, radius 0.7 px, 7x7 neighbourhood, iters = 4:
      up to 4 suppression rounds, stopping early at the fixed point; top-k per image); front_fast: k = 640 S^2 / 64^2,
-     detect p_min 0.2 (THR0 / NBR_PMIN, the neighbour splat), stored candidates p >= CAND_PMIN = 0.3
+     detect p_min 0.2 (THR0 / NBR_PMIN, the neighbour map), stored candidates p >= CAND_PMIN = 0.3
      (processing/common.py). Detector inference under bf16 autocast.
 
 (b) EmitterNet (simcode/emitter/model.py: EmitterNet, nbr_map, nbr_patches, PSFCol, apply_to_candidates)
    - args: ch = 96, bf16 = 1, arch 'emitter_net'; patch PP = 21; T = 6.
    - input channels (forward): norm_photons(patch) [6], norm_photons(mean over frames) [1], lin = (patch - lvl) / 100 [6]
      with lvl = mean over frames of the per-frame border median b0_t, lin mean [1], cx, cy = (pixel - detector point) /
-     10 px [2], nbrp [2] = (splat of the other candidates p >= 0.2: p exp(-d^2 / (2 0.5^2)) on 7x7 px, own stamp removed;
+     10 px [2], nbrp [2] = (map of the other candidates p >= 0.2: p exp(-d^2 / (2 0.5^2)) on 7x7 px, own stamp removed;
      sigmoid(detector logit)). Total 2T + 4 + 2 = 18 (cin.weight (96, 18, 3, 3)).
    - The PSF template g is NOT an input channel: it enters only the read-out (w0 = g / (g.g); D_t projected orthogonal to
      g). docs/METHOD.md stage 1 lists "the PSF template" among the inputs; the figure follows the code. g = PSFCol: the
