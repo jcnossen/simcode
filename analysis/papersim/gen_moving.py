@@ -18,6 +18,9 @@ v2-PSF set (2026-11-15, --v2psf 1; common.py "v2-PSF movie sets"; out/papersim/m
   collected(z)), the v2 camera (50 x 50 crop at (row, col) 40, 40 of camera_maps_1809_2_v2.npz), and for --cond 1809_2 the
   real-data photon / background statistics converted to v2 camera units (photons x 0.76, threshold 300 -> 228, bg per 6-sum
   0.76 b - 11.81). The --cond preprint condition keeps its 500 photons / bg 4 as detected photons.
+--gt wsm:<seed>:<dx>:<dy> (2026-11-15, moving_exp_v2psf_wsm): the webSMLM microtubule centrelines of the 50 x 50 px field (inside the
+  field and the webSMLM optical section) as point chains at 20 points / px instead of the old script's spline tubules; everything
+  else unchanged. --device cpu renders on the CPU.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/gen_moving.py [--nframes 64000] [--out out/papersim/moving] [--v2psf 1]
 outputs: movie.tif, gt_rows.npz (frame, spot, x, y, photons of every ON emitter-frame), traj.npy (all points every
 traj_step frames, [n, N, 2] px float32, for the block Jaccard), calib_sim.json, camera_sim.npz, gt_pattern.pt, mp_gt.pickle,
@@ -52,6 +55,9 @@ def main():
     ap.add_argument('--avg_on_time', type=float, default=None)
     ap.add_argument('--v2psf', type=int, default=0, help='1 = the v2-PSF set (module doc)')
     ap.add_argument('--psf', default='vectorial', help="'vectorial' or e.g. 'gauss1.3' (the preprint's PSF; calib_sim.json still names the vectorial PSF)")
+    ap.add_argument('--gt', default='preprint', help="'preprint' (default: the old script's 15 spline tubules) or 'wsm:<seed>:<dx>:<dy>' = the "
+                    "webSMLM microtubule centrelines of a 50 x 50 px field as point chains at the same 20 points / px (wsm_gt.chains)")
+    ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-genmov')
     import torch
@@ -60,8 +66,13 @@ def main():
     F = ported()
     W = 50
     np.random.seed(a.seed)
-    tubules = F['generate_microtubule_points'](width=W, depth=0, linedensity=20, numtubules=15, spl_knots=4, spl_degree=3,
-                                               return_knots=False, return_list=True, margin=0.01)
+    wst = None
+    if a.gt.startswith('wsm'):        # webSMLM structure; the Brownian / spring dynamics below act on these chains unchanged
+        import wsm_gt
+        tubules, wst = wsm_gt.chains(a.gt.split(':', 1)[1], W=W, spacing=1 / 20)
+    else:
+        tubules = F['generate_microtubule_points'](width=W, depth=0, linedensity=20, numtubules=15, spl_knots=4, spl_degree=3,
+                                                   return_knots=False, return_list=True, margin=0.01)
     rest = [np.sqrt(np.sum((t[1:] - t[:-1]) ** 2, axis=1)) for t in tubules]
     sig_i = 0.2 * np.sqrt(2 * 0.01); sig_e = 0.15 * np.sqrt(2 * 0.01)
     Npts = sum(len(t) for t in tubules)
@@ -91,11 +102,11 @@ def main():
     P = C.gt_pattern([1, 91])
     if a.v2psf:
         zpt = C.heights_v2(Npts, np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
-        R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+        R = C.RendererV2(W, W, dev=a.device); R.z = float(np.median(zpt))
         cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
     else:
-        R = C.Renderer(W, W, psf=a.psf)
-    gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + 64)
+        R = C.Renderer(W, W, dev=a.device, psf=a.psf)
+    gen = torch.Generator(device=a.device); gen.manual_seed(a.seed * 7919 + 64)
     gx = np.zeros(len(fr), np.float32); gy = np.zeros(len(fr), np.float32)
     ntraj = a.nframes // a.traj_step
     traj = np.lib.format.open_memmap(os.path.join(d, 'traj.npy'), mode='w+', dtype=np.float32, shape=(ntraj, Npts, 2))
@@ -120,7 +131,7 @@ def main():
                     nf = fi - f_blk0 + 1
                     rows = (np.concatenate(buf_f), np.concatenate(buf_x), np.concatenate(buf_y)) + ((np.concatenate(buf_z),) if a.v2psf else ()) + (np.concatenate(buf_p),)
                     mu = R.expected(f_blk0, nf, *rows) \
-                         + torch.as_tensor(bgf[f_blk0:f_blk0 + nf], device='cuda', dtype=torch.float32)[:, None, None]
+                         + torch.as_tensor(bgf[f_blk0:f_blk0 + nf], device=a.device, dtype=torch.float32)[:, None, None]
                     yield R.adu(mu, gen)
                     buf_f, buf_x, buf_y, buf_p, buf_z = [], [], [], [], []; f_blk0 = fi + 1
             for i, tub in enumerate(tubules):          # simulate_brownian_microtubules: update after recording the frame
@@ -147,7 +158,9 @@ def main():
                         z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
                         photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected); ev_I6 = detected',
                         collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if a.v2psf else {}),
-                source=f'smlmtorch {C.MOVING_COMMIT} scripts/fig_moving_tubules.py', s=round(time.time() - t00, 1))
+                gt=a.gt, device=a.device, **(dict(wsm=wst) if wst else {}),
+                source=(f'webSMLM microtubules (cells) = inSiliScope CellField (analysis/fourpi_sim/mt_cells.py) centrelines, wsm_gt.chains; dynamics smlmtorch {C.MOVING_COMMIT} scripts/fig_moving_tubules.py'
+                        if wst else f'smlmtorch {C.MOVING_COMMIT} scripts/fig_moving_tubules.py'), s=round(time.time() - t00, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)
 

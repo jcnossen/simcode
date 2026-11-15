@@ -133,5 +133,5 @@ case $what in
       $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm --model $N
       $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf_wsm --model $N
     done ;;
-  *) sed -n 2,38p "$0"; exit 1 ;;
+  *) sed -n 2,34p "$0"; exit 1 ;;
 esac
