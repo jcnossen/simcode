@@ -188,13 +188,17 @@ Facts:
   ({fw_psf[0] * px_nm:.0f} / {fw_psf[1] * px_nm:.0f} nm).
 - spot FWHM (1D Gaussian fit to the inset's centre row / column, background = border median): x {fw_spot[0]:.2f} px,
   y {fw_spot[1]:.2f} px (single noisy spot; informative only).
-- the earlier caption's "approximately 1.3 pixels full-width at half-maximum ... 141 nm" was wrong: 1.3 px is the Gaussian sigma
-  of the earlier Gaussian simulation PSF (FWHM 2.355 x 1.3 = 3.06 px = 332 nm); replaced by the PSF-model value above.
 - variant si_review-single-frame_locs.*: cyan circles = the {nloc} selected SIMCODE localizations of the 6 windows that contain
   this frame (window starts every 3 frames, so most emitters appear in two windows).
 - calibration {cp}; run {a.run}.
 """
     open(a.out + '_caption.txt', 'w').write(cap)
+    # working notes (not caption text): corrections relative to earlier caption versions
+    open(a.out + '_notes_internal.txt', 'w').write(
+        'Working notes behind si_review-single-frame (internal: corrections relative to earlier versions; not caption text).\n\n'
+        '- the earlier caption\'s "approximately 1.3 pixels full-width at half-maximum ... 141 nm" was wrong: 1.3 px is the Gaussian\n'
+        '  sigma of the earlier Gaussian simulation PSF (FWHM 2.355 x 1.3 = 3.06 px = 332 nm); replaced by the PSF-model value\n'
+        f'  ({np.mean(fw_psf):.2f} px = {np.mean(fw_psf) * px_nm:.0f} nm, in-situ PSF at z = {z_med_um * 1e3:.0f} nm).\n')
     print(cap)
 
 

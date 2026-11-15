@@ -190,6 +190,8 @@ def fig_phase_decouple(run, outdir, nframes=120000):
     SA = decouple_stats(BA, psi); SB = decouple_stats(BB, psi)
     fk = np.arange(pat['eps'].shape[1]) * pat['kf']; keep = fk <= nframes
 
+    # display in the preprint's convention: sin(q_i.(x, y) - phi_ij - eps_i(t)), phi_ij = psi_s - pi/2 (code: cos(... - psi_s ...))
+    phi = wrap(psi - np.pi / 2)
     fig = plt.figure(figsize=(15, 9.6))
     gs = fig.add_gridspec(3, 5, width_ratios=[1, 0.2, 1, 0.3, 1], height_ratios=[1, 1, 1.05], hspace=0.55, wspace=0.08,
                           left=0.07, right=0.98, top=0.94, bottom=0.07)
@@ -198,17 +200,17 @@ def fig_phase_decouple(run, outdir, nframes=120000):
         ax1 = fig.add_subplot(gs[a, 0]); ax2 = fig.add_subplot(gs[a, 2]); ax3 = fig.add_subplot(gs[a, 4])
         okA = SA['ok']
         for j, s in enumerate(sl):
-            y = deg(psi[s] + wrap(BA['phi'][0, :, s] - psi[s]))
-            ax1.plot(BA['centres'][okA] / 1e3, y[okA], '.', ms=5, color=STEP_COLORS[j], label=f'step {j}')
-            ax3.axhline(deg(psi[s]), color=STEP_COLORS[j], lw=2.5)
+            y = deg(phi[s] + wrap(BA['phi'][0, :, s] - psi[s]))
+            ax1.plot(BA['centres'][okA] / 1e3, y[okA], '.', ms=5, color=STEP_COLORS[j], label=f'step j = {j + 1}')
+            ax3.axhline(deg(phi[s]), color=STEP_COLORS[j], lw=2.5)
         ax2.plot(fk[keep] / 1e3, deg(pat['eps'][a, keep]), color='k', lw=1.2)
         ax2.plot(BA['centres'][okA] / 1e3, deg(np.angle(np.exp(1j * wrap(BA['phi'][0][:, list(sl)] - psi[list(sl)][None])).mean(1)))[okA],
                  'o', ms=3.5, mfc='none', mec='0.4', mew=0.8)
-        lo = min(deg(psi[list(sl)]).min(), np.nanmin(deg(psi[list(sl)][None] + wrap(BA['phi'][0][:, list(sl)] - psi[list(sl)][None])))) - 25
-        hi = max(deg(psi[list(sl)]).max(), np.nanmax(deg(psi[list(sl)][None] + wrap(BA['phi'][0][:, list(sl)] - psi[list(sl)][None])))) + 25
+        lo = min(deg(phi[list(sl)]).min(), np.nanmin(deg(phi[list(sl)][None] + wrap(BA['phi'][0][:, list(sl)] - psi[list(sl)][None])))) - 25
+        hi = max(deg(phi[list(sl)]).max(), np.nanmax(deg(phi[list(sl)][None] + wrap(BA['phi'][0][:, list(sl)] - psi[list(sl)][None])))) + 25
         for ax in (ax1, ax3): ax.set_ylim(lo, hi + 70)
         ax2.set_ylim(-25, 25)
-        ax1.set_ylabel(f'angle {a}\nphase (deg)')
+        ax1.set_ylabel(f'angle i = {a + 1}\nphase (deg)')
         sec = ax2.secondary_yaxis('right', functions=(lambda v, p=pitch_nm[a]: v / 360 * p, lambda v, p=pitch_nm[a]: v * 360 / p))
         sec.set_ylabel('nm', labelpad=2)
         ax3.set_yticklabels([])
@@ -218,8 +220,8 @@ def fig_phase_decouple(run, outdir, nframes=120000):
             if a == 1: ax.set_xlabel('frame (x1000)')
         if a == 0:
             ax1.set_title('Per-step phases\n(independent fits, 3000-frame blocks)', fontsize=13)
-            ax2.set_title('Shared phase drift $\\epsilon_a(t)$ (deg)\n(pattern estimation)', fontsize=13)
-            ax3.set_title('Fixed per-step offsets $\\psi_s$', fontsize=13)
+            ax2.set_title('Shared phase drift $\\epsilon_i(t)$ (deg)\n(pattern estimation)', fontsize=13)
+            ax3.set_title('Fixed per-step phases $\\phi_{i,j}$', fontsize=13)
             pass
         for x_, t_, xx in ((gs[a, 1], '=', 0.3), (gs[a, 3], '+', 0.72)):
             axt = fig.add_subplot(x_); axt.axis('off'); axt.text(xx, 0.5, t_, ha='center', va='center', fontsize=24)
@@ -229,7 +231,7 @@ def fig_phase_decouple(run, outdir, nframes=120000):
     okB = SB['ok']
     for a, c in ((0, 'k'), (1, 'tab:purple')):
         axb.plot(BB['centres'][okB] / 1e3, deg(SB[a]['std3'][okB]), lw=0.7, color=c, alpha=0.8,
-                 label=f'angle {a}: mean {deg(SB[a]["mean_std3"]):.2f} deg (noise ref. {deg(SB[a]["mean_std3_noise"]):.2f})')
+                 label=f'angle {a + 1}: mean {deg(SB[a]["mean_std3"]):.2f} deg (noise ref. {deg(SB[a]["mean_std3_noise"]):.2f})')
         axb.axhline(deg(SB[a]['mean_std3_noise']), color='w', ls='-', lw=4, zorder=5)
         axb.axhline(deg(SB[a]['mean_std3_noise']), color=c, ls='--', lw=2, zorder=6)
     axb.set_xlim(0, nframes / 1e3); axb.set_ylim(0, 11)
@@ -243,6 +245,7 @@ def fig_phase_decouple(run, outdir, nframes=120000):
     eps_rng = {a: [float(deg(pat['eps'][a, keep].min())), float(deg(pat['eps'][a, keep].max()))] for a in (0, 1)}
     eps_rms = {a: float(deg(np.std(pat['eps'][a, keep]))) for a in (0, 1)}
     V = dict(run=run, pattern=f'{run}/pattern_est.pt', clean=cinfo, psi_deg=deg(psi).round(2).tolist(),
+             phi_deg=deg(phi).round(2).tolist(),
              step_spacing_deg=[float(deg((psi[3 * a + j + 1] - psi[3 * a + j]) % (2 * np.pi))) for a in (0, 1) for j in (0, 1)],
              pitch_nm=pitch_nm, eps_range_deg=eps_rng, eps_rms_deg=eps_rms,
              eps_range_nm={a: [v / 360 * pitch_nm[a] for v in eps_rng[a]] for a in (0, 1)},
@@ -332,8 +335,8 @@ def phase_rms_line(D):
     o = lambda v: float(np.sqrt(np.mean(np.square(v))))
     r, n, dd, dn, pp = q('rms_r'), q('prec_step'), q('rms_d'), q('rms_d_noise'), q('rms_persistent')
     return (f'PHASE-ESTIMATION RMS (150-frame blocks, {b["n_blocks_used"]} blocks, median {b["median_rows"]:.0f} clean emitter-windows '
-            f'per block): per-step phase scatter around the shared-drift model (psi_s + eps_a(t)) rms {r[0]:.2f} / {r[1]:.2f} deg '
-            f'(angle 0 / 1; overall {o(r):.2f} deg = {o(r) / 360 * np.mean(D["pitch_nm"]):.2f} nm); statistical precision of one per-step '
+            f'per block): per-step phase scatter around the shared-drift model (phi_ij + eps_i(t)) rms {r[0]:.2f} / {r[1]:.2f} deg '
+            f'(angle 1 / 2; overall {o(r):.2f} deg = {o(r) / 360 * np.mean(D["pitch_nm"]):.2f} nm); statistical precision of one per-step '
             f'block phase (site-split halves, sqrt(3/2) x noise rms of d) {n[0]:.2f} / {n[1]:.2f} deg (overall {o(n):.2f} deg). Step-specific part (deviation of the 3 '
             f'steps from a common shift) rms {dd[0]:.2f} / {dd[1]:.2f} deg vs noise {dn[0]:.2f} / {dn[1]:.2f} deg; persistent '
             f'(lag 2-10 autocovariance) {pp[0]:.2f} / {pp[1]:.2f} deg. 3000-frame blocks: residual rms '
@@ -346,9 +349,9 @@ def interp(V):
     x = [b[f'angle{a}']['rms_d'] / b[f'angle{a}']['rms_d_noise'] for a in (0, 1)]
     t = (f'INTERPRETATION: the step-specific deviation d is {x[0]:.2f} / {x[1]:.2f} x its noise reference (150-frame blocks); '
          f'persistent part {b["angle0"]["rms_persistent"]:.2f} / {b["angle1"]["rms_persistent"]:.2f} deg. ')
-    t += ('So the 3 steps of an orientation follow one shared drift within the estimation noise (shared-drift model supported). '
+    t += ('So the 3 steps of an angle follow one shared drift within the estimation noise (shared-drift model supported). '
           if max(x) < 1.15 else 'The 3 steps deviate from a shared drift beyond the noise (step-specific wander). ')
-    t += ('The residual to psi + eps (r) exceeds the per-step precision because it also contains the error of the estimated eps '
+    t += ('The residual to phi + eps (res) exceeds the per-step precision because it also contains the error of the estimated eps '
           '(3-block running mean, other weighting) and the block-to-block change of the spatial phase field over the emitter '
           'population; both are common to the 3 steps and cancel in d. The lag-1 autocorrelation of d is expected from emitters whose '
           'windows span adjacent blocks.')
@@ -359,15 +362,16 @@ def caption_decouple(V, pat):
     b = V['blocks150']; c = V['clean']; deg = np.degrees
     L = ['DRAFT CAPTION',
          'Shared phase drift of the illumination pattern (low-density DNA-PAINT movie of main-text Fig. 3, 1809/cover1/2, '
-         'SIMCODE pattern estimation). SIMCODE models the phase of each of the 6 illumination patterns as a fixed per-step '
-         'offset psi_s plus a phase drift eps_a(t) shared by the 3 phase steps of an orientation a (the DMD shifts the pattern in '
-         'discrete pixel steps, so a drift of the optics moves all 3 steps together). (A) Per orientation: the per-step phases fitted '
-         'independently in 3000-frame blocks (left) decompose into the shared drift estimated by the pattern estimation (middle; '
-         'black: eps_a(t) on 150-frame knots; grey circles: the block mean of the left panel minus psi) and the fixed offsets (right). '
+         'SIMCODE pattern estimation). SIMCODE models the phase of each of the 6 illumination patterns as a fixed phase phi_ij '
+         '(angle i, phase step j) plus a phase drift eps_i(t) at time t, shared by the 3 phase steps of angle i (the DMD shifts the '
+         'pattern in discrete pixel steps, so a drift of the optics moves all 3 steps together). (A) Per angle: the per-step phases '
+         'fitted independently in 3000-frame blocks (left) decompose into the shared drift estimated by the pattern estimation (middle; '
+         'black: eps_i(t) on 150-frame knots; grey circles: the block mean of the left panel minus phi_ij) and the fixed phases '
+         'phi_ij (right). '
          '(B) Test of the shared-drift assumption in 150-frame blocks: standard deviation over the 3 steps of the per-step phase '
          "deviation from the block's common shift (solid) and the same statistic for pure estimation noise (dashed; from two "
          f'independent halves of the emitters, split by position). The 3 steps deviate from a common shift by '
-         f'{b["angle0"]["rms_d"]:.1f} / {b["angle1"]["rms_d"]:.1f} deg rms (orientation 0 / 1), as expected from the estimation noise '
+         f'{b["angle0"]["rms_d"]:.1f} / {b["angle1"]["rms_d"]:.1f} deg rms (angle 1 / 2), as expected from the estimation noise '
          f'alone ({b["angle0"]["rms_d_noise"]:.1f} / {b["angle1"]["rms_d_noise"]:.1f} deg), against a drift range of {V["eps_range_deg"]["0"][0]:.0f} to '
          f'{V["eps_range_deg"]["0"][1]:.0f} deg and {V["eps_range_deg"]["1"][0]:.0f} to {V["eps_range_deg"]["1"][1]:.0f} deg.',
          '',
@@ -375,10 +379,11 @@ def caption_decouple(V, pat):
          '',
          'NUMBERS (si_phase_decouple_values.json)',
          f'Pattern: pitch {V["pitch_nm"][0]:.1f} / {V["pitch_nm"][1]:.1f} nm, depth m {pat["m"][0]:.3f} / {pat["m"][1]:.3f}, '
-         f'psi (deg) {V["psi_deg"]}, step spacing (deg) {[round(v, 2) for v in V["step_spacing_deg"]]}.',
-         f'Shared drift eps_a(t): range {V["eps_range_deg"]["0"][0]:.1f} to {V["eps_range_deg"]["0"][1]:.1f} deg (angle 0; '
+         f'phi_ij (deg; i = 1, 2, j = 1, 2, 3) {V.get("phi_deg", V["psi_deg"])} (= code psi_s - 90 deg, sin convention), step spacing (deg) '
+         f'{[round(v, 2) for v in V["step_spacing_deg"]]}.',
+         f'Shared drift eps_i(t): range {V["eps_range_deg"]["0"][0]:.1f} to {V["eps_range_deg"]["0"][1]:.1f} deg (angle 1; '
          f'{V["eps_range_nm"]["0"][0]:.1f} to {V["eps_range_nm"]["0"][1]:.1f} nm), {V["eps_range_deg"]["1"][0]:.1f} to '
-         f'{V["eps_range_deg"]["1"][1]:.1f} deg (angle 1; {V["eps_range_nm"]["1"][0]:.1f} to {V["eps_range_nm"]["1"][1]:.1f} nm); rms '
+         f'{V["eps_range_deg"]["1"][1]:.1f} deg (angle 2; {V["eps_range_nm"]["1"][0]:.1f} to {V["eps_range_nm"]["1"][1]:.1f} nm); rms '
          f'{V["eps_rms_deg"]["0"]:.2f} / {V["eps_rms_deg"]["1"]:.2f} deg = {V["eps_rms_nm"]["0"]:.2f} / {V["eps_rms_nm"]["1"]:.2f} nm '
          '(knots every 150 frames, 3-block running mean in the estimation, mean removed; nm = deg / 360 x pitch).',
          f'Rows: {c["n_rows"]} pass-1 localizations, {c["n_on"]} on through the window, {c["n_clean"]} clean (nn >= {c["nn_min"]} px, '
@@ -388,16 +393,17 @@ def caption_decouple(V, pat):
         L.append(f'{lab}: {B["n_blocks_used"]} blocks, median {B["median_rows"]:.0f} clean rows per block.')
         for a in (0, 1):
             A = B[f'angle{a}']
-            L.append(f'  angle {a}: step-specific deviation d rms {A["rms_d"]:.2f} deg (noise ref. {A["rms_d_noise"]:.2f}); mean std over 3 '
-                     f'steps {A["mean_std3"]:.2f} (noise {A["mean_std3_noise"]:.2f}); residual to psi + eps rms {A["rms_r"]:.2f}; '
+            L.append(f'  angle {a + 1}: step-specific deviation d rms {A["rms_d"]:.2f} deg (noise ref. {A["rms_d_noise"]:.2f}); mean std over 3 '
+                     f'steps {A["mean_std3"]:.2f} (noise {A["mean_std3_noise"]:.2f}); residual to phi + eps rms {A["rms_r"]:.2f}; '
                      f'per-step precision {A["prec_step"]:.2f} (site-split difference incl. the phase-field difference of the halves: '
                      f'{A["rms_noise_step"]:.2f}); persistent part {A["rms_persistent"]:.2f} deg; autocorrelation of d at '
                      f'lag 1/2/5/10 blocks {", ".join(f"{v:.2f}" for v in A["acorr_d"].values())}.')
-    L += ['Definitions: phi_s(b) = per-step phase of block b fitted with eps = 0 (pattern_estimation.fit_steps regression); '
-          'd_s(b) = (phi_s(b) - psi_s) - circular mean over the angle\'s 3 steps; noise reference = same statistic on '
-          '(phi_s^h1 - phi_s^h2) / 2 of two halves split by a 3-px checkerboard of the position (all windows of an emitter in one '
-          'half); residual r_s(b) = phi_s(b) - psi_s - mean eps_a at the rows\' frames; persistent part = sqrt(mean autocovariance '
-          'of d over lags 2-10 blocks) (noise is independent between blocks).',
+    L += ['Definitions: blockphase_ij(b) = phase of angle i, step j in block b fitted with eps = 0 (pattern_estimation.fit_steps '
+          'regression); d_ij(b) = (blockphase_ij(b) - phi_ij) - circular mean over the angle\'s 3 steps; noise reference = same '
+          'statistic on (blockphase_ij^h1 - blockphase_ij^h2) / 2 of two halves split by a 3-px checkerboard of the position (all '
+          'windows of an emitter in one half); residual res_ij(b) = blockphase_ij(b) - phi_ij - mean eps_i at the rows\' frames; '
+          'persistent part = sqrt(mean autocovariance of d over lags 2-10 blocks) (noise is independent between blocks). Code '
+          'names: phi_ij = psi_s - pi/2 (s = 3 (i - 1) + j - 1), eps_i = eps_a (a = i - 1).',
           interp(V),
           '',
           f'FILES: {V["pattern"]} (k, phi, m, logrel, dphi, knot_frames); pass-1 chunks {V["run"]}/pass1_*.npz.',
@@ -568,6 +574,13 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
         cfg = DS[ds]
         for ci, meth in enumerate(('SIMFLUX', 'SIMCODE')):
             R = cached_rows(meth, ds, ep, outdir); ax = axs[ri, ci]
+            if not R['sin_conv']:
+                # SIMCODE rows are in the code's cos convention (phase k_a.r - psi_s - eps_a(t)); plot them in the preprint's sin
+                # convention, phase q_i.(x, y) - phi_ij - eps_i(t) with phi_ij = psi_s - pi/2, as the SIMFLUX panels
+                R = dict(R); r0_, dep_ = R['relint'], R['depth']
+                for k_ in ('x', 'x_solved'):
+                    if k_ in R: R[k_] = (R[k_] + np.pi / 2) % (2 * np.pi)
+                R['curve'] = lambda t, r0_=r0_, dep_=dep_: r0_ * (1 + dep_ * np.sin(t)); R['sin_conv'] = True
             P = dict(files=R['files'], rule=R['rule'], n=R['n'], n_included=R['n_inc'], frac_included=R['n_inc'] / R['n'],
                      depth=R['depth'], relint=R['relint'], pitch_nm=R['pitch_nm'])
             for key, msk, col, lab in (('included', R['inc'], INC_COLOR, 'Included (method filter)'),
@@ -579,7 +592,7 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
                 P[f'm_eff_{key}'] = me; P[f'phase_offset_deg_{key}'] = off
                 if 'x_solved' in R:
                     P[f'm_eff_{key}_solved_position'], P[f'phase_offset_deg_{key}_solved_position'] = _fit_meff(
-                        R['x_solved'][idx], R['y'][idx] / R['relint'], False)
+                        R['x_solved'][idx], R['y'][idx] / R['relint'], R['sin_conv'])
             if 'x_solved' in R: P['phase_position'] = 'pass-1 head (x_prior, y_prior), pattern-free'
             tt = np.linspace(0, 2 * np.pi, 400)
             ax.plot(tt, R['curve'](tt), 'k', lw=2.5, label='Illumination pattern')
@@ -607,9 +620,10 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
 def caption_pattern_preprint(V):
     P = V['panels']; ds = V['datasets']
     L = ['DRAFT CAPTION',
-         'Localizations and their intensities mapped onto one period of the illumination pattern (pattern 0: orientation 0, '
-         'phase step 0), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
-         'localization by the sum of the 6 intensities of its window, I_k / sum_6 I. SIMFLUX: per-frame intensities of the SMLM '
+         'Localizations and their intensities mapped onto one period of the illumination pattern (angle i = 1, phase step '
+         'j = 1), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
+         'localization by the sum of the 6 intensities of its window, mu_N_ij / sum_ij mu_N_ij, and plotted against the pattern '
+         'phase q_i . (x, y) - phi_ij (- eps_i(t) for SIMCODE). SIMFLUX: per-frame intensities of the SMLM '
          'ROI fit, phase from the SMLM (2D Gaussian) position; included (blue) = modulation error < 0.1, the filter that selects '
          'the SIMFLUX input. SIMCODE: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
          'pass-1 network head, not at the position of the pattern solve (which is computed from these intensities and the pattern '
@@ -617,8 +631,9 @@ def caption_pattern_preprint(V):
          'max(sigma_x, sigma_y) <= 12 nm); excluded (red) = all other localizations in the field of view (x, y in [5, 115) px). '
          f'{V["n_show_per_class"]} random localizations per class are shown in each panel (not the class proportions; see the '
          'numbers). Black: the illumination pattern of each method (SIMFLUX: depth fixed to 0.9, as in the SIMFLUX pipeline; '
-         'SIMCODE: the estimated depth).',
-         '', 'NUMBERS (si_pattern_plots_values.json; m_eff = least-squares sine fit of y / relint over ALL rows of the class)']
+         'SIMCODE: the estimated depth), N r_ij (1 + m_i sin(phase)) normalized by the window sum.',
+         '', 'NUMBERS (si_pattern_plots_values.json; m_eff = effective modulation depth, from a least-squares sine fit of '
+         'y / relint over ALL rows of the class)']
     for k, p in P.items():
         L.append(f'  {k}: n {p["n"]} in the crop, included {p["n_included"]} ({100 * p["frac_included"]:.1f} %), rule: {p["rule"]}; '
                  f'pattern depth {p["depth"]:.3f}, pitch {p["pitch_nm"]:.1f} nm; m_eff included {p["m_eff_included"]:.3f} '
@@ -631,10 +646,11 @@ def caption_pattern_preprint(V):
           'modulation is not agreement by construction (the solved position is computed from these intensities and the pattern; its '
           'm_eff is listed for reference only). SIMFLUX uses the SMLM position (pattern-free), as in the SIMFLUX pipeline. '
           'Both inclusion rules relate to the modulation in part by construction: SIMFLUX selects on the modulation error itself '
-          '(|I_k / sum I - model| < 0.1); the SIMCODE selection uses the detection score and the calibrated precision only (not the '
+          '(|mu_N_ij / sum mu_N - model| < 0.1); the SIMCODE selection uses the detection score and the calibrated precision only (not the '
           'modulation), but the plotted position comes from the pattern solve.',
-          'Conventions: SIMFLUX (smlmtorch) model relint (1 + depth sin phase); SIMCODE rel (1 + m cos phase); each panel uses '
-          'its own method\'s phase definition, so the curves are shifted by pi/2 relative to each other.',
+          'Conventions: both panels in the preprint\'s sin convention, model r_ij (1 + m_i sin(phase)): SIMFLUX (smlmtorch) relint '
+          '(1 + depth sin phase) as is; SIMCODE\'s code model rel_s (1 + m_a cos(k_a.r - psi_s - eps_a(t))) is plotted with phase + '
+          'pi/2 (phi_ij = psi_s - pi/2), so the peak offsets of both are relative to the sine maximum.',
           'Extended version (both angles, SIMCODE only, binned means): si_pattern_plots_extended.*',
           '', 'CODE: analysis/paper/si_pattern.py (fig_pattern_plots, simflux_pattern_rows, simcode_pattern_rows); plot style: '
           'smlmtorch/simflux/localizer_report.py draw_pattern; SIMFLUX baseline: analysis/baselines/paper_pipeline.py.',

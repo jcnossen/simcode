@@ -116,7 +116,7 @@ def panel_a(cv, N):
     # input
     for t in range(4):
         cv.img(spot(A=0.6 + 0.4 * np.cos(t), seed=t), 3 + t * 1.6, 11 + t * 1.6, 9, 9, vmin=0, vmax=1.2, z=3 + 0.1 * t)
-    cv.lines(2, 36.6, ['window 6 × H × W (photons),', r'$\mathrm{sign}(y)\,\log(1+|y|/30)$'], size=FS - 0.4)
+    cv.lines(2, 36.6, ['window 6 × H × W (photons),', 'log-scaled'], size=FS - 0.4)
     # stem + mean
     cv.layer(20, 9, 25, 17, 'per-frame stem', ['weights shared over', 'the 6 frames:', 'conv3×3 1→16, GELU',
                                                 'conv3×3 16→16, GELU'], size=FS - 0.4)
@@ -129,7 +129,7 @@ def panel_a(cv, N):
     cv.box(2, 43, 62.5, 13.5, fc=C['p2'], ec=C['p2e'], ls=(0, (3, 1.5)))
     cv.text(3.2, 43.8, 'pass 2 only (illumination of the estimated pattern)', size=FS, weight='bold', color=C['p2e'])
     cv.lines(3.2, 46.8, ['maps per frame: cos part (6) + sin part (6) = 12 × H × W',
-                         'stem input (y_t, cos_t, sin_t): first conv 3→16 instead of 1→16',
+                         'stem input (frame, cos, sin): first conv 3→16 instead of 1→16',
                          '+ conv3×3 12→48 (no bias) added before the input GELU',
                          'new weights zero-initialised = the pass-1 detector at start'], size=FS - 0.5, dy=2.35)
     cv.arrow(56.5, 43, 56.5, 35.6, color=C['p2e'], ls='--')
@@ -154,14 +154,14 @@ def panel_a(cv, N):
     cv.arrow(171, 14.5, 172.3, 14.5)
     cv.box(132.5, 36.5, 47, 19.5, fc=C['out'], ec=C['oute'])
     cv.text(133.5, 37.4, 'per pixel (native 108 nm grid):', size=FS, weight='bold')
-    cv.lines(133.5, 40.6, [r'logit ($p=\sigma(\cdot)$); offset $d_{x,y} = 1.5\tanh(\cdot)$ px;',
-                           r'$\log\sigma_\mathrm{off} = -5 + 6\,\sigma(\cdot)$',
+    cv.lines(133.5, 40.6, [r'detection probability $p$ (sigmoid of a logit);',
+                           'sub-pixel offset (≤ 1.5 px) and its uncertainty',
                            'candidates: greedy NMS on the sub-pixel points',
                            '(radius 0.7 px), top-k = 640 per 64 × 64 px,',
                            r'stored if $p\geq 0.3$ (neighbour splat: $p\geq 0.2$)'], size=FS - 0.6)
     cv.arrow(176.05, 33.5, 176.05, 36.5, color=C['oute'])
     # legend + counts
-    cv.lines(68, 50.0, [r'ResBlock($c$, $d$): $x + \mathrm{conv}_{3\times3}(\mathrm{GELU}(\mathrm{GN}_8(\mathrm{conv}_{3\times3,\,d}(\mathrm{GELU}(x)))))$',
+    cv.lines(68, 50.0, [r'ResBlock(channels, dilation $d$): $h + \mathrm{conv}_{3\times3}(\mathrm{GELU}(\mathrm{GN}_8(\mathrm{conv}_{3\times3,\,d}(\mathrm{GELU}(h)))))$',
                         f'parameters: pass 1 {N["det"]:,}; pass 2 {N["p2det"]:,} (+{N["p2det"] - N["det"]:,})'],
              size=FS - 0.3)
 
@@ -175,22 +175,21 @@ def panel_b(cv, N):
     yi = y0 + 7
     cv.box(2, yi, 44, 41, fc=C['inp'], ec=C['inpe'])
     cv.text(3.2, yi + 1.0, 'input: 21 × 21 patch per candidate', size=FS, weight='bold')
-    rows = [('6', r'frames, $\mathrm{sign}(y)\log(1+|y|/30)$'),
+    rows = [('6', 'frames, log-scaled photons'),
             ('1', 'window mean, same normalisation'),
-            ('6', r'frames, linear: $(y - \bar b)/100$'),
+            ('6', 'frames, linear (photons − border bg)'),
             ('1', 'window mean, linear'),
             ('2', 'coordinate maps (x, y relative to the'),
             ('', 'detector point, / 10 px)'),
             ('1', 'neighbour splat: other candidates'),
-            ('', r'($p\geq0.2$), $p\,\exp(-d^2/2\cdot0.5^2)$, own'),
-            ('', 'stamp removed'),
+            ('', r'($p\geq0.2$), Gaussian stamps of'),
+            ('', 'height $p$, own stamp removed'),
             ('1', 'detector-probability map'),
             ('18', 'channels')]
     for i, (n, s) in enumerate(rows):
         yy = yi + 4.6 + i * 3.1
         cv.text(6.0, yy, n, size=FS - 0.3, ha='right', weight='bold' if n == '18' else 'normal')
         cv.text(7.2, yy, s, size=FS - 0.3, weight='bold' if n == '18' else 'normal')
-    cv.text(3.2, yi + 4.6 + 11 * 3.1 + 0.3, r'$\bar b$: mean over frames of the border median', size=FS - 0.8, color='#555555')
     # pass-2 inputs
     cv.box(2, yi + 43.5, 44, 12, fc=C['p2'], ec=C['p2e'], ls=(0, (3, 1.5)))
     cv.text(3.2, yi + 44.4, 'pass 2 only', size=FS, weight='bold', color=C['p2e'])
@@ -207,14 +206,14 @@ def panel_b(cv, N):
     cv.arrow(61, yi + 20, 64, yi + 20)
     # branches
     bx, bw = 87, 36
-    cv.layer(bx, yi, bw, 11, 'weight map', ['conv3×3 96→32, GELU', '1×1 32→1 → m'])
-    cv.layer(bx, yi + 12.5, bw, 11, 'per-frame maps', ['conv3×3 96→32, GELU', r'1×1 32→6 → $D_t$'])
+    cv.layer(bx, yi, bw, 11, 'weight modulation', ['conv3×3 96→32, GELU', '1×1 32→1'])
+    cv.layer(bx, yi + 12.5, bw, 11, 'per-frame weight changes', ['conv3×3 96→32, GELU', '1×1 32→6'])
     cv.layer(bx, yi + 25, bw, 16, 'global', ['conv3×3 /2 96→96, GELU', 'conv3×3 /2 96→96, GELU', 'avg-pool 4 × 4 → 1536'])
     for yy in (yi + 5.5, yi + 18, yi + 33):
         cv.arrow(83, yy, bx, yy)
     # scalars
     cv.box(bx, yi + 43.5, bw, 12, fc=C['inp'], ec=C['inpe'])
-    cv.lines(bx + 1.2, yi + 44.4, ['14 scalars: border-median bg', r'$b_{0,t}$ (6, normalised), detector', 'offset (2), zeros (6)'],
+    cv.lines(bx + 1.2, yi + 44.4, ['14 scalars: border-median back-', 'ground per frame (6), detector', 'offset (2), zeros (6)'],
              size=FS - 0.4)
     # MLP + out
     mx = 127
@@ -227,16 +226,18 @@ def panel_b(cv, N):
     cv.box(rx, yi, 52, 22.5, fc=C['out'], ec=C['oute'])
     cv.text(rx + 1.2, yi + 0.9, 'linear read-out (fp32)', size=FS + 0.3, weight='bold')
     cv.lines(rx + 1.2, yi + 4.2, [
-        r'$g$: PSF template at the detector offset (calibrated',
-        r'in-situ PSF); $w_0 = g/(g\cdot g)$',
-        r'$w = w_0\,e^{m}$, scaled so that $w\cdot g = 1$',
-        r'$w_t = w + D_t$, $D_t$ with its $g$-component removed',
-        r'$I_{\mathrm{lin},t}=\mathbf{w}_t\cdot(\mathbf{y}_t-bg_t)$ (sum over the patch pixels)'], size=FS - 0.3)
+        'weights: PSF template at the detector offset',
+        '(in-situ PSF) × weight modulation, scaled to',
+        'unit response to the template; + per-frame',
+        'changes (no response to the template).',
+        'Linear intensity per frame = weighted sum of',
+        'the patch pixels (photons − background)'], size=FS - 0.3)
     cv.arrow(bx + bw, yi + 5.5, rx, yi + 5.5); cv.arrow(bx + bw, yi + 18, rx, yi + 18)
     # out split bar
     ox, oy, ow = 152, yi + 25, 27
-    segs = [('dI', 6, '#4c78a8'), ('log diag L', 6, '#72a0cf'), ('off-diag L', 15, '#a9c6e8'), ('dx, dy', 2, '#e45756'),
-            (r'log $\sigma_{x,y}$', 2, '#f19e9c'), ('bg', 6, '#59a14f'), (r'z, log $s_{z|xy}$, $b_x$, $b_y$', 4, '#b07aa1')]
+    segs = [('intensity corrections', 6, '#4c78a8'), ('intensity uncertainties', 6, '#72a0cf'),
+            ('intensity correlations', 15, '#a9c6e8'), (r'$x, y$ offset', 2, '#e45756'),
+            (r'$\sigma_x, \sigma_y$', 2, '#f19e9c'), ('backgrounds', 6, '#59a14f'), (r'$z$, $\sigma_z$, $z$ slopes', 4, '#b07aa1')]
     cv.text(ox, oy, '41 outputs', size=FS, weight='bold')
     x = ox; u = ow / 41
     for i, (nm, n, col) in enumerate(segs):
@@ -248,20 +249,19 @@ def panel_b(cv, N):
     # outputs
     yo = yi + 59
     cv.box(2, yo, 177, 27.5, fc='white', ec=C['oute'], lw=0.8)
-    cv.text(3.2, yo + 0.9, 'outputs (the solve uses I, L and the x, y prior; z of pass-2 rows comes from pass 1)', size=FS + 0.3,
-            weight='bold')
-    cv.lines(3.2, yo + 4.6, [
-        r'$bg_t = b_{0,t} + q_{bg,t}\sqrt{|b_{0,t}|+1}$',
-        r'$I_t = I_{\mathrm{lin},t} + c\,dI_t$,   $c = \max(3,\sqrt{\langle I_\mathrm{lin}\rangle_+ + 9\langle bg\rangle_+})$',
-        r'6 × 6 Cholesky $L$: diag $1.5\,c\,e^{q}$ ($q$ clamped to ±4), off-diagonal $c\,q$',
-        r'(intensity covariance $LL^\mathsf{T}$; the solve scales it per photon bin)'], size=FS - 0.2, dy=3.6)
-    cv.lines(98, yo + 4.6, [
-        r'prior $x, y$ = detector point $+\,0.5\tanh(\cdot)$ px',
-        r'$\log\sigma_{x,y} = -4.5 + 5\,\sigma(\cdot)$ ($x, y$ uncorrelated)',
-        r'$z$ (px, relative to the PSF focal plane),',
-        r'$\log s_{z|xy} = -4 + 5.5\,\sigma(\cdot)$, $\mathbf{b}$ clamped to ±5:',
-        r'3 × 3 covariance $L_p = [[\sigma_x,0,0],[0,\sigma_y,0],$',
-        r'$[b_x\sigma_x, b_y\sigma_y, s_{z|xy}]]$'], size=FS - 0.2, dy=2.75)
+    cv.text(3.2, yo + 0.9, 'outputs (the fit uses the intensities, their uncertainties and the position; z of pass-2 rows comes from pass 1)',
+            size=FS + 0.3, weight='bold')
+    cv.lines(3.2, yo + 6.4, [
+        r'backgrounds $\hat{\mu}_{b_{i,j}}$: border median per frame + learned correction',
+        r'intensities $\hat{\mu}_{N_{i,j}}$: linear read-out + learned correction',
+        r'uncertainties $\hat{\sigma}_{N_{i,j}}$ (with their correlations, as a Cholesky',
+        'factor; scaled with the signal and background)'], size=FS - 0.2, dy=3.6, va='baseline')
+    cv.lines(98, yo + 6.4, [
+        r'position $\hat{\theta}_{dl}$: $x, y$ = detector point + ≤ 0.5 px,',
+        r'uncertainties $\sigma_x, \sigma_y$ (uncorrelated);',
+        r'$z$ (relative to the PSF focal plane) with its',
+        r'uncertainty $\sigma_z$ and its slopes in $x$ and $y$ (used',
+        r'to correct $z$ for the solved $x, y$)'], size=FS - 0.2, dy=3.2, va='baseline')
     cv.text(3.2, yo + 22.6, f'parameters: pass 1 {N["hd"]:,}; pass 2 {N["p2hd"]:,} (+{N["p2hd"] - N["hd"]:,}).  '
                              'bf16 autocast for the CNN trunk, branches and MLP; fp32 for the output layers, read-out and Cholesky.',
             size=FS - 0.4)
@@ -288,23 +288,34 @@ def build(out, models):
 
 CAPTION = r"""si_network_structure_v3: caption material (generated by analysis/paper/fig_network_structure.py)
 
-DRAFT CAPTION
+DRAFT CAPTION (symbols as in the preprint / main-text Methods; see out/paper_figs_v2/NOTATION.md)
 Figure S?. Network architectures. Pass 1 and pass 2 use the same two network classes. The pass-2 networks add input
 channels for the illumination maps of the estimated pattern (orange). These new weights are zero-initialised, so training
 starts exactly from the pass-1 network. (a) Detector: a fully convolutional U-Net with 3 levels (48, 96, 160 channels),
 residual blocks with GroupNorm, and bilinear upsampling with additive skips. It runs on a 6-frame window. A per-frame
 stem with weights shared over the frames is followed by an input convolution on the 6x16 stem channels and the window
-mean. Per pixel of the native grid it outputs a detection logit, a sub-pixel offset and the offset's log-sigma.
-Candidates are selected by greedy non-maximum suppression on the sub-pixel points (radius 0.7 px) followed by top-k. The
-detector has {det:,} parameters in pass 1 and {p2det:,} in pass 2. (b) EmitterNet runs per candidate on a 21x21 patch with
-18 input channels: normalised and linear frames, their window means, coordinate maps, and two neighbour channels (a splat
-of the other detected candidates and the detector-probability map). A trunk of 4 residual blocks (96 channels) feeds three
-branches: a weight-map modulation m, 6 signed per-frame maps D_t, and a pooled global feature that goes through an MLP to
-41 scalar outputs. The intensities come from a learned linear read-out of the pixels, I_lin,t = sum_q w_tq (y_tq - bg_t),
-whose weights are built around the PSF template g at the detector offset and satisfy w_t . g = 1. A learned correction is
-added: I_t = I_lin,t + c dI_t. The network further outputs the Cholesky factor of a full 6x6 intensity covariance, the
-per-frame background, and a 3D position prior (x, y, z) with a 3x3 covariance (x, y uncorrelated; z | x, y linear in x, y).
-EmitterNet has {hd:,} parameters in pass 1 and {p2hd:,} in pass 2.
+mean. Per pixel of the native grid it outputs the detection probability p, a sub-pixel offset and the offset's
+uncertainty. Candidates are selected by greedy non-maximum suppression on the sub-pixel points (radius 0.7 px) followed by
+top-k. The detector has {det:,} parameters in pass 1 and {p2det:,} in pass 2. (b) EmitterNet runs per candidate on a 21x21
+patch with 18 input channels: log-scaled and linear frames, their window means, coordinate maps, and two neighbour
+channels (a splat of the other detected candidates and the detector-probability map). A trunk of 4 residual blocks (96
+channels) feeds three branches: a modulation of the read-out weights, 6 per-frame weight changes, and a pooled global
+feature that goes through an MLP to 41 scalar outputs. The intensity of each frame is a learned linear read-out: a weighted
+sum of the background-subtracted patch pixels, with weights built around the PSF template at the detector offset (unit
+response to the template), plus a learned correction. The network outputs, per candidate, the 6 intensities
+mu_N_ij (angle i, phase step j) with their uncertainties sigma_N_ij, the 6 backgrounds mu_b_ij, and the position
+theta_dl = (x, y, z) with uncertainties sigma_x, sigma_y, sigma_z. The uncertainties of the intensities are predicted
+together with their correlations (as a Cholesky factor); z is predicted with its dependence on x and y. EmitterNet has
+{hd:,} parameters in pass 1 and {p2hd:,} in pass 2.
+
+SYMBOLS (paper symbol <- code name; NOTATION.md): mu_N_ij <- I_t = I_lin,t + c dI_t (t = 3 (i - 1) + (j - 1)); sigma_N_ij <-
+sqrt(diag(L L^T)), L = the 6x6 Cholesky factor (diag 1.5 c exp(q), off-diagonal c q; c = max(3, sqrt(<I_lin>_+ +
+9 <bg>_+)), the 'signal and background' scale of the panel); mu_b_ij <- bg_t = b0_t + q_bg,t sqrt(|b0_t| + 1); theta_dl,
+sigma_x, sigma_y, sigma_z <- the prior x, y, sigma_x, sigma_y, s_z|xy; 'z slopes' <- b = (dz/dx, dz/dy). The read-out
+weights: g = PSF template, w0 = g / (g.g), w = w0 exp(m) / (w.g) (m = the weight modulation), w_t = w + D_t (D_t = the
+per-frame weight changes minus their g-component), I_lin,t = sum_q w_tq (n_tq - bg_t) with n = the patch photons. The
+correlations (off-diagonal of L) are used by the fit; the covariance ablation (out/ablation_cov/REPORT.md) found no
+measurable effect of them in pass 2.
 
 FACTS (code = /home/jc/simcode2-paperfigs2, branch paperfigs2; checkpoints /home/jc/simcode2/models/<set>/, read on CPU)
 

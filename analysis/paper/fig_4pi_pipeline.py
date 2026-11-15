@@ -27,7 +27,7 @@ mpl.rcParams.update({'font.family': 'DejaVu Sans', 'mathtext.fontset': 'dejavusa
                      'pdf.fonttype': 42, 'ps.fonttype': 42, 'font.size': 6.0})
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-W, H = 180.0, 176.0
+W, H = 180.0, 180.0
 MM = 1 / 25.4
 FS, FT, FL = 6.0, 6.9, 10
 # colours as fig_pipeline_v2: networks blue, solve green, per-file estimation purple; channel offsets red; SIMCODE (2D) grey
@@ -187,7 +187,7 @@ class Canvas:
         self.text(x, y, s, size=FL, weight='bold')
         if title: self.text(x + 5.0, y + 0.7, title, size=FT, weight='bold', color=color)
 
-    def tag(self, x, y, s=r'$(dx_c, dy_c)$', size=FS - 0.6, ha='left', **kw):
+    def tag(self, x, y, s='offset', size=FS - 0.6, ha='left', **kw):
         """channel-offset marker (red)"""
         return self.text(x, y, s, size=size, color=C['off'], ha=ha, **kw)
 
@@ -217,13 +217,13 @@ def panel_a(cv, D):
         cx = fx + xc * s
         cv.ax.add_patch(Rectangle((cx, fy), 360 * s, fh, fc='#1e1e1e', ec=CH[c], lw=0.9, zorder=3))
         flag(cv, cx + 180 * s, fy + fh / 2, 3.1, mirror=mir, color='#f2f2f2')
-        cv.text(cx + 180 * s, fy - 0.6, f'c{c}', size=FS - 0.3, ha='center', va='bottom', color=CH[c], weight='bold')
+        cv.text(cx + 180 * s, fy - 0.6, f'ch{c + 1}', size=FS - 0.3, ha='center', va='bottom', color=CH[c], weight='bold')
     cv.text(fx, fy + fh + 0.9, 'one camera frame, 4 interference channels', size=FS - 0.3)
-    cv.text(fx, fy + fh + 3.5, '(c2, c3 mirrored)', size=FS - 0.3, color='#555555')
+    cv.text(fx, fy + fh + 3.5, '(ch3, ch4 mirrored)', size=FS - 0.3, color='#555555')
     # crops flipped back and overlaid on c0
     ay = fy + fh + 8.0
     cv.arrow(fx + 27, ay - 1.6, fx + 27, ay + 0.6)
-    cv.text(fx + 28.2, ay - 1.4, 'crop, flip c2 / c3', size=FS - 0.6, color='#555555')
+    cv.text(fx + 28.2, ay - 1.4, 'crop, flip ch3 / ch4', size=FS - 0.6, color='#555555')
     by = ay + 1.6; bw_, bh_ = 11.8, 6.6
     for c in range(4):
         bx = fx + c * 14.0
@@ -240,9 +240,9 @@ def panel_a(cv, D):
         cv.ax.plot(mx + mw / 2 * (1 + vv * 0.82), my + mw / 2 * (1 + t * 0.82) * 0.82, color='#9a9a9a', lw=0.45, zorder=3)
         a, b = warp(t, np.full_like(t, v)); cv.ax.plot(mx + mw / 2 * (1 + a * 0.82), my + mw / 2 * (1 + b * 0.82) * 0.82, color=CH[2], lw=0.6, zorder=4)
         a, b = warp(np.full_like(t, v), t); cv.ax.plot(mx + mw / 2 * (1 + a * 0.82), my + mw / 2 * (1 + b * 0.82) * 0.82, color=CH[2], lw=0.6, zorder=4)
-    cv.lines(mx - 1.0, my + mw * 0.82 + 2.2, ['order-2 polynomial map', r'per channel, c $\leftrightarrow$ c0'], size=FS - 0.3)
-    cv.text(mx + mw + 0.5, my + 1.0, 'c0', size=FS - 0.6, color='#777777')
-    cv.text(mx + mw + 0.5, my + 4.0, 'c2', size=FS - 0.6, color=CH[2], weight='bold')
+    cv.lines(mx - 1.0, my + mw * 0.82 + 2.2, ['order-2 polynomial map', r'per channel $\leftrightarrow$ ch1'], size=FS - 0.3)
+    cv.text(mx + mw + 0.5, my + 1.0, 'ch1', size=FS - 0.6, color='#777777')
+    cv.text(mx + mw + 0.5, my + 4.0, 'ch3', size=FS - 0.6, color=CH[2], weight='bold')
     # (iii) patch cut without resampling: nearest pixel centre + sub-pixel remainder
     px0, py0, n, q = 88.0, 8.6, 7, 2.55
     for i in range(n + 1):
@@ -263,8 +263,8 @@ def panel_a(cv, D):
         cv.img(patch_img(D['img'][1, c]), x, qy, qs, qs, cmap='magma', ec=CH[c])
         dxx, dyy = D['doff'][c]
         cv.ax.plot([x + qs / 2 + dxx * qs / 15], [qy + qs / 2 + dyy * qs / 15], marker='+', ms=3.5, mew=0.6, color='#8fd3ff', zorder=6)
-        cv.text(x + qs / 2, qy - 0.5, f'c{c}', size=FS - 0.5, ha='center', va='bottom', color=CH[c], weight='bold')
-    cv.tag(qx, qy + qs + 0.8, r'kept per channel: $(dx_c, dy_c)$; c0: (0, 0)', size=FS - 0.5)
+        cv.text(x + qs / 2, qy - 0.5, f'ch{c + 1}', size=FS - 0.5, ha='center', va='bottom', color=CH[c], weight='bold')
+    cv.tag(qx, qy + qs + 0.8, 'sub-pixel offset kept per channel (ch1: 0)', size=FS - 0.5)
 
 
 def panel_b(cv, D):
@@ -279,7 +279,7 @@ def panel_b(cv, D):
     cv.ax.add_patch(Circle((sx_, sy_), 2.6, fc='white', ec='k', lw=0.7, zorder=4))
     cv.text(sx_, sy_ + 0.15, r'$\Sigma$', size=FS + 1.2, ha='center', va='center')
     cv.arrow(fx + 15.5, sy_, sx_ - 2.7, sy_)
-    cv.lines(fx - 0.5, fy + 12.6, ['registered 4-channel sum', '(c1-c3 resampled into c0)'], size=FS - 0.4)
+    cv.lines(fx - 0.5, fy + 12.6, ['registered 4-channel sum', '(ch2-ch4 resampled into ch1)'], size=FS - 0.4)
     # 6 planes (one per frame of the window)
     zx, zy = sx_ + 7.0, fy - 1.2
     for t in range(6):
@@ -312,14 +312,14 @@ def panel_c(cv, D, N):
         for c in range(4):
             cv.img(patch_img(D['img'][t, c], 0, D['img'].max() * 0.85), gx + c * (gs + gp), gy + t * (gs + gp), gs, gs, cmap='magma', ec=CH[c])
     for c in range(4):
-        cv.text(gx + c * (gs + gp) + gs / 2, gy - 0.5, f'c{c}', size=FS - 1.0, ha='center', va='bottom', color=CH[c], weight='bold')
-    cv.text(gx - 0.9, gy + 1.4, r'$t$=1', size=FS - 1.2, ha='right'); cv.text(gx - 0.9, gy + 5 * (gs + gp) + 1.4, '6', size=FS - 1.2, ha='right')
+        cv.text(gx + c * (gs + gp) + gs / 2, gy - 0.5, f'ch{c + 1}', size=FS - 1.4, ha='center', va='bottom', color=CH[c], weight='bold')
+    cv.text(gx - 0.9, gy + 1.4, '1', size=FS - 1.2, ha='right'); cv.text(gx - 0.9, gy + 5 * (gs + gp) + 1.4, '6', size=FS - 1.2, ha='right')
     gb = gy + 6 * (gs + gp)
     cv.lines(gx - 2.0, gb + 0.8, ['24 patches', '(6 frames × 4', 'channels)'], size=FS - 0.5)
     # channel offsets: input marker and red bus to the two networks
     ox, oy = gx - 2.0, gb + 9.8
     cv.box(ox, oy - 0.6, 17.6, 4.4, fc='white', ec=C['off'], lw=0.7, r=0.6)
-    cv.tag(ox + 0.8, oy, r'$(dx_c, dy_c)$ ×4', size=FS - 0.3)
+    cv.tag(ox + 0.8, oy, '4 channel offsets', size=FS - 0.8)
     bus_x = 25.5
     # prior network
     px, py, pw, ph = 30.0, y0 + 7.5, 37.0, 21.0
@@ -333,8 +333,8 @@ def panel_c(cv, D, N):
     cv.box(wx, wy, ww, wh, fc=C['netl'], ec=C['net'], lw=0.8)
     cv.text(wx + 1.2, wy + 1.0, 'Window network', size=FS + 0.3, weight='bold', color=C['net'])
     cv.lines(wx + 1.2, wy + 4.6, ['4 frame means (log, linear)', '+ 4 PSF templates at the prior',
-                                  '+ 8 coordinate maps', r'CNN 64 ch → window change $D$',
-                                  '(no response to the emitter)', r'MLP → $bg_c$, covariance scale'], size=FS - 0.5)
+                                  '+ 8 coordinate maps', 'CNN 64 ch → window changes',
+                                  '(no response to the emitter)', 'MLP → backgrounds, unc. scale'], size=FS - 0.5)
     # arrows from the input
     xin = gx + 4 * (gs + gp) + 0.2
     cv.arrow(xin, py + 8, px - 0.2, py + 8, color='k')
@@ -351,42 +351,40 @@ def panel_c(cv, D, N):
     cv.text(131.0, ty_ - 0.4, r'$x, y, z\pm\sigma$', size=FS - 0.6, va='bottom', ha='center', color=C['net'])
     # prior -> p0 -> window network (templates)
     cv.arrow(px + pw / 2, py + ph, px + pw / 2, wy - 0.2, color=C['net'], lw=0.8, ms=5)
-    cv.text(px + pw / 2 + 0.8, py + ph + 1.4, r'$\mathbf{p}_0$', size=FS - 0.4, color=C['net'])
+    cv.text(px + pw / 2 + 0.8, py + ph + 1.4, 'prior position', size=FS - 0.9, color=C['net'])
     # canonical windows of one channel at p0 + offset
     kx, ky, ks, kg = 74.0, y0 + 14.5, 6.0, 2.3
     cv.text(kx, ky - 6.6, 'read-out windows, per channel', size=FS - 0.4)
-    cv.text(kx, ky - 3.6, r'at $\mathbf{p}_0$', size=FS - 0.4, color=C['net'])
-    cv.tag(kx + 5.6, ky - 3.6, r'$+\,(dx_c, dy_c)$', size=FS - 0.4)
+    cv.text(kx, ky - 3.6, 'at the prior position', size=FS - 0.6, color=C['net'])
+    cv.tag(kx + 21.0, ky - 3.6, '+ offset', size=FS - 0.6)
     names = [('mf', 'matched\nfilter'), ('cr', 'interf.\ncos'), ('ci', 'interf.\nsin'), ('flat', 'patch\nsum')]
     for i, (k, lab) in enumerate(names):
         a = D['wins'][k]; v = np.abs(a).max() * (2.5 if k == 'flat' else 1.0)
         cv.img(a, kx + i * (ks + kg), ky, ks, ks, cmap='RdBu_r', vmin=-v, vmax=v)
         cv.text(kx + i * (ks + kg) + ks / 2, ky + ks + 0.6, lab, size=FS - 1.2, ha='center', linespacing=1.05)
     cv.arrow(px + pw, ky + ks / 2, kx - 0.3, ky + ks / 2, color=C['net'], lw=0.8, ms=5)
-    cv.text(px + pw + 0.8, ky + ks / 2 - 0.4, r'$\mathbf{p}_0$', size=FS - 0.6, va='bottom', color=C['net'])
+
     # read-out
     rx, ry, rw = 74.0, y0 + 34.5, 31.0
     cv.box(rx, ry, rw, 13.0, fc='white', ec=C['net'], lw=0.7)
     cv.text(rx + 1.2, ry + 1.0, 'linear read-out', size=FS, weight='bold', color=C['net'])
-    cv.text(rx + 1.2, ry + 4.8, r'$Y_{tck}=\sum_{\mathrm{px}}(W_{ck}+D_{ck})$', size=FS - 0.3)
-    cv.text(rx + 9.0, ry + 8.6, r'$\times\,(y_{tc}-bg_c)$', size=FS - 0.3)
+    cv.lines(rx + 1.2, ry + 4.6, ['(window + change) · (pixels', '− background), per frame,', 'channel and window'], size=FS - 0.8)
     xm = kx + 2 * (ks + kg) - kg / 2
     cv.arrow(xm, ky + ks + 5.2, xm, ry - 0.2, color=C['net'], lw=0.8, ms=5)
-    cv.text(xm + 0.8, ky + ks + 5.8, r'$W_{ck}$', size=FS - 0.8, color=C['net'])
+
     cv.arrow(wx + ww, wy + 9.5, rx - 0.2, wy + 9.5, color=C['net'], lw=0.8, ms=5)
-    cv.text(wx + ww + 0.6, wy + 9.0, r'$D$, $bg_c$', size=FS - 1.0, va='bottom', color=C['net'])
     cv.seg([23.0, 23.0], [wy + 6, y0 + 60.0], color='#999999', lw=0.6, ls=(0, (2, 1.5)))
     cv.seg([23.0, 71.0], [y0 + 60.0, y0 + 60.0], color='#999999', lw=0.6, ls=(0, (2, 1.5)))
     cv.seg([71.0, 71.0], [y0 + 60.0, ry + 11.0], color='#999999', lw=0.6, ls=(0, (2, 1.5)))
     cv.arrow(71.0, ry + 11.0, rx - 0.2, ry + 11.0, color='#999999', lw=0.6, ls=(0, (2, 1.5)), ms=5)
-    cv.text(46.0, y0 + 59.6, r'pixels $y_{tc}$ of all 24 patches', size=FS - 1.0, va='bottom', color='#666666', ha='center')
+    cv.text(46.0, y0 + 59.6, 'pixels of all 24 patches', size=FS - 1.0, va='bottom', color='#666666', ha='center')
     # outputs: read-out grid (6 frames x 4 channels x 4 windows) + block-diagonal covariance
     qx, qy = 110.0, y0 + 14.5
-    cv.text(qx, qy - 6.6, r'96 read-outs $Y_{tck}$', size=FS - 0.4)
+    cv.lines(qx, qy - 8.6, ['96 read-outs: 4 per', 'frame and channel'], size=FS - 0.6)
     cw, chh = 3.5, 3.0
     rng = np.random.default_rng(5)
     for c in range(4):
-        cv.text(qx + c * (cw + 0.45) + cw / 2, qy - 0.4, f'c{c}', size=FS - 1.4, ha='center', va='bottom', color=CH[c], weight='bold')
+        cv.text(qx + c * (cw + 0.45) + cw / 2, qy - 0.4, f'ch{c + 1}', size=FS - 2.0, ha='center', va='bottom', color=CH[c], weight='bold')
     for t in range(6):
         for c in range(4):
             xx, yy = qx + c * (cw + 0.45), qy + t * (chh + 0.35)
@@ -395,29 +393,18 @@ def panel_c(cv, D, N):
             for k in range(4):
                 bh = hgt[k] * (chh - 0.5)
                 cv.ax.add_patch(Rectangle((xx + 0.3 + k * 0.75, yy + chh - 0.25 - bh), 0.55, bh, fc=CH[c], ec='none', zorder=4))
-    cv.text(qx - 0.6, qy + 1.3, r'$t$=1', size=FS - 1.4, ha='right')
+    cv.text(qx - 0.6, qy + 1.3, '1', size=FS - 1.4, ha='right')
     cv.text(qx + 2 * (cw + 0.45), qy + 6 * (chh + 0.35) + 0.5, '4 windows per\n(frame, channel)', size=FS - 1.1, ha='center',
             linespacing=1.05)
     cv.seg([rx + rw, 107.5], [ry + 6.5, ry + 6.5], color=C['net'], lw=0.8)
     cv.seg([107.5, 107.5], [ry + 6.5, qy + 3 * (chh + 0.35) - 0.17], color=C['net'], lw=0.8)
     cv.arrow(107.5, qy + 3 * (chh + 0.35) - 0.17, qx - 0.3, qy + 3 * (chh + 0.35) - 0.17, color=C['net'], lw=0.8, ms=5)
-    # covariance glyph: block diagonal, 4 x 4 blocks
-    vx, vy, vs = 127.5, y0 + 14.5, 9.6
-    nb = 6; b = vs / nb
-    cv.ax.add_patch(Rectangle((vx, vy), vs, vs, fc='white', ec='#888888', lw=0.4, zorder=3))
-    cm = mpl.colormaps['RdBu_r']
-    for i in range(nb):
-        A = rng.standard_normal((4, 4)) * 0.4 + np.eye(4); S = A @ A.T; d = np.sqrt(np.diag(S)); R = S / np.outer(d, d)
-        for u in range(4):
-            for v in range(4):
-                cv.ax.add_patch(Rectangle((vx + i * b + v * b / 4, vy + i * b + u * b / 4), b / 4, b / 4, fc=cm(0.5 + 0.5 * R[u, v]), ec='none', zorder=4))
-    cv.text(vx + vs / 2, vy + vs + 0.8, '4 × 4 cov.', size=FS - 1.0, ha='center')
-    cv.text(vx + vs / 2, vy + vs + 3.3, r'per $(t, c)$', size=FS - 1.0, ha='center')
-    cv.text(vx + vs / 2, vy + vs + 7.4, r'$bg_1\ldots bg_4$', size=FS - 0.4, ha='center')
-    cv.text(vx + vs / 2, vy + vs + 10.3, 'per channel', size=FS - 1.0, ha='center')
-    cv.text(110.0, y0 + 46.0, 'SIMCODE: one 21 × 21 × 6', size=FS - 0.8, color=C['two'], style='italic')
-    cv.text(110.0, y0 + 48.8, r'patch → $I_1\ldots I_6$, 6 × 6 cov.,', size=FS - 0.8, color=C['two'], style='italic')
-    cv.text(110.0, y0 + 51.6, r'$bg_1\ldots bg_6$, prior with 3 × 3 cov.', size=FS - 0.8, color=C['two'], style='italic')
+    # uncertainties and backgrounds (words; the analytic 4 x 4 read-out covariance per frame and channel is in the caption)
+    vx, vy = 127.5, y0 + 14.5
+    cv.lines(vx, vy, ['± uncertainties', '(analytic, ×', 'learned scale)', '', 'backgrounds:', 'one per channel'], size=FS - 0.8)
+    cv.text(110.0, y0 + 46.0, 'SIMCODE: one 21 × 21 × 6 patch →', size=FS - 0.8, color=C['two'], style='italic')
+    cv.text(110.0, y0 + 48.8, '6 intensities ± uncertainties,', size=FS - 0.8, color=C['two'], style='italic')
+    cv.text(110.0, y0 + 51.6, '6 backgrounds, position (x, y, z)', size=FS - 0.8, color=C['two'], style='italic')
 
 
 def panel_d(cv, D):
@@ -440,8 +427,8 @@ def panel_d(cv, D):
     cv.ax.plot([gx + 7.0], [gy], marker='o', ms=1.8, color=C['net'], zorder=4)
     cv.text(gx, gy + 4.0, r'$x, y$', size=FS - 0.6, ha='center', va='top')
     cv.text(gx + 8.4, gy - 0.2, r'$z\pm\sigma_z$', size=FS - 0.6, va='center')
-    cv.lines(143.5, gy + 7.5, [r'$\sigma_x, \sigma_y, \sigma_z$ (independent)', r'→ window position $\mathbf{p}_0$ (c),',
-                               '   prior term of the solve (e)'], size=FS - 0.6)
+    cv.lines(143.5, gy + 7.5, [r'$\sigma_x, \sigma_y, \sigma_z$ (independent)', '→ position of the read-out windows (c),',
+                               '   prior term of the fit (e)'], size=FS - 0.6)
 
 
 def panel_e(cv, D):
@@ -449,7 +436,7 @@ def panel_e(cv, D):
     cv.seg([1, W - 1], [y0 - 1.6, y0 - 1.6], color='#bbbbbb', lw=0.5)
     cv.letter(x0, y0, 'e', 'Explicit solve on the read-outs (per candidate; no pixel fit)', color='k')
     # per-file estimation
-    bx, by, bw, bh = 4.0, y0 + 7.0, 33.0, 49.0
+    bx, by, bw, bh = 4.0, y0 + 7.0, 33.0, 53.0
     cv.box(bx, by, bw, bh, fc=C['patl'], ec=C['pat'], lw=0.8)
     cv.text(bx + 1.2, by + 1.0, 'Per file, in situ', size=FS + 0.3, weight='bold', color=C['pat'])
     cv.lines(bx + 1.2, by + 4.3, ['from the read-outs of', 'bright isolated candidates'], size=FS - 0.6, color=C['pat'])
@@ -458,7 +445,7 @@ def panel_e(cv, D):
     for i, ang in enumerate((0.0, np.pi / 2)):
         a = np.cos(2 * np.pi / 7 * (np.cos(ang) * xx + np.sin(ang) * yy))
         cv.img(a, bx + 1.5 + i * 8.0, by + 10.5, 7.0, 7.0, cmap='Greys_r', vmin=-1.6, vmax=1.2)
-    cv.lines(bx + 18.0, by + 10.8, ['SIM pattern', r'$\mathbf{k}_a, \psi_t, m$'], size=FS - 0.5)
+    cv.lines(bx + 18.0, by + 10.8, ['SIM pattern', r'$\vec{q}_i, \phi_{i,j}, m_i$'], size=FS - 0.5)
     # 4Pi phase field glyph: tile map + time blocks
     rng = np.random.default_rng(11)
     from scipy import ndimage as ndi
@@ -468,18 +455,19 @@ def panel_e(cv, D):
     cv.img(tb, bx + 1.5, by + 33.6, 20.0, 1.8, cmap='twilight', vmin=-np.pi, vmax=np.pi)
     cv.text(bx + 22.5, by + 22.5, '12-px', size=FS - 1.1); cv.text(bx + 22.5, by + 25.0, 'tiles', size=FS - 1.1)
     cv.text(bx + 22.5, by + 33.4, 'time', size=FS - 1.1)
-    cv.lines(bx + 1.2, by + 37.4, ['4Pi phase field', r'$\Phi_0(x, y, t)$'], size=FS - 0.5)
-    cv.text(bx + 1.2, by + 44.6, r'+ per-angle offset $\delta_a$', size=FS - 0.9, color='#555555')
+    cv.lines(bx + 1.2, by + 37.4, ['4Pi phase field', '(per file; tiles × time)'], size=FS - 0.5)
+    cv.text(bx + 1.2, by + 44.6, '+ an offset per angle', size=FS - 0.9, color='#555555')
     cv.arrow(bx + bw, by + 26.0, 41.0, by + 26.0, color=C['pat'], lw=1.0)
     # solve box
-    sx, sy, sw, sh = 41.0, y0 + 7.0, 69.0, 49.0
+    sx, sy, sw, sh = 41.0, y0 + 7.0, 69.0, 53.0
     cv.box(sx, sy, sw, sh, fc=C['soll'], ec=C['sol'], lw=0.8)
     cv.text(sx + 1.2, sy + 1.0, 'Read-out model', size=FS + 0.3, weight='bold', color=C['sol'])
-    cv.text(sx + 1.2, sy + 4.8, r'$E[Y_{tck}]=N_t\sum_{\mathrm{px}}W^\prime_{ck}\,g_c(x{+}dx_c,\,y{+}dy_c,\,z;\ \Phi_0{+}\delta_a)$', size=FS - 0.4)
-    cv.text(sx + 1.2, sy + 9.4, r'$N_t=F\,[1+m\cos(\mathbf{k}_a\cdot\mathbf{r}-\psi_t)]$  (× on-time, if blinking)', size=FS - 0.4)
+    cv.text(sx + 1.2, sy + 4.6, r'expected read-out = $e_{i,j}(\theta)$ × the window applied to the channel', size=FS - 0.6)
+    cv.text(sx + 1.2, sy + 7.6, r"4Pi PSF at $(x, y, z)$ + offset, with the 4Pi phase of the field", size=FS - 0.6)
+    cv.text(sx + 1.2, sy + 10.6, r'$e_{i,j}(\theta)=N[1+m_i\sin(\vec{q}_i\cdot(x,y)-\phi_{i,j})]$ (× on-time, if blinking)', size=FS - 0.6)
     # left glyph: channel photons vs z (interference)
     zs = D['zs']; g = D['gz'] / D['gz'].mean()
-    gx, gy, gw, gh = sx + 3.0, sy + 17.0, 27.0, 12.0
+    gx, gy, gw, gh = sx + 3.0, sy + 20.0, 27.0, 12.0
     for c in range(4):
         yv = (g[:, c] - g.min()) / (g.max() - g.min())
         cv.ax.plot(gx + (zs - zs[0]) / (zs[-1] - zs[0]) * gw, gy + gh - yv * gh, color=CH[c], lw=0.8, zorder=4)
@@ -491,10 +479,10 @@ def panel_e(cv, D):
     xa = gx + (zA - zs[0]) / (zs[-1] - zs[0]) * gw; xb = gx + (zB - zs[0]) / (zs[-1] - zs[0]) * gw
     cv.seg([xa, xb], [gy - 1.0, gy - 1.0], color='k', lw=0.5)
     for xx_ in (xa, xb): cv.seg([xx_, xx_], [gy - 1.6, gy - 0.4], color='k', lw=0.5)
-    cv.text(xb + 0.6, gy - 1.0, r'$\Lambda$ = 257 nm', size=FS - 1.1, ha='left', va='center')
+    cv.text(xb + 0.6, gy - 1.0, 'period 257 nm', size=FS - 1.1, ha='left', va='center')
     cv.text(gx, gy + gh + 4.3, 'z from the interference phase', size=FS - 0.7)
     # right glyph: objective vs z, prior, starts
-    hx, hy, hw, hh = sx + 36.0, sy + 17.0, 24.0, 12.0
+    hx, hy, hw, hh = sx + 36.0, sy + 20.0, 24.0, 12.0
     chi = D['chi2']; pri = D['prior']; tot = chi + pri
     norm = lambda a: np.clip(a / np.percentile(tot, 97), 0, 1)
     X = hx + (zs - zs[0]) / (zs[-1] - zs[0]) * hw
@@ -506,18 +494,19 @@ def panel_e(cv, D):
         zz = D['zp'] + js * LAM
         xx_ = hx + (zz - zs[0]) / (zs[-1] - zs[0]) * hw
         cv.ax.plot([xx_], [hy + hh + 1.6], marker='^', ms=2.8, color='k' if js == 0 else '#777777', zorder=6, clip_on=False)
-    cv.text(hx + hw / 2, hy + hh + 3.0, r'3 starts: prior $z$, $\pm\Lambda/2$', size=FS - 0.9, ha='center')
+    cv.text(hx + hw / 2, hy + hh + 3.0, r'3 starts: prior $z$, ± half a period', size=FS - 0.9, ha='center')
     cv.text(hx + hw + 0.8, hy + 0.5, 'data', size=FS - 1.1, color='#777777')
     cv.text(hx + hw + 0.8, hy + 3.1, 'prior', size=FS - 1.1, color=C['net'])
     cv.text(hx + hw + 0.8, hy + 5.7, 'total', size=FS - 1.1, color=C['sol'])
-    cv.text(hx, hy - 2.8, r'$-\log L$ vs $z$: prior picks the fringe', size=FS - 0.9, va='bottom')
+    cv.text(hx, hy - 2.8, r'cost vs $z$: the prior picks the fringe', size=FS - 0.9, va='bottom')
     # fit line
-    cv.lines(sx + 1.2, sy + 39.0, [r'LM fit of $x, y, z, F$ [, $t_\mathrm{on}, t_\mathrm{off}$], $bg_c$ (4); prior on $x, y, z$',
-                                   r'output: $x, y, z$, $\sigma_{x,y,z}$, photons, $\chi^2$'], size=FS - 0.4, dy=3.1)
+    cv.lines(sx + 1.2, sy + 41.5, [r'LM fit of $\theta=(x, y, z, N)$, a background per channel',
+                                   r'[, on / off switching]; prior on $x, y, z$; output: $x, y, z$,',
+                                   r'$\sigma_x, \sigma_y, \sigma_z$, photons, $\chi^2$'], size=FS - 0.6, dy=2.75)
     cv.text(sx + sw - 1.2, sy + sh - 1.0, 'no pass 2', size=FS - 0.6, ha='right', va='bottom', color=C['sol'], style='italic')
     # inputs to the solve from c: read-outs, covariance, windows, prior + offsets
-    cv.text(sx + 1.2, sy + sh - 1.0, r"from c: $Y_{tck}$, covariance, $W'_{ck}$, prior;", size=FS - 0.9, va='bottom', color='#555555')
-    cv.tag(sx + 33.6, sy + sh - 1.0, r'$(dx_c, dy_c)$', size=FS - 0.9, va='bottom')
+    cv.text(sx + 1.2, sy + sh - 1.0, 'from c: read-outs ± unc., windows, prior,', size=FS - 0.9, va='bottom', color='#555555')
+    cv.tag(sx + 39.6, sy + sh - 1.0, 'offsets', size=FS - 0.9, va='bottom')
 
 
 def panel_f(cv):
@@ -527,16 +516,16 @@ def panel_f(cv):
         ('camera', '1 channel', '4 channels, mapped'),
         ('detector input', '6 frames', '6 channel sums'),
         ('network input', '21×21×6', '15×15×6×4 + offsets'),
-        ('read-outs', r'$I_t$: 6', r'$Y_{tck}$: 6×4×4'),
-        ('covariance', '6×6', '4×4 per (t, c)'),
+        ('read-outs', '6 intensities', '4 per frame and channel'),
+        ('uncertainties', 'per intensity', 'per frame and channel'),
         ('background', 'per frame', 'per channel'),
-        ('prior', r'$x,y,z$, 3×3 cov.', r'$x,y,z$, $\sigma$ each'),
+        ('prior position', r'$x,y,z$ (z with x, y)', r'$x,y,z$, independent'),
         ('pass 2', 'pattern-aware', 'none'),
-        ('per file / movie', 'pattern', r'pattern + $\Phi_0(x,y,t)$'),
-        ('solve', r'$x, y, B$', r'$x, y, z, F$, $bg_c$'),
-        ('starts', '9 (lateral fringes)', r'3 ($z$, $\Lambda/2$ apart)'),
+        ('per file / movie', 'pattern', 'pattern + 4Pi phase field'),
+        ('fit', r'$x, y, N$', r'$x, y, z, N$, bg per channel'),
+        ('starts', '9 (lateral fringes)', r'3 ($z$, half a fringe apart)'),
         ('z from', 'pass-1 prior', 'interference phase'),
-        ('selection', r'$p$, $\sigma_{xy}$', r'$\chi^2$/dof, $\sigma$, photons'),
+        ('selection', r'$p$, $\sigma_x, \sigma_y$', r'$\chi^2$/dof, $\sigma$, photons'),
     ]
     tx, ty = x0 + 1.0, y0 + 7.0
     c1, c2, c3 = tx, tx + 19.5, tx + 39.0
@@ -574,35 +563,48 @@ def build(out, m4, m2):
 
 CAPTION = r"""si_4pi_pipeline: caption material (generated by analysis/paper/fig_4pi_pipeline.py)
 
-DRAFT CAPTION
+DRAFT CAPTION (symbols as in the preprint / main-text Methods; 4Pi additions defined here; see out/paper_figs_v2/NOTATION.md)
 Figure S?. The 4Pi-SIMCODE pipeline and how it differs from SIMCODE. (a) Channel mapping. Each camera frame holds the four
-interference channels side by side; two of them are mirrored by the optics and are flipped back when the channels are cut
-out. An order-2 polynomial map relates every channel to the reference channel c0. For each candidate, a 15 x 15 px patch is
-cut from every channel around the pixel nearest to the candidate's mapped position, so the pixels are never resampled. The
-sub-pixel remainder of the mapped position, (dx_c, dy_c), is kept as a per-channel offset ((0, 0) for c0). (b) Detector.
-The three other channels are resampled into c0 coordinates and summed with c0, frame by frame. The detector, the same U-Net
-as in SIMCODE (trained on 4Pi simulations), runs on these 6 summed planes of a window and proposes candidates (p >= 0.5).
-SIMCODE runs it on the 6 frames of its single channel. (c) Emitter network. Its input per candidate is the 24 patches
-(6 frames x 4 channels) and the four channel offsets. Inside the network the offsets (red) enter at three places: as
+interference channels (ch1-ch4) side by side; two of them are mirrored by the optics and are flipped back when the channels
+are cut out. An order-2 polynomial map relates every channel to the reference channel ch1. For each candidate, a 15 x 15 px
+patch is cut from every channel around the pixel nearest to the candidate's mapped position, so the pixels are never
+resampled. The sub-pixel remainder of the mapped position is kept as the channel offset of that channel (zero for ch1).
+(b) Detector. The three other channels are resampled into ch1 coordinates and summed with ch1, frame by frame. The detector,
+the same U-Net as in SIMCODE (trained on 4Pi simulations), runs on these 6 summed planes of a window and proposes candidates
+(detection probability p >= 0.5). SIMCODE runs it on the 6 frames of its single channel. (c) Emitter network. Its input per
+candidate is the 24 patches (6 frames x 4 channels) and the four channel offsets. The offsets (red) enter the network as
 coordinate maps and scalars of the prior network, as coordinate maps and PSF templates of the window network, and as the
-positions of the read-out windows. The solve uses them again to place each channel's PSF (e). A frozen prior network sees all 24 patches and gives a pattern-free 3D position prior (d). At this prior
-position, shifted by each channel's offset, four read-out windows are placed per channel: a matched filter, two quadrature
-windows on the 4Pi interference term, and the patch sum. A window network sees only frame-symmetric inputs (frame means of
-each channel, the PSF templates at the prior, coordinate maps). It learns a bounded change D of the windows that has no
-response to the emitter's own image, plus one background per channel and a covariance scale. The read-out is linear in the
-pixels of each frame: Y_tck = sum_px (W_ck + D_ck)(y_tc - bg_c). This gives 96 read-outs per candidate (6 frames x 4
-channels x 4 windows) with an analytic 4 x 4 covariance per (frame, channel), times the learned scale. SIMCODE's emitter
-network instead returns 6 intensities with a full 6 x 6 covariance, a background per frame and a 3D prior with a 3 x 3
-covariance. (d) Prior. The prior network is trained with random 4Pi phase and random pattern phase, so its z comes from the
-shape of the channel-summed PSF (astigmatism) and not from the interference. It outputs x, y and z with independent
-uncertainties sigma_x, sigma_y and sigma_z. (e) Explicit solve. For each file, the SIM pattern (wave vectors k_a, phases
-psi_t, modulation depth m) and the 4Pi phase field Phi_0(x, y, t) (12-px tiles and 50-window time blocks) are estimated in
-situ from the read-outs of bright, isolated candidates. Each candidate's 96 read-outs are then fitted by
-Levenberg-Marquardt with the model E[Y_tck] = N_t sum_px W'_ck g_c(x + dx_c, y + dy_c, z; Phi_0 + delta_a), where g_c is
-the 4Pi PSF of channel c and N_t = F[1 + m cos(k_a.r - psi_t)]. The free parameters are x, y, z, F, a residual background per
-channel and, for a blinking emitter, t_on and t_off. The network prior enters the fit as a Gaussian term on x, y and z. z
-follows from the interference phase, which repeats every Lambda = 257 nm. The fit starts at the prior z and half a fringe on
-either side of it, and the prior picks the fringe. There is no pass 2. (f) Summary of the differences from SIMCODE.
+positions of the read-out windows; the fit uses them again to place each channel's PSF (e). A frozen prior network sees all
+24 patches and gives a pattern-free 3D position (d). At this position, shifted by each channel's offset, four read-out
+windows are placed per channel: a matched filter, two quadrature windows on the 4Pi interference term, and the patch sum. A
+window network sees only frame-symmetric inputs (frame means of each channel, the PSF templates at the prior position,
+coordinate maps). It learns a bounded change of the windows that does not respond to the emitter's own image, plus one
+background per channel and a scale for the uncertainties. Each read-out is the window applied to the background-subtracted
+pixels of one frame and channel, which gives 96 read-outs per candidate (4 per frame and channel), with uncertainties
+computed analytically from the photon and camera noise and multiplied by the learned scale. SIMCODE's emitter network instead
+returns 6 intensities with their uncertainties, a background per frame and a 3D position. (d) Prior. The prior network is
+trained with random 4Pi phase and random pattern phase, so its z comes from the shape of the channel-summed PSF
+(astigmatism) and not from the interference. It outputs x, y and z with independent uncertainties sigma_x, sigma_y and
+sigma_z. (e) Explicit fit. For each file, the SIM pattern (modulation frequency q_i, phases phi_ij and modulation depth m_i
+of angle i and phase step j) and the 4Pi phase field (the 4Pi interference phase as a function of position and time: 12-px
+tiles and 50-window time blocks, plus one offset per angle) are estimated in situ from the read-outs of bright, isolated
+candidates. Each candidate's 96 read-outs are then fitted by Levenberg-Marquardt. The expected read-out is the modulated
+intensity e_ij(theta) = N [1 + m_i sin(q_i . (x, y) - phi_ij)] times the window applied to the 4Pi PSF of that channel at
+(x, y, z) plus the channel offset, with the 4Pi phase of the field at the candidate. The free parameters are
+theta = (x, y, z, N), a residual background per channel and, for an emitter that switches on or off within the window, the
+switching times. The network position enters the fit as a Gaussian prior on x, y and z. z follows from the interference
+phase, which repeats every 257 nm. The fit starts at the prior z and half a fringe period on either side of it, and the
+prior picks the fringe. There is no pass 2. (f) Summary of the differences from SIMCODE.
+
+SYMBOLS (paper symbol / words <- code name; the FACTS below use the code names)
+   ch1-ch4 <- channels c0-c3 (0-based; ch3, ch4 = the mirrored c2, c3)
+   channel offset <- doff_c = (dx_c, dy_c); read-outs <- Y_tck (frame t, channel c, window k); windows <- W_ck, window
+   change <- D_ck; background per channel <- bg_c; prior position <- p0; uncertainty scale <- cs
+   q_i, phi_ij, m_i <- k_a, psi_t (phi_ij = psi_t - pi/2: cos -> sin convention of the preprint), m
+   N (emitter intensity per window) <- F; e_ij(theta) <- N_t = F [1 + m cos(k_a . r - psi_t)]; switching times <- t_on, t_off
+   4Pi phase field <- Phi0(x, y, t) = M(x, y) + d(t); offset per angle <- delta_a; fringe period 257 nm <- Lambda
+   If the SI text needs symbols for them, NOTATION.md proposes: channel index c (c = 1..4), channel offset (Delta x_c, Delta y_c),
+   4Pi phase field Psi(x, y, t) with per-angle offset Psi_i, fringe period Lambda (none clashes with a preprint symbol).
 
 FACTS BEHIND EACH PANEL (code = this repository, branch 4pipipe from main 56c27e5; checkpoints read on CPU from
 /home/jc/simcode2/out/4pi/models; the paper's 4Pi tables were made on 2026-11-12 by the pre-refactor driver

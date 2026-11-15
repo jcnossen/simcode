@@ -124,10 +124,9 @@ def panel_C(cv, y0):
     for t in range(6):
         a = spot(A=MOD[t] * 1.2, seed=t)
         cv.img(a, fx + t * 2.3, fy + t * 2.3, fs, fs, vmin=0, vmax=1.15, z=3 + t * 0.2)
-    cv.text(fx + 2.3 * 5 + fs + 1.0, fy + 2.3 * 5 + fs / 2, r'$t$', size=FS + 1, va='center')
-    cv.lines(6, fy + 2.3 * 5 + fs + 2.0, ['6-frame window =', '2 angles × 3 phase steps'])
+    cv.lines(6, fy + 2.3 * 5 + fs + 2.0, ['6-frame window = 2 angles', r'($i$) × 3 phase steps ($j$)'])
     # timeline: frames, a window every 3 frames
-    ty = fy + 2.3 * 5 + fs + 10.5
+    ty = fy + 2.3 * 5 + fs + 11.5
     sq = 2.05
     for f in range(12):
         col = C['a0'] if (f % 6) < 3 else C['a1']
@@ -150,17 +149,6 @@ def bars(cv, x, y, w, h, vals, errs=None, col=None):
             cv.seg([x + i * bw + bw / 2] * 2, [y + h - (v + errs[i]) * h, y + h - (v - errs[i]) * h], color='k', lw=0.45)
 
 
-def covmat(cv, x, y, s, seed=1):
-    rng = np.random.default_rng(seed)
-    A = rng.standard_normal((6, 6)) * 0.35 + np.eye(6) * 1.2
-    S = A @ A.T; d = np.sqrt(np.diag(S)); R = S / np.outer(d, d)
-    cm = mpl.colormaps['RdBu_r']
-    c = s / 6
-    for i in range(6):
-        for j in range(6):
-            cv.ax.add_patch(Rectangle((x + j * c, y + i * c), c, c, fc=cm(0.5 + 0.5 * R[i, j]), ec='white', lw=0.15, zorder=3))
-
-
 def panel_D(cv, y0):
     x0, x1 = 41.0, 121.0
     cv.letter(x0 - 4.5, y0, 'D')
@@ -170,8 +158,8 @@ def panel_D(cv, y0):
     dx, dy, dw, dh = x0 + 1.8, y0 + 7.5, 26.0, 22.0
     cv.box(dx, dy, dw, dh, fc='white', ec=C['p1'], lw=0.7)
     cv.text(dx + 1.2, dy + 1.2, 'Detector', size=FS + 0.3, weight='bold', color=C['p1'])
-    cv.lines(dx + 1.2, dy + 4.9, ['U-Net on the window', '→ logit + sub-pixel', 'offset per pixel;', 'sub-pixel NMS + top-k;',
-                                  r'keep $p \geq 0.3$'])
+    cv.lines(dx + 1.2, dy + 4.9, ['U-Net on the window', '→ detection prob. $p$', '+ sub-pixel offset', 'per pixel; sub-pixel',
+                                  r'NMS; keep $p \geq 0.3$'])
     # candidate patch
     px_, py_ = dx, dy + dh + 3.2
     for t in range(3):
@@ -182,7 +170,7 @@ def panel_D(cv, y0):
     ex, ey, ew, eh = dx + dw + 3.4, dy, 20.8, 44.0
     cv.box(ex, ey, ew, eh, fc='white', ec=C['p1'], lw=0.7)
     cv.text(ex + 1.2, ey + 1.2, 'EmitterNet', size=FS + 0.3, weight='bold', color=C['p1'])
-    cv.lines(ex + 1.2, ey + 4.9, ['per-candidate', 'CNN; learned', 'linear read-out', r'$I_t=\mathbf{w}_t\cdot(\mathbf{y}_t-bg_t)$',
+    cv.lines(ex + 1.2, ey + 4.9, ['per-candidate', 'CNN; intensity', '= learned', 'weighted sum', 'of the pixels', 'minus back-', 'ground,',
                                   '+ correction'], size=FS - 0.2)
     cv.text(ex + 1.2, ey + eh - 1.2, 'no pattern\ninput', size=FS - 0.3, va='bottom', color=C['p1'], style='italic')
     cv.arrow(px_ + 12.6, py_ + 6.5, ex - 0.3, py_ + 6.5, color=C['p1'])
@@ -190,17 +178,13 @@ def panel_D(cv, y0):
     ox = ex + ew + 2.5
     cv.arrow(ex + ew + 0.2, ey + 20, ox + 0.2, ey + 20, color=C['p1'])
     oy = ey - 0.5
-    cv.text(ox + 1, oy, r'$I_1\ldots I_6$', size=FS)
-    bars(cv, ox + 1, oy + 3.0, 11.5, 7.0, MOD * 0.85, errs=0.09 + 0.05 * MOD, col=[C['a0']] * 3 + [C['a1']] * 3)
-    covmat(cv, ox + 14.0, oy + 3.0, 7.0)
-    cv.text(ox + 1, oy + 11.6, r'full 6×6 covariance', size=FS - 0.3)
-    cv.text(ox + 1, oy + 14.4, r'(Cholesky $L$)', size=FS - 0.3)
-    cv.text(ox + 1, oy + 18.6, r'$bg_1\ldots bg_6$', size=FS)
-    cv.text(ox + 1, oy + 23.2, r'3D prior $(x,y,z)$', size=FS)
-    cv.ax.add_patch(Ellipse((ox + 6.0, oy + 32.0), 8.0, 4.4, angle=-25, fc=C['p1'], alpha=0.25, ec=C['p1'], lw=0.5, zorder=3))
-    cv.ax.add_patch(Ellipse((ox + 6.0, oy + 32.0), 3.0, 1.6, angle=-25, fc=C['p1'], alpha=0.5, ec='none', zorder=3))
-    cv.lines(ox + 12.0, oy + 29.0, ['+ 3×3', 'covariance'], size=FS - 0.3)
-    cv.lines(ox + 1, oy + 37.5, [r'$z$ | $x,y$: $z + \mathbf{b}\cdot\Delta\mathbf{r}$'], size=FS - 0.3)
+    cv.lines(ox + 1, oy, ['intensities', r'$\hat{\mu}_{N_{i,j}}\pm\hat{\sigma}_{N_{i,j}}$'], size=FS - 0.2)
+    bars(cv, ox + 1, oy + 6.2, 16.5, 7.0, MOD * 0.85, errs=0.09 + 0.05 * MOD, col=[C['a0']] * 3 + [C['a1']] * 3)
+    cv.lines(ox + 1, oy + 15.6, ['backgrounds', r'$\hat{\mu}_{b_{i,j}}$'], size=FS - 0.2)
+    cv.lines(ox + 1, oy + 22.6, ['position', r'$\hat{\theta}_{dl}=(x,y,z)\pm\sigma_{dl}$'], size=FS - 0.2)
+    cv.ax.add_patch(Ellipse((ox + 7.0, oy + 33.5), 8.0, 4.4, angle=-25, fc=C['p1'], alpha=0.25, ec=C['p1'], lw=0.5, zorder=3))
+    cv.ax.add_patch(Ellipse((ox + 7.0, oy + 33.5), 3.0, 1.6, angle=-25, fc=C['p1'], alpha=0.5, ec='none', zorder=3))
+    cv.lines(ox + 1, oy + 38.0, ['(pattern-free)'], size=FS - 0.3, color=C['p1'], style='italic')
     return dict(out_x=ox, ex=ex, ey=ey)
 
 
@@ -213,25 +197,25 @@ def panel_E(cv, y0):
     gx, gy, gw, gh = x0 + 4.5, y0 + 7.0, 22.0, 13.0
     rng = np.random.default_rng(3)
     th = rng.uniform(0, 2 * np.pi, 70)
-    yv = np.clip(1 + 0.8 * np.cos(th) + 0.22 * rng.standard_normal(70), -0.25, 2.25)
+    yv = np.clip(1 + 0.8 * np.sin(th) + 0.22 * rng.standard_normal(70), -0.25, 2.25)
     X = gx + th / (2 * np.pi) * gw; Y = gy + gh - (yv + 0.3) / 2.6 * gh
     cv.ax.scatter(X, Y, s=0.9, color=C['pat'], alpha=0.6, lw=0, zorder=3)
     tt = np.linspace(0, 2 * np.pi, 100)
-    cv.ax.plot(gx + tt / (2 * np.pi) * gw, gy + gh - (1 + 0.8 * np.cos(tt) + 0.3) / 2.6 * gh, color='k', lw=0.8, zorder=4)
+    cv.ax.plot(gx + tt / (2 * np.pi) * gw, gy + gh - (1 + 0.8 * np.sin(tt) + 0.3) / 2.6 * gh, color='k', lw=0.8, zorder=4)
     cv.seg([gx, gx + gw], [gy + gh, gy + gh], color='#444444', lw=0.4)
     cv.seg([gx, gx], [gy, gy + gh], color='#444444', lw=0.4)
-    cv.text(gx + gw / 2, gy + gh + 0.6, r'$\mathbf{k}_a\cdot\mathbf{r}-\psi_s-\varepsilon_a(t)$', size=FS - 0.6, ha='center')
-    cv.text(gx - 0.8, gy + gh / 2, r'$I_t/B$', size=FS - 0.6, ha='right', va='center', rotation=90)
+    cv.text(gx + gw / 2, gy + gh + 0.6, r'$\vec{q}_i\cdot(x,y)-\phi_{i,j}-\epsilon_i(t)$', size=FS - 0.6, ha='center')
+    cv.text(gx - 0.8, gy + gh / 2, r'$\hat{\mu}_{N_{i,j}}/N$', size=FS - 0.6, ha='right', va='center', rotation=90)
     cv.text(gx + gw + 1.5, gy + 1.0, 'clean,\nisolated\nemitter-\nwindows', size=FS - 0.8, color=C['pat'])
-    yy = cv.lines(x0 + 1.5, gy + gh + 5.0, [
-        r'$I_t = B\,\mathrm{rel}_s\,[1+m_a\cos(\mathbf{k}_a\cdot\mathbf{r}-\psi_s-\varepsilon_a(t))]$'], size=FS - 0.5)
+    yy = cv.lines(x0 + 1.0, gy + gh + 5.0, [
+        r'$e_{i,j}=N r_{i,j}[1+m_i\sin(\vec{q}_i\cdot(x,y)-\phi_{i,j}-\epsilon_i(t))]$'], size=FS - 0.9)
     cv.lines(x0 + 1.5, yy + 0.6, [
-        'from the pass-1 network intensities',
-        'and prior positions only:',
-        r'$\mathbf{k}_a$: FFT, then DFT refinement',
-        r'per-step phases $\psi_s$, rel. intensities',
-        r'modulation depth $m_a$',
-        r'phase drift $\varepsilon_a(t)$ per angle (shared)'], size=FS - 0.2)
+        'from the pass-1 intensities and',
+        'pattern-free positions only:',
+        r'$\vec{q}_i$: FFT, then DFT refinement;',
+        r'phases $\phi_{i,j}$, rel. intensities $r_{i,j}$,',
+        r'modulation depth $m_i$; phase drift',
+        r'$\epsilon_i(t)$ shared by the 3 steps'], size=FS - 0.2)
 
 
 def panel_F(cv, y0):
@@ -271,15 +255,15 @@ def panel_G(cv, y0):
         cv.ax.plot([xx], [gy + gh + 1.4], marker='^', ms=2.6, color='k' if uu == 0 else '#777777', zorder=5, clip_on=False)
     cv.text(gx + gw / 2, gy + gh + 2.6, 'starts: prior centre + 8 fringe shifts', size=FS - 0.6, ha='center')
     cv.text(gx + gw / 2, gy + gh + 5.2, r'($\pm1$ period per angle)', size=FS - 0.6, ha='center')
-    cv.text(gx + gw + 1.5, gy + 0.5, 'NLL along\n' + r'$\mathbf{k}_a$', size=FS - 0.6)
-    cv.lines(x0 + 1.5, gy + gh + 9.3, [
-        r'LM fit of $(x, y, B\,[, t_\mathrm{on}, t_\mathrm{off}])$ to $I_t$, with',
-        r'$\Sigma(\mu)=s\,\Sigma_\mathrm{net}+c^2\,\mathrm{diag}(\mu^2)+c_a^2\,\mu\mu^\mathsf{T}$',
-        r'(fixed $c$, $c_a$ of the model calibration)',
-        r'+ Gaussian prior term on $(x, y)$',
-        r'on/off kinetics kept if $\Delta(-2\log L)>9.21$',
-        r'output: fringe posterior mean, calibrated $\sigma$',
-        r'(pass-1 rows and pass-2 rows alike)'], size=FS - 0.1)
+    cv.text(gx + gw + 1.5, gy + 0.5, 'cost along\n' + r'$\vec{q}_i$', size=FS - 0.6)
+    cv.lines(x0 + 1.5, gy + gh + 11.6, [
+        r'LM fit of $\theta=(x, y, N)$: $e_{i,j}(\theta)$ to $\hat{\mu}_{N_{i,j}}$,',
+        r'weighted by $\hat{\sigma}_{N_{i,j}}$ (+ a term $\propto e_{i,j}^2$',
+        'for brightness fluctuations)',
+        r'+ Gaussian prior term: $\hat{\theta}_{dl}$, $\sigma_{dl}$',
+        'switching on / off within the window: kept',
+        'if it lowers −2 log-likelihood by > 9.21',
+        r'output: mean over the fringes, calibrated $\sigma$'], size=FS - 0.1, dy=3.25, va='baseline')
 
 
 def panel_H(cv, y0):
@@ -290,10 +274,10 @@ def panel_H(cv, y0):
     cv.text(x0 + 1.5, y0 + 1.4, r'$z$ from pass 1', size=FT, weight='bold', color=C['p1'])
     cv.lines(x0 + 1.5, y0 + 5.4, [
         'each pass-2 row is linked to its',
-        'pass-1 candidate (≤ 1 px); that',
-        'candidate\'s 3D prior (D) is',
-        r'conditioned on the final $x, y$:',
-        r'$z=z_\mathrm{p}+\mathbf{b}\cdot(\mathbf{r}-\mathbf{r}_\mathrm{p})$'], size=FS - 0.3)
+        'pass-1 candidate (≤ 1 px); its z',
+        "is that candidate's $z$ (D), corrected",
+        r'for the solved $x, y$ (the network',
+        r'predicts how $z$ varies with $x, y$)'], size=FS - 0.3)
     # selection
     sy = y0 + 25.5
     cv.box(x0, sy, x1 - x0, 11.5, fc='white', ec=C['out'], lw=0.8)
@@ -326,7 +310,7 @@ def build(out):
     # flow arrows
     cv.arrow(36.5, r2 + 16, 41.0, r2 + 16, color='k')                         # C -> D
     cv.arrow(121.2, r2 + 28, 129.0, r2 + 28, color=C['p1'], lw=1.1)          # D -> E (I_t + prior)
-    cv.text(125.1, r2 + 26.6, r'$I_t$, $\mathbf{r}$', size=FS - 1.0, ha='center', va='bottom', color=C['p1'])
+    cv.text(125.1, r2 + 26.6, r'$\hat{\mu}_{N}$, $\hat{\theta}_{dl}$', size=FS - 1.0, ha='center', va='bottom', color=C['p1'])
     # estimated pattern bus: E -> F (illumination inputs) and E -> G (solve)
     by = r3 - 4.6
     cv.seg([154.0, 154.0], [r2 + 56, by], color=C['pat'], lw=1.1)
@@ -352,27 +336,42 @@ def build(out):
 
 CAPTION = r"""fig_pipeline_v2: caption material (generated by analysis/paper/fig_pipeline_v2.py)
 
-DRAFT CAPTION
-Figure 1. SIMCODE pipeline. (A) Optical system (DMD-SIMFLUX TIRF microscope). (B) Training.
-All networks are trained only on simulated data from an experiment-matched simulator that uses the in-situ calibration of
-the target movie (vectorial PSF fitted on the movie's own spots, sCMOS camera maps, fitted emitter heights). The result is
-one PSF-matched model per movie: a detector and an emitter network for each of the two passes, plus their solve
-calibrations. (C) Input. The movie is processed in 6-frame windows (2 pattern orientations x 3 phase steps), with a new
-window every 3 frames. (D) Pass 1. A pattern-free detector proposes candidates. For each candidate, an emitter network
-(EmitterNet) outputs the 6 per-frame intensities I_t with a full 6x6 covariance (Cholesky factor), the per-frame
-background and a 3D position prior (x, y, z) with a 3x3 covariance. The intensities come from a learned linear read-out of
-the pixels plus a learned correction. The networks never see the illumination pattern in pass 1. (E) Pattern estimation.
-The pattern is estimated from the pass-1 intensities and prior positions of clean, isolated emitter-windows: wave vectors
-k_a, per-step phases psi_s and relative intensities, modulation depth m_a, and a shared per-angle phase drift eps_a(t).
-(F) Pass 2. The same detector and emitter network, with extra input channels for the illumination maps (cos and sin
-parts per frame) of the estimated pattern. They are trained on generic two-orientation patterns, so they accept any
-measured pattern. (G) Explicit pattern solve, the same for both passes. For each row, a Levenberg-Marquardt fit of
-(x, y, B [, t_on, t_off]) to the network intensities under the covariance Sigma(mu) = s Sigma_net + c^2 diag(mu^2) +
-c_a^2 mu mu^T, with a Gaussian prior from the network position. The fit starts from the prior centre and from 8
-fringe-shifted starts (+-1 period per angle). The on/off kinetics model is kept only if it lowers -2 log L by more than 9.21.
-The output is the fringe posterior mean with a calibrated uncertainty. (H) z is taken from pass 1: each pass-2 row is
-linked to its pass-1 candidate, and that candidate's 3D prior is conditioned on the solved x, y. The final table keeps the
-rows with detection probability p >= 0.63 and calibrated max(sigma_x, sigma_y) <= 12 nm.
+DRAFT CAPTION (symbols as in the preprint / main-text Methods; see out/paper_figs_v2/NOTATION.md)
+Figure 1. SIMCODE pipeline. (A) Optical system (DMD-SIMFLUX TIRF microscope). (B) Training. All networks are trained only
+on simulated data from an experiment-matched simulator that uses the in-situ calibration of the target movie (vectorial PSF
+fitted on the movie's own spots, sCMOS camera maps, fitted emitter heights). The result is one PSF-matched model per movie:
+a detector and an emitter network for each of the two passes, plus their fit calibrations. (C) Input. The movie is
+processed in 6-frame windows, one frame per modulation angle i (i = 1, 2) and phase step j (j = 1, 2, 3), with a new window
+every 3 frames. (D) Pass 1. A pattern-free detector gives, per pixel, the detection probability p and a sub-pixel offset.
+For each candidate, an emitter network (EmitterNet) estimates the 6 emitter intensities with their uncertainties
+(mu_N_ij +- sigma_N_ij, from a learned weighted sum of the background-subtracted pixels plus a learned correction), the
+backgrounds mu_b_ij and the position theta_dl = (x, y, z) with its uncertainty sigma_dl. The networks never see the
+illumination pattern in pass 1. (E) Pattern estimation. The pattern e_ij = N r_ij [1 + m_i sin(q_i . (x, y) - phi_ij -
+eps_i(t))] is estimated from the pass-1 intensities and positions of clean, isolated emitter-windows: modulation frequency
+q_i, phases phi_ij, relative illumination intensities r_ij, modulation depth m_i and a phase drift eps_i(t) at the time t of
+the window, shared by the 3 phase steps of angle i. (F) Pass 2. The same detector and emitter network, with extra input
+channels for the illumination maps (cos and sin parts per frame) of the estimated pattern. They are trained on generic
+two-orientation patterns, so they accept any measured pattern. (G) Explicit pattern fit, the same for both passes. For
+each localization, a Levenberg-Marquardt fit of theta = (x, y, N) matches e_ij(theta) to the network intensities
+mu_N_ij, weighted by their uncertainties sigma_N_ij plus a term proportional to e_ij^2 for brightness fluctuations of the
+emitter, with the network position theta_dl as a Gaussian prior (width sigma_dl). The fit starts from theta_dl and from 8
+starts shifted by +-1 pattern period per angle. A model in which the emitter switches on or off within the window is kept
+only if it lowers -2 log-likelihood by more than 9.21. The output is the mean over the fringe solutions with a calibrated
+uncertainty. (H) z is taken from pass 1: each pass-2 localization is linked to its pass-1 candidate, whose z is corrected
+for the solved x, y. The final table keeps the localizations with detection probability p >= 0.63 and calibrated
+max(sigma_x, sigma_y) <= 12 nm.
+
+SYMBOLS IN THE PANELS (paper symbol <- code name; NOTATION.md)
+   i, j = angle, phase step (1-based) <- a = t // 3, s = t % 3 (0-based frame t of the window)
+   mu_N_ij +- sigma_N_ij <- I_t and sqrt(diag(L L^T)) (EmitterNet); mu_b_ij <- bg_t
+   theta_dl = (x, y, z) +- sigma_dl <- the EmitterNet prior (x, y, z, 3x3 covariance L_p)
+   e_ij(theta) = N r_ij [1 + m_i sin(q_i . (x, y) - phi_ij - eps_i(t))] <- B rel_s [1 + m_a cos(k_a . r - psi_s - eps_a(t))]:
+     N <- B, r_ij <- rel_s, m_i <- m_a, q_i <- k_a, eps_i <- eps_a, phi_ij = psi_s - pi/2 (cos -> sin convention of the
+     preprint's Eq. 1)
+   'a term proportional to e_ij^2' <- c^2 diag(mu^2) (+ c_a^2 mu mu^T within an angle; c = c_a = 0.10, see G below)
+   Not drawn (on purpose): the off-diagonal elements of the network's intensity covariance. They are used by the fit, but
+   the covariance ablation (out/ablation_cov/REPORT.md) found no measurable effect of them in pass 2 (the product); the
+   figure describes the network output as the preprint does (intensities with uncertainties).
 
 FACTS BEHIND EACH PANEL (code = /home/jc/simcode2-paperfigs2, branch paperfigs2, from the main commit 4c3af7f)
 

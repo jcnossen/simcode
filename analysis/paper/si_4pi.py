@@ -218,7 +218,7 @@ def fig_npc(a):
     for k in rows:
         hr, er = np.histogram(V[k]['r'], bins=np.arange(0, 96, 2)); rc = 0.5 * (er[1:] + er[:-1]); hn = gaussian_filter(hr / (2 * np.pi * rc), 1.0)
         ax.plot(rc, hn / hn.max(), color=COL[k], lw=1.1 if k != 'net' else 0.8, ls='-' if k != 'net' else '--',
-                label=f"{LAB[k]}: r {PM[k]['ring_radius_median_nm']:.1f}, w {PM[k]['radial_width_nm']:.1f} nm")
+                label=f"{LAB[k]}: radius {PM[k]['ring_radius_median_nm']:.1f}, width {PM[k]['radial_width_nm']:.1f} nm")
     ax.set_xlabel('radius (nm)', labelpad=1); ax.set_ylabel('density (norm.)', labelpad=1); ax.set_ylim(0, 1.5); ax.set_xlim(0, 95)
     ax.set_yticks([0, 0.5, 1]); ax.tick_params(length=2, pad=1)
     ax.legend(loc='upper left', frameon=False, fontsize=5.0, handlelength=1.6, borderaxespad=0.0, labelspacing=0.15)
@@ -257,11 +257,11 @@ def caption_npc(v):
          "publication, 38 files of 18 000 frames = 3000 six-frame windows each; 4 camera channels, 128 nm pixels). "
          "(a) Overview of the nucleus, 4Pi-SIMCODE localizations in the validated range (>= 1000 photo-electrons per window, |z| <= 0.3 um), colour = z. "
          "(b) Zoom (white box in a): 4Pi-SIMCODE all kept, 4Pi-SIMCODE at matched count (the localizations with the smallest reported combined "
-         f"precision sqrt(sx^2+sy^2+sz^2) <= {I['thr_matched_nm']:.2f} nm, as many as the 4Pi-SIMFLUX pipeline keeps), and the 4Pi-SIMFLUX pipeline "
+         f"precision sqrt(sigma_x^2 + sigma_y^2 + sigma_z^2) <= {I['thr_matched_nm']:.2f} nm, as many as the 4Pi-SIMFLUX pipeline keeps), and the 4Pi-SIMFLUX pipeline "
          "(published-style). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
          f"{I['n_pores']:,} pores found once on the 4Pi-SIMFLUX table, the same centres for every method. (d) Side views (x-z, |y| < 30 nm) of the "
          "averaged pore: 4Pi-SIMCODE all kept and at matched count, 4Pi-SIMFLUX and 4Pi-SIMFLUX pixel MLE. (e) z histogram of the ring "
-         "(25 < r < 85 nm) about each pore's mean z: the two Nup96 rings. (f) Radial density. (g) Per-ring z spread versus the number of "
+         "(radius 25-85 nm) about each pore's mean z: the two Nup96 rings. (f) Radial density. (g) Per-ring z spread versus the number of "
          "localizations kept when each method's rows are ranked by its own reported combined precision (dotted line: the 4Pi-SIMFLUX count).",
          '',
          'NUMBERS (si_4pi_npc_values.json; same recipe as out/4pi/fig/NPC_selection_curves_v10.json)',
@@ -474,7 +474,7 @@ SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
 BEST = {t: 'net_sig1' for t in ('mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15')}   # ONE selection at every density (user 2026-11-15)
 FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps)
 NMIN_CL = 50                                             # fewer kept 4Pi-SIMFLUX localizations: rates not measurable
-SELTXT = dict(net_sig0='σxy < 7, σz < 16 nm', net_sig1='σxy < 5, σz < 12 nm')
+SELTXT = dict(net_sig0='max(σx, σy) < 7, σz < 16 nm', net_sig1='max(σx, σy) < 5, σz < 12 nm')
 ZOOM1 = ((3945.0, 3785.0), 1200.0)                       # sweep4pi_fig.ZOOMS[0]: crossing, dz 256 nm
 ZOOM2 = ((4800.0, 2330.0), 1200.0)                       # 4-5 tubes
 
@@ -610,7 +610,7 @@ def caption_sim(V):
          "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
-         "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported sigma_xy < 5 nm and sigma_z < 12 nm, on top of the base filters). "
+         "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported max(sigma_x, sigma_y) < 5 nm and sigma_z < 12 nm, on top of the base filters). "
          "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = localizations "
          "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution in x-y and in x-z sections "
          "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
@@ -659,7 +659,7 @@ def caption_sim(V):
           'The x-z plateau (~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
           'CONDITIONS: detector det4pi, emitter network v10 (trained with <= 3 neighbours within 7 px: out of distribution at >= 0.82), explicit solve with '
           'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); one selection at every density: base filters (sigma_z < 25 nm, '
-          f'sigma_x, sigma_y < 0.12 px, N > 300) + reported sigma_xy < 5 nm and sigma_z < 12 nm (net_sig1 of the sweep). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
+          f'sigma_x, sigma_y < 0.12 px, N > 300) + reported max(sigma_x, sigma_y) < 5 nm and sigma_z < 12 nm (net_sig1 of the sweep). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
           'localizations: none here). One structure realisation, one movie per density.',
           'CODE: analysis/paper/si_4pi.py (sim); data analysis/fourpi_sim/sweep4pi_{movie,run,eval}.py, panels e / f analysis/fourpi_sim/sweep4pi_ttf_fp.py.']
     return '\n'.join(L) + '\n'
