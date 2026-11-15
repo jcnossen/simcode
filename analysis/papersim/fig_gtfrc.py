@@ -31,9 +31,9 @@ def main():
           'GT-FRC = FRC(rendered reconstruction, rendered ground truth = all labelling sites), 5 nm pixels, whole field, 1/7; rows = the FRC set '
           '(disjoint windows, max σ < 0.15 px). Frames to 40 / 30 / 20 nm: GT-FRC on the first N frames, log-interpolated ("-" = not reached in 60k). '
           'σ-Jaccard: correct = a structure point within 3 own σ (Mahalanobis); in brackets the share of correct localizations. '
-          'Ghost = no emitter ON in the window within 3 own σ. Coverage CV over 250 nm filament segments (recovered / expected from the GT '
+          'False positive = no emitter ON in the window within 3 own σ. Coverage CV over 250 nm filament segments (recovered / expected from the GT '
           'emitter-windows): CV (Poisson floor, excess). Fair FRC and 10 nm Jaccard (end of the movie, all rows) as before.', '',
-          '| density | method | n FRC set | GT-FRC nm | frames to 40 nm | frames to 30 nm | frames to 20 nm | σ-Jaccard (correct) | ghost | coverage CV (Poisson, excess) | fair FRC nm | Jaccard 10 nm |',
+          '| density | method | n FRC set | GT-FRC nm | frames to 40 nm | frames to 30 nm | frames to 20 nm | σ-Jaccard (correct) | false posst | coverage CV (Poisson, excess) | fair FRC nm | Jaccard 10 nm |',
           '|---|---|---|---|---|---|---|---|---|---|---|---|']
     rows = []
     fk = lambda v, f0=250: '-' if v is None else (f'<= {v / 1e3:g}k' if v <= f0 else f'{v / 1e3:.1f}k')

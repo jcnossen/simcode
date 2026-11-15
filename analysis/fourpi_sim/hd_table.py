@@ -40,7 +40,7 @@ def main():
     heads = ['v10'] + sys.argv[1:]
     os.makedirs(OUT, exist_ok=True)
     hdr = ('| ON/µm²/frame | head | selection | recall | precision | GT-FRC x-y / x-z (nm) | frames to x-y 25 / x-z 35 | T_fid | wrong fringe (2-4k e) | '
-           'fixed ghosts | coverage CV (Poisson) / excess | lateral / axial robust (nm) | dip in-plane / axial | faithful |')
+           'fixed false positives | coverage CV (Poisson) / excess | lateral / axial robust (nm) | dip in-plane / axial | faithful |')
     L = ['## Per density x selection x head (30 000 frames)', '', hdr, '|' + '---|' * (hdr.count('|') - 1)]
     best = {}; summ = {}
     for t in TAGS:

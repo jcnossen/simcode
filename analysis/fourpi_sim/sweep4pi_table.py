@@ -39,11 +39,11 @@ def main():
           'GT-FRC = last 1/7 crossing (first crossing of gtfrc.py in brackets; it stops at the hollow-tube spectral zeros at 1/64 and 1/28 nm), '
           'x-y projection and pooled x-z sections, all 30 000 frames, 5 nm pixels, 10 nm = Nyquist. frames to: first N on the sqrt(2) grid '
           '(log-interpolated) with GT-FRC (last crossing) at or below the target; > T = not within 30 000 frames. coverage CV over 250 nm '
-          'segments (Poisson floor in brackets). ghost: no emitter ON in the own window within 3 own σ (3D) / within a fixed 30/30/75 nm gate. '
+          'segments (Poisson floor in brackets). false positive: no emitter ON in the own window within 3 own σ (3D) / within a fixed 30/30/75 nm gate. '
           'wrong fringe: matched localizations with |Δz| > 100 nm. errors: robust sd over all matched (2–4k e in brackets); axial without fringe errors. '
           'dip < 0.81 = hollow tube resolved.', '']
     hdr = ('| ON/µm²/frame | method / selection | locs | recall | precision | GT-FRC x-y (nm) | GT-FRC x-z (nm) | frames to x-y 25 / 20 nm | '
-           'frames to x-z 40 / 35 nm | coverage CV | ghost σ / fixed | wrong fringe | σ-Jaccard | lateral (nm) | axial (nm) | dip in-plane / axial |')
+           'frames to x-z 40 / 35 nm | coverage CV | false pos. σ / fixed | wrong fringe | σ-Jaccard | lateral (nm) | axial (nm) | dip in-plane / axial |')
     L += [hdr, '|' + '---|' * (hdr.count('|') - 1)]
     for t, E in Es.items():
         for nm in ROWS:
@@ -58,9 +58,9 @@ def main():
     # ---- time to a faithful image per density x selection
     L += ['', '## Time to a faithful image', '',
           f'T_fid = frames until GT-FRC x-y <= {XY_T} nm AND x-z sections <= {XZ_T} nm (last crossing, log-interpolated on the grid), '
-          f'counted only if the selection is faithful at 30 000 frames: wrong fringe <= {FR_MAX:.0%}, fixed-gate ghosts <= {GH_MAX:.0%}, '
+          f'counted only if the selection is faithful at 30 000 frames: wrong fringe <= {FR_MAX:.0%}, fixed-gate false positives <= {GH_MAX:.0%}, '
           f'coverage excess CV (sqrt(CV^2 - Poisson^2)) <= {CV_MAX}. Frames x 6 ms = acquisition time on the 4Pi-SIMFLUX setup.', '',
-          '| ON/µm²/frame | selection | frames to x-y | frames to x-z | T_fid | wrong fringe | fixed ghosts | coverage excess | faithful |', '|---|---|---|---|---|---|---|---|---|']
+          '| ON/µm²/frame | selection | frames to x-y | frames to x-z | T_fid | wrong fringe | fixed false positives | coverage excess | faithful |', '|---|---|---|---|---|---|---|---|---|']
     best = {}
     for t, E in Es.items():
         for nm in ROWS:

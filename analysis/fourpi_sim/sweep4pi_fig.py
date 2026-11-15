@@ -145,7 +145,7 @@ def fig_sweep(Es):
     tags = [t for t in TAGS if t in Es]; D = np.array([Es[t]['dens_fov'] for t in tags])
     sels = ['net_all', 'net_base', 'net_chi16', 'net_chi13', 'net_sig0', 'net_sig1', 'net_sig2', 'net_chi16_sig1', 'cl_pub']
     keys = [('gtfrc_xy', 'GT-FRC x-y (nm)'), ('gtfrc_xz', 'GT-FRC x-z sections (nm)'), ('ft_xz', 'frames to x-z GT-FRC 35 nm'),
-            ('recall', 'recall (GT ≥ 300 e)'), ('fringe', 'wrong fringe (|Δz| > 100 nm)'), ('ghost', 'ghosts (fixed 30/30/75 nm gate)'), ('cov', 'coverage excess CV (250 nm segments)')]
+            ('recall', 'recall (GT ≥ 300 e)'), ('fringe', 'wrong fringe (|Δz| > 100 nm)'), ('ghost', 'false positives (fixed 30/30/75 nm gate)'), ('cov', 'coverage excess CV (250 nm segments)')]
     fig, axs = plt.subplots(1, len(keys), figsize=(3.0 * len(keys), 3.4))
     for s in sels:
         vals = {k: [] for k, _ in keys}

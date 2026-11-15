@@ -73,7 +73,7 @@ def main():
     if a.suffix == '_v2psf':      # v2-PSF sets (2026-11-15): 'decode' = the DECODE retrained for the v2 PSF and these conditions
         LAB['decode'] = 'DECODE (retrained dec_sim1809v2)'
     rows = []; md_lines = [f'# Density sweep {a.prefix}{a.suffix}, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
-                           '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm | GT-FRC nm | frames to 40 / 30 / 20 nm GT-FRC | σ-Jaccard | ghost | coverage CV excess |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
+                           '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm | GT-FRC nm | frames to 40 / 30 / 20 nm GT-FRC | σ-Jaccard | false posst | coverage CV excess |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for d in [float(v) for v in a.densities.split(',')]:
         try:
             R = fig(d, a.model, a.sub, a.prefix, a.suffix)
