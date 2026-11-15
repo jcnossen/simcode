@@ -10,6 +10,8 @@ Run dir default: <movie dir>/full (all frames) or <movie dir>/cut<N> (first N fr
   v2       run_simcode.py (network set --model; + the GT-pattern diagnostic)           -> <run>/v2_<model>/locs_p2_sim.npz
   hollow   hollow_analysis.py (hollow-tube movies only): cross-section profiles, dip ratio, two-line vs one-line fit
   metrics  metrics.py (density: FRC, Jaccard vs frames, counts, GT match; moving: block Jaccard) -> <run>/metrics_<model>.json
+  gtfrc    gtfrc_run.py (density): GT-FRC, time to fidelity, sigma-gated Jaccard, ghosts, coverage (+ the v2 of --ref)
+                                                                               -> <run>/gtfrc_<model>.json
 Timing of every step is appended to <run>/timing.json; stdout / stderr of each step go to <run>/logs/<step>.log."""
 import argparse, json, os, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +32,7 @@ def main():
     ap.add_argument('--gt_diag', type=int, default=1, help='v2: also the GT-pattern pass-2 diagnostic (0 = skip, ~40 %% of the v2 time)')
     ap.add_argument('--tag', default='', help="suffix of the v2 output and of the metrics name, e.g. '_3d': v2 -> <run>/v2_<model>_3d, "
                     'metrics -> <run>/metrics_<model>_3d.json (a rerun of v2 with new networks next to the earlier one)')
+    ap.add_argument('--ref', default='', help="gtfrc: also the v2 table of this metrics name (e.g. m1809 = the earlier v2) as 'v2sig_ref'")
     a = ap.parse_args()
     sys.path.insert(0, REPO)
     from simcode.util.proctitle import auto; auto('psim-all')
@@ -56,6 +59,7 @@ def main():
         'v2': ([py, S.format('run_simcode.py'), md, '--model', a.model, '--cal_kind', a.cal_kind, '--out', v2dir, '--gt_diag', str(a.gt_diag)]
                + ([] if nf == g['nframes'] else ['--nframes', str(nf)]), os.path.join(v2dir, 'papersim_run.json')),
         'metrics': ([py, S.format('metrics.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname], None),
+        'gtfrc': ([py, S.format('gtfrc_run.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname] + (['--ref', a.ref] if a.ref else []), None),
         'hollow': ([py, S.format('hollow_analysis.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname], None),
     }
     import shutil

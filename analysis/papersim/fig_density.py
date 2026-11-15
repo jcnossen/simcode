@@ -6,7 +6,9 @@ movie), Jaccard vs frames. Rows rendered = each method's FRC set (disjoint windo
 'sfhd-ndi+smlm' rows in that set; v2 = its main selection sigma <= 12 nm (v2sig)), 5.4 nm pixels (zoom 20), 1-pixel Gaussian blur, 99.5 % clip.
 DECODE = dec_1809_2, OUT of its training range for these movies (flagged in the labels).
 usage: python analysis/papersim/fig_density.py [--model m1809] [--densities 0.5,1,2,4]
-outputs: out/papersim/fig_density_D<d>_<model>.png, out/papersim/summary_density_<model>.json / .md"""
+outputs: out/papersim/fig_density_D<d>_<model>.png, out/papersim/summary_density_<model>.json / .md
+With <run>/gtfrc_<model>.json (gtfrc_run.py): GT-FRC in the panel titles and the columns GT-FRC, frames to 40 / 30 nm, sigma-gated
+Jaccard, ghost fraction, coverage CV excess in the summary (fig_gtfrc.py has the full table and the time-to-fidelity figure)."""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -34,6 +36,8 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     md = os.path.join(C.OUT, f'{prefix}{d:g}{suffix}'); run = os.path.join(md, sub)
     R = json.load(open(os.path.join(run, f'metrics_{model}.json')))
+    gf = os.path.join(run, f'gtfrc_{model}.json'); GF = json.load(open(gf))['methods'] if os.path.exists(gf) else {}
+    R['_gtfrc'] = GF
     gt = np.load(os.path.join(md, 'gt.npz'))
     ks = [k for k in FIG_ORDER if k in R['methods']]
     fig = plt.figure(figsize=(2.3 * (len(ks) + 1), 7.5))
@@ -44,8 +48,8 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     for i, k in enumerate(ks):
         T = M.load_method(k, R['methods'][k]['path']); _, _, f = M.frc_set(T, R['W'], R['nframes'])
         ax = fig.add_subplot(gs[0, i + 1]); ax.imshow(render(T['x'][f], T['y'][f], (cx, cy), w), cmap='inferno'); ax.axis('off')
-        r = R['methods'][k]
-        ax.set_title(f"{LAB[k]}\nFRC {r.get('frc_nm', float('nan')):.1f} nm, J {r['jaccard_end']:.2f}", fontsize=7)
+        r = R['methods'][k]; gl = f", GT-FRC {GF[k]['gt_frc']['res_nm']:.1f}" if k in GF else ''
+        ax.set_title(f"{LAB[k]}\nFRC {r.get('frc_nm', float('nan')):.1f} nm{gl}, J {r['jaccard_end']:.2f}", fontsize=7)
     n4 = len(ks) + 1; q = n4 // 4
     a1 = fig.add_subplot(gs[1, 0:q]); a2 = fig.add_subplot(gs[1, q:2 * q]); a3 = fig.add_subplot(gs[1, 2 * q:3 * q]); a4 = fig.add_subplot(gs[1, 3 * q:])
     for k in ks:
@@ -66,20 +70,25 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
     a = ap.parse_args()
     rows = []; md_lines = [f'# Density sweep, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
-                           '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm |', '|---|---|---|---|---|---|---|---|---|---|---|---|']
+                           '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm | GT-FRC nm | frames to 40 / 30 / 20 nm GT-FRC | σ-Jaccard | ghost | coverage CV excess |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']
     for d in [float(v) for v in a.densities.split(',')]:
         try:
             R = fig(d, a.model, a.sub, a.prefix, a.suffix)
         except FileNotFoundError as e:
             print('skip', d, e); continue
         fl = R.get('frc_floor', {})
-        md_lines.append(f"| {d:g} | (floor: all {fl.get('n_events')} GT events at sigma 1 / 5 / 10 nm) | | | {fl.get('1', float('nan')):.1f} / {fl.get('5', float('nan')):.1f} / {fl.get('10', float('nan')):.1f} | | | | | | | |")
+        md_lines.append(f"| {d:g} | (floor: all {fl.get('n_events')} GT events at sigma 1 / 5 / 10 nm) | | | {fl.get('1', float('nan')):.1f} / {fl.get('5', float('nan')):.1f} / {fl.get('10', float('nan')):.1f} | | | | | | | | | | | | |")
+        GF = R.get('_gtfrc', {}); fk = lambda v: '-' if v is None else (f'<= {v / 1e3:g}k' if v <= 250 else f'{v / 1e3:.1f}k')
         for k in [k for k in ORDER if k in R['methods']]:
             r = R['methods'][k]; g = r['gt_match']
             rows.append(dict(density=d, method=k, n_all=r['n_all'], n_frc=r['n_frc'], frc_nm=r.get('frc_nm'), frc_ideal_nm=r.get('frc_ideal_nm'), frc_ideal_shuffled_nm=r.get('frc_ideal_shuffled_nm'), sigma_robust_nm=r.get('sigma_robust_nm'), jaccard=r['jaccard_end'],
                              rms_nm=g.get('rms_nm'), recall=g.get('recall_gt_ph150'), med_sigma_nm=g.get('median_sigma_nm')))
             md_lines.append(f"| {d:g} | {LAB[k]} | {r['n_all']} | {r['n_frc']} | {r.get('frc_nm', float('nan')):.1f} | {r.get('frc_ideal_nm', float('nan')):.1f} / {r.get('frc_ideal_shuffled_nm', float('nan')):.1f} | {r.get('sigma_robust_nm', float('nan')):.1f} | {g.get('frc_err_gt30', g.get('frac_err_gt30', float('nan'))):.3f} | {r['jaccard_end']:.3f} | "
-                            f"{','.join(f'{v:.1f}' for v in g.get('rms_nm', []))} | {g.get('recall_gt_ph150', float('nan')):.3f} | {','.join(f'{v:.1f}' for v in g.get('median_sigma_nm', []))} |")
+                            f"{','.join(f'{v:.1f}' for v in g.get('rms_nm', []))} | {g.get('recall_gt_ph150', float('nan')):.3f} | {','.join(f'{v:.1f}' for v in g.get('median_sigma_nm', []))} | "
+                            + (f"{GF[k]['gt_frc']['res_nm']:.1f} | {fk(GF[k]['ttf']['frames_to']['40'])} / {fk(GF[k]['ttf']['frames_to']['30'])} / {fk(GF[k]['ttf']['frames_to'].get('20'))} | {GF[k]['sigma_jaccard']['jaccard']:.3f} | "
+                               f"{GF[k]['ghost']['ghost_fraction']:.3f} | {GF[k]['coverage']['excess_cv']:.2f} |" if k in GF else '| | | | |'))
+            if k in GF: rows[-1].update(gt_frc_nm=GF[k]['gt_frc']['res_nm'], frames_to_40=GF[k]['ttf']['frames_to']['40'], frames_to_30=GF[k]['ttf']['frames_to']['30'],
+                                        sigma_jaccard=GF[k]['sigma_jaccard']['jaccard'], ghost=GF[k]['ghost']['ghost_fraction'], coverage_excess_cv=GF[k]['coverage']['excess_cv'])
     json.dump(rows, open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.json'), 'w'), indent=1)
     open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.md'), 'w').write('\n'.join(md_lines) + '\n')
     print('\n'.join(md_lines))
