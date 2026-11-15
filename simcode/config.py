@@ -8,7 +8,8 @@ Roots, each set by (in order of precedence) an environment variable, a key in a 
   out      outputs of the benchmark / analysis scripts                    SIMCODE_OUT        default ./simcode_out
   fourpi   work directory of the 4Pi pipelines (models, PSF, registration, SIMCODE_4PI        default <out>/4pi
            tables)
-  data4pi  raw 4Pi movies (dcimg)                                         SIMCODE_4PI_DATA   default: 'root' of simcode/fourpi/datasets.json
+  data4pi  raw 4Pi movies (dcimg)                                         SIMCODE_4PI_DATA   default: none (the 4Pi acquisition
+           configs, simcode/pipeline/configs/fourpi.py, then use their own data path)
 One optional path, set the same way: dme = a checkout of the DME drift-estimation package (DME_PATH; default: the installed
 package; see simcode/util/drift.py).
 Config file: $SIMCODE_CONFIG, else <repo>/simcode.json, else ~/.config/simcode.json; keys "models", "data", "out", "fourpi",
@@ -56,7 +57,6 @@ def root(kind):
     if kind == 'models': return str(REPO / 'models')
     if kind == 'out': return 'simcode_out'
     if kind == 'fourpi': return os.path.join(root('out'), '4pi')
-    if kind == 'data4pi': return json.load(open(Path(__file__).with_name('fourpi') / 'datasets.json'))['root']
     return ''
 
 

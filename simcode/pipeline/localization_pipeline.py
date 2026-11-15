@@ -12,7 +12,10 @@ fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
                                         # extract_tracks, fit_beads, estimate_psf, train_model, process, report
   ds = pipe.dataset_pass2()             # simcode.dataset.Dataset of the processed movie (dataset_pass1(): pass 1); ds.select()
 
-Stages (run order): order, camera, spots, cammaps, tracks, beads, psf, train, process, report. Each writes
+The set-up (config key 'setup', simcode/setups/) chooses the stages and supplies what differs between acquisition types
+(reader / channel layout, PSF model, networks, solve); there is one pipeline class for all of them.
+Stages (run order) of the widefield set-up: order, camera, spots, cammaps, tracks, beads, psf, train, process, report
+(with more than one channel: order, camera, registration); of the fourpi set-up: registration, process, report. Each writes
 <out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped unless redone (--redo <stage> redoes
 it and every later stage). Each summary has 'checks' = [{name, value, ok, warn_only}]; a failed check that is not warn_only
 stops the run unless --force."""
@@ -25,9 +28,10 @@ import numpy as np
 from simcode.pipeline import acquisition_config as C
 from simcode.io.work import atomic_json
 
-# stage name (directory under <out>, command line) -> the public method, in run order
-METHODS = dict(order='determine_frame_order', camera='calibrate_camera', spots='find_spots', cammaps='estimate_camera_maps',
-               tracks='extract_tracks', beads='fit_beads', psf='estimate_psf', train='train_model', process='process', report='report')
+# stage name (directory under <out>, command line) -> the public method, in run order (each set-up runs a subset: Setup.stages)
+METHODS = dict(order='determine_frame_order', camera='calibrate_camera', registration='register_channels', spots='find_spots',
+               cammaps='estimate_camera_maps', tracks='extract_tracks', beads='fit_beads', psf='estimate_psf', train='train_model',
+               process='process', report='report')
 STAGES = list(METHODS)
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -41,6 +45,9 @@ class LocalizationPipeline:
         """cfg: ConfigDict (simcode/util/cfgdict.py), dict, yaml / json path, or a Python file that defines one `config`;
         validated against the schema of simcode/pipeline/acquisition_config.py in every form. self.c = the resolved plain dict."""
         self.c = C.load(cfg)
+        from simcode import setups
+        self.setup = setups.get(self.c['setup'])
+        self.stages = self.setup.stages(self.c)
         if gpus is not None: self.c['gpus'] = list(gpus)
         if quick is not None: self.c['train']['quick'] = bool(quick)
         self.out = self.c['out']
@@ -173,9 +180,10 @@ class LocalizationPipeline:
             if n in (k, m): return k
         raise ValueError(f'unknown stage {x!r} (methods: {list(METHODS.values())}; command-line names: {STAGES})')
 
-    def _invalidate(self, first, todo=STAGES):
+    def _invalidate(self, first, todo=None):
         """redo: the done markers of stage `first` and of every later stage in todo are moved to summary.json.old"""
-        for s in STAGES[STAGES.index(first):]:
+        todo = self.stages if todo is None else todo
+        for s in self.stages[self.stages.index(first):]:
             p = os.path.join(self.out, s, 'summary.json')
             if os.path.exists(p) and s in todo: os.replace(p, p + '.old')
 
@@ -186,9 +194,11 @@ class LocalizationPipeline:
         if isinstance(only, str) or callable(only): only = [only]
         if isinstance(redo, str) or callable(redo): redo = [redo]
         sel = None if only is None or list(only) in ([], ['all']) else {self._stage_name(x) for x in only}
-        todo = [s for s in STAGES if sel is None or s in sel]
+        if sel is not None and sel - set(self.stages):
+            raise ValueError(f'stages {sorted(sel - set(self.stages))} are not stages of the {self.setup.name} set-up ({self.stages})')
+        todo = [s for s in self.stages if sel is None or s in sel]
         if redo:
-            self._invalidate(min((self._stage_name(r) for r in redo), key=STAGES.index), todo)
+            self._invalidate(min((self._stage_name(r) for r in redo), key=self.stages.index), todo)
         for s in todo:
             self._stage(s, force=force)
         return {s: self.summary(s) for s in todo}
@@ -202,6 +212,10 @@ class LocalizationPipeline:
     def calibrate_camera(self, force=False, redo=False):
         """gain, offset, read noise from the movie (stage a1)"""
         return self._stage('camera', force, redo)
+
+    def register_channels(self, force=False, redo=False):
+        """registration of the channels to channel 0 (several channels): per file, in situ from the movie (no beads)"""
+        return self._stage('registration', force, redo)
 
     def find_spots(self, force=False, redo=False):
         """pattern-free Gaussian spot finding on moving 6-frame sums (stage c1)"""
@@ -257,6 +271,8 @@ class LocalizationPipeline:
         return self._dataset(2, **kw)
 
     def _stage(self, name, force=False, redo=False):
+        if name not in self.stages:
+            raise ValueError(f'{name!r} is not a stage of the {self.setup.name} set-up ({self.stages})')
         if redo: self._invalidate(name)
         if self.done(name):
             self.log(f'[{name}] done (summary.json exists), skipped'); return self.summary(name)
@@ -266,7 +282,8 @@ class LocalizationPipeline:
         from simcode.util import runconfig as RC
         t0 = time.time(); started = RC.now()
         code = {k: v for k, v in RC.code_record(dme=False).items() if k in ('version', 'git_commit', 'git_dirty', 'modified_files', 'untracked_package_files')}
-        S = getattr(self, '_st_' + name)()
+        own = getattr(self.setup, 'st_' + name, None)          # a stage the set-up implements, else the pipeline's
+        S = own(self) if own is not None else getattr(self, '_st_' + name)()
         S['stage'] = name; S['time_s'] = time.time() - t0; S['finished'] = time.strftime('%Y-%m-%d %H:%M:%S')
         # how the stage was calculated: code at its start, host, the config it ran with (the complete record: <out>/run_config.json)
         S['record'] = dict(started=started, finished=RC.now(), code=code, host=RC.socket.gethostname(),
@@ -295,6 +312,23 @@ class LocalizationPipeline:
             frame_order.write_blocked(c['movie'], cache, inv, log=self.log)
         chk = frame_order.verify(c['movie'], cache, inv, log=self.log)
         return dict(movie=cache, reordered=True, perm_slot_from_frame=inv, **chk['info'], checks=chk['checks'])
+
+    # ---- stage registration (several channels; widefield: one map for the movie)
+    def _st_registration(self):
+        from simcode.channels import registration as REG
+        from simcode.channels.layout import ChannelLayout
+        c, r = self.c, self.c['registration']
+        if r['mode'] == 'file':
+            return dict(mode='file', map=r['map'], checks=[])
+        cam = self.summary('camera') or {}
+        camera = dict(offset=c['camera']['offset_adu'] if c['camera']['offset_adu'] is not None else cam.get('offset'),
+                      gain=c['camera']['gain_e_per_adu'] or cam.get('gain'), readnoise_e=c['camera']['readnoise_e'] or cam.get('readnoise_e'))
+        dev = self.torch_dev(6)
+        rd = self.setup.reader(c, self.movie)
+        pm, rep = REG.register_insitu(rd, camera, r, pixel_um=c['optics']['pixel_um'], dev=dev, log=self.log)
+        fn = os.path.join(self.dir('registration'), 'map.json')
+        pm.save(fn, source=f'in situ: {c["name"]}', report=rep)
+        return dict(mode='insitu', map=fn, report=rep, checks=REG.checks({0: rep}))
 
     # ---- stage a1: camera
     def _st_camera(self):

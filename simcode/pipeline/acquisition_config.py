@@ -1,14 +1,28 @@
 """Acquisition config of the automatic pipeline (docs/AUTO_PIPELINE.md section 1): defaults = the DMD-SIMFLUX setup.
 load(cfg) -> nested dict with every default filled in; unknown keys raise. cfg: a ConfigDict (simcode/util/cfgdict.py), a
-dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) -> list (a Python file with `configs`)."""
+dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) -> list (a Python file with `configs`).
+
+  setup         widefield (default) | fourpi: the set-up plug-in (simcode/setups/), which adds its own config section
+                (fourpi: simcode/setups/fourpi.py) and chooses the stages
+  channels      null (one channel = the whole frame) or the list of detection channels on the camera
+                [{name, crop: [x0, y0, w, h], mirror, page, psf, weight}] (simcode/channels/layout.py)
+  registration  of the channels to channel 0 (simcode/channels/registration.py): mode insitu (per file, from the
+                movie itself; no beads) | file (one map json for every file: map) | none; order of the polynomial; the
+                settings of the in-situ chain (frames per file, frames per sum, detection / fit / matching)
+  camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)"""
 import copy, json, math, os
 from collections.abc import Mapping
 
 DEFAULTS = {
     'name': None, 'movie': None, 'out': None,
     'beads': None,
-    'camera': dict(type='scmos', gain_e_per_adu=None, offset_adu=None, readnoise_e=None, dark=None, readnoise_from=None,
+    'setup': 'widefield',
+    'camera': dict(type='scmos', gain_e_per_adu=None, offset_adu=None, offset_map=None, readnoise_e=None, dark=None, readnoise_from=None,
                    map_frames=20000, gain_frames=12000),
+    'channels': None,
+    'registration': dict(mode='insitu', map=None, order=2, frames=0, sum=6, chunk=600, calib_frames=1200, roi=13, threshold=8.0,
+                         isolation=6, nms=7, d_um=0.27, z_range=[-0.6, 0.6], k_dev=3.0, max_crlb=0.15, zlim=[-0.5, 0.5],
+                         flips=['none', 'lr', 'ud', 'both'], r1=2.0, k_sigma=4.0, kfold=5),
     'optics': dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
     'pattern': dict(orientations=2, steps=3, frame_order='blocked', cache=None, pitch_px=[1.6, 2.8]),
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
@@ -60,6 +74,7 @@ def _read(cfg):
     else:
         u = json.loads(txt)
     if not isinstance(u, dict): raise ValueError(f'{src}: the top level of a config must be a mapping')
+    u.pop('_file', None)                             # a resolved config written by the pipeline (config_resolved.json)
     return [(u, src)]
 
 
@@ -83,7 +98,12 @@ def load(cfg):
 
 
 def _resolve(u, src=None):
+    from simcode import setups
     c = copy.deepcopy(DEFAULTS)
+    name = u.get('setup', DEFAULTS['setup'])
+    if name not in setups.NAMES: raise ValueError(f"config: setup must be one of {setups.NAMES}, not {name!r}")
+    S = setups.get(name)
+    c.update(copy.deepcopy(S.defaults()))
     if u.get('beads'):
         b = dict(BEAD_DEFAULTS); bu = u.pop('beads')
         for k in bu:
@@ -96,6 +116,7 @@ def _resolve(u, src=None):
         if not isinstance(c[k], str): raise ValueError(f'config: {k!r} must be a string (quote it in yaml: 1809_2 reads as the number 18092)')
     c['_file'] = src
     validate(c)
+    S.validate(c)
     return c
 
 
@@ -119,6 +140,12 @@ def validate(c):
         raise ValueError('camera.type: scmos | emccd')
     if c['psf']['blur'] not in ('none', 'line') or c['psf']['photosel'] not in (0, 3):
         raise ValueError('psf.blur: none | line; psf.photosel: 0 | 3')
+    if c['channels'] is not None:
+        from simcode.channels.layout import ChannelLayout
+        ChannelLayout.from_config(c)                     # field checks (crop, mirror, equal crop sizes, names)
+    r = c['registration']
+    if r['mode'] not in ('insitu', 'file', 'none'): raise ValueError('registration.mode: insitu | file | none')
+    if r['mode'] == 'file' and not r['map']: raise ValueError('registration.mode file needs registration.map')
 
 
 def needs_reorder(c):
