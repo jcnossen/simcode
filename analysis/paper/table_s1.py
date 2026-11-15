@@ -3,15 +3,17 @@ fig_exp_new.py --psf writes (<out>_values.json, key psf_panel; the same numbers 
 
 One column per data set; a data set whose values file does not exist yet is shown as 'pending'. The CRLB is computed for one
 isolated emitter at the median emitter height and the median signal of the plotted SIMCODE v2 set (analysis/paper/psfdata.py,
-analysis/papersim/psfpanel.py): SMLM = 3D fit (x, y, z, I, bg) of the 6-frame sum; SIMFLUX = the 6 frames with the calibration's
-pattern (2 orientations x 3 phase steps), uniformly random pattern phases; read noise as an added per-pixel variance.
+analysis/papersim/psfpanel.py): SMLM = 3D fit (x, y, z, I, bg) of the 6-frame sum; SIMFLUX = the 6 frames with the run's OWN
+estimated pattern (psfdata.run_pattern: <run>/pattern_est.pt; pitch and modulation depth per orientation, relative step intensities;
+2 orientations x 3 phase steps), uniformly random pattern phases; read noise as an added per-pixel variance. (Until 2026-11-15
+late the CRLB used the calibration files' constant pattern block, 224.19 nm / depth 0.94, for every data set.)
 
 usage: python analysis/paper/table_s1.py [--sets label=values.json ...] [--out out/paper_figs_v2/table_S1_conditions]
   writes <out>.md and <out>.tex (a LaTeX tabular, booktabs)"""
 import os, json, argparse
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-V = os.path.realpath(os.path.join(REPO, 'out', 'paper_v2psf'))
+V = os.path.realpath(os.path.join(REPO, 'out', 'paper_v2psf', 'baselines_psfv2'))     # the current figures' values (redraw_basev2.sh)
 DEFAULT = [('Low density (1809/2, Fig. 3)', f'{V}/1809_2_fig3_psfv2_values.json'),
            ('Medium density (2.5 nM/2, Fig. 4)', f'{V}/2.5nM_2_fig4_psfv2_values.json'),
            ('High density (20 nM/2)', f'{V}/20nM_2_fig_psfv2_values.json')]
@@ -27,8 +29,9 @@ ROWS = [  # (label md, label tex, unit, function of psf_panel -> str)
     ('median signal, detected', 'median signal, detected', 'photons / 6-frame window', lambda p: f"{p['detected_photons']:.0f}"),
     ('median background', 'median background', 'photons / px / frame', lambda p: f"{p['conditions']['bg_px_frame']:.2f}"),
     ('camera read noise', 'camera read noise', 'e- rms', lambda p: f"{p['conditions']['rn2_e'] ** 0.5:.2f}"),
-    ('pattern pitch / modulation depth', 'pattern pitch / modulation depth', 'nm / -',
-     lambda p: f"{p['conditions']['pattern']['pitch_nm']:.0f} / {p['conditions']['pattern']['depth']:.2f}"),
+    ('pattern pitch (estimated)', 'pattern pitch (estimated)', 'nm', lambda p: f"{p['conditions']['pattern']['pitch_nm']:.0f}"),
+    ('modulation depth, orientation 1 / 2 (estimated)', 'modulation depth, orientation 1 / 2 (estimated)', '',
+     lambda p: ' / '.join(f'{v:.2f}' for v in p['conditions']['pattern'].get('depth_per_angle') or [p['conditions']['pattern']['depth']])),
     ('CRLB SMLM x / y / z', 'CRLB SMLM $x$ / $y$ / $z$', 'nm',
      lambda p: f"{p['crlb_nm']['smlm']['x']:.1f} / {p['crlb_nm']['smlm']['y']:.1f} / {p['crlb_nm']['smlm']['z']:.0f}"),
     ('CRLB SIMFLUX x / y / z', 'CRLB SIMFLUX $x$ / $y$ / $z$', 'nm',
@@ -65,7 +68,8 @@ def main():
     notes = ('Signal, background and height: medians of the SIMCODE localizations shown in the figure (the fair-FRC set); '
              'background = pass-1 network background of the p >= 0.63 rows in disjoint windows inside the crop; read noise = '
              'mean read-noise variance of the camera map over the crop. CRLB: one isolated emitter at the median signal and '
-             'height, SMLM on the 6-frame sum, SIMFLUX on the 6 frames with the pattern of the calibration file (pitch, depth; 2 x 3 steps, random phases).\n\nSources: '
+             'height, SMLM on the 6-frame sum, SIMFLUX on the 6 frames with the pattern estimated from that recording (pitch, modulation '
+             'depth per orientation and relative step intensities of the run\'s pattern estimate; 2 x 3 steps, random phases).\n\nSources: '
              + '; '.join(f'{l}: {f}' + ('' if p is not None else ' (not yet written)') for l, p, f in cols))
     open(a.out + '.md', 'w').write('\n'.join(md) + '\n\n' + notes + '\n')
     open(a.out + '.tex', 'w').write('% ' + notes.replace('\n\n', '\n% ') + '\n' + '\n'.join(tex) + '\n')
