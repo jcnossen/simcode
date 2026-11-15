@@ -62,7 +62,7 @@ def main():
         md.append(f'| {lmd} | {unit} | ' + ' | '.join(vals) + ' |')
         tex.append(f'{ltex} & {tex_escape(unit)} & ' + ' & '.join(tex_escape(v) for v in vals) + r' \\')
     tex += [r'\bottomrule', r'\end{tabular}']
-    notes = ('Signal, background and height: medians of the SIMCODE v2 localizations shown in the figure (the fair-FRC set); '
+    notes = ('Signal, background and height: medians of the SIMCODE localizations shown in the figure (the fair-FRC set); '
              'background = pass-1 network background of the p >= 0.63 rows in disjoint windows inside the crop; read noise = '
              'mean read-noise variance of the camera map over the crop. CRLB: one isolated emitter at the median signal and '
              'height, SMLM on the 6-frame sum, SIMFLUX on the 6 frames with the pattern of the calibration file (pitch, depth; 2 x 3 steps, random phases).\n\nSources: '

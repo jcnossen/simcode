@@ -63,8 +63,8 @@ def write_table(out, md, model, meth, R):
     with open(out + '_table.csv', 'w', newline='') as fh:
         Wr = csv.DictWriter(fh, fieldnames=list(rows[0])); Wr.writeheader(); Wr.writerows(rows)
     f = lambda v, fmt='{:.1f}': '-' if v != v else fmt.format(v)
-    note = (f'Moving-microtubule simulation ({os.path.basename(md)}; {nf} frames, {nb} blocks of {bs} frames; SIMCODE = SIMCODE v2 '
-            f'({model}) with its selection p >= 0.63, max(sigma) <= 12 nm; the other methods all output rows; SIMFLUX with its own '
+    note = (f'Moving-microtubule simulation ({os.path.basename(md)}; {nf} frames, {nb} blocks of {bs} frames; SIMCODE = model '
+            f'{model} with its selection p >= 0.63, max(sigma) <= 12 nm; the other methods all output rows; SIMFLUX with its own '
             'pattern estimate). Jaccard = mean over the blocks (GT = all trajectory points of the block), as Fig. B. FRC = median over the '
             'blocks of the half-split FRC within each block, on the FRC set (disjoint 6-frame windows, sigma < 0.15 px); "-" = too few '
             'localizations per block. RMS error = GT-matched error of the FRC-set localizations (nearest emitter ON in the window, within '
