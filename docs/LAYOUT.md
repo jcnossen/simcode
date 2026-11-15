@@ -7,7 +7,7 @@ Evaluation: `docs/EVALUATION.md`. Working with the results: `docs/USAGE.md`.
 The repository holds two comparisons and what they need:
 - **SIMCODE preprint vs SIMCODE v2** on DMD-SIMFLUX DNA-PAINT movies: the v2 pipeline below with the PSF-matched models, the
   preprint's model as a baseline (`analysis/baselines/run_simcode*.py`), and the paper's other baselines (SMLM, SIMFLUX, DECODE).
-- **4Pi-SIMFLUX (classical, as published) vs 4Pi-SIMCODE** (network): `fourpi/` below and `analysis/fourpi_classical/`.
+- **4Pi-SIMFLUX (classical, as published) vs 4Pi-SIMCODE** (network): the 4Pi modules below (`setups/fourpi.py`, `channels/`, `*/fourpi*.py`) and `analysis/fourpi_classical/`.
 
 ## How the pieces fit (2D pipeline)
 
@@ -50,6 +50,7 @@ simcode/
     model.py                  EmitterNet: the per-candidate network of pass 1 and pass 2 (I_t with full covariance, bg_t, 3D position prior; illum=True: + illumination patches); neighbour inputs, PSF template, detect_candidates / apply_to_candidates, load() of every checkpoint (2D ones with zero z rows)
     train.py                  trainer of both passes: python -m simcode.emitter.train (pass 2: a pass-2 --detector or --init); intensity / prior / z NLL, anti-shrinkage and slope terms
     heldout.py                held-out gate-type patches of the pass-1 trainer (python -m simcode.emitter.heldout [--set 5]) and their metrics
+    fourpi.py                 the 4Pi emitter network: FourPiEmitterNet (learned windows, v10; arch tag 'w') with the frozen FourPiPrior (v3L) inside, the read-out windows, the fixed-window read-out, the training losses (solve_loss), load() of the 4Pi checkpoints by their arch tag
   solve/
     __init__.py               package doc
     solve.py                  the multi-start explicit pattern solve (reference implementation) and solve_emitters: the solve of the emitter-network outputs with a model calibration
@@ -57,6 +58,7 @@ simcode/
     pattern.py                pattern geometry of the solve (illumination at a position, angle index, fringe shifts, kinetics starts, chi2 p-value)
     z_conditioning.py         z after the solve: the network's 3D prior conditioned on the solved x, y; pass-2 rows linked to pass-1 candidates for their z
     autoc.py                  opt-in automatic noise scale (s, c, c_a) of the network intensities from the solve's own residuals (analysis only)
+    fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background), kinetics starts
   pattern/
     __init__.py               package doc
     illumination.py           illumination input maps of a pattern (cos / sin per frame) and perturbed pattern estimates (training error models v1 / real / realw)
@@ -70,6 +72,8 @@ simcode/
     pattern_estimation.py     the illumination pattern from the pass-1 rows (k, per-step phases, depth, relative intensities, per-angle phase drift)
     pattern_field.py          per-cell phase map and smooth depth field on top of the global pattern (analysis only)
     gate_dump.py              raw network outputs of pass 1 / pass 2 on the gate scenes (input of a model's calibration fit): python -m simcode.processing.gate_dump
+    fourpi.py                 4Pi-SIMCODE per file (the process stage of the fourpi set-up): read, detect, patches, network, pattern, phase field, solve; python -m simcode.processing.fourpi <config>
+    fourpi_pattern_phase.py   per-file SIM pattern (slot DFT, per-candidate pattern phases) and 4Pi phase field (tile map + block drift) of the 4Pi pipelines
   simulate/
     __init__.py               package doc
     acquisition.py            AcquisitionSim: the experiment-matched acquisition simulator (measured PSF with jitter, camera maps, structured / fluctuating bg, filaments, kinetics, SIMCODE or generic patterns)
@@ -79,6 +83,8 @@ simcode/
     crlb.py                   scene generator and multi-emitter CRLB of the benchmark scenes
     gate_layouts.py           emitter layouts of the gate scenes (grids, pairs, Poisson scenes, wide brightness) and the pattern-estimate error model
     psf_perturbation.py       bank of perturbed PSF LUTs (width, aberrations, focus) and camera errors
+    fourpi_patches.py         FourPiPatchSim: 4Pi candidate patches (24 channel patches) with GT read-out targets (4Pi emitter-network training, solve gates)
+    multichannel.py           MultiChannelAcquisitionSim: full multi-channel scenes through the registration maps (4Pi detector training, simulated movies; patterns=False: plain 4Pi; random registration error)
   benchmark/
     __init__.py               package doc
     gate.py                   the gate suite: fixed simulated scenes (isolated, pairs, realistic) through a front end: python -m simcode.benchmark.gate
@@ -92,9 +98,9 @@ simcode/
   pipeline/
     __init__.py               the automatic per-acquisition pipeline (LocalizationPipeline, ConfigDict)
     __main__.py               python -m simcode.pipeline <config>
-    localization_pipeline.py  LocalizationPipeline: the stages in order (order, camera, spots, cammaps, tracks, beads, psf, train, process, report), done markers, checks
-    acquisition_config.py     the acquisition config: defaults, yaml / json / Python files, validation, frame-order helpers
-    configs/                  example acquisitions: 1809_2.py / .yaml, nr80.py / .yaml, example_setup.py
+    localization_pipeline.py  LocalizationPipeline: the stages of the acquisition's set-up in order (widefield: order, camera, spots, cammaps, tracks, beads, psf, train, process, report; fourpi: registration, process, report), done markers, checks
+    acquisition_config.py     the acquisition config: defaults (+ the set-up's section), setup / channels / registration keys, yaml / json / Python files, validation, frame-order helpers
+    configs/                  acquisitions: 1809_2.py / .yaml, nr80.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies)
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
@@ -107,7 +113,7 @@ simcode/
     report.py                 stage report: summary page of an acquisition
   io/
     __init__.py               package doc
-    movie.py                  one reader interface with TIFF / dcimg / array back ends (open_movie), Prefetch
+    movie.py                  one reader interface with TIFF / dcimg / interleaved two-channel TIFF / array back ends (open_movie), Prefetch
     work.py                   the resumable work driver (Units: claims, dead-process takeover, records), atomic writes, disk guard
     launch.py                 the same command once per GPU: python -m simcode.io.launch --gpus 1,2 -- <command … --claim 1>
   evaluation/
@@ -120,27 +126,20 @@ simcode/
   psf/
     __init__.py               the only module that imports torch_psf (PSF models, calibration reader, fits, TIFF reader) + the SIMCODE glue (per-angle PSF terms, render, spline)
     beads.py                  PSF fit to bead z-stacks (torch_psf.ZStackEstimator)
-  fourpi/                     4Pi-SIMFLUX (separate data type; does not touch the 2D pipeline)
-    __init__.py               package marker
-    run.py                    4Pi-SIMCODE on raw dcimg files: python -m simcode.fourpi.run --cell NPC --files 10 --head v10
-    setup.py                  the 4Pi set-up: work / data directory, channel layout, gain, pixel size, patch size, phase offsets, file lists
-    datasets.json             the 4Pi datasets (cells, files, data root)
-    front.py                  front end shared with the classical pipeline: registration (PolyMap), camera conversion, 4-channel sum, detection, patches
-    insitu.py                 in-situ estimates per file: SIM pattern, per-candidate pattern phases, 4Pi phase field
-    head4pi_w.py              the learned-window head (v10) with a frozen Head4Pi prior
-    head4pi.py                per-candidate head on the 24 channel patches (the prior of head4pi_w; checkpoint v3L)
-    loadhead.py               loader of the 4Pi head checkpoints
-    windows4pi.py             the canonical read-out windows of the head and the solve
-    linread4pi.py             fixed linear window read-out with analytic covariance (reference of the learned head)
-    solve4pi.py               explicit solve: lateral position from the pattern, z from the 4Pi phase
-    solvek4pi.py              the same solve on K window read-outs per (frame, channel) (the pipeline's)
-    solveloss4pi.py           solve-aware training loss of the learned-window head
+  channels/                   acquisitions with several channels on one camera (1, 2, 4)
+    __init__.py               package doc
+    layout.py                 Channel (crop, mirror, page, psf, weight), ChannelLayout (from the config key channels; split of a frame), ChannelReader
+    registration.py           PolyMap (channel c <-> channel 0, json with feats_norm) and the in-situ registration per file (per-channel fits, coarse alignment incl. flips, matching, robust order-2 map + inverse, held-out residual, self-consistency): register_insitu, checks
+    front.py                  ChannelFront: camera conversion, registered channel sum, classical detection, per-channel patches at the mapped positions
+  setups/                     set-ups of the pipeline: what differs between acquisition types
+    __init__.py               get(name): widefield | fourpi
+    base.py                   the Setup interface (defaults, validate, stages, st_<stage>, movie_files, reader)
+    widefield.py              SIMCODE on DMD-SIMFLUX movies (the pipeline's own stages; registration with several channels)
+    fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name)
+  fourpi/                     the 4Pi PSF until torch-psf ships it (torch_psf.FourPiPSF on the torch-psf branch multichannel)
+    __init__.py               package doc
     psf4pi.py                 coherent two-arm vectorial 4Pi PSF with four interference channels
     lut4pi.py                 spline lookup table of that PSF, 4Pi phase analytic
-    sim4pi.py                 simulator of candidate patches (6 frames × 4 channels)
-    acquisition4pi.py         AcquisitionSim4Pi: full-scene 4Pi simulator for the detector training
-    lm.py                     batched Poisson fit and CRLB (classical 4Pi baseline)
-    zdrift.py                 sample axial drift from the structure itself
   util/
     __init__.py               package marker
     ckpt.py                   atomic checkpoint save with a disk guard (every trainer)
@@ -214,3 +213,23 @@ column names are unchanged.
 | checkpoint architecture tag `'sc4n'` | `'emitter_net'` in new checkpoints (`emitter.model.ARCH`; the stored `'sc4n'` is read through `ARCH_TAGS`); new detector checkpoints carry `'detector'` |
 | `calibration/fit_insitu2.py`, `benchmark/gate_report_xdet.py` | `calibration/fit_psf_tracks.py` (archived 2026-11-15), `benchmark/gate_report_detector_matched.py` |
 | output paths `<out>/sc4/heldout{4,5}.pt`, `<out>/p2/fe`, `<out>/p2/long` | `<out>/emitter_heldout/heldout{4,5}.pt`, `<out>/gate_dumps`, `<out>/pass2_gate/long` |
+
+## 4Pi refactor (branch fourpi, 2026-11-15)
+
+One LocalizationPipeline for every acquisition type: the set-up (config key `setup`) supplies the stages and what differs.
+No aliases remain; checkpoints, PSF states and registration maps are read unchanged (the 4Pi tables, every network's
+outputs and the seeded simulator batches are bit-identical to the code before).
+
+| before | now |
+|---|---|
+| `fourpi/run.py` (`python -m simcode.fourpi.run --cell MT --files 5`) | the pipeline: `python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT` (stages registration, process, report); worker `processing/fourpi.py` |
+| `fourpi/setup.py`, `fourpi/datasets.json` (P4, DATA4, LAYOUT, GAIN, PX_NM, P, XLIM, DELTA, file lists) | `pipeline/configs/fourpi.py` (acquisitions fourpi_MT, fourpi_NPC) read through `setups/fourpi.py` (`acquisition(name)`, `FourPiSetup`); P4 = `config.root('fourpi')`; config `data4pi` has no default |
+| `fourpi/front.py` Front(cell), PolyMap, feats, blur, nn_dist | `channels/front.py` ChannelFront (C channels), `channels/registration.py` PolyMap (+ feats_norm), `FourPiSetup.front(c, fi)` |
+| `DcimgMovie(path, layout=dict)`, `io.movie.crops` | `channels.layout.ChannelReader(DcimgMovie(path), ChannelLayout)`, `ChannelLayout.split` |
+| `fourpi/insitu.py` | `processing/fourpi_pattern_phase.py` |
+| `fourpi/solve4pi.py` Solve4Pi, `fourpi/solvek4pi.py` SolveK | `solve/fourpi.py` FourPiSolve (the T / C solve = windows ('flat', 'gauss' 1.0)) |
+| `fourpi/head4pi_w.py` Head4PiW, nbr_map, load_v10; `fourpi/head4pi.py` Head4Pi; `fourpi/windows4pi.py` WINS_K, DEFAULT; `fourpi/loadhead.py` load_head; `fourpi/linread4pi.py`; `fourpi/solveloss4pi.py` | `emitter/fourpi.py` FourPiEmitterNet, neighbour_map, init_from_v10; FourPiPrior; WINDOWS_K, WINDOWS_TC; load; linear_readout, border_bg; solve_loss |
+| `fourpi/sim4pi.py` Sim4Pi, `fourpi/acquisition4pi.py` AcquisitionSim4Pi, RegMap | `simulate/fourpi_patches.py` FourPiPatchSim, `simulate/multichannel.py` MultiChannelAcquisitionSim, TorchMap |
+| `fourpi/zdrift.py` zdrift_struct | `util/drift.py` zdrift_struct |
+| `fourpi/lm.py` | `analysis/fourpi_classical/pixel_lm.py` (classical baselines only) |
+| run output `<P4>/net/locs_<cell>_<file>_<head><tag>.npz` | `<out>/process/locs_<file><tag>.npz` (same arrays) |
