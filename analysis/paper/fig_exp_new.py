@@ -11,7 +11,12 @@ on the union of the 4 methods' sets (the same boxes for every method; written to
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM_2|20nM_2> [--nframes N] [--tag t]
           [--smlm p] [--sf p] [--decode p] [--v2 <run dir or table>] [--v2_sigma_max nm] [--aoi auto]
   defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz, v2 (run directory: locs_p2)}; v2 rows: sel, or with
-  --v2_sigma_max the paper's selection at that threshold (Dataset.select); output out/paper2/fig/<ds>[_<tag>].*"""
+  --v2_sigma_max the paper's selection at that threshold (Dataset.select); output out/paper2/fig/<ds>[_<tag>].*
+  (2026-11-15) --outdir d: output directory instead of out/paper2/fig; --reuse_drift <prefix>: the methods other than v2 take
+  their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
+  the same DME v2 drift); --psf <calib json>: PSF panel (psfpanel.py: xy at the plotted v2 set's median height + xz, rms
+  aberration, SMLM / SIMFLUX CRLB at that set's median photons, the run's pass-1 background and the camera read noise;
+  psfdata.py), the v2 argument must then be a run directory"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,6 +24,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path[:0] = [HERE, os.path.join(REPO, 'analysis', 'figures')]
 from paper_common import plt, Dataset, draw_rect, compute_pc, ZOOMS     # also sets the matplotlib rc params
 import frc_fair as FF
+import shutil
 
 P2 = f'{REPO}/out/paper2'
 SETS = {
@@ -57,6 +63,33 @@ def pick_aois(sets, sizes=(10.0, 15.0)):
     return out
 
 
+def torch_mask(m):
+    import torch
+    return torch.from_numpy(np.asarray(m, bool))
+
+
+def jsonable(o):
+    if isinstance(o, dict): return {k: jsonable(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)): return [jsonable(v) for v in o]
+    if isinstance(o, (np.floating, np.integer)): return o.item()
+    if isinstance(o, np.ndarray): return o.tolist()
+    return o
+
+
+def panel_text(info, cond):
+    """small print of the PSF panel: aberration, the conditions (data units), SMLM / SIMFLUX CRLBs"""
+    c = info['crlb']; p = cond['pattern']; q = cond['z_quantiles_um']
+    L = [f"In-situ vectorial PSF v2, rms aberration (Noll ≥ 5) {info['rms_mwaves']:.0f} mλ",
+         f"Emitter height (SIMCODE v2): median {cond['z_median_um'] * 1e3:.0f} nm (q25-q75 {q['q25'] * 1e3:.0f}-{q['q75'] * 1e3:.0f})",
+         f"CRLB at the data's median {cond['photons_median']:.0f} ph / 6-frame window (PSF-model",
+         f"intensity; {info['detected_photons']:.0f} detected), bg {cond['bg_px_frame']:.2f} ph/px/frame, read noise {cond['rn2_e']:.2f} e²:"]
+    for k, lab in (('smlm', 'SMLM'), ('sf', 'SIMFLUX')):
+        r = c[k]
+        L.append(f"  {lab}: x/y/z {r['x']:.1f}/{r['y']:.1f}/{r['z']:.0f} nm (x/y with z known {r['xy_zfixed'][0]:.1f}/{r['xy_zfixed'][1]:.1f})")
+    L.append(f"(pattern {p['pitch_nm']:.0f} nm, depth {p['depth']:.2f}, 2 x 3 steps; gain {cond['gain_e_per_adu']} e/ADU)")
+    return '\n'.join(L)
+
+
 def main():
     LABELS, KINDS, COLORS = list(globals()['LABELS']), list(globals()['KINDS']), list(globals()['COLORS'])
     ap = argparse.ArgumentParser()
@@ -69,13 +102,17 @@ def main():
     ap.add_argument('--note', default='', help='extra footnote line (e.g. a provisional marker)')
     ap.add_argument('--v2_sigma_max', type=float, default=None, help="nm: v2 rows = the paper's selection at this threshold (default: the rows sel)")
     ap.add_argument('--aoi', default=None, help="'auto' = zoompick crossings (default for 20nM_2)")
+    ap.add_argument('--outdir', default=None, help='output directory (default out/paper2/fig)')
+    ap.add_argument('--reuse_drift', default=None, help='prefix of earlier drift caches for the methods other than v2')
+    ap.add_argument('--psf', default=None, help='calib json of the PSF panel (needs --v2 = a run directory)')
     a = ap.parse_args()
     S = SETS[a.dataset]; F = a.nframes or S['nframes']
     dflt = dict(smlm=f'{P2}/{a.dataset}/smlm/smlm.npy', sf=f'{P2}/{a.dataset}/sf/sf.hdf5',
                 decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2')
     paths = {k: getattr(a, k) or dflt[k] for k in KINDS}       # the 4 reprocessed methods
     name = a.dataset + (f'_{a.tag}' if a.tag else '')
-    out = f'{P2}/fig/{name}'; os.makedirs(f'{P2}/fig', exist_ok=True)
+    od = a.outdir or f'{P2}/fig'
+    out = f'{od}/{name}'; os.makedirs(od, exist_ok=True)
     if a.v1:
         LABELS[3:] = ['SIMCODE (preprint)', 'SIMCODE v2']; KINDS[3:] = ['v1', 'v2']; COLORS[3:] = ['red', 'purple']
         paths['v1'] = a.v1
@@ -85,6 +122,8 @@ def main():
         T = FF.load('sf' if k == 'v1' else k, paths[k], **(dict(v2_sigma_max=a.v2_sigma_max) if k == 'v2' else {}))
         keep = T['f'] + 6 <= F
         T = {kk: v[keep] for kk, v in T.items()}
+        if a.reuse_drift and k != 'v2' and not os.path.exists(f'{out}_{k}_drift.npy'):
+            shutil.copyfile(f'{a.reuse_drift}_{k}_drift.npy', f'{out}_{k}_drift.npy')
         R = FF.evaluate(T, F, drift_cache=f'{out}_{k}_drift.npy')
         m = R['mask']
         dsets.append(to_dataset(R['x_dc'][m], R['y_dc'][m], T['f'][m], T['sx'][m], T['sy'][m], T['photons'][m]))
@@ -96,6 +135,15 @@ def main():
     shared.update(S['render_args'] or {})
     full = dict(shared); zoom = 10; full.update(zoom=zoom, scalebar_nm=2000)
     pc, rmsd, _ = compute_pc(S['tif'], dsets)
+    psf_cond = psf_info = None
+    if a.psf:
+        import psfdata
+        from simcode.dataset import Dataset as SD
+        V = SD.load(paths['v2']); V = V.select(a.v2_sigma_max) if a.v2_sigma_max is not None else V[V.sel]
+        T = FF.load('v2', paths['v2'], v2_sigma_max=a.v2_sigma_max); keep = T['f'] + 6 <= F
+        V = V[torch_mask(keep)][torch_mask(res[KINDS.index('v2')]['mask'])]       # the plotted set (= the FRC rows)
+        psf_cond = psfdata.data_conditions(paths['v2'], V, a.psf)
+        psf_info = psfdata.panel_info(a.psf, psf_cond)
 
     # layout: A overview | zoom 1 (one panel per method) ; zoom 2 (one row) ; FRC, counts, Pearson. Panel letters run in the
     # preprint's order (overview, zoom 1 methods, zoom 2 methods, FRC, counts, Pearson).
@@ -108,7 +156,10 @@ def main():
     root = fig.add_gridspec(3, 1, hspace=0.16, height_ratios=[1, 0.5 if NM <= 4 else 0.42, 0.42])
     top = root[0].subgridspec(2, 2 + nc, hspace=0.18, wspace=0.1)
     mid = root[1].subgridspec(1, NM, wspace=0.1)
-    bot = root[2].subgridspec(1, 3, wspace=0.42, width_ratios=[1, 0.42, 0.42])
+    if psf_info is None:
+        bot = root[2].subgridspec(1, 3, wspace=0.42, width_ratios=[1, 0.42, 0.42])
+    else:
+        bot = root[2].subgridspec(1, 4, wspace=0.42, width_ratios=[1, 0.42, 0.42, 1.0])
     styles = ['-', '--', '-.']
     ax = fig.add_subplot(top[:2, :2])
     dsets[-1].renderFigure(axes=ax, title='Overview' + (' (SIMCODE v2)' if a.v1 else ''), **full)
@@ -143,6 +194,15 @@ def main():
     ax = fig.add_subplot(bot[2])
     ax.bar(range(NM), pc, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
     ax.set_title('Pearson corr.', fontsize=15); letter(ax, dx=-0.12)
+    if psf_info is not None:
+        import psfpanel
+        g = bot[3].subgridspec(2, 2, height_ratios=[1.25, 0.75], hspace=0.12, wspace=0.3)
+        axy, axz, axt = fig.add_subplot(g[0, 0]), fig.add_subplot(g[0, 1]), fig.add_subplot(g[1, :])
+        psfpanel.draw(axy, axz, psf_info, fontsize=8)
+        axz.set_aspect('equal')
+        letter(axy, dx=-0.12, dy=1.12)
+        axt.axis('off')
+        axt.text(-0.05, 0.98, panel_text(psf_info, psf_cond), transform=axt.transAxes, fontsize=8, va='top', ha='left', linespacing=1.15)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     fig.text(0.5, 0.0, foot, ha='center', va='top', fontsize=11)
@@ -155,6 +215,12 @@ def main():
                 pearson=np.asarray(pc).tolist(), rmsd=np.asarray(rmsd).tolist(), drift_ptp_nm=[R['drift_ptp_nm'] for R in res],
                 drift_info=[R['drift_info'] for R in res], note=a.note, aois=[[list(c), w] for c, w, _ in renders],
                 protocol=dict(sigma_max_px=FF.SIGMA_MAX, grid=FF.GRID, halves_frames=FF.BLK, crop=FF.CROP))
+    if psf_info is not None:
+        vals['psf_panel'] = dict(conditions=psf_cond, rms_mwaves=psf_info['rms_mwaves'], z_um=psf_info['z_um'],
+                                 collected=psf_info['collected'], intensity_param=psf_info['intensity_param'],
+                                 detected_photons=psf_info['detected_photons'],
+                                 crlb_nm=jsonable(psf_info['crlb']), text=panel_text(psf_info, psf_cond))
+    if a.reuse_drift: vals['drift_reused_from'] = a.reuse_drift
     json.dump(vals, open(out + '_values.json', 'w'), indent=1)
     print(json.dumps({k: vals[k] for k in ('frc_nm', 'n_frc', 'pearson', 'aois')}), flush=True)
 
