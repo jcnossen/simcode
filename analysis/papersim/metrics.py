@@ -83,7 +83,7 @@ def load_method(kind, path):
                     sx=z['mrg_sx'].astype(np.float64), sy=z['mrg_sy'].astype(np.float64), photons=z['ndi_photons'].astype(np.float64))
     if kind in ('v2sel', 'v2sig', 'v2siggt'):
         from simcode.dataset import Dataset
-        L = Dataset.load_table(path)
+        L = Dataset.load_npz(path) if path.endswith('.npz') else Dataset.load_table(path)     # (.npz: runs before 2026-11-15)
         # v2sig: the paper's selection (user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the
         # field = the run's crop (0, 0, W)); v2sel: the rows sel
         L = L[L['sel']] if kind == 'v2sel' else L.select()

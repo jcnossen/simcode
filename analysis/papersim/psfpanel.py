@@ -15,7 +15,10 @@
   draw(ax_xy, ax_xz, info, cmap='inferno')   log-scale images (3 decades), 500 nm scale bars; xz over z 0 - 0.8 um with
                                              the emitter height (cyan dotted) and the focal plane (white dashed) marked
   crlb_text(info)                            the small print (aberration, photons / bg used, CRLBs in nm)
-  add_panel(fig, rect, info)                 both images + the text in a figure rectangle [x0, y0, w, h] (figure fraction)"""
+  add_panel(fig, rect, info)                 both images + the text in a figure rectangle [x0, y0, w, h] (figure fraction)
+  sim_psf_info(movie_dir, dexp)              psf_info for a papersim movie (its gen.json; _v2psf: detected photons + read noise)
+  panel_label(info) / caption_text(info)     the paper style (analysis/paper/fig_exp_new.py): a two-line label on the figure,
+                                             conditions / CRLBs / xz line legend in the caption text"""
 import os, sys, json, math
 import numpy as np
 import torch
@@ -128,7 +131,7 @@ def draw(ax_xy, ax_xz, info, cmap='inferno', decades=3, fontsize=6):
     px = info['pixel_nm']; Pi = info['roi_px']; h = Pi * px / 2
     z0, z1 = info['z_grid_um'][0] * 1e3, info['z_grid_um'][-1] * 1e3
     for ax, img, ext, ttl in ((ax_xy, info['xy'], [-h, h, -h, h], f"PSF xy (z = {info['z_um'] * 1e3:.0f} nm), log" if info['is3d'] else 'PSF xy (2D), log'),
-                              (ax_xz, info['xz'], [-h, h, z0, z1], 'PSF xz, log' if info['is3d'] else 'PSF xz (no z dependence)')):
+                              (ax_xz, info['xz'], [-h, h, z0, z1], 'PSF xz, log')):
         if ax is None: continue
         m = img.max()
         ax.imshow(np.clip(img, m * 10 ** -decades, None), cmap=cmap, norm=LogNorm(m * 10 ** -decades, m), extent=ext, origin='lower',
@@ -172,3 +175,42 @@ def add_panel(fig, rect, info, fontsize=6):
     draw(a1, a2, info, fontsize=fontsize)
     fig.text(x0, y0 + 0.33 * h, crlb_text(info), fontsize=fontsize, va='top', ha='left', family='sans-serif')
     return a1, a2
+
+
+def sim_psf_info(md, dexp):
+    """psf_info for the papersim movie directory md (gen.json): Dexp = the movie's median brightness / mean bg, else the nominal
+    photons / bg; a v2 camera movie (camera_sim.npz): detected photons, mean read-noise variance of the crop, PSF to 0.40 um"""
+    g0 = json.load(open(os.path.join(md, 'gen.json')))
+    spec = 'gauss:' + g0['psf'][5:] if g0['psf'].startswith('gauss') else g0['psf']
+    if dexp: ph, bg = g0['brightness_fit']['fit_median'], g0['bg_per_frame']['mean']
+    else: ph, bg = g0['intensity_per_6frames'], g0['bg']
+    pat = g0.get('pattern') or {}
+    kw = {}
+    if md.rstrip('/').endswith('_v2psf'):
+        rn = np.load(os.path.join(md, 'camera_sim.npz'))['readnoise_e']
+        kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
+    return psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)
+
+
+def panel_label(info):
+    return f"Gaussian PSF, σ {info['spec'][6:]} px" if not info['is3d'] else f"In-situ vectorial PSF fit\nrms aberration {info['rms_mwaves']:.0f} mλ"
+
+
+def caption_text(info, what='PSF panel'):
+    """caption sentences: the PSF panel (incl. the xz line legend) and the single-emitter SMLM / SIMFLUX CRLBs with their definition"""
+    c = info['crlb']; p = info['pattern']
+    if info['is3d']:
+        psfcap = (f"{what}: the in-situ vectorial PSF fit the movies were simulated with (Zernike Noll 5-21), xy section at the emitters' median "
+                  f"height ({info['z_um'] * 1e3:.0f} nm) and xz section, log scale (3 decades); rms aberration over Noll >= 5 {info['rms_mwaves']:.0f} mλ. "
+                  "xz section: white dashed line = focal plane, cyan dotted line = median emitter height.")
+        xyz = lambda r: f"x/y/z {r['x']:.1f}/{r['y']:.1f}/{r['z']:.0f} nm"
+    else:
+        psfcap = (f"{what}: the Gaussian PSF (σ {info['spec'][6:]} px, no aberrations, no z dependence) the movies were simulated with (the preprint "
+                  "simulation), xy and xz sections, log scale (3 decades); xz section: cyan dotted line = emitter plane.")
+        xyz = lambda r: f"x/y {r['x']:.1f}/{r['y']:.1f} nm"
+    rncap = f" and camera read noise {info['rn2_e'] ** 0.5:.1f} e- rms" if info.get('rn2_e') else ''
+    crlbcap = (f"Cramér-Rao lower bounds for a single isolated emitter (mean over sub-pixel positions and pattern phases, 16 x 16 px ROI"
+               + (", z free" if info['is3d'] else '') + f") at {info['photons']:.0f} {'detected ' if info.get('collected') else ''}photons per 6-frame window, "
+               f"background {info['bg_px_frame']:.2f} photons/px/frame{rncap}: SMLM (the 6-frame sum) {xyz(c['smlm'])}, SIMFLUX (the 6 frames with the "
+               f"known pattern: pitch {p['pitch_nm']:.0f} nm, depth {p['depth']:g}, 2 x 3 phase steps) {xyz(c['sf'])}.")
+    return psfcap + '\n' + crlbcap

@@ -4,8 +4,9 @@
 usage: python analysis/papersim/fig_overview.py [--prefix Dexp|D] [--model m1809]
 output: out/papersim/overview_<prefix>_<model>.png
 With <run>/gtfrc_<model>.json (gtfrc_run.py) the panels also give the GT-FRC (reconstruction vs ground truth); a PSF panel
-(psfpanel.py: the PSF the movies were simulated with, xy + xz, log) with its CRLBs at the condition's photons / background
-sits on the right."""
+(psfpanel.py: the PSF the movies were simulated with, xy | xz side by side, log) with a two-line label sits on the right (the style
+of analysis/paper/fig_exp_new.py). Conditions, CRLBs, the xz line legend and the footnotes go to overview_<...>_caption.txt
+(_v2psf: also .pdf / .svg)."""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -18,7 +19,7 @@ a = ap.parse_args()
 DENS = [0.5, 1, 2, 4]
 COLS = [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), ('v2sig', 'SIMCODE v2\n(σ ≤ 12 nm)')]
 (cx, cy), w = CROP
-fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1) + 2.6, 2.95 * len(DENS)), squeeze=False)
+fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1) + 3.0, 2.95 * len(DENS)), squeeze=False)
 notes = set()
 for i, d in enumerate(DENS):
     md = os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}'); R = json.load(open(os.path.join(md, 'full', f'metrics_{a.model}.json')))
@@ -41,7 +42,7 @@ for i, d in enumerate(DENS):
         A = ax[i, j + 1]
         if k not in R['methods']:
             A.text(0.5, 0.5, 'no result', ha='center', transform=A.transAxes); A.set_xticks([]); A.set_yticks([]); continue
-        r = R['methods'][k]; T = M.load_method(k, r['path']); _, _, f = M.frc_set(T, R['W'], R['nframes'])
+        r = R['methods'][k]; T = M.load_method(k, r['path'] if os.path.exists(r['path']) else r['path'].replace('/simcode2-z3d/', '/simcode2/')); _, _, f = M.frc_set(T, R['W'], R['nframes'])
         A.imshow(render(T['x'][f], T['y'][f], (cx, cy), w), cmap='inferno')
         gtl = f"   GT-FRC {GF[k]['gt_frc']['res_nm']:.1f} nm" if k in GF else ''
         A.text(0.02, 0.02, f"FRC {r.get('frc_nm', float('nan')):.1f} nm{gtl}\nJaccard {r['jaccard_end']:.2f}   {r['n_frc'] / 1e3:.0f}k localizations{tag}", transform=A.transAxes,
@@ -58,23 +59,22 @@ if a.suffix == '_v2psf':        # v2-PSF sets (2026-11-15): conditions from the 
     zd = g0['z_dist_um']
     psfname = f"in-situ PSF v2 of 1809/2 + v2 camera, emitter heights 0-400 nm (median {zd['p50'] * 1e3:.0f} nm)"
 
-fig.suptitle(f'Simulated microtubules, 60 000 frames, {psfname}; {cond}.\nDensity in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) and rendering in every panel; SIMCODE v2 with the PSF-matched networks.', fontsize=10)
+title = (f'Simulated microtubules, 60 000 frames, {psfname}; {cond}. Density in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) '
+         'and rendering in every panel; SIMCODE v2 with the PSF-matched networks.')
 if any(os.path.exists(os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}', 'full', f'gtfrc_{a.model}.json')) for d in DENS):
     notes.add('GT-FRC = FRC between the rendered reconstruction and the rendered ground truth (all labelling sites; 5 nm pixels, 1/7); FRC = the fair half-split FRC')
-fig.text(0.01, 0.005, '\n'.join(sorted(notes)), fontsize=8)
-plt.tight_layout(rect=[0, 0.065, 2.75 * (len(COLS) + 1) / (2.75 * (len(COLS) + 1) + 2.6), 0.95])
-# PSF panel (the PSF of the simulation) with its CRLBs at the condition's photons / background
+fw, fh = fig.get_size_inches()
+plt.tight_layout(rect=[0, 0, 2.75 * (len(COLS) + 1) / fw, 1])
+# PSF panel (the PSF of the simulation): xy | xz side by side (same height), a two-line label; conditions / CRLBs -> caption
 import psfpanel
-g0 = json.load(open(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}', 'gen.json')))
-spec = 'gauss:' + g0['psf'][5:] if g0['psf'].startswith('gauss') else g0['psf']
-if a.prefix == 'Dexp': ph, bg = g0['brightness_fit']['fit_median'], g0['bg_per_frame']['mean']
-else: ph, bg = g0['intensity_per_6frames'], g0['bg']
-pat = g0.get('pattern') or {}                          # (the Dexp movies: the density movies' pattern, 0 / 90 deg, 224 nm, 0.9)
-kw = {}
-if a.suffix == '_v2psf':        # detected photons, the camera's read noise (mean rn^2 of the crop), PSF to 0.40 um
-    rn = np.load(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}', 'camera_sim.npz'))['readnoise_e']
-    kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
-info = psfpanel.psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)
-fw = 2.75 * (len(COLS) + 1) + 2.6
-psfpanel.add_panel(fig, [1 - 2.35 / fw, 0.42, 1.9 / fw, 0.5], info, fontsize=7)
-fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}.png'); plt.savefig(fn, dpi=130); print(fn)
+info = psfpanel.sim_psf_info(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}'), a.prefix == 'Dexp')
+S = 1.0; x0 = 2.75 * (len(COLS) + 1) + 0.25; y0 = ax[0, 1].get_position().y1 - S / fh
+axy = fig.add_axes([x0 / fw, y0, S / fw, S / fh]); axz = fig.add_axes([(x0 + S + 0.62) / fw, y0, S / fw, S / fh])
+psfpanel.draw(axy, axz, info, fontsize=7)
+fig.text(x0 / fw, y0 - 0.025, psfpanel.panel_label(info), fontsize=10, va='top', ha='left', linespacing=1.2)
+# caption material (next to the figure)
+fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}')
+open(fn + '_caption.txt', 'w').write('\n'.join([title, psfpanel.caption_text(info)] + sorted(notes)) + '\n')
+plt.savefig(fn + '.png', dpi=130); print(fn + '.png')
+if a.suffix == '_v2psf':
+    for ext in ('pdf', 'svg'): plt.savefig(f'{fn}.{ext}', dpi=300); print(f'{fn}.{ext}')
