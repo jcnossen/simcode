@@ -489,7 +489,7 @@ def fig_sim(a):
     fig = plt.figure(figsize=(W, H))
     ncol = 1 + len(SHOW); gap = 0.006; x0 = 0.075; wcol = (1 - x0 - 0.005 - gap * (ncol - 1)) / ncol; hcol = wcol * W / H
     ext = HI - LO; zr = (-200, 200)
-    rows = [('ov', 'x-y, colour = z'), ('z2net', 'zoom 2'), ('z2cl', 'zoom 2'), ('sec', 'x-z')]
+    rows = [('ov', 'x-y, colour = z'), ('z2net', 'zoom'), ('z2cl', 'zoom'), ('sec', 'x-z')]
     ytop = 0.975
     yrow = [ytop - hcol, ytop - 2 * hcol - 0.012, ytop - 3 * hcol - 0.024]
     hsec = hcol * 0.62; yrow.append(yrow[2] - 0.022 - hsec)
@@ -511,7 +511,7 @@ def fig_sim(a):
                 else f"{E['dens_fov']:.2f} ON /µm²/frame"
         x, y, z = data['net']
         ax = fig.add_axes([xl, up(yrow[0]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
-        for (cc, s), lab in (((ZOOM2, 'zoom'),) if share else ((ZOOM1, '1'), (ZOOM2, '2'))):
+        for (cc, s), lab in ((ZOOM2, 'zoom'),):                       # only the zoom-2 box, labelled 'zoom' (user 2026-11-15)
             ax.add_patch(plt.Rectangle(((cc[0] - s / 2 - LO) / 8, (cc[1] - s / 2 - LO) / 8), s / 8, s / 8, fill=False, ec='w', lw=0.5))
             ax.text((cc[0] + s / 2 - LO) / 8 + 2, (cc[1] - s / 2 - LO) / 8, lab, color='w', fontsize=5.5, va='top')
         if j == 0: scalebar(ax, 1000 / ext, '1 µm'); letter(ax, 'a', -0.02)
@@ -533,7 +533,7 @@ def fig_sim(a):
         if j > 0:
             n_ = int(inrect(x, y, (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
             fig.axes[-2].text(0.97, 0.03, f"{n_:,}", transform=fig.axes[-2].transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
-        # x-z section through zoom 1 (crossing, dz 256 nm) + zoom 2, 200 nm y-strip, network
+        # x-z section along the 200 nm y-strip through the centre of the zoom (ZOOM2; dotted in b), network
         if share: continue
         ax = fig.add_axes([xl, yrow[3], wcol, hsec])
         cc, s = ZOOM2
@@ -545,7 +545,7 @@ def fig_sim(a):
         if j == 0: ax.set_ylabel('z (nm)', labelpad=0); letter(ax, 'd', -0.02)
         else: ax.set_yticklabels([])
     # row labels
-    zl = 'zoom' if share else 'zoom 2'
+    zl = 'zoom'
     rl = ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, f'4Pi-SIMCODE\n{zl}'), (yrow[2], hcol, f'4Pi-SIMFLUX\n{zl}'))
     for yy, hh, t in (rl if share else rl + ((yrow[3], hsec, '4Pi-SIMCODE\nx-z'),)):
         fig.text(0.008 if hh != hsec else 0.0, up(yy + hh / 2), t, rotation=90, ha='center', va='center', fontsize=6.5)
@@ -626,8 +626,9 @@ def caption_sim(V):
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
          "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported sigma_xy < 5 nm and sigma_z < 12 nm, on top of the base filters). "
-         "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = localizations "
-         "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution in x-y and in x-z sections "
+         "(b, c) The zoom (white box in a; four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = "
+         "localizations in the zoom. (d) 4Pi-SIMCODE x-z sections taken along the 200 nm wide y-strip through the centre of the zoom (between the "
+         "dotted lines in b), over the zoom's full x range. (e) Ground-truth FRC resolution in x-y and in x-z sections "
          "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
          "of the 5-shell smoothed curve, interpolated between shells, taken where the curve stays below 1/7 for 0.01 /nm, best value up to that time. "
          "The step from ~65 to ~35 nm is the hollow-tube spectrum (Bessel zero at 1/64 nm for 24.6 nm radius): the curve crosses 1/7 before that null "
