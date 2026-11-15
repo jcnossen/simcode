@@ -139,7 +139,7 @@ def main():
     Mt = R['methods']; zd = g0['z_dist_um']; ws = g0.get('wsm') or {}; wz = g0.get('wsm_z_raw_nm') or {}
     ft = lambda k, t: (lambda v: 'not reached' if v is None else f"{v / 1e3:.1f}k")(Mt[k]['ttf']['frames_to'].get(str(t)))
     is3d = str(g0.get('gt', '')).startswith('wsm3d')
-    hcap = (f"The labels sit at their own 3D positions on the filaments (heights {zd['p05'] * 1e3:.0f}-{zd['p95'] * 1e3:.0f} nm above the "
+    hcap = (f"Every label is simulated at its own 3D position on the filament (heights {zd['p05'] * 1e3:.0f}-{zd['p95'] * 1e3:.0f} nm above the "
             f"coverslip, 5th-95th percentile, median {zd['p50'] * 1e3:.0f} nm" + (f"; the {100 * wz['frac_below0']:.1f} % of label positions below "
             "the coverslip surface are set to 0 nm" if wz.get('frac_below0') else '') + ")." if is3d else
             "Their heights are drawn from the experimental height distribution.")
@@ -160,7 +160,7 @@ def main():
            f"Gaussian blur, colour scale saturated at the {FS.CLIP_PCT:g}th percentile of the image's pixels). One selection rule for "
            "every method, the rule used for the experimental data, set before the analysis and without the ground truth: each method's "
            "localizations on disjoint 6-frame windows (one localization per window and emitter, no photon used twice) that pass the "
-           "method's own quality filters and have a reported precision below 0.15 px (16.2 nm; the larger of the x and y values; "
+           "method's own quality filters and have a reported precision below 0.15 px (16.25 nm; the larger of the x and y values; "
            "SMLM / SIMFLUX: CRLB; DECODE: its network uncertainty; SIMCODE: its calibrated uncertainty, with its detection probability of "
            "at least 0.63). Titles: GT-FRC resolution and the number of localizations. SIMFLUX uses the pattern estimated from the data, "
            "as SIMCODE does. SMLM and DECODE get the sum of the 6 frames; SMLM and SIMFLUX fit a 2D model of the PSF at the median "
