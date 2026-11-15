@@ -33,7 +33,7 @@ OUTD = os.path.join(C.OUT, 'websmlm_gt')
 
 
 def parse(spec):
-    s = str(spec).split(':'); seed = int(s[0]); dx = float(s[1]) if len(s) > 1 else 0.0; dy = float(s[2]) if len(s) > 2 else 0.0
+    s = [v for v in str(spec).split(':') if v != 'axis']; seed = int(s[0]); dx = float(s[1]) if len(s) > 1 else 0.0; dy = float(s[2]) if len(s) > 2 else 0.0
     return seed, dx, dy
 
 
@@ -90,8 +90,26 @@ def zoom_box(pts, n=4):
     return out
 
 
+def to_axis(g):
+    """control variant (spec suffix ':axis'): every label moved to the nearest point of its own microtubule's centreline (the
+    webSMLM layout and label positions along the filament kept, the ~25-30 nm label shell around the tube removed, i.e. thin lines
+    as the preprint GT; a hollow tube's spectral null in the GT-FRC goes away). Zoom box kept."""
+    from scipy.spatial import cKDTree
+    pts = g['pts'].copy(); mt = g['mt']; dmax = 0.0
+    for i in np.unique(mt):
+        c = np.asarray(g['centre'][i], float) if i >= 0 else np.concatenate([np.asarray(v, float) for v in g['centre']])
+        sarc = np.r_[0, np.cumsum(np.hypot(*np.diff(c, axis=0).T))]; q = np.arange(0, sarc[-1], 0.005)    # 0.5 nm
+        d = np.c_[np.interp(q, sarc, c[:, 0]), np.interp(q, sarc, c[:, 1])]
+        k = mt == i; dist, j = cKDTree(d).query(pts[k, :2]); pts[k, :2] = d[j]; dmax = max(dmax, float(dist.max()))
+    st = dict(g['stats'], spec=g['stats']['spec'] + ':axis', axis=True, axis_max_shift_nm=dmax * C.PX_NM)
+    return dict(g, pts=pts, stats=st)
+
+
 def load(spec):
-    """cached GT of a spec (out/papersim/websmlm_gt/gt_<seed>_<dx>_<dy>.npz)"""
+    """cached GT of a spec (out/papersim/websmlm_gt/gt_<seed>_<dx>_<dy>[_axis].npz)"""
+    if str(spec).endswith(':axis'):
+        g = to_axis(load(str(spec)[:-5]))
+        return g
     seed, dx, dy = parse(spec)
     f = os.path.join(OUTD, f'gt_{seed}_{dx:g}_{dy:g}.npz')
     if not os.path.exists(f):
