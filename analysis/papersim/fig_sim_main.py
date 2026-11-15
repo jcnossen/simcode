@@ -37,12 +37,24 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--suffix', default='_v2psf')
     ap.add_argument('--model', default='m1809v2')
     ap.add_argument('--internal', type=int, default=0, help='1: with the preprint SIMCODE (columns, table rows) -> fig_sim_<..>_internal.*')
+    ap.add_argument('--v2key', default='v2sig', help="SIMCODE row: v2sig (calibrated sigma <= 12 nm) or v2c (2026-11-15: the common rule of every "
+                    "method, sigma < 0.15 px; outputs tagged _common)")
     a = ap.parse_args()
     METH, TABLE = (METH_INTERNAL, TABLE_INTERNAL) if a.internal else (METH_PAPER, TABLE_PAPER)
-    SC = dict(METH)['v2sig']
+    METH = [(a.v2key if k == 'v2sig' else k, l) for k, l in METH]; TABLE = [(a.v2key if k == 'v2sig' else k, l) for k, l in TABLE]
+    SC = dict(METH)[a.v2key]
     runs = [os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}') for d in DENS]
     R = [json.load(open(os.path.join(r, 'full', f'metrics_{a.model}.json'))) for r in runs]
     G = [json.load(open(os.path.join(r, 'full', f'gtfrc_{a.model}.json')))['methods'] for r in runs]
+    if a.v2key == 'v2c':      # common rule (2026-11-15): GT-FRC and time to fidelity of common_rule.py (sustained 1/7 crossing, as Fig 2)
+        import common_rule as CR
+        for i, r in enumerate(runs):
+            CRm = json.load(open(os.path.join(CR.OUTD, os.path.basename(r) + '.json')))['methods']
+            for k, ck in (('smlm', 'smlm'), ('sf', 'sf'), ('sf_gtp', 'sf_gtp'), ('decode', 'decode'), ('v1', 'v1'), ('v2c', 'v2')):
+                if k in G[i] and ck in CRm:
+                    assert G[i][k]['n'] == CRm[ck]['n'], (r, k, G[i][k]['n'], CRm[ck]['n'])
+                    G[i][k]['gt_frc'] = dict(G[i][k]['gt_frc'], res_nm=CRm[ck]['gt_sust'], res_nm_first=CRm[ck]['gt_first'])
+                    G[i][k]['ttf'] = CRm[ck]['ttf']; G[i][k]['ghost'] = dict(ghost_fraction=CRm[ck]['fp'])
     (cx, cy), w = crop_of(runs[0])
     nc = len(METH) + 1; tw = 2.3
     fig = plt.figure(figsize=(nc * tw + 5.6, len(DENS) * tw + 1.0))
@@ -78,7 +90,7 @@ def main():
     A = fig.add_subplot(gr[1]); B = fig.add_subplot(gr[2])
     fmax = R[0]['nframes']
     for k in keys:
-        lw, ms = (2.4, 6) if k == 'v2sig' else (1.4, 4.5)
+        lw, ms = (2.4, 6) if k == a.v2key else (1.4, 4.5)
         y = [G[i][k]['gt_frc']['res_nm'] if k in G[i] else np.nan for i in range(len(DENS))]
         A.plot(DENS, y, '-o', color=COL[k], lw=lw, ms=ms, label=labs[k].replace('\n', ' '))
         t = [G[i][k]['ttf']['frames_to'].get('30') if k in G[i] else None for i in range(len(DENS))]
@@ -95,7 +107,7 @@ def main():
     B.set_yscale('log'); B.axhline(fmax / 1e3, color='0.5', lw=0.8, ls=':'); B.set_ylim(0.15, fmax / 1e3 * 1.8)
     B.set_yticks([0.25, 1, 4, 15, 60]); B.set_yticklabels(['0.25', '1', '4', '15', '60']); B.minorticks_off()
     B.set_ylabel('frames (x1000)', fontsize=10); B.set_title('Frames to 30 nm GT-FRC vs density', fontsize=11); letter(B, 'D', dx=-0.16)
-    out = os.path.join(C.OUT, 'figures', f'fig_sim_{a.prefix}{a.suffix}' + ('_internal' if a.internal else '')); os.makedirs(os.path.dirname(out), exist_ok=True)
+    out = os.path.join(C.OUT, 'figures', f'fig_sim_{a.prefix}{a.suffix}' + ('_common' if a.v2key == 'v2c' else '') + ('_internal' if a.internal else '')); os.makedirs(os.path.dirname(out), exist_ok=True)
     # SI table
     rows = []
     for i, d in enumerate(DENS):
@@ -110,7 +122,7 @@ def main():
         W = csv.DictWriter(fh, fieldnames=list(rows[0])); W.writeheader(); W.writerows(rows)
     f1 = lambda v, s='{:.1f}': '-' if v is None else s.format(v)
     md = [f'# Simulation table ({a.prefix}{a.suffix}, {SC} = {a.model}; 60 000 frames)', '',
-          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px); GT-FRC = FRC(reconstruction, ground truth), 1/7; '
+          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px' + ('; SIMCODE p >= 0.63, calibrated σ' if a.v2key == 'v2c' else '') + '); GT-FRC = FRC(reconstruction, ground truth), 1/7' + (' sustained crossing (stays below 1/7 for 0.01 nm^-1)' if a.v2key == 'v2c' else '') + '; '
           'frames to 30 nm GT-FRC ("-" = not reached in 60 000 frames, values <= 250 = reached in the first 250 frames); fair FRC = half-split FRC; '
           'Jaccard at 10 nm; false positive = a localization with no emitter ON in its window within 3 own σ.', '',
           '| density | method | n | GT-FRC (nm) | frames to 30 nm | fair FRC (nm) | Jaccard 10 nm | false positive fraction |', '|---|---|---|---|---|---|---|---|']
@@ -124,12 +136,15 @@ def main():
             f"{g0['bg_per_frame']['mean']:.2f} photons/px/frame)" if a.prefix == 'Dexp' else
             f"preprint condition ({g0['intensity_per_6frames']:.0f} photons per 6-frame window, background {g0['bg']:g} photons/px/frame)")
     zd = g0.get('z_dist_um')
-    psfs = (f"the in-situ PSF of 1809/2 and the sCMOS camera maps of that movie (gain, offset, per-pixel read noise), emitter heights 0-400 nm "
-            f"(median {zd['p50'] * 1e3:.0f} nm)" if zd else 'a Gaussian PSF')
+    hts = (f"emitter heights = the labels' own 3D positions on the filaments ({zd['p05'] * 1e3:.0f}-{zd['p95'] * 1e3:.0f} nm, 5th-95th percentile, "
+           f"median {zd['p50'] * 1e3:.0f} nm)" if zd and str(g0.get('gt', '')).startswith('wsm3d') else
+           f"emitter heights 0-400 nm (median {zd['p50'] * 1e3:.0f} nm)" if zd else '')
+    psfs = (f"the in-situ PSF of 1809/2 and the sCMOS camera maps of that movie (gain, offset, per-pixel read noise), {hts}" if zd else 'a Gaussian PSF')
     cap = [f"Simulated {gt_desc(runs[0], paper=not a.internal)}, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
            f"(A) Renders of the same {w * C.PX_NM / 1000:.2f} µm crop for every method and emitter density (emitters/µm²/frame), same rendering in every "
            "tile; each tile gives the GT-FRC (FRC between the rendered reconstruction and the rendered ground truth of all labelling sites; 5 nm pixels, 1/7) "
-           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px). "
+           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px" + ("; SIMCODE: detection probability >= 0.63 and its calibrated σ < 0.15 px, "
+           "the same precision cut as every method" if a.v2key == 'v2c' else "") + "). "
            + ("SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; " if a.internal else
               "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
            "Results with the true pattern, the fair half-split FRC, the Jaccard index and the false-positive fraction are in the SI table.",
