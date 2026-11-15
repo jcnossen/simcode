@@ -135,7 +135,7 @@ def main():
         S = torch.load(st_fn, map_location=inst.param.Hardware.device, weights_only=False)
         inst.model.load_state_dict(S['model']); inst.optimizer.load_state_dict(S['optim']); inst.lr_scheduler.load_state_dict(S['lr_sched'])
         e0 = S['epoch'] + 1
-        torch.set_rng_state(S['rng_torch']); np.random.set_state(S['rng_np'])
+        torch.set_rng_state(S['rng_torch'].cpu()); np.random.set_state(S['rng_np'])
         inst.ds_train.sample(True)
         print(f'resumed {st_fn} at epoch {e0}, lr {inst.optimizer.param_groups[0]["lr"]:.2e}', flush=True)
     elif a.init:
