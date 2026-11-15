@@ -23,7 +23,8 @@ E counts | F SIMFLUX | G DECODE | H SIMCODE / I GT-FRC curves | J GT-FRC vs fram
 gtfrc.RULE (sustained 1/7 crossing; the hollow-tube spectral null), stated in the caption; all numbers of the figure in
 _values.json; file paths / run names only in _notes_internal.txt (not in the caption).
 usage: python analysis/papersim/fig_sim_fig2.py [--density 1] [--prefix Dexp] [--suffix _v2psf] [--model m1809v2] [--internal 0|1]
-output: out/paper_figs_v2/fig_sim_<prefix><suffix>.{pdf,svg,png}, _caption.txt, _values.json, _notes_internal.txt"""
+output: out/paper_figs_v2/fig_sim_<prefix><suffix><tag>.{pdf,svg,png}, _caption.txt, _values.json, _notes_internal.txt (tag '_fixedsel';
+2026-11-15: the main Fig 2 file without tag comes from fig_sim_frcopt.py)"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -55,6 +56,8 @@ def main():
     ap.add_argument('--suffix', default='_v2psf'); ap.add_argument('--model', default='m1809v2')
     ap.add_argument('--internal', type=int, default=0, help='1: internal comparison version with the preprint SIMCODE column '
                     '(labels SIMCODE (preprint) / SIMCODE v2) -> fig_sim_<prefix><suffix>_internal.*')
+    ap.add_argument('--tag', default='_fixedsel', help="output name tag (default '_fixedsel': the main Fig 2 file fig_sim_<prefix><suffix>.* "
+                    "is written by fig_sim_frcopt.py, per-method FRC-optimal selection; this script = the fixed selection)")
     ap.add_argument('--out', default=os.path.join(os.path.dirname(C.OUT), 'paper_figs_v2')); a = ap.parse_args()
     run = os.path.join(C.OUT, f'{a.prefix}{a.density:g}{a.suffix}')
     R = json.load(open(os.path.join(run, 'full', f'metrics_{a.model}.json')))
@@ -141,7 +144,7 @@ def main():
     B.set_xlabel('frames (x 1000)', fontsize=11); B.set_ylabel('GT-FRC resolution (nm)', fontsize=11)
     B.set_title('GT-FRC vs frames (time to fidelity)', fontsize=FS); letter(B, LT, dx=ldx)
 
-    os.makedirs(a.out, exist_ok=True); out = os.path.join(a.out, f'fig_sim_{a.prefix}{a.suffix}' + ('_internal' if a.internal else ''))
+    os.makedirs(a.out, exist_ok=True); out = os.path.join(a.out, f'fig_sim_{a.prefix}{a.suffix}{a.tag}' + ('_internal' if a.internal else ''))
     # caption material (paper version: no reference to the preprint / earlier versions)
     g0 = json.load(open(os.path.join(run, 'gen.json'))); zd = g0['z_dist_um']
     ft = {k: GR.ttf(G[k]['ttf'])['frames_to'].get('30') for k in keys}
