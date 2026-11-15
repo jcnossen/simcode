@@ -70,7 +70,11 @@ spec = 'gauss:' + g0['psf'][5:] if g0['psf'].startswith('gauss') else g0['psf']
 if a.prefix == 'Dexp': ph, bg = g0['brightness_fit']['fit_median'], g0['bg_per_frame']['mean']
 else: ph, bg = g0['intensity_per_6frames'], g0['bg']
 pat = g0.get('pattern') or {}                          # (the Dexp movies: the density movies' pattern, 0 / 90 deg, 224 nm, 0.9)
-info = psfpanel.psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat})
+kw = {}
+if a.suffix == '_v2psf':        # detected photons, the camera's read noise (mean rn^2 of the crop), PSF to 0.40 um
+    rn = np.load(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}', 'camera_sim.npz'))['readnoise_e']
+    kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
+info = psfpanel.psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)
 fw = 2.75 * (len(COLS) + 1) + 2.6
 psfpanel.add_panel(fig, [1 - 2.35 / fw, 0.42, 1.9 / fw, 0.5], info, fontsize=7)
 fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}.png'); plt.savefig(fn, dpi=130); print(fn)

@@ -154,7 +154,7 @@ def crlb_text(info):
     else:
         L.append(f"vectorial PSF\n{os.path.splitext(os.path.basename(info['spec']))[0]}\nrms aberration (Noll ≥ 5) {info['rms_mwaves']:.0f} mλ")
     L.append(f"CRLB at {info['photons']:.0f} {'detected ' if info.get('collected') else ''}ph / 6-frame window,\nbg {info['bg_px_frame']:.2f} ph/px/frame"
-             + (f", read noise {info['rn2_e']:.2f} e²/px/frame" if info.get('rn2_e') else '') + (f" (z = {info['z_um'] * 1e3:.0f} nm)" if info['is3d'] else '') + ':')
+             + (f",\nread noise {info['rn2_e']:.2f} e²/px/frame" if info.get('rn2_e') else '') + (f" (z = {info['z_um'] * 1e3:.0f} nm)" if info['is3d'] else '') + ':')
     for k, lab in (('smlm', 'SMLM'), ('sf', 'SIMFLUX')):
         r = c[k]
         if info['is3d']:
