@@ -33,7 +33,7 @@ def main():
           'σ-Jaccard: correct = a structure point within 3 own σ (Mahalanobis); in brackets the share of correct localizations. '
           'False positive = no emitter ON in the window within 3 own σ. Coverage CV over 250 nm filament segments (recovered / expected from the GT '
           'emitter-windows): CV (Poisson floor, excess). Fair FRC and 10 nm Jaccard (end of the movie, all rows) as before.', '',
-          '| density | method | n FRC set | GT-FRC nm | frames to 40 nm | frames to 30 nm | frames to 20 nm | σ-Jaccard (correct) | false posst | coverage CV (Poisson, excess) | fair FRC nm | Jaccard 10 nm |',
+          '| density | method | n FRC set | GT-FRC nm | frames to 40 nm | frames to 30 nm | frames to 20 nm | σ-Jaccard (correct) | false-pos. frac | coverage CV (Poisson, excess) | fair FRC nm | Jaccard 10 nm |',
           '|---|---|---|---|---|---|---|---|---|---|---|---|']
     rows = []
     fk = lambda v, f0=250: '-' if v is None else (f'<= {v / 1e3:g}k' if v <= f0 else f'{v / 1e3:.1f}k')
