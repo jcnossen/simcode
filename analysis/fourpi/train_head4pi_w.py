@@ -117,17 +117,19 @@ def main_plain(a):
     T = c['fourpi']['window']; out = c['fourpi']['emitter']; os.makedirs(os.path.dirname(out), exist_ok=True)
     steps = a.steps if a.steps != 20000 else t['emitter_steps']
     vread = c['camera']['readnoise_e'] ** 2 + t['offerr'] ** 2
+    from simcode.emitter.fourpi import WINDOWS_PLAIN
     a.arch = 'fourpi_emitter'; a.T = T; a.zmax = t['zmax']; a.vread = vread; a.zlut = list(t['zlut']); a.train_prior = 1; a.steps = steps
+    a.wins = [list(w) for w in WINDOWS_PLAIN]; a.excess = T > 1     # single frames: no frame-mean excess in the pixel variance
     torch.manual_seed(a.seed)
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'      # cpu: smoke tests only
     st = json.load(open(c['fourpi']['psf']))['psf']
     lut = LUT4Pi(st, P=15, zmin=t['zlut'][0], zmax=t['zlut'][1], dev=dev)
     init, smp = S_.sim_kw(c)
     sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)
-    net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, train_prior=True, T=T, zmax=t['zmax'], vread=vread).to(dev); net.lut = lut
+    net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, train_prior=True, T=T, zmax=t['zmax'], vread=vread, wins=WINDOWS_PLAIN, excess=a.excess).to(dev); net.lut = lut
     if a.init: net.load_state_dict(torch.load(a.init, weights_only=False)['state'])
     net.train()
-    sv = FourPiSolve(lut, WINDOWS_K, dev=dev, **S_.solve_kw(c, net)); sv.tab_lim = None
+    sv = FourPiSolve(lut, WINDOWS_PLAIN, dev=dev, **S_.solve_kw(c, net)); sv.tab_lim = None
     opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=steps, pct_start=0.05)
     if a.tag != 'v10': out = out.replace('.pt', f'_{a.tag}.pt')       # --tag: a variant next to the configured file

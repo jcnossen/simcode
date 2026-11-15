@@ -70,7 +70,7 @@ class FourPiSolve:
             for c in range(4):
                 ev = [comp[c].render(p, True) for comp in self.lut.luts]
                 inc = ev[0][0].clamp(min=1e-7)
-                ws = [window(k, par, inc, ex, ey, (ev[1][0], ev[2][0])) for k, par in self.wins]
+                ws = [window(k, par, inc, ex, ey, (ev[1][0], ev[2][0]), ev[0][1:]) for k, par in self.wins]
                 for v, gx, gy, gz in ev:
                     row += [(w * v).sum((-1, -2)) for w in ws]
                     for j, gg in enumerate((gx, gy, gz)):

@@ -90,7 +90,7 @@ def process_file(rd, fr, ctx, a, fi, nfr):
             img, doff, ok = fr.patches(E, w, cy, cx, window=T)
             sel = torch.nonzero(ok)[:, 0]
             img = img[sel]; doff = doff[sel]
-            outs = [net(img[i:i + a.batch], doff[i:i + a.batch]) for i in range(0, len(sel), a.batch)]
+            outs = [net(img[i:i + a.batch], doff[i:i + a.batch], learned=a.learned) for i in range(0, len(sel), a.batch)]
             o = {k: torch.cat([u[k] for u in outs]) for k in ('Y', 'dxy', 'z', 'ls')}
             kp = o['Y'][..., 0].sum((1, 2)) >= a.min_photons
             o = {k: v[kp] for k, v in o.items()}; img = img[kp]; doff = doff[kp]; sel = sel[kp]
@@ -114,9 +114,16 @@ def process_file(rd, fr, ctx, a, fi, nfr):
         psi = m = torch.zeros(n, T, device=dev); patf = None
     tdoff = torch.tensor(R['doff'], device=dev)
 
-    def chunk_out(j):
+    def _resolve_at(j, z0):
+        """on-through solve of rows j started at z0 only (the 4Pi period of z0)"""
+        oo, o = chunk_out(j); jt = torch.tensor(j, device=dev)
+        r = sv.solve(dict(oo, z0=torch.tensor(z0, device=dev, dtype=torch.float32)), Phi0[jt], tdoff[jt], m[jt], psi[jt], mode='on',
+                     iters=a.iters, zstarts=(0.0,))
+        return {k: v.cpu().numpy() for k, v in r.items()}, o['bgc'].cpu().numpy()
+
+    def chunk_out(j, at=None):
         with torch.no_grad():
-            o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j])
+            o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j], learned=a.learned, at=at)
         return dict(Y=o['Y'], Lb=o['Lb'], dxy=o['dxy'], z=o['z'], ls=o['ls'], W=o['W'], Wsum=o['Wsum'],
                     sb=torch.full((len(j), 4), a.sb, device=dev)), o
 
@@ -148,7 +155,11 @@ def process_file(rd, fr, ctx, a, fi, nfr):
     for i in range(0, n, a.batch):
         j = np.arange(i, min(i + a.batch, n)); oo, o = chunk_out(j); jt = torch.tensor(j, device=dev)
         arg = (Phi0[jt], tdoff[jt], m[jt], psi[jt])
-        ron = sv.solve(oo, *arg, mode='on', iters=a.iters, Lam=a.z_period_um)
+        ron = sv.solve(oo, *arg, mode='on', iters=a.iters, Lam=a.z_period_um, zstarts=tuple(a.zstarts))
+        for _ in range(a.refine):   # windows re-placed at the solved position, solved again from there (prior unchanged)
+            oo, o = chunk_out(j, at=ron['th'][:, :3])
+            rr = sv.solve(dict(oo, z0=ron['th'][:, 2]), *arg, mode='on', iters=a.iters, zstarts=(0.0,))
+            ron = best_of(ron, rr) if a.refine_keep_best else rr
         if T > 1:
             o2 = dict(oo, z0=ron['th'][:, 2], xy0=ron['th'][:, :2])     # free / kinetics start at the on-through solution (one z start)
             # kinetics starts from the per-frame photon read-outs (matched-filter read-out summed over channels); no free solve
@@ -167,11 +178,16 @@ def process_file(rd, fr, ctx, a, fi, nfr):
         if (i // a.batch) % 10 == 0:
             print(f'{a.cell} {fi}: solved {i + len(j)}/{n}, {time.time() - t0:.0f}s', flush=True)
     C = {k: np.concatenate(v) for k, v in cols.items()}
+    C['wrap'] = np.zeros(n, np.int8)
+    if a.unwrap_r_px > 0:   # ---- E: 4Pi period from the structure (continuous samples, e.g. the nuclear envelope)
+        C['wrap'] = unwrap(C, cx, cy, R['z'], Tsum, a, lambda j, z0: _resolve_at(j, z0), T)
     nY = T * 4 * net.K; dof = np.where(C['kin'], nY - 10.0, nY - 8.0); good = C['chi2'] / dof < a.chi2_max
-    out = dict(x=cx + C['th'][:, 0], y=cy + C['th'][:, 1], z=C['th'][:, 2], sx=C['sig'][:, 0], sy=C['sig'][:, 1], sz=C['sig'][:, 2], N=C['N'],
+    ss = a.sig_scale
+    out = dict(x=cx + C['th'][:, 0], y=cy + C['th'][:, 1], z=C['th'][:, 2], sx=C['sig'][:, 0] * ss[0], sy=C['sig'][:, 1] * ss[1], sz=C['sig'][:, 2] * ss[2], N=C['N'],
                on=np.ones(n, bool), kin=C['kin'], ton=C['ton'], toff=C['toff'], chi2=C['chi2'], dof=dof, good=good, chi2_on=C['chi2_on'], chi2_free=C['chi2_kin'],
                Phi0=Phi0.cpu().numpy(), zprior=R['z'], szprior=np.exp(R['ls'][:, 2]), xprior=Xp[:, 0], yprior=Xp[:, 1], cx=R['cx'], cy=R['cy'],
                w=R['w'], frame=R['w'] * T, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
+    if a.unwrap_r_px > 0: out['wrap'] = C['wrap']
     g2 = good & (Tsum > 2000) & (Tsum < 4000)
     px = ctx['px_nm']
     summ = dict(n=n, per_window=n / (nfr // T), good_frac=float(good.mean()), kin_frac=float(C['kin'].mean()), field_R=diag['R'],
@@ -179,6 +195,33 @@ def process_file(rd, fr, ctx, a, fi, nfr):
                 sig_med_nm_2_4k=[float(np.median(out['sx'][g2]) * px), float(np.median(out['sy'][g2]) * px), float(np.median(out['sz'][g2]) * 1000)],
                 coh=a.coh, t_read_network=tA, t_field=tC, t_total=time.time() - t0)
     return out, dict(M=diag['M'], d=diag['d']), summ
+
+
+def unwrap(C, cx, cy, zprior, Tsum, a, resolve, T):
+    """4Pi period from the structure: reference z = median z of the nearest (<= 30) bright rows within unwrap_r_px whose z
+    agrees with their own astigmatic prior (|z - zprior| < unwrap_tol um); a row whose z is more than half a period
+    (z_period_um) from its reference is solved again started one or more periods over (on-through rows only; the new
+    solution is kept). C is updated in place; -> the period shift k per row (int8)"""
+    from scipy.spatial import cKDTree
+    th = C['th']; X = cx + th[:, 0]; Y = cy + th[:, 1]; z = th[:, 2]; L = a.z_period_um
+    ref = (np.abs(z - zprior) < a.unwrap_tol) & (Tsum > 1000) & ~C['kin']
+    k = np.zeros(len(z), np.int8)
+    if ref.sum() < 50: return k
+    d, q = cKDTree(np.c_[X[ref], Y[ref]]).query(np.c_[X, Y], k=31, distance_upper_bound=a.unwrap_r_px)
+    zr = z[ref]; ok = np.isfinite(d) & (d > 1e-6)                                     # not the row itself
+    zz = np.where(ok, zr[np.minimum(q, len(zr) - 1)], np.nan)
+    cnt = ok.sum(1); zref = np.where(cnt >= 5, np.nanmedian(np.where(cnt[:, None] >= 5, zz, 0.0), 1), np.nan)
+    kk = np.where(np.isfinite(zref), np.round((zref - z) / L), 0).astype(int)
+    kk = np.where(np.abs(kk) <= a.unwrap_kmax, kk, 0)                               # farther: not a period slip, left as is
+    redo = np.nonzero((kk != 0) & ~C['kin'])[0]
+    for i in range(0, len(redo), a.batch):
+        j = redo[i:i + a.batch]
+        r, bgc = resolve(j, np.clip(z[j] + kk[j] * L, -0.98, 0.98))
+        C['th'][j] = r['th'][:, :3]; C['sig'][j] = r['sig'][:, :3]; C['chi2'][j] = r['chi2']; C['chi2_on'][j] = r['chi2']
+        C['N'][j] = r['th'][:, 3] * T; C['bg'][j] = bgc + r['th'][:, -4:]
+        k[j] = kk[j]
+    print(f'{a.cell}: unwrap: {len(redo)} rows ({len(redo) / max(len(z), 1):.3f}) solved again one or more 4Pi periods over', flush=True)
+    return k
 
 
 def output_units(c, out=None, claim=None, redo=None):

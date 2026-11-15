@@ -55,6 +55,18 @@ def simulate(c, frames, dens, seed, dev, B=25):
     return mov, G
 
 
+def isolated_interior(G, out_fr=None, r=3.0, margin=(8, 9)):
+    """GT rows with no other emitter (> 50 photons) of the frame within r px, inside the processed field"""
+    nn = np.full(len(G['x']), 99.0)
+    for t in np.unique(G['t']):
+        s = np.nonzero((G['t'] == t) & (G['N'] > 50))[0]
+        if len(s) > 1:
+            d, _ = cKDTree(np.c_[G['x'][s], G['y'][s]]).query(np.c_[G['x'][s], G['y'][s]], k=2); nn[s] = d[:, 1]
+    x0, x1 = out_fr['fourpi']['xlim'] if out_fr else (0, 1e9)
+    H = out_fr['channels'][0]['crop'][3] if out_fr else 1e9
+    return (nn > r) & (G['x'] >= max(x0, margin[0])) & (G['x'] < x1 - 4) & (G['y'] >= margin[1]) & (G['y'] < H - margin[1])
+
+
 def evaluate(L, G, px_nm, r=0.8):
     """per frame one-to-one nearest within r px: recall per photon bin, FP, errors, pulls"""
     gi, li = [], []
@@ -92,6 +104,7 @@ def main():
     ap.add_argument('--acq', required=True); ap.add_argument('--out', required=True); ap.add_argument('--frames', type=int, default=600)
     ap.add_argument('--dens', default='0.02,0.2'); ap.add_argument('--seed', type=int, default=11)
     ap.add_argument('--set', nargs='*', default=[], help='overrides of the fourpi section: key=value (json values)')
+    ap.add_argument('--sim_set', nargs='*', default=[], help='overrides of the simulation recipe (fourpi_train): key=value, e.g. n_psf=1 reg_shift_sd=0')
     ap.add_argument('--sim_dev', default='cuda', help="device of the movie simulation ('cpu': GPU-free)"); ap.add_argument('--sim_only', type=int, default=0)
     a = ap.parse_args()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'fourpi'))
@@ -100,6 +113,8 @@ def main():
     c = acquisition(a.acq)
     for kv in a.set:
         k, v = kv.split('=', 1); c['fourpi'][k] = json.loads(v)
+    for kv in a.sim_set:
+        k, v = kv.split('=', 1); c['fourpi_train'][k] = json.loads(v)
     os.makedirs(a.out, exist_ok=True)
     fm = os.path.join(a.out, 'sim_movie.npz')
     if os.path.exists(fm):
@@ -119,6 +134,18 @@ def main():
     np.savez(os.path.join(a.out, 'locs_sim.npz'), **out)
     # 4Pi phase-field error at the GT emitters (the solved Phi0 of the matched localizations)
     res, gi, li = evaluate(out, G, c['optics']['pixel_um'] * 1000)
+    # the same on isolated interior GT emitters (no other on-emitter within 3 px; NPC-like rings put several emitters
+    # within 1 px in one frame, which no single-frame method separates)
+    iso = isolated_interior(G, out_fr=c)
+    Gi = {k: v[iso] for k, v in G.items()}
+    res['isolated'], gi2, li2 = evaluate(out, Gi, c['optics']['pixel_um'] * 1000)
+    # sigma calibration: robust pull (error / reported sigma) of the matched isolated emitters with >= 1000 photons and
+    # chi2 'good' -> the factors fourpi.sig_scale that make the pulls 1 (divide by the current sig_scale)
+    s = (Gi['N'][gi2] >= 1000) & out['good'][li2]
+    rs = lambda v: float(1.4826 * np.median(np.abs(v - np.median(v))))
+    pulls = [rs((out[k][li2] - Gi[k][gi2])[s] / out[sk][li2][s]) for k, sk in (('x', 'sx'), ('y', 'sy'), ('z', 'sz'))]
+    res['sig_scale_fit'] = dict(n=int(s.sum()), pull=pulls, current=c['fourpi']['sig_scale'],
+                                sig_scale=[p * q for p, q in zip(pulls, c['fourpi']['sig_scale'])])
     dphi = np.angle(np.exp(1j * (out['Phi0'][li] - G['Phi'][gi])))
     res['phase_field'] = dict(offset_deg=float(np.degrees(np.angle(np.mean(np.exp(1j * dphi))))), R=float(np.abs(np.mean(np.exp(1j * dphi)))),
                               sd_deg=float(np.degrees(np.std(np.angle(np.exp(1j * (dphi - np.angle(np.mean(np.exp(1j * dphi))))))))))

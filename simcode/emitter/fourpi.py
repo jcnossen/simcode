@@ -21,8 +21,10 @@ their covariance, a background per channel and a pattern-free, Phi-free 3D prior
   FourPiPrior        the per-candidate network with two read-outs per (frame, channel) (T = template-matched photons,
       C = Gaussian-window photons) with a 2 x 2 covariance, per-(t, c) background and the 3D prior (checkpoints without
       arch tag: v2 .. v8, v3L = the frozen prior of FourPiEmitterNet, also the candidate front of the simulated movies)
-  window(kind, ...)  the canonical read-out windows ('mf', 'inc', 'gauss', 'flat', 'cr', 'ci'); WINDOWS_K = the K = 4
-      windows of FourPiEmitterNet, WINDOWS_TC = ('mf', 'gauss') of the T / C solve
+  window(kind, ...)  the canonical read-out windows ('mf', 'inc', 'gauss', 'flat', 'cr', 'ci', 'dx', 'dy', 'dz'); WINDOWS_K =
+      the K = 4 windows of FourPiEmitterNet (4Pi-SIMFLUX: the lateral position comes from the SIM pattern),
+      WINDOWS_PLAIN = WINDOWS_K + the three shift windows 'dx', 'dy', 'dz' (plain 4Pi: without a pattern the four
+      symmetric windows carry almost no lateral information), WINDOWS_TC = ('mf', 'gauss') of the T / C solve
   linear_readout     fixed-window read-out with analytic covariance (the teacher; reference of the learned network)
   losses: nll_2x2, nll_prior (FourPiPrior training), solve_loss (solve-aware loss of FourPiEmitterNet: the explicit solve
       linearised at the truth, Gaussian NLL of its error under its reported covariance)
@@ -47,15 +49,23 @@ ARCH_TAGS = {'w': 'FourPiEmitterNet', None: 'FourPiPrior', 'fourpi_emitter': 'Fo
 # -------------------------------------------------------------------------------------------------------------- read-out windows
 WINDOWS_TC = (('mf', 0.003), ('gauss', 1.0))
 WINDOWS_K = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))   # the K = 4 read-outs of FourPiEmitterNet
+WINDOWS_PLAIN = WINDOWS_K + (('dx', 0.003), ('dy', 0.003), ('dz', 0.003))   # plain 4Pi: + the shift read-outs (K = 7)
 
 
 def needs_coh(wins):
     return any(k in ('cr', 'ci') for k, _ in wins)
 
 
-def window(kind, par, inc, ex, ey, coh=None):
+def needs_grad(wins):
+    return any(k in ('dx', 'dy', 'dz') for k, _ in wins)
+
+
+def window(kind, par, inc, ex, ey, coh=None, grad=None):
     """inc [n,P,P] incoherent channel PSF at p (clamped positive); ex, ey [n,P,P] pixel - p offsets; coh = (cr, ci) the
-    coherent cross-term components at p (only for 'cr' / 'ci') -> w [n,P,P]"""
+    coherent cross-term components at p (only for 'cr' / 'ci'); grad = (d/dx, d/dy, d/dz) of the incoherent PSF at p
+    (only for 'dx' / 'dy' / 'dz': the Poisson-weighted shift read-outs, the linear estimators of a small displacement) -> w [n,P,P]"""
+    if kind in ('dx', 'dy', 'dz'):
+        return grad['xyz'.index(kind[1])] / (inc + par)
     if kind in ('cr', 'ci'):   # quadrature windows on the 4Pi cross term: the image is inc + cos(Phi) cr - sin(Phi) ci, so
         # these two read the interference amplitude and phase without knowing Phi (Poisson weights 1 / (inc + beta))
         return coh[0 if kind == 'cr' else 1] / (inc + par)
@@ -73,10 +83,13 @@ def window(kind, par, inc, ex, ey, coh=None):
 
 def windows_at(lut, c, pos, wins, ox, oy):
     """all K windows of channel c at positions pos [n,3] -> [n,K,P,P], and the normalised incoherent template [n,P,P]"""
-    inc = lut.luts[0][c].render(pos).clamp(min=1e-7)
+    if needs_grad(wins):
+        v, gx, gy, gz = lut.luts[0][c].render(pos, True); inc = v.clamp(min=1e-7); grad = (gx, gy, gz)
+    else:
+        inc = lut.luts[0][c].render(pos).clamp(min=1e-7); grad = None
     coh = (lut.luts[1][c].render(pos), lut.luts[2][c].render(pos)) if needs_coh(wins) else None
     ex = ox[None] - pos[:, 0, None, None]; ey = oy[None] - pos[:, 1, None, None]
-    return torch.stack([window(k, p, inc, ex, ey, coh) for k, p in wins], 1), inc / inc.sum((-1, -2), keepdim=True)
+    return torch.stack([window(k, p, inc, ex, ey, coh, grad) for k, p in wins], 1), inc / inc.sum((-1, -2), keepdim=True)
 
 # -------------------------------------------------------------------------------------------------------------- FourPiPrior
 class FourPiPrior(nn.Module):
@@ -177,9 +190,11 @@ def nll_prior(x, y, z, o):
 # -------------------------------------------------------------------------------------------------------------- FourPiEmitterNet
 class FourPiEmitterNet(nn.Module):
     def __init__(self, P=15, ch=64, nblk=4, wins=WINDOWS_K, bound=1.0, prior_ch=96, prior_nblk=4, nbr_in=False, train_prior=False,
-                 T=6, zmax=0.6, vread=VREAD):
+                 T=6, zmax=0.6, vread=VREAD, excess=True):
         """T frames per window (the prior's input; the window network itself sees only frame-symmetric context);
-        zmax: prior z range (um); vread: read variance per pixel (e^2) of the camera"""
+        zmax: prior z range (um); vread: read variance per pixel (e^2) of the camera; excess: the pixel variance includes
+        the excess of the frame-mean image over the model at the prior (neighbours; False for single frames, where that
+        excess is the emitter's own mismatch at the prior position and the noise itself)"""
         super().__init__()
         self.P, self.wins, self.K, self.bound, self.T = P, tuple(wins), len(wins), bound, T
         self.nbr_in, self.train_prior = nbr_in, train_prior   # v11: neighbour-candidate map input (4 planes); prior trained jointly
@@ -195,15 +210,18 @@ class FourPiEmitterNet(nn.Module):
         nn.init.zeros_(self.mlp[-1].weight); nn.init.zeros_(self.mlp[-1].bias)
         self.lut = None
         self.vread = vread      # read variance per pixel (e^2); K x for K summed frames (set by the caller)
+        self.excess = excess
 
     def train(self, mode=True):
         super().train(mode)
         if not self.train_prior: self.prior.eval()
         return self
 
-    def forward(self, img, doff, learned=True, nbr=None):
+    def forward(self, img, doff, learned=True, nbr=None, at=None):
         """nbr [n,4,P,P]: map of the OTHER candidates of the window in each channel patch (Gaussian sd 0.7 px stamps), frame-symmetric;
-        inputs on another device than the network (patches kept in host memory) are moved to the network's device"""
+        at [n,3] (x, y px, z um): place the windows there instead of at the prior (a refinement pass at a solved position;
+        the prior outputs are returned unchanged); inputs on another device than the network (patches kept in host memory)
+        are moved to the network's device"""
         dev = self.cin.weight.device
         img, doff = img.to(dev), doff.to(dev)
         if nbr is not None: nbr = nbr.to(dev)
@@ -213,6 +231,7 @@ class FourPiEmitterNet(nn.Module):
         dxy_o, z_o, ls_o = op['dxy'], op['z'], op['ls']
         with torch.no_grad():
             dxy, z, ls = dxy_o.detach(), z_o.detach(), ls_o.detach()
+            if at is not None: dxy, z = at[:, :2].to(dev), at[:, 2].to(dev)
             p0 = torch.cat([dxy, z[:, None]], 1)
             border = torch.cat([img[..., 0, :], img[..., -1, :], img[..., 1:-1, 0], img[..., 1:-1, -1]], -1)
             bm = border.mean(1).median(-1).values                                # [n,4]
@@ -222,10 +241,13 @@ class FourPiEmitterNet(nn.Module):
             Ws, gs, Bs = [], [], []
             for c in range(4):
                 pos = torch.stack([dxy[:, 0] + doff[:, c, 0], dxy[:, 1] + doff[:, c, 1], z], 1)
-                inc_, cr, ci = (lut.luts[j][c].render(pos) for j in range(3))
+                if needs_grad(self.wins):
+                    inc_, *grad = lut.luts[0][c].render(pos, True); cr, ci = (lut.luts[j][c].render(pos) for j in (1, 2))
+                else:
+                    inc_, cr, ci = (lut.luts[j][c].render(pos) for j in range(3)); grad = None
                 inc = inc_.clamp(min=1e-7)
                 ex = ox[None] - pos[:, 0, None, None]; ey = oy[None] - pos[:, 1, None, None]
-                Ws.append(torch.stack([window(k, par, inc, ex, ey, (cr, ci)) for k, par in self.wins], 1))
+                Ws.append(torch.stack([window(k, par, inc, ex, ey, (cr, ci), grad) for k, par in self.wins], 1))
                 gs.append(inc / inc.sum((-1, -2), keepdim=True)); Bs.append(torch.stack([inc_, cr, ci], -1).reshape(n, P * P, 3))
             W = torch.stack(Ws, 1); g = torch.stack(gs, 1)                        # [n,4,K,P,P], [n,4,P,P]
             Q = torch.linalg.qr(torch.stack(Bs, 1))[0]                            # [n,4,P*P,3] orthonormal basis of the emitter's image
@@ -250,7 +272,8 @@ class FourPiEmitterNet(nn.Module):
         with torch.no_grad():
             Y0 = torch.einsum('ncuv,ntcuv->ntc', W[:, :, 0], y).clamp(min=0)      # photons per (t, c) through the canonical window
             mod = Y0[..., None, None] * g[:, None] + bgc[:, None, :, None, None].clamp(min=0.05)
-            vp = mod + self.vread + (fm[:, None] - mod.mean(1, keepdim=True)).clamp(min=0)   # + frame-mean excess (neighbours)
+            vp = mod + self.vread
+            if self.excess: vp = vp + (fm[:, None] - mod.mean(1, keepdim=True)).clamp(min=0)   # + frame-mean excess (neighbours)
         S = torch.einsum('nckuv,ncluv,ntcuv->ntckl', Wp, Wp, vp)
         S = S + 1e-6 * torch.diagonal(S, dim1=-2, dim2=-1).mean(-1)[..., None, None] * torch.eye(K, device=dev)
         Lb0 = torch.linalg.cholesky(S)
@@ -388,7 +411,7 @@ def load(tag_or_path, dev='cuda'):
     tg = dict(T=a.get('T', 6), zmax=a.get('zmax', 0.6)) if a.get('arch') in ('fourpi_emitter', 'fourpi_prior') else {}   # T = 6 tags: the defaults
     zl = dict(zip(('zmin', 'zmax'), a['zlut'])) if a.get('zlut') else {}
     if ARCH_TAGS[a.get('arch')] == 'FourPiEmitterNet':
-        if a.get('arch') == 'fourpi_emitter': tg['vread'] = a['vread']
+        if a.get('arch') == 'fourpi_emitter': tg.update(vread=a['vread'], excess=a.get('excess', True))
         net = FourPiEmitterNet(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins']), bound=a.get('bound', 1.0), nbr_in=a.get('nbr_in', False), **tg).to(dev).eval()
         net.load_state_dict(ck['state']); net.lut = LUT4Pi(ck['psf'], P=15, dev=dev, **zl)
         return net, ck

@@ -14,6 +14,17 @@ camera.offset_map, optics.pixel_um, channels, registration):
   delta_deg     4Pi phase offset of the second pattern angle (deg)
   z_period_um   4Pi z period (um): spacing of the solve's z starts (Lambda / 2 apart)
   sb            prior sd (e/px) of the solve's residual background per channel (training: the same value)
+  sig_scale     factors (x, y, z) on the solve's sigma in the table (the model's calibration on simulated movies)
+  zstarts       z starts of the final on-through solve, in 4Pi periods around the network's prior ([0]: the period of
+                the astigmatic prior only)
+  unwrap_r_px   > 0: the 4Pi period of every row from the structure (median z of bright prior-consistent rows within
+                this radius; continuous samples such as the nuclear envelope; processing.fourpi.unwrap); unwrap_tol (um),
+                unwrap_kmax (largest period shift applied)
+  refine        refinement passes of the on-through solve: windows re-placed at the solved position, solved again
+                (refine_keep_best: keep the lower objective; the objectives of different window sets are not comparable,
+                so off by default)
+  learned       the emitter network's learned window change, background and covariance scale (false: the fixed
+                canonical windows at the network's prior, border background, analytic covariance)
   file_field    which '_'-separated field of a movie file name is the file number (-1: Cell03_561_000_005.dcimg -> 5)
   det_batch     windows per detector batch
   zstack, bead_align   file globs of the bead z-stack / bead-align recordings of the acquisition (PSF / registration
@@ -34,6 +45,8 @@ import numpy as np
 from simcode.setups.base import Setup
 
 DEFAULTS = dict(frame_dt_s=5.575e-3, xlim=[55, 305], patch=15, window=6, pattern=True, delta_deg=None, z_period_um=0.257, sb=0.2,
+                sig_scale=[1.0, 1.0, 1.0], learned=True, refine=0, refine_keep_best=False, zstarts=[-0.5, 0.0, 0.5],
+                unwrap_r_px=0.0, unwrap_tol=0.12, unwrap_kmax=2,
                 file_field=-1, det_batch=20, zstack=None, bead_align=None, psf=None,
                 pattern_ref=None, detector=None, emitter='v10', files=None, nframes=0,
                 chunk=600, p_min=0.5, tile=12.0, tblk=50, dnll=9.21, chi2_max=2.5, coh=1.0, iters=15, batch=1500,
