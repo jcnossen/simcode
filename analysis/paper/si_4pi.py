@@ -501,7 +501,7 @@ def dense_ref():
                 t768=f['sim_field_7.68um']['on_per_frame_per_um_tube_mean'], nfiles=len(d['files']))
 
 
-FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps)
+FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps); not used in the sim figure (frames only, user)
 NMIN_CL = 50                                             # fewer kept 4Pi-SIMFLUX localizations: rates not measurable
 SELTXT = dict(net_sig0='max(σx, σy) < 7, σz < 16 nm', net_sig1='max(σx, σy) < 5, σz < 12 nm')
 ZOOM1 = ((3945.0, 3785.0), 1200.0)                       # sweep4pi_fig.ZOOMS[0]: crossing, dz 256 nm
@@ -592,14 +592,15 @@ def fig_sim(a):
     for i, (key, ttl) in enumerate((('ttf_xy', 'GT-FRC x-y (nm)'), ('ttf_xz', 'GT-FRC x-z sections (nm)'))):
         ax = fig.add_axes([0.075 + i * 0.255, lo_(ys), ws, hh_(hs)])
         for t in DENS:
-            F = TF[t]; g = np.array(F['grid']) * FRAME_S
+            F = TF[t]; g = np.array(F['grid'], float)                     # frames
             ax.plot(g, F['methods'][BEST[t]][key], color=cols[t], lw=1.2, label=f"{F['dens_fov']:.2f} ON /µm²/frame")
             c = np.array(F['methods']['cl_pub'][key], float)
             ax.plot(g, c, color=cols[t], lw=0.9, ls=':')
         ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(15, 250); ax.set_yticks([20, 30, 50, 100, 200]); ax.set_yticklabels(['20', '30', '50', '100', '200'])
         ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.grid(alpha=0.25, lw=0.4, which='both')
         ax.axhline(25 if 'xy' in key else 35, color='0.4', lw=0.6, ls='--')
-        ax.set_xlabel(f'acquisition time (s; {1e3 * FRAME_S:.3f} ms / frame)', labelpad=1, fontsize=6.3); ax.set_ylabel(ttl, labelpad=1); ax.tick_params(length=2, pad=1)
+        ax.set_xticks([1000, 3000, 10000, 30000]); ax.set_xticklabels(['1,000', '3,000', '10,000', '30,000']); ax.xaxis.set_minor_formatter(plt.NullFormatter())
+        ax.set_xlabel('frames', labelpad=1); ax.set_ylabel(ttl, labelpad=1); ax.tick_params(length=2, pad=1)
         if i == 0:
             h_, l_ = ax.get_legend_handles_labels()
             h_ += [Line2D([], [], color='k', lw=1.2), Line2D([], [], color='k', lw=0.9, ls=':')]
@@ -661,7 +662,7 @@ def dens_limit_text(V, DR, thr=40.0):
     dn, bn = dens_limit(V, 'net', thr); dc, bc = dens_limit(V, 'cl_pub', thr)
     rel = '>=' if bn == '>=' else '='
     return (f"DENSITY LIMIT (one criterion for both: the highest density at which a method still gives GT-FRC <= {thr:.0f} nm in x-y AND in x-z "
-            f"sections within 30 000 frames, {30000 * FRAME_S:.0f} s; 4Pi-SIMFLUX reaches 34 / 36 nm at 0.11): 4Pi-SIMFLUX {dc:.2f} ON /um^2/frame "
+            f"sections within 30 000 frames; 4Pi-SIMFLUX reaches 34 / 36 nm at 0.11): 4Pi-SIMFLUX {dc:.2f} ON /um^2/frame "
             f"(interpolated; {dc / DR['d768']:.2f}x the densest real region), 4Pi-SIMCODE {bn} {dn:.2f} ({bn} {dn / DR['d768']:.1f}x; the highest simulated "
             f"density), i.e. 4Pi-SIMCODE tolerates {rel} {dn / dc:.1f}x the emitter density of 4Pi-SIMFLUX.")
 
@@ -669,13 +670,12 @@ def dens_limit_text(V, DR, thr=40.0):
 def caption_sim(V):
     DR = dense_ref()
     fmt = lambda x, n=0: '-' if x is None else (f'{x:.{n}f}' if np.isfinite(x) else '-')
-    sec = lambda f: '-' if f is None else f'{f * FRAME_S:.0f} s'
+    sec = lambda f: 'not reached' if f is None else f'{f:,.0f} frames'
     L = ['DRAFT CAPTION',
          "4Pi-SIMCODE versus 4Pi-SIMFLUX (the analysis as published: our implementation of the published pipeline, sim_cl.py published-style, with "
          "the published rejections) on simulated 4Pi-SIMFLUX movies of a microtubule cell field at increasing labelling "
          "density. Structure: the 'Microtubules (cells)' world model of webSMLM / inSiliScope (flat lamella below the nucleus, 59 microtubules, labels "
-         "24.6 nm from the tube axis, 70 % labelling, heights 0-300 nm, focus at 150 nm). Movies: 30 000 frames (5000 six-frame windows; time axis "
-         f"with the {1e3 * FRAME_S:.3f} ms frame interval measured on the real 4Pi-SIMFLUX movies), "
+         "24.6 nm from the tube axis, 70 % labelling, heights 0-300 nm, focus at 150 nm). Movies: 30 000 frames (5000 six-frame windows), "
          "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
@@ -686,7 +686,7 @@ def caption_sim(V):
          "(b, c) The zoom (white box in a; four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = "
          "localizations in the zoom. (d) 4Pi-SIMCODE x-z sections taken along the 200 nm wide y-strip through the centre of the zoom (between the "
          "dotted lines in b), over the zoom's full x range. (e) Ground-truth FRC resolution in x-y and in x-z sections "
-         "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
+         "versus the number of frames acquired for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
          "of the 5-shell smoothed curve, interpolated between shells, taken where the curve stays below 1/7 for 0.01 /nm, best value up to that time. "
          "The step from ~65 to ~35 nm is the hollow-tube spectrum (Bessel zero at 1/64 nm for 24.6 nm radius): the curve crosses 1/7 before that null "
          "until the next lobe rises above 1/7. (f) Recall of the ground-truth emitter-windows (>= 300 e) and the false-positive fraction versus density: "
@@ -700,7 +700,7 @@ def caption_sim(V):
         L.append(f"{v['dens_fov']:.2f} ON /um^2/frame ({v['dens_region']:.2f} in the evaluation region): 4Pi-SIMCODE ({SELTXT[b]}) {n['n_locs']:,} locs, recall {n['recall']:.2f}, "
                  f"false positives {100 * n['false_pos_3d']:.1f} % (of which one-fringe-off only {100 * n['false_pos_wrong_fringe_only']:.1f} %), robust error lateral / axial "
                  f"{n['lat_rob']:.1f} / {n['ax_rob']:.1f} nm, GT-FRC x-y / x-z {n['gtfrc_end_xy']:.0f} / {n['gtfrc_end_xz']:.0f} nm, frames to x-y 25 nm "
-                 f"{fmt(n['frames_to_xy25'])} ({sec(n['frames_to_xy25'])}), to x-z 35 nm {fmt(n['frames_to_xz35'])} ({sec(n['frames_to_xz35'])}), "
+                 f"{fmt(n['frames_to_xy25'])}, to x-z 35 nm {fmt(n['frames_to_xz35'])}, "
                  f"coverage excess CV {n['coverage_excess_cv']:.2f}; "
                  f"4Pi-SIMFLUX {c['n_locs']:,} locs, recall {c['recall']:.2f}, false positives {100 * c['false_pos_3d']:.1f} %, "
                  f"{c['lat_rob']:.1f} / {c['ax_rob']:.1f} nm, GT-FRC {c['gtfrc_end_xy']:.0f} / {c['gtfrc_end_xz']:.0f} nm, frames to 25 / 35 nm "
@@ -720,8 +720,8 @@ def caption_sim(V):
     L += ['',
           'READING: the 4Pi-SIMFLUX pipeline keeps 22 % / 7 % / 3 % / 1 % / 0 % of the ground-truth units at 0.11 / 0.33 / 0.55 / 0.82 / 1.64 and '
           + ('reaches 25 nm (x-y) and 35 nm (x-z) within 30 000 frames at some density; ' if cl_any else 'never reaches both 25 nm (x-y) and 35 nm (x-z) within 30 000 frames; ')
-          + (f"4Pi-SIMCODE reaches both soonest at {rd} ON /um^2/frame, after {ok[tb]:,.0f} frames ({ok[tb] * FRAME_S:.0f} s)" if tb else '4Pi-SIMCODE does not reach both')
-          + (f", {ratio:.1f}x faster than at 0.11 ({fb[t01]:,.0f} frames, {fb[t01] * FRAME_S:.0f} s). " if ratio else '. ')
+          + (f"4Pi-SIMCODE reaches both soonest at {rd} ON /um^2/frame, after {ok[tb]:,.0f} frames" if tb else '4Pi-SIMCODE does not reach both')
+          + (f", {ratio:.1f}x faster than at 0.11 ({fb[t01]:,.0f} frames). " if ratio else '. ')
           + 'Time to both targets per density (0.11 / 0.33 / 0.55 / 0.82 / 1.64): '
           + ' / '.join(sec(fb[t]) for t in DENS)
           + '; coverage excess CV ' + ' / '.join(f"{V[t][BEST[t]]['coverage_excess_cv']:.2f}" for t in DENS)
