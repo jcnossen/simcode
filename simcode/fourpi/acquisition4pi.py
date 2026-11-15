@@ -27,8 +27,8 @@ import torch
 import torch.nn.functional as F
 from simcode.fourpi.lut4pi import LUT4Pi
 
-from simcode.config import REPO
-from simcode.fourpi.setup import P4
+from simcode.config import root
+P4 = root('fourpi')
 BG = {'MT': (0.42, 1.06, 0.54, 1.17), 'NPC': (0.41, 0.93, 0.51, 1.15)}
 K0 = {'MT': ((3.839, -0.024), (0.003, 3.851)), 'NPC': ((3.826, -0.028), (0.013, 3.845))}
 

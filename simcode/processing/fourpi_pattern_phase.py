@@ -1,4 +1,5 @@
-"""In-situ estimates of the 4Pi pipelines, per file, from the candidates themselves (no calibration sample):
+"""Per-file SIM pattern and 4Pi phase field of the 4Pi pipelines (network and classical), estimated in situ from the
+candidates themselves (no calibration sample):
 
   SIM pattern   slot_z / refine_k / emitter_phase (per-emitter 3-step solve; global k and step phases from the slot DFT),
                 repattern_xy (pattern of a file from per-frame intensities at given positions),

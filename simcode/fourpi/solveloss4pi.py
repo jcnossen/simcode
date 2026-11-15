@@ -10,7 +10,7 @@ read-out. Errors of the read-outs that the solve cannot see (common gain, anythi
 nothing; frame / channel mixing that moves the pattern phase or the 4Pi phase costs directly.
 """
 import torch
-from simcode.fourpi.solve4pi import ANG
+from simcode.solve.fourpi import ANG
 
 
 def solve_loss(sv, o, S, Ystar, sb=0.2, clamp=50.0, grad_model=False):
@@ -21,7 +21,7 @@ def solve_loss(sv, o, S, Ystar, sb=0.2, clamp=50.0, grad_model=False):
         sv._ctx = dict(W=o['W'], p0=None, Wsum=None)
         A, _ = sv.readout_k(S['x'], S['y'], S['z'], S['Phi0'], S['doff'])
         A = A[:, torch.tensor(ANG, device=dev)]                                   # [n,6,4,K,5]
-        from simcode.fourpi.solve4pi import psi_from_eps
+        from simcode.solve.fourpi import psi_from_eps
         Pt, dPx, dPy = sv.pattern(S['x'], S['y'], S['m'], psi_from_eps(S['eps']))
         Fq = (S['F'][:, None] * S['q'])                                           # [n,6]
         A0 = A[..., 0]

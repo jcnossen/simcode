@@ -1,6 +1,7 @@
-"""Consistency test of the explicit 4Pi solve (simcode/fourpi/solve4pi.py) against the simulator: feed the ground-truth
-read-out targets (T, C) without noise and a loose prior around the truth; the solve must return the truth, and the phase
-mode must return Phi0. GPU, ~1 min; needs the 4Pi PSF model <4Pi work dir>/psf4pi/NPC_f_dxy15.json (skipped without it).
+"""Consistency test of the explicit 4Pi solve (simcode/solve/fourpi.py) against the simulator: feed the ground-truth
+read-out targets (T = patch sum, C = Gaussian window sd 1 px at the emitter) without noise and a loose prior around the
+truth, as the two windows ('flat', 'gauss' 1.0) of the solve (tables, co-moving windows); the solve must return the truth,
+and the phase mode must return Phi0. GPU, ~1 min; needs the 4Pi PSF model <4Pi work dir>/psf4pi/NPC_f_dxy15.json (skipped without it).
 Run: CUDA_VISIBLE_DEVICES=<gpu> python tests/test_solve4pi_oracle.py  (or pytest tests)
 
 Measured 2026-11-12 (2000 isolated on-through emitters, seed 5): mode 'on' p99 |error| 0.0026 / 0.0026 px, 5.1 nm in z;
@@ -12,13 +13,13 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 
 def test_solve_oracle():
     import torch
-    from simcode.fourpi.setup import P4
+    from simcode.config import root; P4 = root('fourpi')
     f = f'{P4}/psf4pi/NPC_f_dxy15.json'
     if not os.path.exists(f) or not torch.cuda.is_available():
         print(f'  skip (needs a GPU and {f})'); return
     from simcode.fourpi.lut4pi import LUT4Pi
     from simcode.fourpi.sim4pi import Sim4Pi
-    from simcode.fourpi.solve4pi import Solve4Pi, psi_from_eps
+    from simcode.solve.fourpi import FourPiSolve, psi_from_eps
     lut = LUT4Pi(json.load(open(f))['psf'], P=15)
     n = 2000
     S = Sim4Pi(lut, seed=5).sample(n, p_nb=0.0, p_on=1.0)
@@ -27,7 +28,8 @@ def test_solve_oracle():
              dxy=torch.stack([S['x'], S['y']], 1) + 0.1 * torch.randn(n, 2, device='cuda', generator=g),
              z=S['z'] + 0.02 * torch.randn(n, device='cuda', generator=g), ls=torch.log(torch.tensor([0.3, 0.3, 0.04], device='cuda')).expand(n, 3))
     o['L'][..., 0, 0] = (S['T'] + 5).sqrt(); o['L'][..., 1, 1] = (S['C'] + 2).sqrt()
-    sv = Solve4Pi(lut)
+    o['Y'] = torch.stack([S['T'], S['C']], -1); o['Lb'] = o.pop('L')
+    sv = FourPiSolve(lut, wins=(('flat', 0.0), ('gauss', 1.0))); sv.build_table()
     psi = psi_from_eps(S['eps'])
     truth = torch.stack([S['x'], S['y'], S['z']], 1)
     p99 = {}

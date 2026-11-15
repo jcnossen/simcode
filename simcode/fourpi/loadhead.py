@@ -5,8 +5,8 @@ import os
 import torch
 from simcode.fourpi.lut4pi import LUT4Pi
 
-from simcode.config import REPO
-from simcode.fourpi.setup import P4
+from simcode.config import root
+P4 = root('fourpi')
 
 
 def load_head(tag_or_path):
