@@ -169,9 +169,12 @@ def fig_npc(a):
     axA.set_title(f"4Pi-SIMCODE, {len(S['x']):,} localizations (38 files)", fontsize=7, pad=2)
     zcbar(fig, [0.06, 0.966 - ha - 0.03, 0.2, 0.008], zr, 'z (nm), a')
     # (b) zooms, coloured by z, same box
+    OPK = {'net': 'network, all kept (good & N >= 1000)', 'net_m': 'network, matched count (combined sigma)', 'cl': 'classical published-style'}
+    FRCn = {k: ref['operating_points'][OPK[k]]['frc'] for k in K3}                 # central 10 x 10 um, select_curve_npc.metrics
     zlist = [('net', f"4Pi-SIMCODE\n{int(inrect(T['net']['x'], T['net']['y'], zb).sum()):,} locs"),
              ('net_m', f"4Pi-SIMCODE, matched count\n{int(inrect(T['net_m']['x'], T['net_m']['y'], zb).sum()):,} locs"),
              ('cl', f"4Pi-SIMFLUX\n{int(inrect(T['cl']['x'], T['cl']['y'], zb).sum()):,} locs")]
+    zlist = [(k, t + f"\nFRC {FRCn[k]:.1f} nm") for k, t in zlist]
     x0 = 0.395; wz = 0.195; hz = wz * AR
     for i, (k, t) in enumerate(zlist):
         ax = fig.add_axes([x0 + i * (wz + 0.007), 0.966 - hz, wz, hz])
@@ -230,7 +233,6 @@ def fig_npc(a):
     save(fig, 'si_4pi_npc')
     # numbers
     sc = json.load(open(f'{P4}/net/cmp_v10/compare_NPC_v10.json')) if os.path.exists(f'{P4}/net/cmp_v10/compare_NPC_v10.json') else None
-    OPK = {'net': 'network, all kept (good & N >= 1000)', 'net_m': 'network, matched count (combined sigma)', 'cl': 'classical published-style'}
     val = dict(lines={k: LAB[k] for k in K3}, pore_metrics={k: PM[k] for k in K3}, n_rows={k: int(len(T[k]['x'])) for k in K3}, n_overview=int(len(S['x'])),
                zoom_box_nm=list(map(float, zb)), info=info, reference_json=f'{P4}/fig/NPC_selection_curves_v10.json',
                panel_f_valley_peak_vs_kept={k: [dict(n_keep=r['n_keep'], valley_peak=r.get('z_dip'), ring_z_sd_nm=r.get('ring_z_sd_nm'))
@@ -257,7 +259,9 @@ def caption_npc(v):
          f"<= {I['thr_matched_nm']:.2f} nm, as many as 4Pi-SIMFLUX keeps); and 4Pi-SIMFLUX, the analysis as published (published-style pipeline with its "
          "published rejections). "
          "(a) Overview of the nucleus, 4Pi-SIMCODE localizations in the validated range (|z| <= 0.3 um), colour = z. "
-         "(b) Zoom (white box in a), the three analyses. (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
+         "(b) Zoom (white box in a), the three analyses, with the localizations in the zoom and the FRC resolution of each analysis (x-y, over "
+         "the central 10 x 10 um of the nucleus; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC "
+         "smoothed over 5 rings, 1/7 threshold, first crossing; simcode/evaluation/frc.py). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
          f"{I['n_pores']:,} pores found once on the 4Pi-SIMFLUX table, the same centres for every analysis. (d) Side views (x-z, |y| < 30 nm) of the "
          "averaged pore. (e) z histogram of the ring (radius 25-85 nm) about each pore's mean z: the two Nup96 rings; valley / peak = the "
          "lowest count between the two ring peaks divided by the lower peak (lower = better separated rings). "
@@ -357,6 +361,8 @@ def fig_mt(a):
     wc = 0.108; hc = wc * AR; xc = [0.665 + i * (wc + 0.006) for i in range(3)]
     ZT = dict(net='4Pi-SIMCODE', net_m='matched count', cl='4Pi-SIMFLUX')
     zoom_matched = []
+    refm = json.load(open(f'{P4}/fig/MT_selection_curves_v10_full.json'))['operating_points']
+    FRCm = {k: refm[o]['frc'] for k, o in (('net', 'all'), ('net_m', 'matched count'), ('cl', 'classical published (same files)'))}   # box 0 = region b
     for r, (cc, s) in enumerate(zooms):
         y0 = top - hc - r * (hc + 0.05)
         zr_ = (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)
@@ -368,7 +374,7 @@ def fig_mt(a):
             ax = fig.add_axes([xc[i], y0, wc, hc]); U = Uz[k]
             ax.imshow(zrgb(U['x'], U['y'], U['z'] - zc, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, (-zh, zh), 1.0)); noaxis(ax)
             n = int(inrect(U['x'], U['y'], zr_).sum())
-            ax.set_title(f"{ZT[k]}\nzoom {r + 1}: {n:,} locs", fontsize=5.6, pad=2, color=COL[k])
+            ax.set_title(f"{ZT[k]}" + (f"\nFRC {FRCm[k]:.1f} nm" if r == 0 else '') + f"\nzoom {r + 1}: {n:,} locs", fontsize=5.6, pad=2, color=COL[k])
             if r == 1:
                 sec = G['section']
                 for v in (sec['a0'], sec['a1']):
@@ -445,7 +451,9 @@ def caption_mt(v):
          f"reported combined precision sqrt(sigma_x^2 + sigma_y^2 + sigma_z^2) <= {v['threshold_matched_nm']:.2f} nm, as many in boxes 0 and 1 as "
          f"4Pi-SIMFLUX keeps, {v['n_matched']:,}); and 4Pi-SIMFLUX, the analysis as published (published-style pipeline with its published rejections). "
          "(a) The whole field, 4Pi-SIMCODE localizations coloured by z. (b) The 6 x 6 um region of box 0 (white box in a), 4Pi-SIMCODE. (c) Zoom 1, "
-         f"a crossing of two microtubules {G['zoom1']['dz_nm']:.0f} nm apart in z, the three analyses; in the zooms (c, d) the matched count is taken "
+         f"a crossing of two microtubules {G['zoom1']['dz_nm']:.0f} nm apart in z, the three analyses, each with its FRC resolution "
+         "(x-y, over the whole region of b = box 0; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC "
+         "smoothed over 5 rings, 1/7 threshold, first crossing; simcode/evaluation/frc.py); in the zooms (c, d) the matched count is taken "
          "WITHIN each zoom (the most precise 4Pi-SIMCODE localizations of that zoom, as many as 4Pi-SIMFLUX has there: "
          + ' / '.join(f"{q['n']:,} (combined precision <= {q['threshold_nm']:.2f} nm)" for q in v['zoom_matched'])
          + " for zooms 1 / 2); everywhere else (e-g, numbers) it is the global match over boxes 0 and 1. "
