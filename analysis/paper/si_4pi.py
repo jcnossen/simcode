@@ -472,6 +472,17 @@ NM = 128.0; LO, HI = 8 * NM, 52 * NM
 DENS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
 SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
 BEST = {t: 'net_sig1' for t in ('mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15')}   # ONE selection at every density (user 2026-11-15)
+DREG = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep/densregion.json')   # analysis/fourpi_sim/sweep4pi_densregion.py
+
+
+def dense_ref():
+    """real MT ON density (per um^2 per frame): densest 7.68 um window (= simulated field), densest 20 um window, field average"""
+    d = json.load(open(DREG)); f = d['fixed']
+    return dict(d768=f['sim_field_7.68um']['on_per_um2_frame_mean'], d768_sd=f['sim_field_7.68um']['on_per_um2_frame_sd'],
+                d20=f['20um']['on_per_um2_frame_mean'], d20_sd=f['20um']['on_per_um2_frame_sd'], field=d['field_on_per_um2_frame_mean'],
+                t768=f['sim_field_7.68um']['on_per_frame_per_um_tube_mean'], nfiles=len(d['files']))
+
+
 FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps)
 NMIN_CL = 50                                             # fewer kept 4Pi-SIMFLUX localizations: rates not measurable
 SELTXT = dict(net_sig0='max(σx, σy) < 7, σz < 16 nm', net_sig1='max(σx, σy) < 5, σz < 12 nm')
@@ -483,6 +494,7 @@ def fig_sim(a):
     """a.share: the temporary share variant si_4pi_sim_share (not for the SI): no x-z row, only the zoom box (labelled 'zoom') in a,
     no strip lines in b, panels re-lettered a-e"""
     share = bool(getattr(a, 'share', False))
+    DR = dense_ref()
     Es = {t: json.load(open(f'{SW}/{t}/eval.json')) for t in DENS}
     gt = np.load(f'{P4}/simmovie/{SHOW[0]}/gt_sites.npz')['sites']; gx, gy, gz = gt[:, 0] * NM, gt[:, 1] * NM, gt[:, 2] * 1000
     W, H = 7.2, 7.6
@@ -507,7 +519,7 @@ def fig_sim(a):
         else:
             t = SHOW[j - 1]; E = Es[t]; Ln = L(t, BEST[t]); Lc = L(t, 'cl_pub')
             data = {'net': (Ln['x'], Ln['y'], Ln['z']), 'cl': (Lc['x'], Lc['y'], Lc['z'])}
-            ttl = f"{E['dens_fov']:.2f} ON /µm²/frame\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
+            ttl = f"{E['dens_fov']:.2f} ON /µm²/frame\n= {E['dens_fov'] / DR['d768']:.2g}x densest real region\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
                 else f"{E['dens_fov']:.2f} ON /µm²/frame"
         x, y, z = data['net']
         ax = fig.add_axes([xl, up(yrow[0]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
@@ -614,7 +626,27 @@ def fig_sim(a):
     open(f'{OUT}/si_4pi_sim_caption.txt', 'w').write(caption_sim(val))
 
 
+def dens_limit(V, nm, thr=40.0):
+    """highest density with GT-FRC x-y <= thr and x-z <= thr (30 000 frames), log-interpolated between sweep points; (value, bound)"""
+    D = np.array([V[t]['dens_fov'] for t in DENS])
+    q = np.array([max(V[t][nm if nm != 'net' else BEST[t]]['gtfrc_end_xy'], V[t][nm if nm != 'net' else BEST[t]]['gtfrc_end_xz']) for t in DENS])
+    if q[-1] <= thr: return float(D[-1]), '>='
+    if q[0] > thr: return float(D[0]), '<'
+    i = int(np.nonzero(q > thr)[0][0]); u = (thr - q[i - 1]) / (q[i] - q[i - 1])
+    return float(np.exp(np.log(D[i - 1]) + u * (np.log(D[i]) - np.log(D[i - 1])))), '='
+
+
+def dens_limit_text(V, DR, thr=40.0):
+    dn, bn = dens_limit(V, 'net', thr); dc, bc = dens_limit(V, 'cl_pub', thr)
+    rel = '>=' if bn == '>=' else '='
+    return (f"DENSITY LIMIT (one criterion for both: the highest density at which a method still gives GT-FRC <= {thr:.0f} nm in x-y AND in x-z "
+            f"sections within 30 000 frames, {30000 * FRAME_S:.0f} s; 4Pi-SIMFLUX reaches 34 / 36 nm at 0.11): 4Pi-SIMFLUX {dc:.2f} ON /um^2/frame "
+            f"(interpolated; {dc / DR['d768']:.2f}x the densest real region), 4Pi-SIMCODE {bn} {dn:.2f} ({bn} {dn / DR['d768']:.1f}x; the highest simulated "
+            f"density), i.e. 4Pi-SIMCODE tolerates {rel} {dn / dc:.1f}x the emitter density of 4Pi-SIMFLUX.")
+
+
 def caption_sim(V):
+    DR = dense_ref()
     fmt = lambda x, n=0: '-' if x is None else (f'{x:.{n}f}' if np.isfinite(x) else '-')
     sec = lambda f: '-' if f is None else f'{f * FRAME_S:.0f} s'
     L = ['DRAFT CAPTION',
@@ -625,6 +657,9 @@ def caption_sim(V):
          "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
+         f"Densities are ON emitters per um^2 per frame over the simulated 7.68 x 7.68 um field; 'x real' = multiple of the densest 7.68 x 7.68 um "
+         f"region of the real 4Pi-SIMFLUX microtubule movie ({DR['d768']:.2f} +- {DR['d768_sd']:.2f} ON /um^2/frame over {DR['nfiles']} files of the series; "
+         f"its densest 20 x 20 um region {DR['d20']:.2f}, field average {DR['field']:.2f}). "
          "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported max(sigma_x, sigma_y) < 5 nm and sigma_z < 12 nm, on top of the base filters). "
          "(b, c) The zoom (white box in a; four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = "
          "localizations in the zoom. (d) 4Pi-SIMCODE x-z sections taken along the 200 nm wide y-strip through the centre of the zoom (between the "
@@ -664,7 +699,7 @@ def caption_sim(V):
           'READING: the 4Pi-SIMFLUX pipeline keeps 22 % / 7 % / 3 % / 1 % / 0 % of the ground-truth units at 0.11 / 0.33 / 0.55 / 0.82 / 1.64 and '
           + ('reaches 25 nm (x-y) and 35 nm (x-z) within 30 000 frames at some density; ' if cl_any else 'never reaches both 25 nm (x-y) and 35 nm (x-z) within 30 000 frames; ')
           + (f"4Pi-SIMCODE reaches both soonest at {rd} ON /um^2/frame, after {ok[tb]:,.0f} frames ({ok[tb] * FRAME_S:.0f} s)" if tb else '4Pi-SIMCODE does not reach both')
-          + (f", {ratio:.1f}x faster than at the real-data density (0.11: {fb[t01]:,.0f} frames, {fb[t01] * FRAME_S:.0f} s). " if ratio else '. ')
+          + (f", {ratio:.1f}x faster than at 0.11 ({fb[t01]:,.0f} frames, {fb[t01] * FRAME_S:.0f} s). " if ratio else '. ')
           + 'Time to both targets per density (0.11 / 0.33 / 0.55 / 0.82 / 1.64): '
           + ' / '.join(sec(fb[t]) for t in DENS)
           + '; coverage excess CV ' + ' / '.join(f"{V[t][BEST[t]]['coverage_excess_cv']:.2f}" for t in DENS)
@@ -672,7 +707,8 @@ def caption_sim(V):
           + ' / '.join(f"{100 * V[t][BEST[t]]['false_pos_3d']:.1f}" for t in DENS) + ' % (4Pi-SIMFLUX '
           + ' / '.join(f"{100 * V[t]['cl_pub']['false_pos_3d']:.1f}" for t in DENS) + ' %); at 1.64 the network is out of distribution '
           '(neighbours along the tube bias the astigmatic prior that picks the 4Pi fringe; out/fourpi_sim/sweep/STATUS.md). '
-          'The x-z plateau (~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
+          'The x-z plateau (~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33). '
+          + dens_limit_text(V, DR),
           'CONDITIONS: detector det4pi, emitter network v10 (trained with <= 3 neighbours within 7 px: out of distribution at >= 0.82), explicit solve with '
           'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); one selection at every density: base filters (sigma_z < 25 nm, '
           f'sigma_x, sigma_y < 0.12 px, N > 300) + reported max(sigma_x, sigma_y) < 5 nm and sigma_z < 12 nm (net_sig1 of the sweep). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
