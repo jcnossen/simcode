@@ -81,7 +81,8 @@ class TrainingBatches:
         self.H, self.W, self.T = H, W, T
         self.p_std = p_std
         if p_std is not None:      # pass-2 setup (illumination_batch)
-            if not 0.0 <= p_std < 1.0: raise ValueError(f'p_std {p_std}: the share of SIMCODE-pattern FOVs must be in [0, 1)')
+            # p_std = 1: every FOV keeps the SIMCODE pattern (the dedicated pass-2 draw, reference detectors; 2026-11-15)
+            if not 0.0 <= p_std <= 1.0: raise ValueError(f'p_std {p_std}: the share of SIMCODE-pattern FOVs must be in [0, 1]')
             for rs in self.all_rs():
                 rs.p['frame_sd'] = 0.09
                 rs.p_std = float(p_std)      # generic pattern draw (simulate/acquisition.AcquisitionSim._generic) in a share 1 - p_std of the FOVs
