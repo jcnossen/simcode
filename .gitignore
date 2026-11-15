@@ -13,5 +13,3 @@ models/**/*.pt
 models/*.pt
 *.joblib
 models/**/*.png
-# the 4Pi spline-table psf.zip (~120 MB; analysis/psfzip/convert_paper_psfs.py --spline): distributed with the weights
-models/fourpi/*_spline.psf.zip

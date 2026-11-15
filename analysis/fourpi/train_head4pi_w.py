@@ -123,7 +123,7 @@ def main_plain(a):
     a.wins = [list(w) for w in WINDOWS_PLAIN]; a.excess = T > 1     # single frames: no frame-mean excess in the pixel variance
     torch.manual_seed(a.seed)
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'      # cpu: smoke tests only
-    st = json.load(open(c['fourpi']['psf']))['psf']
+    st = fourpi_state(c['fourpi']['psf'])
     lut = LUT4Pi(st, P=15, zmin=t['zlut'][0], zmax=t['zlut'][1], dev=dev)
     init, smp = S_.sim_kw(c)
     sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)
