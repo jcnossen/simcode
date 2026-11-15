@@ -549,6 +549,9 @@ def fig_sim(a):
         cc, s = ZOOM2
         ax = fig.add_axes([xl, up(yrow[1]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0)); noaxis(ax)
         if not share: ax.axhline((s / 2 - 100) / 4, color='w', lw=0.4, ls=':'); ax.axhline((s / 2 + 100) / 4, color='w', lw=0.4, ls=':')
+        if not share and j == 0:                                       # marker: the strip that panel d sections
+            ax.text(0.03, 0.5, 'x-z section in d', transform=ax.transAxes, color='w', fontsize=5.5, ha='left', va='center',
+                    bbox=dict(fc='k', ec='none', alpha=0.6, pad=0.6))
         if j == 0: scalebar(ax, 200 / s, '200 nm'); letter(ax, 'b', -0.02)
         ax = fig.add_axes([xl, up(yrow[2]), wcol, hh_(hcol)])
         if data['cl'] is not None:
