@@ -448,10 +448,12 @@ def caption_pattern(V, D=None):
 
 
 # ------------------------------------------------------------------------------- pattern plots, preprint layout
-DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/home/jc/simcode2/out/paper2/1809_2'),
+# SIMFLUX rows: the PSF-v2 + camera-v2 refit baselines (out/paper2/<ds>/baselines_psfv2, run_base_psfv2.sh; decision 2026-11-15,
+# consistent with SIMCODE and Figs 3 / 4); the pre-refit tables were out/paper2/<ds>
+DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/home/jc/simcode2/out/paper2/1809_2/baselines_psfv2'),
       '2.5nM_2': dict(title='Medium density DNA-PAINT (2.5 nM/2)',
                       run='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final',
-                      base='/home/jc/simcode2/out/paper2/2.5nM_2')}
+                      base='/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2')}
 CROP = (5.0, 5.0, 110.0)
 INC_COLOR, EXC_COLOR = 'b', 'r'          # the preprint's colours (included blue, excluded red)
 
@@ -609,7 +611,7 @@ def caption_pattern_preprint(V):
     L = ['DRAFT CAPTION',
          'Localizations and their intensities mapped onto one period of the illumination pattern (pattern 0: orientation 0, '
          'phase step 0), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
-         'localization by the sum of the 6 intensities of its window, I_k / sum_6 I. SIMFLUX: per-frame intensities of the SMLM '
+         'localization by the sum of the 6 intensities of its window, I_k / sum_6 I. SIMFLUX (PSF-v2 + camera-v2 refit baselines): per-frame intensities of the SMLM '
          'ROI fit, phase from the SMLM (2D Gaussian) position; included (blue) = modulation error < 0.1, the filter that selects '
          'the SIMFLUX input. SIMCODE v2: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
          'pass-1 network head, not at the position of the pattern solve (which is computed from these intensities and the pattern '
