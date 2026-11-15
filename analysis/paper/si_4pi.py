@@ -1,0 +1,635 @@
+"""SI figures of the 4Pi-SIMCODE section (paper v2), from EXISTING 4Pi results (no new GPU runs):
+
+  si_4pi_npc   real 4Pi-SIMFLUX Nup96 (NPC) movie, 38 files: 4Pi-SIMCODE (head v10) vs the classical 4Pi-SIMFLUX
+               pipeline (published-style; pixel MLE): overview coloured by z, pore zooms, averaged pore (x-y, x-z side views),
+               two-ring z histogram, ring metrics vs number of localizations kept.
+  si_4pi_mt    real 4Pi-SIMFLUX microtubule movie, 100 files: network overview of the cell, box-0 region coloured by z, a
+               crossing zoom, y-z section through overlapping tubes, tube cross-section (14 isolated segments) + profiles.
+  si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
+               emitters / um^2 / frame: renders per density (network best selection; classical), x-z sections, GT-FRC vs
+               frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
+
+Tables (all existing, read-only):
+  NPC  out/4pi/net/net_NPC_v10_all.npz (post_w4pi.py), out/4pi/classical/real/cl_NPC_wv_all.npz
+  MT   out/4pi/net/net_MT_v10_all.npz, out/4pi/classical/real/cl_MT_wv_all.npz, out/4pi/patches/regions_MT.json
+  sim  out/4pi/sweep4pi/<tag>/{eval.json, locs_*.npz}, out/4pi/simmovie/<tag>/gt_sites.npz (sweep4pi_eval.py)
+The loading / registration / z-drift / pore and segment finding code is imported from the analysis scripts that made the
+4Pi status numbers (analysis/fourpi/select_curve_npc.py, showcase_real_mt.py), so the numbers are the same recipe.
+
+Usage (CPU only; SIMCODE_CONFIG must point at the main checkout's simcode.json so that out/4pi resolves):
+  export SIMCODE_CONFIG=~/simcode2/simcode.json
+  python analysis/paper/si_4pi.py prep_npc      # ~10 min, ~20 GB RAM -> out/paper_figs_v2/cache_si_4pi/npc.npz
+  python analysis/paper/si_4pi.py prep_mt       # ~20 min, ~40 GB RAM -> cache_si_4pi/mt.npz, mt_geom.json
+  python analysis/paper/si_4pi.py npc | mt | sim
+"""
+import argparse, json, os, sys, time
+import numpy as np
+import matplotlib as mpl
+mpl.use('Agg')
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from scipy.ndimage import gaussian_filter
+from scipy.spatial import cKDTree
+
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+for p in (REPO, f'{REPO}/analysis/fourpi', f'{REPO}/analysis/fourpi_classical', f'{REPO}/analysis/figures', f'{REPO}/analysis/fourpi_sim'):
+    if p not in sys.path: sys.path.insert(0, p)
+from simcode.config import root
+P4 = root('fourpi')
+OUT = os.path.expanduser('~/simcode2/out/paper_figs_v2')
+CACHE = f'{OUT}/cache_si_4pi'
+PX = 128.0                                              # 4Pi pixel (nm), out/4pi/PROCESSING_STATUS.md 'Optics facts'
+FPF = 18000                                             # frames per file (6-frame windows: 3000 per file)
+ZCMAP = LinearSegmentedColormap.from_list('zdiv', ['#3987e5', '#c3c2b7', '#eb6834'])   # as the 4Pi showcase figures
+COL = dict(net='#2a78d6', net_m='#0b3f8a', cl='#eb6834', clp='#1baf7a', gt='#52514e')
+LAB = dict(net='4Pi-SIMCODE, all kept', net_m='4Pi-SIMCODE, matched count', cl='classical, published-style', clp='classical, pixel MLE')
+mpl.rcParams.update({'font.size': 7, 'axes.labelsize': 7, 'axes.titlesize': 7, 'xtick.labelsize': 6, 'ytick.labelsize': 6,
+                     'legend.fontsize': 6, 'axes.spines.top': False, 'axes.spines.right': False, 'svg.fonttype': 'none',
+                     'axes.linewidth': 0.6, 'xtick.major.width': 0.6, 'ytick.major.width': 0.6, 'xtick.major.size': 2.5,
+                     'ytick.major.size': 2.5, 'pdf.fonttype': 42})
+t0 = time.time()
+def lg(s): print(f'[{time.time() - t0:6.0f}s] {s}', flush=True)
+
+
+def save(fig, name):
+    for ext in ('pdf', 'svg'): fig.savefig(f'{OUT}/{name}.{ext}', bbox_inches='tight')
+    fig.savefig(f'{OUT}/{name}.png', dpi=220, bbox_inches='tight'); plt.close(fig)
+    lg(f'-> {OUT}/{name}.(pdf|svg|png)')
+
+
+def letter(ax, s, dx=-0.02, dy=1.02):
+    ax.text(dx, dy, s, transform=ax.transAxes, fontsize=9, weight='bold', va='bottom', ha='right')
+
+
+def noaxis(ax):
+    ax.set_xticks([]); ax.set_yticks([]); [q.set_visible(False) for q in ax.spines.values()]
+
+
+def scalebar(ax, frac, lab, x=0.06, y=0.06, c='w'):
+    ax.plot([x, x + frac], [y, y], transform=ax.transAxes, color=c, lw=1.5, solid_capstyle='butt')
+    ax.text(x + frac / 2, y + 0.025, lab, transform=ax.transAxes, color=c, ha='center', va='bottom', fontsize=6)
+
+
+def zrgb(x, y, z, x0, y0, ext, sr, zr, blur=0.8, ext_y=None, pct=97, gamma=0.7):
+    n = int(round(ext / sr)); ny = int(round((ext if ext_y is None else ext_y) / sr))
+    ix = np.floor((x - x0) / sr).astype(np.int64); iy = np.floor((y - y0) / sr).astype(np.int64)
+    ok = (ix >= 0) & (ix < n) & (iy >= 0) & (iy < ny)
+    c = np.zeros((ny, n)); zs = np.zeros((ny, n))
+    np.add.at(c, (iy[ok], ix[ok]), 1); np.add.at(zs, (iy[ok], ix[ok]), z[ok])
+    return zrgb_img(c, zs, zr, blur, pct, gamma)
+
+
+def zrgb_img(c, zs, zr, blur=0.8, pct=97, gamma=0.7):
+    cs = gaussian_filter(c, blur); zz = gaussian_filter(zs, blur) / np.maximum(cs, 1e-9)
+    v = np.clip(cs / max(np.percentile(cs[cs > 0], pct), 1e-9), 0, 1) ** gamma if (cs > 0).any() else cs
+    return ZCMAP(np.clip((zz - zr[0]) / (zr[1] - zr[0]), 0, 1))[..., :3] * v[..., None]
+
+
+def dens(a, b, a0, a1, b0, b1, sr, blur=0.8, pct=99.7):
+    na, nb = int(round((a1 - a0) / sr)), int(round((b1 - b0) / sr))
+    ia = np.floor((a - a0) / sr).astype(np.int64); ib = np.floor((b - b0) / sr).astype(np.int64)
+    ok = (ia >= 0) & (ia < na) & (ib >= 0) & (ib < nb)
+    c = np.zeros((nb, na)); np.add.at(c, (ib[ok], ia[ok]), 1); c = gaussian_filter(c, blur)
+    return c / max(np.percentile(c[c > 0], pct), 1e-9) if (c > 0).any() else c
+
+
+def zcbar(fig, rect, zr, label='z (nm)'):
+    cax = fig.add_axes(rect)
+    cb = fig.colorbar(plt.cm.ScalarMappable(cmap=ZCMAP, norm=plt.Normalize(*zr)), cax=cax, orientation='horizontal')
+    cb.set_label(label, fontsize=6, labelpad=1); cb.ax.tick_params(labelsize=5.5, length=2, pad=1); cb.outline.set_linewidth(0.4)
+    return cb
+
+
+def inrect(x, y, r): return (x >= r[0]) & (x < r[1]) & (y >= r[2]) & (y < r[3])
+
+
+# =============================================================================================================== NPC
+def prep_npc(a):
+    import select_curve_npc as SN
+    ns = argparse.Namespace(cl=f'{P4}/classical/real/cl_NPC_wv_all.npz', net=f'{P4}/net/net_NPC_v10_all.npz')
+    M, info = SN.load(ns); lg(f"rows { {k: len(v['x']) for k, v in M.items()} }")
+    C = M['cl']; fb = (np.percentile(C['x'], 0.5), np.percentile(C['x'], 99.5), np.percentile(C['y'], 0.5), np.percentile(C['y'], 99.5))
+    M = {k: SN.sub(T, np.nonzero(inrect(T['x'], T['y'], fb))[0]) for k, T in M.items()}
+    P = SN.find_pores(M['cl']); lg(f'{len(P)} pores')
+    zptp = {}
+    for k, T in M.items():
+        d = SN.pore_zdrift(T, P); T['z'] = T['z'] - d[np.clip(T['frame'] // 6 // 500, 0, len(d) - 1)]; zptp[k] = float(np.ptp(d))
+    comb = SN.comb_sigma(M['net'], 'net'); o = np.argsort(np.where(np.isfinite(comb), comb, np.inf), kind='stable')
+    n_m = len(M['cl']['x']); matched = np.zeros(len(comb), bool); matched[o[:n_m]] = True
+    out = dict(P=P, fb=np.array(fb), net_matched=matched, net_sel=M['net']['sel'], net_comb=comb.astype(np.float32),
+               thr_matched=np.float64(comb[o[n_m - 1]]))
+    for k, T in M.items():
+        for q in ('x', 'y', 'z', 'N'): out[f'{k}_{q}'] = T[q].astype(np.float32)
+        out[f'{k}_frame'] = T['frame'].astype(np.int64)
+    os.makedirs(CACHE, exist_ok=True)
+    np.savez(f'{CACHE}/npc.npz', **out)
+    info.update(pore_zdrift_ptp_nm=zptp, n_matched=n_m, thr_matched_nm=float(out['thr_matched']), footprint_nm=list(fb), n_pores=int(len(P)))
+    json.dump(info, open(f'{CACHE}/npc_info.json', 'w'), indent=1, default=float)
+    lg(f'-> {CACHE}/npc.npz; info {info}')
+
+
+def fig_npc(a):
+    import select_curve_npc as SN
+    Z = np.load(f'{CACHE}/npc.npz'); info = json.load(open(f'{CACHE}/npc_info.json'))
+    T = {k: {q: Z[f'{k}_{q}'].astype(np.float64) if q != 'frame' else Z[f'{k}_{q}'] for q in ('x', 'y', 'z', 'N', 'frame')} for k in ('net', 'cl', 'clp')}
+    T['net_m'] = {q: v[Z['net_matched']] for q, v in T['net'].items()}
+    P = Z['P']; fb = Z['fb']
+    sel = Z['net_sel']
+    S = {q: v[sel] for q, v in T['net'].items()}                                # overview: validated-range rows
+    import pickle
+    pc = f'{CACHE}/npc_poremetrics.pkl'
+    if os.path.exists(pc) and os.path.getmtime(pc) > os.path.getmtime(f'{CACHE}/npc.npz'):
+        PM, V = pickle.load(open(pc, 'rb'))
+    else:
+        PM = {}; V = {}
+        for k in ('net', 'net_m', 'cl', 'clp'):
+            PM[k], V[k] = SN.pore_metrics(T[k], P); lg(f'{k}: {PM[k]}')
+        pickle.dump((PM, V), open(pc, 'wb'))
+    ref = json.load(open(f'{P4}/fig/NPC_selection_curves_v10.json'))
+    # ---- layout: 7.2 in wide, every axis inside [0, 1] (no bbox growth)
+    W, H = 7.2, 7.0; AR = W / H
+    fig = plt.figure(figsize=(W, H))
+    zr = (-150.0, 150.0); zmed = float(np.median(S['z']))
+    # (a) overview
+    ext_x, ext_y = fb[1] - fb[0], fb[3] - fb[2]
+    wa = 0.36; ha = wa * AR * ext_y / ext_x
+    axA = fig.add_axes([0.01, 0.966 - ha, wa, ha])
+    axA.imshow(zrgb(S['x'], S['y'], S['z'] - zmed, fb[0], fb[2], ext_x, 25.0, zr, 0.7, ext_y, pct=99), origin='upper'); noaxis(axA)
+    scalebar(axA, 5000 / ext_x, '5 µm')
+    # zoom: 0.9 um box around a pore near the centre of the pore cloud, with the most pores fully inside
+    cen = np.median(P[:, :2], 0); tr = cKDTree(P[:, :2]); s_ = 900.0
+    cand = P[tr.query_ball_point(cen, 2500.0)][:, :2]
+    best = max(cand, key=lambda c: (np.sum(np.all(np.abs(P[:, :2] - c) < s_ / 2 - 60, 1)), -np.hypot(*(c - cen))))
+    zb = (best[0] - s_ / 2, best[0] + s_ / 2, best[1] - s_ / 2, best[1] + s_ / 2)
+    axA.add_patch(plt.Rectangle(((zb[0] - fb[0]) / 25, (zb[2] - fb[2]) / 25), s_ / 25, s_ / 25, fill=False, ec='w', lw=0.6))
+    letter(axA, 'a', 0.0)
+    axA.set_title(f"4Pi-SIMCODE, {len(S['x']):,} localizations (38 files)", fontsize=7, pad=2)
+    zcbar(fig, [0.06, 0.966 - ha - 0.03, 0.2, 0.008], zr, 'z (nm), a')
+    # (b) zooms, coloured by z, same box
+    zlist = [('net', f"4Pi-SIMCODE, all kept\n{int(inrect(T['net']['x'], T['net']['y'], zb).sum()):,} locs"),
+             ('net_m', f"4Pi-SIMCODE, matched count\n{int(inrect(T['net_m']['x'], T['net_m']['y'], zb).sum()):,} locs"),
+             ('cl', f"classical, published-style\n{int(inrect(T['cl']['x'], T['cl']['y'], zb).sum()):,} locs")]
+    x0 = 0.395; wz = 0.195; hz = wz * AR
+    for i, (k, t) in enumerate(zlist):
+        ax = fig.add_axes([x0 + i * (wz + 0.007), 0.966 - hz, wz, hz])
+        ax.imshow(zrgb(T[k]['x'], T[k]['y'], T[k]['z'] - zmed, zb[0], zb[2], s_, 3.0, (-60, 60), 1.0, pct=99.5, gamma=0.8)); noaxis(ax)
+        ax.set_title(t, fontsize=6.5, pad=2)
+        if i == 0: scalebar(ax, 200 / s_, '200 nm'); letter(ax, 'b', 0.0)
+    zcbar(fig, [x0 + 0.02, 0.966 - hz - 0.03, 0.2, 0.008], (-60, 60), 'z (nm), b')
+    # (c) averaged pore x-y (network matched) + (d) x-z side views of 4 rows
+    rows = ['net', 'net_m', 'cl', 'clp']
+    ww = 0.168; hh = ww * AR; yb = 0.375; xs = [0.07, 0.07 + ww + 0.06]
+    xs += [xs[1] + i * (ww + 0.012) for i in range(1, 4)]
+    ax = fig.add_axes([xs[0], yb, ww, hh])
+    h = gaussian_filter(np.histogram2d(V['net_m']['dy'], V['net_m']['dx'], bins=np.arange(-100, 101, 2.5))[0], 0.7)
+    ax.imshow(h / np.percentile(h, 99.7), cmap='magma', vmin=0, vmax=1, extent=[-100, 100, 100, -100])
+    ax.set_xticks([-50, 0, 50]); ax.set_yticks([-50, 0, 50]); ax.tick_params(length=2, pad=1); ax.set_xlabel('x (nm)', labelpad=1); ax.set_ylabel('y (nm)', labelpad=1)
+    ax.set_title(f"averaged pore, x-y\n({info['n_pores']:,} pores; matched)", fontsize=6.5, pad=2)
+    letter(ax, 'c', -0.2)
+    axs = []
+    for i, k in enumerate(rows):
+        ax = fig.add_axes([xs[1 + i], yb, ww, hh])
+        s = np.abs(V[k]['dy']) < 30
+        h = gaussian_filter(np.histogram2d(V[k]['dz'][s], V[k]['dx'][s], bins=[np.arange(-100, 101, 2.5), np.arange(-100, 101, 2.5)])[0], 0.7)
+        ax.imshow(h[::-1] / np.percentile(h, 99.7), cmap='magma', vmin=0, vmax=1, extent=[-100, 100, -100, 100])
+        ax.set_xticks([-50, 0, 50]); ax.set_yticks([-50, 0, 50]); ax.tick_params(length=2, pad=1)
+        if i: ax.set_yticklabels([])
+        else: ax.set_ylabel('z (nm)', labelpad=1)
+        ax.set_xlabel('x (nm), |y| < 30 nm', labelpad=1)
+        ax.set_title(LAB[k].replace(', ', ',\n'), fontsize=6.5, pad=2, color=COL[k])
+        ax.text(0.04, 0.96, f"{PM[k]['locs_per_pore']:.0f} / pore", transform=ax.transAxes, color='w', fontsize=5.5, va='top')
+        axs.append(ax)
+    letter(axs[0], 'd', -0.2)
+    # (e) ring z histograms, (f) radial profile, (g) per-ring z sd vs number kept
+    yb2 = 0.06; h2 = 0.215; w2 = 0.255; xe = [0.07, 0.40, 0.735]
+    ax = fig.add_axes([xe[0], yb2, w2, h2])
+    for k in rows:
+        ring = (V[k]['r'] > 25) & (V[k]['r'] < 85)
+        hz_, ez = np.histogram(V[k]['dz'][ring], bins=np.arange(-100, 101, 2)); cz = 0.5 * (ez[1:] + ez[:-1])
+        hs = gaussian_filter(hz_.astype(float), 1.0); ax.plot(cz, hs / hs.max(), color=COL[k], lw=1.1 if k != 'net' else 0.8, ls='-' if k != 'net' else '--',
+                                                            label=f"{LAB[k]}: dip {PM[k]['z_dip']:.2f}, sd {PM[k]['ring_z_sd_nm']:.0f} nm")
+    ax.set_xlabel('z about the pore mean (nm), ring 25-85 nm', labelpad=1); ax.set_ylabel('norm. count', labelpad=1); ax.set_ylim(0, 1.5); ax.set_xlim(-100, 100)
+    ax.set_yticks([0, 0.5, 1]); ax.tick_params(length=2, pad=1)
+    ax.legend(loc='upper center', frameon=False, fontsize=5.0, handlelength=1.6, borderaxespad=0.0, labelspacing=0.15)
+    letter(ax, 'e', -0.12)
+    ax = fig.add_axes([xe[1], yb2, w2, h2])
+    for k in rows:
+        hr, er = np.histogram(V[k]['r'], bins=np.arange(0, 96, 2)); rc = 0.5 * (er[1:] + er[:-1]); hn = gaussian_filter(hr / (2 * np.pi * rc), 1.0)
+        ax.plot(rc, hn / hn.max(), color=COL[k], lw=1.1 if k != 'net' else 0.8, ls='-' if k != 'net' else '--',
+                label=f"{LAB[k]}: r {PM[k]['ring_radius_median_nm']:.1f}, w {PM[k]['radial_width_nm']:.1f} nm")
+    ax.set_xlabel('radius (nm)', labelpad=1); ax.set_ylabel('density (norm.)', labelpad=1); ax.set_ylim(0, 1.5); ax.set_xlim(0, 95)
+    ax.set_yticks([0, 0.5, 1]); ax.tick_params(length=2, pad=1)
+    ax.legend(loc='upper left', frameon=False, fontsize=5.0, handlelength=1.6, borderaxespad=0.0, labelspacing=0.15)
+    letter(ax, 'f', -0.12)
+    ax = fig.add_axes([xe[2], yb2, w2, h2])
+    Cv = ref['curves']
+    for k, sn, lab in (('net', 'combined sigma', '4Pi-SIMCODE'), ('cl', 'combined sigma', 'classical, published-style'), ('clp', 'combined sigma', 'classical, pixel MLE')):
+        c = Cv[k][sn]; ax.plot([r['n_keep'] / 1e6 for r in c], [r.get('ring_z_sd_nm', np.nan) for r in c], '-o', ms=2, lw=1.0, color=COL[k], label=lab)
+    ax.set_xscale('log'); ax.set_xlabel("localizations kept (millions; ranked by\neach method's own reported σ)", labelpad=1); ax.set_ylabel('per-ring z sd (nm)', labelpad=1)
+    ax.set_xticks([0.3, 1, 3]); ax.set_xticklabels(['0.3', '1', '3']); ax.xaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
+    ax.axvline(info['n_matched'] / 1e6, color='0.6', lw=0.6, ls=':'); ax.grid(alpha=0.25, lw=0.4)
+    ax.legend(loc='upper left', frameon=False, fontsize=5.0, handlelength=1.6, borderaxespad=0.0)
+    letter(ax, 'g', -0.12)
+    save(fig, 'si_4pi_npc')
+    # numbers
+    sc = json.load(open(f'{P4}/net/cmp_v10/compare_NPC_v10.json')) if os.path.exists(f'{P4}/net/cmp_v10/compare_NPC_v10.json') else None
+    val = dict(pore_metrics=PM, n_rows={k: int(len(T[k]['x'])) for k in T}, n_overview=int(len(S['x'])), zoom_box_nm=list(map(float, zb)), info=info,
+               reference_json=f'{P4}/fig/NPC_selection_curves_v10.json',
+               reference_operating_points={k: {q: v.get(q) for q in ('n_keep', 'locs_per_pore', 'ring_radius_median_nm', 'radial_width_nm', 'two_ring_sep_em2_nm',
+                                                                       'ring_z_sd_nm', 'z_dip', 'dafl', 'dafl_2_4k', 'fringe_hop', 'frc')}
+                                           for k, v in ref['operating_points'].items()})
+    json.dump(val, open(f'{OUT}/si_4pi_npc_values.json', 'w'), indent=1, default=float)
+    open(f'{OUT}/si_4pi_npc_caption.txt', 'w').write(caption_npc(val))
+
+
+def caption_npc(v):
+    PM = v['pore_metrics']; R = v['reference_operating_points']; I = v['info']
+    rn = R['network, all kept (good & N >= 1000)']; rm = R['network, matched count (combined sigma)']
+    rc = R['classical published-style']; rp = R['classical pixel MLE']
+    f = lambda k: (f"{PM[k]['locs_per_pore']:.0f} localizations per pore, ring radius {PM[k]['ring_radius_median_nm']:.1f} nm (median, 25-85 nm), "
+                   f"radial width {PM[k]['radial_width_nm']:.1f} nm, two-ring z separation {PM[k]['two_ring_sep_em2_nm']:.0f} nm, per-ring z sd {PM[k]['ring_z_sd_nm']:.1f} nm, "
+                   f"z dip {PM[k]['z_dip']:.2f}")
+    d = lambda r: f"{r['dafl'][0]:.2f} / {r['dafl'][1]:.2f} / {r['dafl'][2]:.2f} nm"
+    L = ['DRAFT CAPTION',
+         "4Pi-SIMCODE on the 4Pi-SIMFLUX nuclear pore complex data (Nup96, U-2 OS, DNA-PAINT with a Cy3B imager; data of the original 4Pi-SIMFLUX "
+         "publication, 38 files of 18 000 frames = 3000 six-frame windows each; 4 camera channels, 128 nm pixels). "
+         "(a) Overview of the nucleus, 4Pi-SIMCODE localizations in the validated range (>= 1000 photo-electrons per window, |z| <= 0.3 um), colour = z. "
+         "(b) Zoom (white box in a): 4Pi-SIMCODE all kept, 4Pi-SIMCODE at matched count (the localizations with the smallest reported combined "
+         f"precision sqrt(sx^2+sy^2+sz^2) <= {I['thr_matched_nm']:.2f} nm, as many as the classical pipeline keeps), and the classical 4Pi-SIMFLUX pipeline "
+         "(published-style). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
+         f"{I['n_pores']:,} pores found once on the classical table, the same centres for every method. (d) Side views (x-z, |y| < 30 nm) of the "
+         "averaged pore: 4Pi-SIMCODE all kept and at matched count, classical published-style and classical pixel MLE. (e) z histogram of the ring "
+         "(25 < r < 85 nm) about each pore's mean z: the two Nup96 rings. (f) Radial density. (g) Per-ring z spread versus the number of "
+         "localizations kept when each method's rows are ranked by its own reported combined precision (dotted line: the classical count).",
+         '',
+         'NUMBERS (si_4pi_npc_values.json; same recipe as out/4pi/fig/NPC_selection_curves_v10.json)',
+         f"4Pi-SIMCODE all kept: {f('net')}.",
+         f"4Pi-SIMCODE matched count: {f('net_m')}.",
+         f"classical published-style: {f('cl')}.",
+         f"classical pixel MLE: {f('clp')}.",
+         f"Localizations in the field (pores' footprint): 4Pi-SIMCODE all kept {v['n_rows']['net']:,}, matched {v['n_rows']['net_m']:,}, "
+         f"classical published-style {v['n_rows']['cl']:,}, pixel MLE {v['n_rows']['clp']:,}; overview rows (validated range) {v['n_overview']:,}.",
+         f"Adjacent-window precision (DAFL, x / y / z, all pairs): 4Pi-SIMCODE all kept {d(rn)}, matched {d(rm)}, published-style {d(rc)}, pixel MLE {d(rp)}. "
+         f"FRC (central 10 x 10 um): {rn['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} / {rp['frc']:.1f} nm. Fringe hops (adjacent windows, |dz| > 80 nm): "
+         f"{100 * rn['fringe_hop']:.1f} % / {100 * rm['fringe_hop']:.2f} % / {100 * rc['fringe_hop']:.1f} % / {100 * rp['fringe_hop']:.1f} %.",
+         f"Registration network -> classical on {I['registration']['n_matched']:,} matched emitters (same window, < 64 nm): "
+         f"{I['registration']['dx_median_nm']:.1f} / {I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed; "
+         f"fringe disagreement {100 * I['registration']['dz_fringe_disagree']:.1f} %.",
+         '',
+         'CONDITIONS',
+         "4Pi-SIMCODE: det4pi detector, emitter network v10 (learned read-out windows, 4 intensities per frame and channel), explicit 4Pi solve "
+         "(SIM pattern and 4Pi phase field estimated in situ per file, interference contrast scale 1.56), z from the interferometric phase with the fringe "
+         "chosen by the network's astigmatic z prior; rows good and >= 1000 e; lateral drift: own DME; sample z drift: own structure-based estimate. "
+         "Classical (out/4pi/classical/STATUS.md): wavelet detection on the registered 4-channel 6-frame sum (as the published code), Poisson MLE of the "
+         "24-image sum with the incoherent part of the bead-fitted 4Pi PSF (x, y, astigmatic z), then either the published two-step SIMFLUX lateral "
+         "solve + 4Pi z from Gaussian-weighted per-channel moments (phasor), unwrapped against the astigmatic z ('published-style'), or a pixel-wise "
+         "MLE of the 24 images with the coherent PSF, the estimated pattern and phase field ('pixel MLE'); pattern and phase field estimated per file; "
+         "the published rejections (keep / keep_pix); classical DME and structure-based z drift. Residual z drift from the fixed pores removed per table "
+         f"(ptp nm: {', '.join(f'{k} {x:.1f}' for k, x in I['pore_zdrift_ptp_nm'].items())}).",
+         'CODE: analysis/paper/si_4pi.py (prep_npc, npc); recipe imported from analysis/fourpi/select_curve_npc.py.']
+    return '\n'.join(L) + '\n'
+
+
+# ================================================================================================================ MT
+def prep_mt(a):
+    import showcase_real_mt as SR
+    ns = argparse.Namespace(cl=f'{P4}/classical/real/cl_MT_wv_all.npz', net_all=f'{P4}/net/net_MT_v10_all.npz', net_locs=None,
+                            head='v10', tag='si4pi', regions=f'{P4}/patches/regions_MT.json')
+    R, G, segs, info, files, src, ncl = SR.prepare(ns)
+    out = {}
+    for k in ('net', 'cl', 'clp'):
+        for q in ('x', 'y', 'z'): out[f'{k}_{q}'] = R[k][q].astype(np.float32)
+        out[f'{k}_frame'] = R[k]['frame'].astype(np.int64)
+    for q in ('sx', 'sy', 'sz', 'N'): out[f'net_{q}'] = R['net'][q].astype(np.float32)
+    # whole-field overview of the network table (its own drift-corrected xd, yd, zd), selection as showcase_real_mt.load_net
+    N = np.load(ns.net_all)
+    s = N['good'] & (N['N'] >= 1000) & (N['sz'] < 0.025) & (N['sx'] < 0.12) & (N['sy'] < 0.12) & np.isfinite(N['zd'])
+    x, y, z = N['xd'][s] * PX, N['yd'][s] * PX, N['zd'][s] * 1000
+    z = z - np.median(z); s2 = np.abs(z) <= 300; x, y, z = x[s2], y[s2], z[s2]
+    sr = 25.0; ex = [np.percentile(x, 0.05) - 500, np.percentile(x, 99.95) + 500, np.percentile(y, 0.05) - 500, np.percentile(y, 99.95) + 500]
+    bx = np.arange(ex[0], ex[1] + sr, sr); by = np.arange(ex[2], ex[3] + sr, sr)
+    c = np.histogram2d(y, x, bins=[by, bx])[0]; zs = np.histogram2d(y, x, bins=[by, bx], weights=z)[0]
+    out.update(ov_c=c.astype(np.float32), ov_zs=zs.astype(np.float32), ov_ext=np.array(ex), ov_sr=np.float64(sr), ov_n=np.int64(len(x)))
+    os.makedirs(CACHE, exist_ok=True); np.savez(f'{CACHE}/mt.npz', **out)
+    json.dump(dict(G=G, segs=segs, info=info, files=files, ncl=ncl, net_overview_rows=int(len(x)),
+                   net_overview_note='network table xd, yd, zd (own DME, own structure-based z drift), good & N >= 1000 & sigma cuts, |z - median| <= 300 nm'),
+              open(f'{CACHE}/mt_geom.json', 'w'), indent=1, default=float)
+    lg(f'-> {CACHE}/mt.npz')
+
+
+def fig_mt(a):
+    import showcase_real_mt as SR, fig_cl as FC
+    Z = np.load(f'{CACHE}/mt.npz'); J = json.load(open(f'{CACHE}/mt_geom.json')); G, segs, info = J['G'], J['segs'], J['info']
+    T = {k: {q: Z[f'{k}_{q}'].astype(np.float64) for q in ('x', 'y', 'z')} for k in ('net', 'cl', 'clp')}
+    for k in T: T[k]['frame'] = Z[f'{k}_frame']
+    for q in ('sx', 'sy', 'sz', 'N'): T['net'][q] = Z[f'net_{q}'].astype(np.float64)
+    cores = info['cores_nm']; inreg = lambda U: inrect(U['x'], U['y'], cores[0]) | inrect(U['x'], U['y'], cores[1])
+    comb = np.sqrt((T['net']['sx'] * PX) ** 2 + (T['net']['sy'] * PX) ** 2 + (T['net']['sz'] * 1000) ** 2)
+    n_m = int(inreg(T['cl']).sum()); o = np.sort(comb[inreg(T['net'])]); thr = float(o[n_m - 1])
+    T['net_m'] = {q: v[comb <= thr] for q, v in T['net'].items()}
+    lg(f'matched count {n_m}, threshold {thr:.3f} nm (status: 5.03)')
+    W = 7.2; H = 6.4; AR = W / H
+    fig = plt.figure(figsize=(W, H))
+    core = G['core']; zr = G['zr_nm']; zc = 0.5 * (zr[0] + zr[1]); zh = 0.5 * (zr[1] - zr[0])
+    top = 0.965
+    # (a) whole-cell overview
+    c, zs, ex, sr = Z['ov_c'], Z['ov_zs'], Z['ov_ext'], float(Z['ov_sr'])
+    ny, nx = c.shape
+    wa = 0.32; ha = wa * AR * ny / nx
+    axA = fig.add_axes([0.01, top - ha, wa, ha])
+    axA.imshow(zrgb_img(c.astype(float), zs.astype(float), (-200, 200), 0.8, 98.5, 0.6), origin='lower'); noaxis(axA)
+    axA.add_patch(plt.Rectangle(((core[0] - ex[0]) / sr, (core[2] - ex[2]) / sr), (core[1] - core[0]) / sr, (core[3] - core[2]) / sr, fill=False, ec='w', lw=0.6))
+    scalebar(axA, 5000 / (nx * sr), '5 µm')
+    axA.set_title(f"4Pi-SIMCODE, {int(Z['ov_n']):,} localizations (100 files)", fontsize=6.5, pad=2); letter(axA, 'a', 0.0)
+    zcbar(fig, [0.06, top - ha - 0.035, 0.2, 0.008], (-200, 200), 'z (nm), a')
+    # (b) box-0 region, network all kept; zoom boxes
+    ext, exty = core[1] - core[0], core[3] - core[2]
+    wb = 0.29; hb = wb * AR * exty / ext
+    axB = fig.add_axes([0.355, top - hb, wb, hb])
+    axB.imshow(zrgb(T['net']['x'], T['net']['y'], T['net']['z'] - zc, core[0], core[2], ext, 10.0, (-zh, zh), 0.8, exty)); noaxis(axB)
+    zooms = [(G['zoom1']['c'], G['zoom1']['size']), (G['zoom2']['c'], G['zoom2']['size'])]
+    for j, (cc, s) in enumerate(zooms):
+        axB.add_patch(plt.Rectangle(((cc[0] - s / 2 - core[0]) / 10, (cc[1] - s / 2 - core[2]) / 10), s / 10, s / 10, fill=False, ec='w', lw=0.6))
+        axB.text((cc[0] - s / 2 - core[0]) / 10 + 3, (cc[1] - s / 2 - core[2]) / 10 + 3, str(j + 1), color='w', fontsize=6, va='top')
+    scalebar(axB, 1000 / ext, '1 µm'); axB.set_title('4Pi-SIMCODE, all kept (box in a)', fontsize=6.5, pad=2); letter(axB, 'b', 0.0)
+    zcbar(fig, [0.40, top - hb - 0.035, 0.2, 0.008], (-zh, zh), 'z (nm), b-d')
+    # (c) zoom 1 (crossing), (d) zoom 2: network all kept | classical published-style
+    wc = 0.155; hc = wc * AR; xc = [0.67, 0.67 + wc + 0.01]
+    for r, (cc, s) in enumerate(zooms):
+        y0 = top - hc - r * (hc + 0.05)
+        for i, k in enumerate(('net', 'cl')):
+            ax = fig.add_axes([xc[i], y0, wc, hc])
+            ax.imshow(zrgb(T[k]['x'], T[k]['y'], T[k]['z'] - zc, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, (-zh, zh), 1.0)); noaxis(ax)
+            n = int(inrect(T[k]['x'], T[k]['y'], (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
+            ax.set_title(f"{'4Pi-SIMCODE' if k == 'net' else 'classical'}, zoom {r + 1}\n{n:,} locs", fontsize=6.3, pad=2, color=COL[k])
+            if r == 1:
+                sec = G['section']
+                for v in (sec['a0'], sec['a1']):
+                    q = (v - (cc[1] if sec['along'] == 'x' else cc[0]) + s / 2) / 4.0
+                    (ax.axhline if sec['along'] == 'x' else ax.axvline)(q, color='w', lw=0.5, ls=':')
+            if i == 0: scalebar(ax, 200 / s, '200 nm'); letter(ax, 'cd'[r], 0.0)
+    # (e) section through zoom 2: three methods
+    sec = G['section']; cc, s = zooms[1]
+    ye = 0.40; he = 0.105; we = 0.29; xe = [0.075, 0.39, 0.705]
+    for i, k in enumerate(('net', 'cl', 'clp')):
+        U = T[k]
+        if sec['along'] == 'x': m = (U['y'] >= sec['a0']) & (U['y'] < sec['a1']); al = U['x'][m] - (cc[0] - s / 2)
+        else: m = (U['x'] >= sec['a0']) & (U['x'] < sec['a1']); al = U['y'][m] - (cc[1] - s / 2)
+        ax = fig.add_axes([xe[i], ye, we, he])
+        im = dens(al, U['z'][m] - zc, 0, s, -zh, zh, 6.0, 1.0)
+        ax.imshow(im[::-1], cmap='Greys_r', extent=(0, s / 1000, -zh, zh), aspect='auto', vmin=0, vmax=1)
+        ax.set_yticks([-100, 0, 100]); ax.tick_params(length=2, pad=1); ax.set_xticks([0, 0.5, 1.0])
+        ax.set_xlabel(f"{sec['along']} along zoom 2 (µm)", labelpad=1)
+        if i == 0: ax.set_ylabel('z (nm)', labelpad=1); letter(ax, 'e', -0.04)
+        else: ax.set_yticklabels([])
+        ax.set_title(f"{LAB[k]} ({int(m.sum()):,} locs)", fontsize=6.3, pad=2, color=COL[k])
+    # (f) tube cross-sections + (g) profiles
+    yf = 0.07; wf = 0.14; hf = wf * AR
+    prof = {}
+    for i, k in enumerate(('net', 'net_m', 'cl', 'clp')):
+        u, v, nseg = SR.cross_section(T[k], segs)
+        ax = fig.add_axes([0.075 + i * (wf + 0.012), yf, wf, hf])
+        ax.imshow(dens(u, v, -70, 70, -70, 70, 2.0, 1.0)[::-1], cmap='Greys_r', extent=(-70, 70, -70, 70), vmin=0, vmax=1)
+        ax.set_xticks([-50, 0, 50]); ax.set_yticks([-50, 0, 50]); ax.tick_params(length=2, pad=1)
+        ax.set_xlabel('across tube (nm)', labelpad=1)
+        if i == 0: ax.set_ylabel('axial (nm)', labelpad=1); letter(ax, 'f', -0.12)
+        else: ax.set_yticklabels([])
+        ax.set_title(LAB[k].replace(', ', ',\n'), fontsize=6.3, pad=2, color=COL[k])
+        lat = u[np.abs(v) < 60]; axl = v[np.abs(u) < 40]
+        prof[k] = dict(lat=lat, ax=axl, n=int(len(u)), nseg=nseg, fwhm_lat=FC.fwhm(lat, -150, 150, 2.0), fwhm_ax=FC.fwhm(axl, -150, 150, 2.0),
+                       lat_peaks=SR.peaks(lat), ax_peaks=SR.peaks(axl))
+        ax.text(0.04, 0.96, f"{len(u):,}", transform=ax.transAxes, color='w', fontsize=5.5, va='top')
+    b = np.arange(-80, 80.1, 2.0); cb_ = 0.5 * (b[1:] + b[:-1])
+    xg = 0.075 + 4 * (wf + 0.012) + 0.045
+    for j, (key, ttl) in enumerate((('lat', 'lateral profile'), ('ax', 'axial profile'))):
+        ax = fig.add_axes([xg + j * 0.14, yf, 0.125, hf])
+        for k in ('net', 'net_m', 'cl', 'clp'):
+            hh = gaussian_filter(np.histogram(prof[k][key], b)[0].astype(float), 1.0)
+            fw = prof[k]['fwhm_lat' if key == 'lat' else 'fwhm_ax']
+            ax.plot(cb_, hh / hh.max(), color=COL[k], lw=1.0 if k != 'net' else 0.8, ls='--' if k == 'net' else '-', label=f'{fw:.0f} nm')
+        ax.set_xlim(-80, 80); ax.set_ylim(0, 1.45); ax.set_yticks([0, 0.5, 1]); ax.set_xticks([-50, 0, 50])
+        ax.set_xlabel('offset (nm)', labelpad=1); ax.tick_params(length=2, pad=1)
+        ax.set_title(ttl, fontsize=6.3, pad=2); ax.grid(alpha=0.25, lw=0.4)
+        ax.legend(title='FWHM', title_fontsize=5.0, loc='upper right', frameon=False, fontsize=5.0, handlelength=1.3, borderaxespad=0.0, labelspacing=0.1)
+        if j == 0: ax.set_ylabel('norm. count', labelpad=1); letter(ax, 'g', -0.2)
+        else: ax.set_yticklabels([])
+    save(fig, 'si_4pi_mt')
+    ref = json.load(open(f'{P4}/fig/MT_selection_curves_v10_full.json'))
+    val = dict(threshold_matched_nm=thr, n_matched=n_m, G={k: G[k] for k in ('box', 'core', 'zoom1', 'zoom2', 'section', 'n_segments', 'zr_nm')},
+               profiles={k: {q: v for q, v in p.items() if q not in ('lat', 'ax')} for k, p in prof.items()},
+               n_overview=int(Z['ov_n']), n_rows_region={k: int(inreg(T[k]).sum()) for k in T}, info=info,
+               reference_json=f'{P4}/fig/MT_selection_curves_v10_full.json',
+               reference_operating_points={k: {q: r.get(q) for q in ('n_keep', 'fwhm_lat', 'fwhm_ax', 'dip', 'dafl', 'dafl_2_4k', 'fringe_hop', 'frc')}
+                                           for k, r in ref['operating_points'].items()})
+    json.dump(val, open(f'{OUT}/si_4pi_mt_values.json', 'w'), indent=1, default=float)
+    open(f'{OUT}/si_4pi_mt_caption.txt', 'w').write(caption_mt(val))
+
+
+def caption_mt(v):
+    P = v['profiles']; R = v['reference_operating_points']; G = v['G']; I = v['info']
+    p = lambda k: (f"{P[k]['fwhm_lat']:.0f} / {P[k]['fwhm_ax']:.0f} nm, lateral dip {P[k]['lat_peaks']['dip']:.2f}"
+                   + (f" (two peaks {P[k]['lat_peaks']['sep_nm']:.0f} nm apart)" if P[k]['lat_peaks']['resolved'] else ''))
+    d = lambda r: f"{r['dafl'][0]:.2f} / {r['dafl'][1]:.2f} / {r['dafl'][2]:.2f}"
+    ra, rm = R['all'], R['matched count']; rc, rp = R['classical published (same files)'], R['classical pixel MLE (same files)']
+    L = ['DRAFT CAPTION',
+         "4Pi-SIMCODE on the 4Pi-SIMFLUX microtubule data (COS-7, DNA-PAINT with a Cy3B imager; data of the original 4Pi-SIMFLUX publication, 100 files "
+         "of 18 000 frames). (a) The whole field, 4Pi-SIMCODE localizations coloured by z. (b) The 6 x 6 um region of box 0 (white box in a), "
+         "4Pi-SIMCODE, all kept. (c) Zoom 1, a crossing of two microtubules "
+         f"{G['zoom1']['dz_nm']:.0f} nm apart in z: 4Pi-SIMCODE (left) and the classical 4Pi-SIMFLUX pipeline, published-style (right). "
+         f"(d) Zoom 2, microtubules overlapping in x-y at different heights; dotted: the {int(G['section']['a1'] - G['section']['a0'])} nm strip of e. "
+         f"(e) {G['section']['along']}-z sections through zoom 2: 4Pi-SIMCODE, classical published-style, classical pixel MLE. (f) Tube cross-section "
+         f"pooled over {P['net']['nseg']} isolated straight segments in boxes 0 and 1 (in-plane offset across the tube x axial offset, each segment's own centre "
+         f"line): 4Pi-SIMCODE all kept and at matched count (reported combined precision <= {v['threshold_matched_nm']:.2f} nm, as many localizations "
+         f"in boxes 0 and 1 as the classical published-style pipeline, {v['n_matched']:,}), classical published-style and pixel MLE. (g) Lateral and "
+         "axial profiles of f with their FWHM (dashed: 4Pi-SIMCODE all kept). Regions, zooms, section strip and segments are chosen automatically on "
+         "the classical published-style table, so they do not favour the network.",
+         '',
+         'NUMBERS (si_4pi_mt_values.json; reference out/4pi/fig/MT_selection_curves_v10_full.json)',
+         f"Tube FWHM lateral / axial: 4Pi-SIMCODE all kept {p('net')}; matched count {p('net_m')}; classical published-style {p('cl')}; pixel MLE {p('clp')}.",
+         f"Localizations in boxes 0 + 1: 4Pi-SIMCODE all kept {v['n_rows_region']['net']:,}, matched {v['n_rows_region']['net_m']:,}, "
+         f"published-style {v['n_rows_region']['cl']:,}, pixel MLE {v['n_rows_region']['clp']:,}; whole field (a) {v['n_overview']:,}.",
+         f"Adjacent-window precision (DAFL x / y / z nm, boxes 0 + 1): 4Pi-SIMCODE all kept {d(ra)}, matched {d(rm)}; published-style {d(rc)}; pixel MLE {d(rp)}. "
+         f"Fringe hops: {100 * ra['fringe_hop']:.1f} / {100 * rm['fringe_hop']:.1f} / {100 * rc['fringe_hop']:.1f} / {100 * rp['fringe_hop']:.1f} %. "
+         f"FRC (box 0): {ra['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} / {rp['frc']:.1f} nm.",
+         f"Registration network -> classical on {I['registration']['n_matched']:,} matched emitters: {I['registration']['dx_median_nm']:.1f} / "
+         f"{I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed. Sample z drift {I['zdrift_ptp_nm']:.0f} nm ptp "
+         "(structure-based, classical published-style table), the same curve subtracted from every row.",
+         '',
+         'CONDITIONS',
+         "4Pi-SIMCODE: det4pi detector, emitter network v10, explicit 4Pi solve with the in-situ SIM pattern and 4Pi phase field per file; rows good, "
+         ">= 1000 e, sigma_z < 25 nm, sigma_x, sigma_y < 0.12 px, |z - median| <= 300 nm; lateral drift: own DME. Classical: published-style (keep) and "
+         "pixel MLE (keep_pix, computed in boxes 0 and 1 only). Panels b-g: classical rows and the network share the classical z-drift curve and are "
+         "registered on matched emitters; panel a uses the network table's own drift and z drift.",
+         'CODE: analysis/paper/si_4pi.py (prep_mt, mt); recipe imported from analysis/fourpi/showcase_real_mt.py.']
+    return '\n'.join(L) + '\n'
+
+
+# =============================================================================================================== sim
+SW = f'{P4}/sweep4pi'
+NM = 128.0; LO, HI = 8 * NM, 52 * NM
+DENS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
+SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
+BEST = dict(mtc_d01='net_sig0', mtc_d03='net_sig0', mtc_d05='net_sig1', mtc_d075='net_sig1', mtc_d15='net_sig1')   # sweep STATUS.md
+SELTXT = dict(net_sig0='σxy < 7, σz < 16 nm', net_sig1='σxy < 5, σz < 12 nm')
+ZOOM1 = ((3945.0, 3785.0), 1200.0)                       # sweep4pi_fig.ZOOMS[0]: crossing, dz 256 nm
+ZOOM2 = ((4800.0, 2330.0), 1200.0)                       # 4-5 tubes
+
+
+def fig_sim(a):
+    Es = {t: json.load(open(f'{SW}/{t}/eval.json')) for t in DENS}
+    gt = np.load(f'{P4}/simmovie/{SHOW[0]}/gt_sites.npz')['sites']; gx, gy, gz = gt[:, 0] * NM, gt[:, 1] * NM, gt[:, 2] * 1000
+    W, H = 7.2, 7.6
+    fig = plt.figure(figsize=(W, H))
+    ncol = 1 + len(SHOW); gap = 0.006; x0 = 0.075; wcol = (1 - x0 - 0.005 - gap * (ncol - 1)) / ncol; hcol = wcol * W / H
+    ext = HI - LO; zr = (-200, 200)
+    rows = [('ov', 'x-y, colour = z'), ('z2net', 'zoom 2'), ('z2cl', 'zoom 2'), ('sec', 'x-z')]
+    ytop = 0.975
+    yrow = [ytop - hcol, ytop - 2 * hcol - 0.012, ytop - 3 * hcol - 0.024]
+    hsec = hcol * 0.62; yrow.append(yrow[2] - 0.022 - hsec)
+    def L(t, nm): return np.load(f'{SW}/{t}/locs_{nm}.npz')
+    for j in range(ncol):
+        xl = x0 + j * (wcol + gap)
+        if j == 0:
+            data = {'net': (gx, gy, gz), 'cl': None}; ttl = f'ground truth\n{len(gx):,} labelling sites'
+        else:
+            t = SHOW[j - 1]; E = Es[t]; Ln = L(t, BEST[t]); Lc = L(t, 'cl_pub')
+            data = {'net': (Ln['x'], Ln['y'], Ln['z']), 'cl': (Lc['x'], Lc['y'], Lc['z'])}
+            ttl = f"{E['dens_fov']:.2f} ON /µm²/frame\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
+                else f"{E['dens_fov']:.2f} ON /µm²/frame"
+        x, y, z = data['net']
+        ax = fig.add_axes([xl, yrow[0], wcol, hcol]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
+        for (cc, s), lab in ((ZOOM1, '1'), (ZOOM2, '2')):
+            ax.add_patch(plt.Rectangle(((cc[0] - s / 2 - LO) / 8, (cc[1] - s / 2 - LO) / 8), s / 8, s / 8, fill=False, ec='w', lw=0.5))
+            ax.text((cc[0] + s / 2 - LO) / 8 + 2, (cc[1] - s / 2 - LO) / 8, lab, color='w', fontsize=5.5, va='top')
+        if j == 0: scalebar(ax, 1000 / ext, '1 µm'); letter(ax, 'a', -0.02)
+        if j > 0:
+            r = Es[t]['methods'][BEST[t]]
+            ax.text(0.97, 0.03, f"{len(x):,} locs\n{SELTXT[BEST[t]]}", transform=ax.transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
+        cc, s = ZOOM2
+        ax = fig.add_axes([xl, yrow[1], wcol, hcol]); ax.imshow(zrgb(x, y, z, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0)); noaxis(ax)
+        ax.axhline((s / 2 - 100) / 4, color='w', lw=0.4, ls=':'); ax.axhline((s / 2 + 100) / 4, color='w', lw=0.4, ls=':')
+        if j == 0: scalebar(ax, 200 / s, '200 nm'); letter(ax, 'b', -0.02)
+        ax = fig.add_axes([xl, yrow[2], wcol, hcol])
+        if data['cl'] is not None:
+            xc, yc, zc_ = data['cl']; ax.imshow(zrgb(xc, yc, zc_, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0))
+            ax.text(0.97, 0.03, f"{int(inrect(xc, yc, (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum()):,}", transform=ax.transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
+        else:
+            ax.set_visible(False)
+        noaxis(ax)
+        if j == 0: fig.text(x0 - 0.02 * wcol, yrow[2] + hcol * 1.02, 'c', fontsize=9, weight='bold', va='bottom', ha='right')
+        if j > 0:
+            n_ = int(inrect(x, y, (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
+            fig.axes[-2].text(0.97, 0.03, f"{n_:,}", transform=fig.axes[-2].transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
+        # x-z section through zoom 1 (crossing, dz 256 nm) + zoom 2, 200 nm y-strip, network
+        ax = fig.add_axes([xl, yrow[3], wcol, hsec])
+        cc, s = ZOOM2
+        m = np.abs(y - cc[1]) < 100
+        im = dens(x[m], z[m], cc[0] - s / 2, cc[0] + s / 2, -350, 350, 5.0, 1.0, 99.5)
+        ax.imshow(im[::-1], cmap='Greys_r', extent=(-s / 2, s / 2, -350, 350), vmin=0, vmax=1, aspect='auto')
+        ax.set_yticks([-200, 0, 200]); ax.set_xticks([-500, 0, 500]); ax.tick_params(length=2, pad=1)
+        ax.set_xlabel('x (nm)', labelpad=1)
+        if j == 0: ax.set_ylabel('z (nm)', labelpad=0); letter(ax, 'd', -0.02)
+        else: ax.set_yticklabels([])
+    # row labels
+    for yy, hh, t in ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, '4Pi-SIMCODE\nzoom 2'), (yrow[2], hcol, 'classical,\npublished-style\nzoom 2'), (yrow[3], hsec, '4Pi-SIMCODE\nx-z')):
+        fig.text(0.008 if hh != hsec else 0.0, yy + hh / 2, t, rotation=90, ha='center', va='center', fontsize=6.5)
+    zcbar(fig, [x0 + 0.01, yrow[3] - 0.062, 0.17, 0.007], zr, 'z (nm)')
+    # summary panels
+    ys = 0.05; hs = 0.15; ws = 0.19
+    cm = plt.get_cmap('viridis')
+    cols = {t: cm(i / (len(DENS) - 1)) for i, t in enumerate(DENS)}
+    for i, (key, ttl) in enumerate((('ttf_last_xy', 'GT-FRC x-y (nm)'), ('ttf_last_xz', 'GT-FRC x-z sections (nm)'))):
+        ax = fig.add_axes([0.075 + i * 0.255, ys, ws, hs])
+        for t in DENS:
+            E = Es[t]; g = np.array(E['ttf_grid']) * 6e-3
+            ax.plot(g, E['methods'][BEST[t]][key], color=cols[t], lw=1.2, marker='o', ms=1.6, label=f"{E['dens_fov']:.2f}")
+            if key in E['methods']['cl_pub']: ax.plot(g, E['methods']['cl_pub'][key], color=cols[t], lw=0.8, ls=':')
+        ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(15, 250); ax.set_yticks([20, 30, 50, 100, 200]); ax.set_yticklabels(['20', '30', '50', '100', '200'])
+        ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.grid(alpha=0.25, lw=0.4, which='both')
+        ax.axhline(25 if 'xy' in key else 35, color='0.4', lw=0.6, ls='--')
+        ax.set_xlabel('acquisition time (s, 6 ms frames)', labelpad=1); ax.set_ylabel(ttl, labelpad=1); ax.tick_params(length=2, pad=1)
+        if i == 0:
+            h_, l_ = ax.get_legend_handles_labels()
+            fig.legend(h_, [f'{q} ON /µm²/frame' for q in l_], frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.30, ys + hs + 0.025),
+                       ncol=3, handlelength=1.6, columnspacing=1.0, labelspacing=0.2)
+            letter(ax, 'e', -0.15)
+        else: ax.text(0.03, 0.03, 'solid: 4Pi-SIMCODE; dotted: classical', transform=ax.transAxes, fontsize=5.5)
+    ax = fig.add_axes([0.075 + 2 * 0.255 + 0.03, ys, 0.215, hs])
+    D = np.array([Es[t]['dens_fov'] for t in DENS])
+    def g(t, nm, k):
+        r = Es[t]['methods'][nm]
+        return dict(recall=r['recall'], fp=r['ghost_fixed']['ghost_fraction'], wf=r['wrong_fringe'])[k]
+    for k, ls, lab in (('recall', '-', 'recall'), ('fp', '--', 'false positives'), ('wf', ':', 'wrong fringe')):
+        ax.plot(D, [g(t, BEST[t], k) for t in DENS], ls, color=COL['net'], marker='o', ms=2, lw=1.1)
+        ax.plot(D, [g(t, 'cl_pub', k) for t in DENS], ls, color=COL['cl'], marker='s', ms=2, lw=1.1)
+    ax.set_xscale('log'); ax.set_xticks(D); ax.set_xticklabels([f'{v:.2g}' for v in D]); ax.xaxis.set_minor_formatter(plt.NullFormatter())
+    ax.set_xlabel('ON emitters / µm² / frame', labelpad=1); ax.set_ylabel('fraction', labelpad=1); ax.set_ylim(0, 0.75); ax.grid(alpha=0.25, lw=0.4); ax.tick_params(length=2, pad=1)
+    from matplotlib.lines import Line2D
+    hl = [Line2D([], [], color=COL['net'], lw=1.1, label='4Pi-SIMCODE'), Line2D([], [], color=COL['cl'], lw=1.1, label='classical'),
+          Line2D([], [], color='k', ls='-', lw=0.9, label='recall'), Line2D([], [], color='k', ls='--', lw=0.9, label='false positives'),
+          Line2D([], [], color='k', ls=':', lw=0.9, label='wrong fringe')]
+    ax.legend(handles=hl, frameon=False, fontsize=5.3, loc='upper right', handlelength=1.8, labelspacing=0.15)
+    letter(ax, 'f', -0.15)
+    save(fig, 'si_4pi_sim')
+    val = {}
+    for t in DENS:
+        E = Es[t]; val[t] = dict(dens_fov=E['dens_fov'], dens_region=E['dens_region'], T=E['T'], crowd=E.get('crowd_frame_mean'))
+        for nm in (BEST[t], 'net_base', 'net_chi16', 'cl_pub', 'net_bound_base'):
+            if nm not in E['methods']: continue
+            r = E['methods'][nm]
+            val[t][nm] = dict(n_locs=r['n_locs'], recall=r['recall'], precision=r['precision'], false_pos_fixed_gate=r['ghost_fixed']['ghost_fraction'],
+                              wrong_fringe=r['wrong_fringe'], lat_rob=r['lat_rob'], ax_rob=r['ax_rob'], gtfrc_last_xy=r['gtfrc_last_xy'], gtfrc_last_xz=r['gtfrc_last_xz'],
+                              frames_to_xy25=(r.get('frames_to_last_xy') or {}).get('25'), frames_to_xz35=(r.get('frames_to_last_xz') or {}).get('35'),
+                              coverage_excess_cv=r.get('coverage', {}).get('excess_cv'), dip_lat=r.get('tube', {}).get('dip_lat'), dip_ax=r.get('tube', {}).get('dip_ax'))
+    json.dump(dict(best=BEST, per_density=val), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
+    open(f'{OUT}/si_4pi_sim_caption.txt', 'w').write(caption_sim(val))
+
+
+def caption_sim(V):
+    fmt = lambda x, n=0: '-' if x is None else (f'{x:.{n}f}' if np.isfinite(x) else '-')
+    L = ['DRAFT CAPTION',
+         "4Pi-SIMCODE versus the classical 4Pi-SIMFLUX pipeline on simulated 4Pi-SIMFLUX movies of a microtubule cell field at increasing labelling "
+         "density. Structure: the 'Microtubules (cells)' world model of webSMLM / inSiliScope (flat lamella below the nucleus, 59 microtubules, labels "
+         "24.6 nm from the tube axis, 70 % labelling, heights 0-300 nm, focus at 150 nm). Movies: 30 000 frames (6 ms, 5000 six-frame windows), "
+         "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
+         "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
+         "SIM pattern and the 4Pi phase field in situ. "
+         "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with the best selection per density, see below). "
+         "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and classical published-style (c); numbers = localizations "
+         "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution (last 1/7 crossing) in x-y and in "
+         "x-z sections versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: classical; dashed: the 25 / 35 nm fidelity targets). "
+         "(f) Recall of the ground-truth emitter-windows (>= 300 e), false positives (localizations with no labelling site within 30 / 30 / 75 nm in "
+         "x / y / z) and the wrong-fringe fraction (matched localizations with |dz| > 100 nm, i.e. one 4Pi fringe period off) versus density.",
+         '',
+         'NUMBERS per density (si_4pi_sim_values.json; full table out/fourpi_sim/sweep/tables.md)']
+    for t, v in V.items():
+        b = BEST[t]; n, c = v[b], v['cl_pub']
+        L.append(f"{v['dens_fov']:.2f} ON /um^2/frame ({v['dens_region']:.2f} in the evaluation region): 4Pi-SIMCODE ({SELTXT[b]}) {n['n_locs']:,} locs, recall {n['recall']:.2f}, "
+                 f"false positives {100 * n['false_pos_fixed_gate']:.1f} %, wrong fringe {100 * n['wrong_fringe']:.1f} %, robust error lateral / axial "
+                 f"{n['lat_rob']:.1f} / {n['ax_rob']:.1f} nm, GT-FRC x-y / x-z {n['gtfrc_last_xy']:.0f} / {n['gtfrc_last_xz']:.0f} nm, frames to x-y 25 nm "
+                 f"{fmt(n['frames_to_xy25'])}, to x-z 35 nm {fmt(n['frames_to_xz35'])}, coverage excess CV {n['coverage_excess_cv']:.2f}; "
+                 f"classical {c['n_locs']:,} locs, recall {c['recall']:.2f}, false positives {100 * c['false_pos_fixed_gate']:.1f} %, wrong fringe "
+                 f"{100 * c['wrong_fringe']:.1f} %, {c['lat_rob']:.1f} / {c['ax_rob']:.1f} nm, GT-FRC {c['gtfrc_last_xy']:.0f} / {c['gtfrc_last_xz']:.0f} nm.")
+        if 'net_bound_base' in v:
+            q = v['net_bound_base']
+            L.append(f"   bound at this density (4Pi-SIMCODE with the TRUE pattern + 4Pi phase field, no selection): GT-FRC x-y / x-z {q['gtfrc_last_xy']:.0f} / "
+                     f"{q['gtfrc_last_xz']:.0f} nm, wrong fringe {100 * q['wrong_fringe']:.1f} %.")
+    L += ['',
+          'READING: the classical pipeline keeps 22 % / 7 % / 3 % / 1 % / 0 % of the ground-truth units at 0.11 / 0.33 / 0.55 / 0.82 / 1.64 and never reaches '
+          '25 nm (x-y) and 35 nm (x-z) within 30 000 frames; 4Pi-SIMCODE reaches both after 10 000 frames (60 s) at 0.33 ON /um^2/frame, 2.7x faster '
+          'than at the real-data density (0.11). Above ~0.5 the wrong-fringe fraction (neighbours along the tube bias the astigmatic prior that '
+          'picks the 4Pi fringe) and the holes made by stricter selection prevent a faithful 3D image (out/fourpi_sim/sweep/STATUS.md). The x-z plateau '
+          '(~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
+          'CONDITIONS: detector det4pi, emitter network v10 (trained with <= 3 neighbours within 7 px: out of distribution at >= 0.82), explicit solve with '
+          'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); selection per density chosen in the sweep (sigma cut; the chi2 '
+          'selection is never the best). Classical: sim_cl.py published-style with its rejections. One structure realisation, one movie per density.',
+          'CODE: analysis/paper/si_4pi.py (sim); data analysis/fourpi_sim/sweep4pi_{movie,run,eval}.py.']
+    return '\n'.join(L) + '\n'
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
+    ap.add_argument('what', choices=['prep_npc', 'prep_mt', 'npc', 'mt', 'sim'])
+    a = ap.parse_args()
+    os.makedirs(OUT, exist_ok=True)
+    dict(prep_npc=prep_npc, prep_mt=prep_mt, npc=fig_npc, mt=fig_mt, sim=fig_sim)[a.what](a)
