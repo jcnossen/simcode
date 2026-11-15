@@ -12,7 +12,7 @@ while [ $ok -lt 10 ]; do
 done
 echo "$(date) GPU $G free, starting dec_m25v3" >> $L/run_m25.log
 export CUDA_VISIBLE_DEVICES=$G TQDM_DISABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-nohup python -u analysis/baselines/decode/train_v3.py --preset m25 --name dec_m25v3 --snap_every 5 > $L/train_dec_m25v3.log 2>&1 &
+nohup python -u analysis/baselines/decode/train_v3.py --preset m25 --name dec_m25v3 --snap_every 5 --warmup 512 > $L/train_dec_m25v3.log 2>&1 &
 sleep 120
 nohup python -u analysis/decode_checks/v3/eval_watch.py --names dec_m25v3 --iso ~/simcode2/out/decode_checks/v3/iso_m25 --dens '' \
   --real 2.5nM_2,20nM_2 --tag dec_m25v3 --poll 600 > $L/eval_dec_m25v3.log 2>&1 &
