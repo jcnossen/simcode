@@ -176,6 +176,13 @@ REMOVED_WORDS = dict(
     v2='SIMCODE: a calibrated uncertainty above 12 nm')
 
 
+def removed_words(k, v2s=12.0):
+    if k == 'v2':
+        return ('SIMCODE: a calibrated uncertainty of 0.15 px or worse' if common_cut(v2s)
+                else f'SIMCODE: a calibrated uncertainty above {v2s:g} nm')
+    return REMOVED_WORDS[k]
+
+
 def pattern_words(p):
     """'pitch 224 nm, modulation depth 0.90 / 0.92 (orientations 1 / 2)' from a conditions pattern dict"""
     d = p.get('depth_per_angle')
@@ -249,7 +256,22 @@ def zoom_bar_nm(w_px):
     return 1000 if w_px * FF.PX >= 2500 else 500
 
 
-def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, SEL, SEL_RULE, fig_no):
+def common_cut(v2s):
+    """True when SIMCODE's calibrated-sigma threshold (nm) is the common 0.15 px cut (the user's one predefined selection, 2026-11-15)"""
+    return v2s is None or v2s >= FF.SIGMA_MAX * FF.PX - 0.01
+
+
+def sel_words(v2s):
+    if common_cut(v2s):
+        return (f"All methods: precision < 0.15 px ({FF.SIGMA_MAX * FF.PX:.2f} nm) on their own reported uncertainty: CRLB for SMLM / "
+                "SIMFLUX, network uncertainty for DECODE, calibrated uncertainty for SIMCODE (the larger of the x and y values), after "
+                "each method's own quality filters (k); SIMCODE keeps only detections with a detection probability of at least 0.63.")
+    return ("Localizations shown and counted per method: precision < 0.15 px (CRLB for SMLM / SIMFLUX, network uncertainty for "
+            f"DECODE), calibrated uncertainty <= {v2s:g} nm for SIMCODE (in both cases the larger of the x and y values; SIMCODE also "
+            "keeps only detections with a detection probability of at least 0.63).")
+
+
+def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, SEL, SEL_RULE, fig_no, v2s=12.0):
     """(2026-11-15 late) the per-panel caption in plain words (no code syntax; notation of out/paper_figs_v2/NOTATION.md)"""
     lab = dict(zip(kinds, labels)); nm = len(kinds)
     L = lambda ls: ', '.join(ls[:-1]) + ' and ' + ls[-1]
@@ -263,9 +285,7 @@ def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, S
          f"5 ms exposure per frame, 120 x 120 camera pixels of {FF.PX:g} nm. Every method localizes 6-frame windows (one pattern "
          "cycle); only windows that start at a cycle boundary are used, so no photon is counted twice, and all methods are compared "
          f"on the same windows and the same region (the central {FF.CROP[2] * FF.PX / 1000:.1f} x {FF.CROP[2] * FF.PX / 1000:.1f} µm "
-         "of the field). Localizations shown and counted per method: precision < 0.15 px (CRLB for SMLM / SIMFLUX, network "
-         "uncertainty for DECODE), calibrated uncertainty <= 12 nm for SIMCODE (in both cases the larger of the x and y values; "
-         "SIMCODE also keeps only detections with a detection probability of at least 0.63). Each method's sample drift is "
+         "of the field). " + sel_words(v2s) + " Each method's sample drift is "
          "estimated from its own localizations (DME v2) and removed." + (' ' + S['fit_note'].replace(' um', ' µm') if S.get('fit_note') else '')]
     if SEL:
         cut = [f"{lab[q]} " + ('none' if SEL[q]['sigma_max_px'] >= FF.SIGMA_MAX else f"{SEL[q]['sigma_max_px'] * FF.PX:.1f} nm")
@@ -292,7 +312,7 @@ def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, S
                             "differ; " if S.get('fit_note') else "SMLM and SIMFLUX: every detected spot with an SMLM fit, the same "
                             "detections for both; ") + "DECODE: every "
              "localization it reported; SIMCODE: every detection with a detection probability of at least 0.63). Accepted: "
-             + acc + '. Quality filters: ' + '; '.join(REMOVED_WORDS[q] for q in kinds) + '.')
+             + acc + '. Quality filters: ' + '; '.join(removed_words(q, v2s) for q in kinds) + '.')
     t.append(f"({l}) Resolution-scaled Pearson correlation (RSP) of each method's render with the widefield image (the mean of all "
              "frames): " + ', '.join(f"{lab[q]} {v:.2f}" for q, v in zip(kinds, pc)) + '.')
     if psf_info is not None:
@@ -405,13 +425,14 @@ def main():
                + f' ({SEL_RULE}; drift of the uncut sets).' if SEL else '')
             + ' K: accepted / removed counted on the windows with start f % 6 == 0 and the FRC crop. Raw: SMLM / SIMFLUX every detected '
               'ROI with an SMLM fit (summed-fit cache, before the chi^2 filter), DECODE every row, SIMCODE every row with p >= 0.63. Removed: '
-            + '; '.join(REMOVED[k] for k in KINDS if k in REMOVED) + '.'
+            + '; '.join(REMOVED[k] if k != 'v2' else f'SIMCODE: calibrated max(sigma_x, sigma_y) > {a.v2_sigma_max:g} nm (and >= 0.15 px)'
+                        for k in KINDS if k in REMOVED) + '.'
             + (f" {S['fit_note']} SMLM raw = its own run's detected ROIs, SIMFLUX raw = those of the SIMFLUX table's run." if S.get('fit_note') else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     txt = (lambda t: t) if a.v1 else paper_text     # paper version (no --v1): no version labels in the caption / table text
     fig_no = a.fig_no or {'1809_2': '3', '2.5nM_2': '4'}.get(a.dataset, 'S?')
     open(f'{out}_caption.txt', 'w').write(txt(exp_caption(a.dataset, S, F, LABELS, KINDS, res, renders, pc, psf_info, psf_cond,
-                                                          SEL, SEL_RULE, fig_no)))
+                                                          SEL, SEL_RULE, fig_no, v2s=a.v2_sigma_max)))
     open(f'{out}_notes_internal.txt', 'w').write(txt(caption_text(psf_info, psf_cond, foot) if psf_info is not None else foot) + '\n')
     if psf_info is not None:
         md, csv_s = psf_table(psf_info, psf_cond, int(res[KINDS.index('v2')]['n_frc']), sc=LABELS[KINDS.index('v2')])
