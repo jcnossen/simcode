@@ -203,36 +203,38 @@ def fig_npc(a):
         ax.text(0.04, 0.96, f"{PM[k]['locs_per_pore']:.0f} / pore", transform=ax.transAxes, color='w', fontsize=5.5, va='top')
         axs.append(ax)
     letter(axs[0], 'd', -0.2)
-    # (e) ring z histograms (wide), (f) per-ring z sd vs number kept
-    yb2 = 0.06; h2 = 0.215
-    ax = fig.add_axes([0.07, yb2, 0.56, h2])
+    # (e) ring z histograms, (f) two-ring valley / peak vs number kept (same size)
+    yb2 = 0.06; h2 = 0.215; w2 = 0.40
+    ax = fig.add_axes([0.07, yb2, w2, h2])
     for k in rows:
         ring = (V[k]['r'] > 25) & (V[k]['r'] < 85)
         hz_, ez = np.histogram(V[k]['dz'][ring], bins=np.arange(-100, 101, 2)); cz = 0.5 * (ez[1:] + ez[:-1])
         hs = gaussian_filter(hz_.astype(float), 1.0); ax.plot(cz, hs / hs.max(), color=COL[k], lw=1.1 if k != 'net' else 0.8, ls='-' if k != 'net' else '--',
-                                                            label=f"{LAB[k]}: valley / peak {PM[k]['z_dip']:.2f}, ring z sd {PM[k]['ring_z_sd_nm']:.0f} nm")
-    ax.set_xlabel('z about the pore mean (nm), ring radius 25-85 nm', labelpad=1); ax.set_ylabel('norm. count', labelpad=1); ax.set_ylim(0, 1.75); ax.set_xlim(-100, 100)
+                                                            label=f"{LAB[k]}: valley / peak {PM[k]['z_dip']:.2f}")
+    ax.set_xlabel('z about the pore mean (nm), ring radius 25-85 nm', labelpad=1); ax.set_ylabel('norm. count', labelpad=1); ax.set_ylim(0, 1.6); ax.set_xlim(-100, 100)
     ax.set_yticks([0, 0.5, 1]); ax.tick_params(length=2, pad=1)
-    ax.legend(loc='upper center', frameon=False, fontsize=5.5, handlelength=1.8, borderaxespad=0.1, labelspacing=0.2)
-    letter(ax, 'e', -0.06)
-    ax = fig.add_axes([0.735, yb2, 0.255, h2])
+    ax.legend(loc='upper center', frameon=False, fontsize=5.3, handlelength=1.8, borderaxespad=0.1, labelspacing=0.2)
+    letter(ax, 'e', -0.1)
+    ax = fig.add_axes([0.585, yb2, w2, h2])
     Cv = ref['curves']
     for k, sn, lab in (('net', 'combined sigma', '4Pi-SIMCODE'), ('cl', 'combined sigma', '4Pi-SIMFLUX')):
-        c = Cv[k][sn]; ax.plot([r['n_keep'] / 1e6 for r in c], [r.get('ring_z_sd_nm', np.nan) for r in c], '-o', ms=2, lw=1.0, color=COL[k], label=lab)
+        c = Cv[k][sn]; ax.plot([r['n_keep'] / 1e6 for r in c], [r.get('z_dip', np.nan) for r in c], '-o', ms=2, lw=1.0, color=COL[k], label=lab)
         if k == 'net':      # matched count = the point of the 4Pi-SIMCODE curve at the 4Pi-SIMFLUX count
-            ax.plot([info['n_matched'] / 1e6], [PM['net_m']['ring_z_sd_nm']], 's', ms=4, color=COL['net_m'], label=LAB['net_m'], zorder=5)
-    ax.set_xscale('log'); ax.set_xlabel('localizations kept (millions)', labelpad=1); ax.set_ylabel('per-ring z sd (nm)', labelpad=1)
+            ax.plot([info['n_matched'] / 1e6], [PM['net_m']['z_dip']], 's', ms=4, color=COL['net_m'], label=LAB['net_m'], zorder=5)
+    ax.set_xscale('log'); ax.set_xlabel('localizations kept (millions)', labelpad=1); ax.set_ylabel('two-ring valley / peak', labelpad=1)
     ax.set_xticks([0.3, 1, 3]); ax.set_xticklabels(['0.3', '1', '3']); ax.xaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
     ax.axvline(info['n_matched'] / 1e6, color='0.6', lw=0.6, ls=':'); ax.grid(alpha=0.25, lw=0.4)
-    yl = ax.get_ylim(); ax.set_ylim(yl[0], yl[1] + 0.55 * (yl[1] - yl[0]))         # head room for the legend
-    ax.legend(loc='upper left', frameon=False, fontsize=4.8, handlelength=1.1, handletextpad=0.4, borderaxespad=0.1, labelspacing=0.15)
-    letter(ax, 'f', -0.2)
+    ax.set_ylim(0.2, 1.05); ax.set_yticks([0.4, 0.6, 0.8, 1.0])
+    ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.3, handletextpad=0.4, borderaxespad=0.2, labelspacing=0.15)
+    letter(ax, 'f', -0.1)
     save(fig, 'si_4pi_npc')
     # numbers
     sc = json.load(open(f'{P4}/net/cmp_v10/compare_NPC_v10.json')) if os.path.exists(f'{P4}/net/cmp_v10/compare_NPC_v10.json') else None
     OPK = {'net': 'network, all kept (good & N >= 1000)', 'net_m': 'network, matched count (combined sigma)', 'cl': 'classical published-style'}
     val = dict(lines={k: LAB[k] for k in K3}, pore_metrics={k: PM[k] for k in K3}, n_rows={k: int(len(T[k]['x'])) for k in K3}, n_overview=int(len(S['x'])),
                zoom_box_nm=list(map(float, zb)), info=info, reference_json=f'{P4}/fig/NPC_selection_curves_v10.json',
+               panel_f_valley_peak_vs_kept={k: [dict(n_keep=r['n_keep'], valley_peak=r.get('z_dip'), ring_z_sd_nm=r.get('ring_z_sd_nm'))
+                                                for r in ref['curves'][k]['combined sigma']] for k in ('net', 'cl')},
                reference_operating_points={k: {q: ref['operating_points'][OPK[k]].get(q) for q in ('n_keep', 'locs_per_pore', 'ring_radius_median_nm', 'radial_width_nm',
                                                                        'two_ring_sep_em2_nm', 'ring_z_sd_nm', 'z_dip', 'dafl', 'dafl_2_4k', 'fringe_hop', 'frc')}
                                            for k in K3})
@@ -258,9 +260,9 @@ def caption_npc(v):
          "(b) Zoom (white box in a), the three analyses. (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
          f"{I['n_pores']:,} pores found once on the 4Pi-SIMFLUX table, the same centres for every analysis. (d) Side views (x-z, |y| < 30 nm) of the "
          "averaged pore. (e) z histogram of the ring (radius 25-85 nm) about each pore's mean z: the two Nup96 rings; valley / peak = the "
-         "lowest count between the two ring peaks divided by the lower peak (lower = better separated rings); ring z sd = per-ring z spread. "
-         "(f) Per-ring z spread versus the number of localizations kept: each method's localizations ranked by its own reported combined precision, "
-         "the most precise kept first (dotted line: the 4Pi-SIMFLUX count; square: 4Pi-SIMCODE at matched count).",
+         "lowest count between the two ring peaks divided by the lower peak (lower = better separated rings). "
+         "(f) Two-ring valley / peak (as in e) versus the number of localizations kept: each method's localizations ranked by its own reported "
+         "combined precision, the most precise kept first (dotted line: the 4Pi-SIMFLUX count; square: 4Pi-SIMCODE at matched count).",
          '',
          'NUMBERS (si_4pi_npc_values.json; same recipe as out/4pi/fig/NPC_selection_curves_v10.json)',
          f"4Pi-SIMCODE: {f('net')}.",
