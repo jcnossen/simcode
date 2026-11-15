@@ -454,10 +454,12 @@ def caption_pattern(V, D=None):
 
 
 # ------------------------------------------------------------------------------- pattern plots, preprint layout
-DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/home/jc/simcode2/out/paper2/1809_2'),
+# SIMFLUX rows: the PSF-v2 + camera-v2 refit baselines (out/paper2/<ds>/baselines_psfv2, run_base_psfv2.sh; decision 2026-11-15,
+# consistent with SIMCODE and Figs 3 / 4); the pre-refit tables were out/paper2/<ds>
+DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/home/jc/simcode2/out/paper2/1809_2/baselines_psfv2'),
       '2.5nM_2': dict(title='Medium density DNA-PAINT (2.5 nM/2)',
                       run='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final',
-                      base='/home/jc/simcode2/out/paper2/2.5nM_2')}
+                      base='/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2')}
 CROP = (5.0, 5.0, 110.0)
 INC_COLOR, EXC_COLOR = 'b', 'r'          # the preprint's colours (included blue, excluded red)
 
@@ -545,7 +547,9 @@ def cached_rows(meth, ds, ep, outdir):
     cfg = DS[ds]
     fn = (lambda: simflux_pattern_rows(cfg['base'], ep)) if meth == 'SIMFLUX' else (lambda: simcode_pattern_rows(cfg['run'], ep))
     cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
-    cf = os.path.join(cd, f'{ds}_{meth}_p{ep}.npz')
+    import hashlib
+    src = cfg['base'] if meth == 'SIMFLUX' else cfg['run']
+    cf = os.path.join(cd, f'{ds}_{meth}_p{ep}_{hashlib.md5(src.encode()).hexdigest()[:8]}.npz')     # keyed on the source path too
     if os.path.exists(cf):
         z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
         if all(os.path.exists(f) and abs(os.path.getmtime(f) - t) < 1e-3 for f, t in M['mtimes'].items()):
@@ -623,7 +627,7 @@ def caption_pattern_preprint(V):
          'Localizations and their intensities mapped onto one period of the illumination pattern (angle i = 1, phase step '
          'j = 1), for SIMFLUX (A) and SIMCODE (B), on the ' + ' and '.join(DS[d]['title'].split(' (')[0].lower() for d in ds) + ' movie' + ('s (rows)' if len(ds) > 1 else '') + '. Intensities are normalized per '
          'localization by the sum of the 6 intensities of its window, mu_N_ij / sum_ij mu_N_ij, and plotted against the pattern '
-         'phase q_i . (x, y) - phi_ij (- eps_i(t) for SIMCODE). SIMFLUX: per-frame intensities of the SMLM '
+         'phase q_i . (x, y) - phi_ij (- eps_i(t) for SIMCODE). SIMFLUX (PSF-v2 + camera-v2 refit baselines): per-frame intensities of the SMLM '
          'ROI fit, phase from the SMLM (2D Gaussian) position; included (blue) = modulation error < 0.1, the filter that selects '
          'the SIMFLUX input. SIMCODE: pass-1 network intensities, phase (estimated pattern) at the pattern-free position of the '
          'pass-1 network head, not at the position of the pattern solve (which is computed from these intensities and the pattern '
