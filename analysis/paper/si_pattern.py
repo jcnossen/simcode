@@ -461,6 +461,7 @@ DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/hom
                       run='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final',
                       base='/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2')}
 CROP = (5.0, 5.0, 110.0)
+NN_MIN = 3.0             # px: the pattern estimation's isolation (run_config fixed.nn_min; pattern_estimation.select)
 INC_COLOR, EXC_COLOR = 'b', 'r'          # the preprint's colours (included blue, excluded red)
 
 
@@ -493,8 +494,13 @@ def simflux_pattern_rows(base, ep=0, me_thr=0.1, chunk=500000):
     F = Dataset.load(f'{base}/smlm/smlm.npy', window=6).numpy()
     pos = F['pos'][:, :2].astype(np.float64); fr = F['frame'].astype(np.int64); I = F['intensities'].astype(np.float64)
     if I.ndim == 3: I = I[..., 0]
+    # isolation as the pattern estimation (pattern_estimation.select): nearest OTHER SMLM fit of the same window (same window
+    # start; SMLM fits a 6-frame sum at every frame start) within NN_MIN px, spatial hash, exact distances; neighbour set = all
+    # stored SMLM fits (smlm.npy, every window, whole field)
+    from simcode.util import spatial_hash as SH
+    nn_all, _ = SH.nearest(pos[:, 0], pos[:, 1], fr, pos[:, 0], pos[:, 1], fr, max(5.0, NN_MIN), qself=np.arange(len(fr)), device='cpu')
     keep = (pos[:, 0] >= CROP[0]) & (pos[:, 0] < CROP[0] + CROP[2]) & (pos[:, 1] >= CROP[1]) & (pos[:, 1] < CROP[1] + CROP[2])
-    pos, fr, I = pos[keep], fr[keep], I[keep]
+    pos, fr, I, nn = pos[keep], fr[keep], I[keep], nn_all[keep]
     npat = mp.pattern_frames.size
     me = np.zeros(len(fr)); x = np.zeros(len(fr))
     k = mp.mod['k'][:, :2].astype(np.float64)
@@ -509,7 +515,8 @@ def simflux_pattern_rows(base, ep=0, me_thr=0.1, chunk=500000):
     e = (ep - fr) % npat
     y = I[np.arange(len(fr)), e] / I.sum(1)
     m = mp.mod[ep]
-    return dict(x=x, y=y, inc=me < me_thr, isum=I.sum(1), curve=lambda t: m['relint'] * (1 + m['depth'] * np.sin(t)), sin_conv=True,
+    return dict(x=x, y=y, inc=me < me_thr, isum=I.sum(1), iso=nn >= NN_MIN,
+                iso_rule=f'no other SMLM fit (smlm.npy) of the same 6-frame window (same window start) within {NN_MIN} px', curve=lambda t: m['relint'] * (1 + m['depth'] * np.sin(t)), sin_conv=True,
                 relint=float(m['relint']), depth=float(m['depth']), pitch_nm=float(2 * np.pi / np.hypot(*k[ep]) * 108.33),
                 n=int(len(fr)), n_inc=int((me < me_thr).sum()), rule=f'modulation error < {me_thr} (own pattern, SMLM per-frame intensities at the SMLM position; the SIMFLUX input filter)',
                 base='SMLM fits accepted by the baseline (chi^2 <= 4 x ROI^2 on the 8 x 8 px ROI, smlm.npy) in the crop',
@@ -551,8 +558,26 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
         xs[c0:c0 + chunk] = (K[a, 0] * F['pos'][ii, 0] + K[a, 1] * F['pos'][ii, 1] - psi[ep] - e) % (2 * np.pi)
         y[c0:c0 + chunk] = Ic[np.arange(len(ii)), j]
     inc = gam < me_thr
+    # isolation as the pattern estimation: no other stored pass-1 candidate (p >= 0.3, pass1_*.npz, each window once,
+    # common.load_pass1_rows) of the same window within NN_MIN px; spatial hash count within NN_MIN of the row's position (the
+    # row itself is one of the candidates and counts once) -> isolated if the count is <= 1
+    from simcode.processing.common import load_pass1_rows
+    from simcode.util import spatial_hash as SH
+    rc = json.load(open(f'{run}/run_config.json'))
+    chunks = sorted(int(f[6:-4]) for f in os.listdir(run) if f.startswith('pass1_') and f.endswith('.npz'))
+    po = None
+    try:
+        po = json.load(open(rc['settings']['cal'])).get('prior_off')
+    except Exception:
+        pass
+    Rp = load_pass1_rows(run, chunks, None, po, cols=('wstart', 'x', 'y'))
+    cnt = SH.count(Rp['x'], Rp['y'], Rp['wstart'], F['x_prior'][gi], F['y_prior'][gi], F['frame'][gi].astype(np.int64), NN_MIN,
+                   device='cpu')
+    del Rp
+    iso = cnt <= 1
     r0 = rn[ep]
-    return dict(x=x, x_solved=xs, y=y, inc=inc, gamma=gam, isum=isum, paper_sel=sel[gi], curve=lambda tt: r0 * (1 + m[a] * np.cos(tt)),
+    return dict(x=x, x_solved=xs, y=y, inc=inc, gamma=gam, isum=isum, iso=iso, iso_count=cnt,
+                iso_rule=f'no other stored pass-1 candidate (p >= 0.3) of the same window within {NN_MIN} px', paper_sel=sel[gi], curve=lambda tt: r0 * (1 + m[a] * np.cos(tt)),
                 sin_conv=False, relint=float(r0), depth=float(m[a]), pitch_nm=float(2 * np.pi / np.hypot(*K[a]) * 108.33), n=int(n),
                 n_inc=int(inc.sum()), rule=f'modulation error < {me_thr} (own pattern, pass-1 intensities at the pass-1 head position)',
                 base='detections p >= 0.63 in the crop (no precision cut), finite positive intensities',
@@ -567,7 +592,7 @@ def cached_rows(meth, ds, ep, outdir):
     cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
     import hashlib
     src = cfg['base'] if meth == 'SIMFLUX' else cfg['run']
-    ver = '_gamma2'                                                               # the common modulation-error rule (2026-11-15)
+    ver = '_gamma3'                                                               # the common modulation-error rule (2026-11-15)
     cf = os.path.join(cd, f'{ds}_{meth}_p{ep}_{hashlib.md5(src.encode()).hexdigest()[:8]}{ver}.npz')     # keyed on the source path too
     if os.path.exists(cf):
         z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
@@ -599,7 +624,7 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
             R = cached_rows(meth, ds, ep, outdir); ax = axs[ri, ci]
             # the pattern estimation's photon cut (min_phot, detected photons, on the 6-frame sum of the method's own per-frame
             # intensities; pattern_estimation.select), applied to both bases
-            n_before = int(R['n']); keep = R['isum'] >= min_phot
+            n_before = int(R['n']); keep_ph = R['isum'] >= min_phot; keep = keep_ph & R['iso']
             R = {k_: (v[keep] if isinstance(v, np.ndarray) and v.shape[:1] == keep.shape else v) for k_, v in R.items()}
             R['n'] = int(keep.sum()); R['n_inc'] = int(R['inc'].sum())
             if not R['sin_conv']:
@@ -609,7 +634,8 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
                 for k_ in ('x', 'x_solved'):
                     if k_ in R: R[k_] = (R[k_] + np.pi / 2) % (2 * np.pi)
                 R['curve'] = lambda t, r0_=r0_, dep_=dep_: r0_ * (1 + dep_ * np.sin(t)); R['sin_conv'] = True
-            P = dict(files=R['files'], rule=R['rule'], base=R.get('base'), n_before_photon_cut=n_before, min_phot=min_phot, n=R['n'], n_included=R['n_inc'],
+            P = dict(files=R['files'], rule=R['rule'], base=R.get('base'), n_before_photon_cut=n_before, min_phot=min_phot,
+                     n_after_photon_cut=int(keep_ph.sum()), isolation=R.get('iso_rule'), n=R['n'], n_included=R['n_inc'],
                      frac_included=R['n_inc'] / R['n'], depth=R['depth'], relint=R['relint'], pitch_nm=R['pitch_nm'])
             if 'paper_sel' in R:
                 ps = R['paper_sel'].astype(bool)
@@ -669,14 +695,18 @@ def caption_pattern_preprint(V):
          'position (before the pattern is used); population = the detections with score p >= 0.63 (no precision cut). Both inside '
          f'the field of view x, y in [5, 115) px, and both with at least {V["min_phot"]:.0f} detected photons summed over the 6 frames of '
          'the method\'s own per-frame intensities (the photon threshold of the pattern estimation; both in photo-electrons with '
-         'the same v2 camera gain and offset map). '
+         'the same v2 camera gain and offset map), and isolated as in the pattern estimation: no other detection of the same window '
+         f'within {NN_MIN:.0f} px ({NN_MIN * 108.33:.0f} nm), each method with its own detections as neighbours (SIMFLUX: all stored SMLM fits '
+         'of the same 6-frame window, i.e. the same window start, SMLM fitting a 6-frame sum at every frame; SIMCODE: all stored '
+         'pass-1 candidates p >= 0.3 of the same window). '
          f'{V["n_show_per_panel"]} random localizations per panel, in their true proportions (red drawn first, blue on top); the '
          'panel text gives the fraction within 0.1 of the whole population. Black: the estimated illumination pattern of each method (SIMFLUX: depth fixed to '
          '0.9, as in the SIMFLUX pipeline; SIMCODE: the estimated depth), r_ij (1 + m_i sin(phase)).',
          '', 'NUMBERS (si_pattern_plots_values.json; m_eff = effective modulation depth, least-squares sine fit of y / relint over '
          'ALL rows of the class)']
     for k, p in P.items():
-        L.append(f'  {k}: base {p["n"]} after the {p["min_phot"]:.0f}-photon cut (before: {p["n_before_photon_cut"]}; {p.get("base")}); within 0.1: {p["n_included"]} ({100 * p["frac_included"]:.1f} %); '
+        L.append(f'  {k}: base {p["n"]} after the {p["min_phot"]:.0f}-photon cut and isolation (before: {p["n_before_photon_cut"]}; '
+                 f'after the photon cut only: {p["n_after_photon_cut"]}; {p.get("base")}; isolation: {p.get("isolation")}); within 0.1: {p["n_included"]} ({100 * p["frac_included"]:.1f} %); '
                  f'pattern depth {p["depth"]:.3f}, pitch {p["pitch_nm"]:.1f} nm; m_eff < 0.1 {p["m_eff_included"]:.3f} '
                  f'(peak offset {p["phase_offset_deg_included"]:.1f} deg), >= 0.1 {p["m_eff_excluded"]:.3f}' +
                  (f'; reference: paper selection = {100 * p["paper_selection_frac_of_base"]:.1f} % of the base, of which '
@@ -689,9 +719,15 @@ def caption_pattern_preprint(V):
           'nor the plotted phase uses a pattern-solved position, but the included points lie near the curve by construction for '
           'both methods (they are selected on their distance to it); the fraction within 0.1 and m_eff of the excluded rows are '
           'the informative numbers.',
-          'Isolation (nn >= 3 px within the same window) and the on-through-window link of the pattern estimation are NOT applied: '
-          'each method would use its own detection list (different detectors, densities and window grids), so the cut would remove '
-          'different emitters per method; the modulation-error rule already flags crowded windows for both.',
+          'Filters of the pattern estimation applied to both bases (decision 2026-11-15): >= 300 detected photons and isolation '
+          '(nn >= 3 px in the same window, spatial hash, each method\'s own detections); not applied: its on-through-window link '
+          '(w - 6 / w + 6) and positive per-frame intensities. Counting rule for SIMCODE: hash count of candidates within 3 px '
+          '(d <= 3 px) of the row position incl. the row itself, isolated if <= 1; SIMFLUX: nearest other fit, isolated if >= 3 px. '
+          'NB the SMLM spot detector (8 px ROI, local-maximum detection on the 6-frame sum) almost never returns two fits within 3 px of '
+          'each other in one window (1809_2: 0.0003 % of the fits; 1 % within 5 px; median nn 7.8 px), so for SIMFLUX the isolation '
+          'cut removes almost nothing: close emitters are merged into one ROI fit (and then mostly fail gamma < 0.1) instead of being '
+          'flagged as crowded; the SIMCODE pass-1 candidates (p >= 0.3) do resolve them, and the cut removes 58 % / 87 % of the SIMCODE '
+          'base (1809_2 / 2.5 nM).',
           'Conventions: both panels in the preprint\'s sin convention, model r_ij (1 + m_i sin(phase)): SIMFLUX (smlmtorch) relint '
           '(1 + depth sin phase) as is; SIMCODE\'s code model rel_s (1 + m_a cos(k_a.r - psi_s - eps_a(t))) is plotted with phase + '
           'pi/2 (phi_ij = psi_s - pi/2).',
