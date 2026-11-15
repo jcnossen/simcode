@@ -30,7 +30,8 @@ def load_ours(run, files):
         n = len(d['x'])
         r = dict(x=(d['x'] - 15.0) * PX, y=d['y'] * PX, z=d['z'] * 1000.0, sx=d['sx'] * PX, sy=d['sy'] * PX, sz=d['sz'] * 1000.0,
                  N=d['N'], t=d['frame'] + NF * fi, good=d['good'], chi2=d['chi2'] / d['dof'], nn=d['nn'], pdet=d['pdet'],
-                 bg=d['bg'].sum(1) if d['bg'].ndim == 2 else d['bg'], file=np.full(n, fi))
+                 bg=d['bg'].sum(1) if d['bg'].ndim == 2 else d['bg'], file=np.full(n, fi),
+                 dzref=(d['z'] - d['zref']) * 1000.0 if 'zref' in d.files else np.full(n, np.nan))
         rows.append(r)
     return {k: np.concatenate([r[k] for r in rows]) for k in rows[0]}
 
@@ -140,6 +141,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('run'); ap.add_argument('out'); ap.add_argument('--files', type=int, nargs='+', default=[0, 1, 2, 3])
     ap.add_argument('--chi2_max', type=float, default=None); ap.add_argument('--sig_max', type=float, default=25.0, help='ours: max(sx, sy) nm')
     ap.add_argument('--nmin', type=float, default=500.0, help='photon cut of both sets (their published set: I > 500)')
+    ap.add_argument('--zref_max', type=float, default=120.0, help='ours: max |z - structure reference z| (nm; 0: no cut)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     O = load_ours(a.run, a.files)
@@ -148,9 +150,11 @@ def main():
     pub = sel(pub, pub['t'] < tmax); raw = sel(raw, raw['t'] < tmax)
     good = O['good'] if a.chi2_max is None else O['chi2'] < a.chi2_max
     keep = good & (np.maximum(O['sx'], O['sy']) < a.sig_max) & (O['N'] >= a.nmin)
+    if a.zref_max > 0: keep &= ~(np.abs(O['dzref']) > a.zref_max)          # the structure contradicts the 4Pi period (NaN: kept)
     Os = sel(O, keep)
     R = dict(n_ours_all=int(len(O['x'])), n_ours_sel=int(keep.sum()), n_theirs_raw=int(len(raw['x'])), n_theirs_pub=int(len(pub['x'])),
-             selection=dict(good='chi2/dof < fourpi.chi2_max' if a.chi2_max is None else f'chi2/dof < {a.chi2_max}', sig_max_nm=a.sig_max, nmin=a.nmin),
+             selection=dict(good='chi2/dof < fourpi.chi2_max' if a.chi2_max is None else f'chi2/dof < {a.chi2_max}', sig_max_nm=a.sig_max, nmin=a.nmin,
+                            zref_max_nm=a.zref_max),
              frames=tmax)
     # ---- offset of our frame against theirs (lateral), then one-to-one matches within 100 nm
     ia, ib = match(Os, pub, 300.0)
@@ -192,6 +196,23 @@ def main():
                         all=dict(emp_x=robust_sd(d['x'][i] - d['x'][j]) / np.sqrt(2), emp_y=robust_sd(d['y'][i] - d['y'][j]) / np.sqrt(2),
                                  emp_z=robust_sd(d['z'][i] - d['z'][j]) / np.sqrt(2)))
     R['precision'] = prec
+    # paired: the same emitters in the same consecutive frames in both sets (their consecutive pairs whose two
+    # localizations both have a matched SIMCODE localization), binned by THEIR photons (our photon scale is 1.7 x theirs)
+    m2 = dict(zip(ib.tolist(), ia.tolist()))
+    pi, pj = consecutive_pairs(pub)
+    ok = np.array([(u in m2) and (v in m2) for u, v in zip(pi, pj)], bool)
+    pi, pj = pi[ok], pj[ok]; oi = np.array([m2[u] for u in pi], int); oj = np.array([m2[v] for v in pj], int)
+    Nm = np.sqrt(pub['N'][pi] * pub['N'][pj]); sz = abs(R['z_relation']['slope'])
+    rows = []
+    for b0, b1 in zip([500, 1000, 2000, 4000, 8000], [1000, 2000, 4000, 8000, 30000]):
+        s = (Nm >= b0) & (Nm < b1)
+        if s.sum() < 30: continue
+        rows.append(dict(N=[b0, b1], pairs=int(s.sum()),
+                         ours=[robust_sd(Os[k][oi][s] - Os[k][oj][s]) / np.sqrt(2) * (sz if k == 'z' else 1) for k in 'xyz'],
+                         theirs=[robust_sd(pub[k][pi][s] - pub[k][pj][s]) / np.sqrt(2) for k in 'xyz']))
+    R['precision_paired'] = dict(pairs=int(len(pi)), bins=rows, note='robust sd / sqrt 2 of consecutive-frame differences on the same emitters; z in their units',
+                                 all=dict(ours=[robust_sd(Os[k][oi] - Os[k][oj]) / np.sqrt(2) * (sz if k == 'z' else 1) for k in 'xyz'],
+                                          theirs=[robust_sd(pub[k][pi] - pub[k][pj]) / np.sqrt(2) for k in 'xyz']))
     # matched pairs: precision of each set on the same emitters / frames (pairs of matched localizations in consecutive frames)
     # ---- NPC: sites found on each set with the same finder; stats on each set's own sites and on the common sites
     sites = {nm: npc_sites(d) for nm, d in (('ours', Os), ('theirs', pub))}
@@ -282,23 +303,19 @@ def figure(out, Os, pub, R, pooled, sites):
     ax.hexbin(Os['z'][i], pub['z'][j], gridsize=60, bins='log', cmap='Greys', mincnt=1)
     zz = np.linspace(np.percentile(Os['z'][i], 1), np.percentile(Os['z'][i], 99), 10); ax.plot(zz, zl['slope'] * zz + zl['offset_nm'], color=C_OURS, lw=1.2)
     ax.set_xlabel('SIMCODE z (nm, model z)'); ax.set_ylabel('published z (nm)')
-    ax.set_title(f'F  z of matched localizations (slope {zl["slope"]:.3f})', fontsize=8.5, loc='left')
+    ax.set_title(f'F  z, matched locs (slope {zl["slope"]:.3f})', fontsize=8.5, loc='left')
+    PP = R['precision_paired']['bins']; Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in PP]
     ax = fig.add_subplot(gs[1, 3])
     for nm in ('ours', 'theirs'):
-        B = R['precision'][nm]['bins']
-        Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in B]
-        ax.plot(Nc, [b['emp_x'] for b in B], 'o-', color=col[nm], ms=4, label=f'{lab[nm]} x')
-        ax.plot(Nc, [b['emp_y'] for b in B], 's--', color=col[nm], ms=4, mfc='none', label=f'{lab[nm]} y')
-    ax.set_xscale('log'); ax.set_xlabel('photons'); ax.set_ylabel('nm'); ax.legend(fontsize=7, frameon=False)
-    ax.set_title('G  lateral precision (consec. frames)', fontsize=8.5, loc='left')
+        ax.plot(Nc, [b[nm][0] for b in PP], 'o-', color=col[nm], ms=4, label=f'{lab[nm]} x')
+        ax.plot(Nc, [b[nm][1] for b in PP], 's--', color=col[nm], ms=4, mfc='none', label=f'{lab[nm]} y')
+    ax.set_xscale('log'); ax.set_xlabel('photons (published scale)'); ax.set_ylabel('nm'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('G  lateral precision, same emitters', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[2, 0])
     for nm in ('ours', 'theirs'):
-        B = R['precision'][nm]['bins']; sc = abs(zl['slope']) if nm == 'ours' else 1.0
-        Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in B]
-        ax.plot(Nc, [b['emp_z'] * sc for b in B], 'o-', color=col[nm], ms=4, label=f'{lab[nm]} empirical')
-        if 'rep_z' in B[0]: ax.plot(Nc, [b['rep_z'] * sc for b in B], 's--', color=col[nm], ms=4, mfc='none', label=f'{lab[nm]} reported')
-    ax.set_xscale('log'); ax.set_xlabel('photons'); ax.set_ylabel('nm (published z units)'); ax.legend(fontsize=7, frameon=False)
-    ax.set_title('H  z precision (consecutive frames)', fontsize=8.5, loc='left')
+        ax.plot(Nc, [b[nm][2] for b in PP], 'o-', color=col[nm], ms=4, label=lab[nm])
+    ax.set_xscale('log'); ax.set_xlabel('photons (published scale)'); ax.set_ylabel('nm (published z units)'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('H  z precision, same emitters', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[2, 1])
     for nm, d in (('ours', Os), ('theirs', pub)):
         ax.hist(np.log10(np.maximum(d['N'], 1)), bins=60, range=(2.5, 4.6), histtype='step', lw=1.5, color=col[nm], label=lab[nm])
@@ -307,12 +324,15 @@ def figure(out, Os, pub, R, pooled, sites):
     ax = fig.add_subplot(gs[2, 2:]); ax.axis('off')
     M = R['match']; N_ = R['npc']; P = R['precision']
     txt = [f'frames {R["frames"]:,}; SIMCODE {R["n_ours_all"]:,} solved, {R["n_ours_sel"]:,} selected; published {R["n_theirs_pub"]:,} (their raw {R["n_theirs_raw"]:,})',
-           f'selection: {R["selection"]}',
+           f'selection: N >= {R["selection"]["nmin"]:.0f} photons, max(sx, sy) < {R["selection"]["sig_max_nm"]:.0f} nm, |z - zref| < {R["selection"]["zref_max_nm"]:.0f} nm',
            f'matched (<= 100 nm, same frame): {M["n"]:,} = {100 * M["frac_of_pub"]:.1f} % of published, {100 * M["frac_of_ours"]:.1f} % of SIMCODE',
            f'z: published = {zl["slope"]:.3f} x SIMCODE {zl["offset_nm"]:+.0f} nm (resid sd {zl["resid_sd_nm"]:.1f} nm)',
-           'empirical precision, all pairs, x / y / z nm:',
-           f'   SIMCODE   {P["ours"]["all"]["emp_x"]:.1f} / {P["ours"]["all"]["emp_y"]:.1f} / {P["ours"]["all"]["emp_z"] * abs(zl["slope"]):.1f}   (median {P["ours"]["median_N"]:.0f} photons)',
-           f'   published {P["theirs"]["all"]["emp_x"]:.1f} / {P["theirs"]["all"]["emp_y"]:.1f} / {P["theirs"]["all"]["emp_z"]:.1f}   (median {P["theirs"]["median_N"]:.0f} photons)',
+           f'photons: SIMCODE / published on matched localizations {M["photon_ratio_median"]:.2f} (median)',
+           f'precision, same emitters in consecutive frames ({R["precision_paired"]["pairs"]:,} pairs), x / y / z nm:',
+           '   SIMCODE   ' + ' / '.join(f'{v:.1f}' for v in R['precision_paired']['all']['ours']),
+           '   published ' + ' / '.join(f'{v:.1f}' for v in R['precision_paired']['all']['theirs']),
+           f'precision, each full set (all its own pairs), x / y / z nm: SIMCODE {P["ours"]["all"]["emp_x"]:.1f} / {P["ours"]["all"]["emp_y"]:.1f} / {P["ours"]["all"]["emp_z"] * abs(zl["slope"]):.1f},'
+           f' published {P["theirs"]["all"]["emp_x"]:.1f} / {P["theirs"]["all"]["emp_y"]:.1f} / {P["theirs"]["all"]["emp_z"]:.1f}',
            f'NPC sites: SIMCODE {N_["ours"]["sites"]}, published {N_["theirs"]["sites"]}; ring radius {N_["ours"]["R_median_nm"]:.1f} / {N_["theirs"]["R_median_nm"]:.1f} nm',
            f'two-layer separation (pooled): {N_["ours"]["zsep_pooled_nm"] * abs(zl["slope"]):.1f} / {N_["theirs"]["zsep_pooled_nm"]:.1f} nm (published z units)']
     if 'common' in N_['ours']:

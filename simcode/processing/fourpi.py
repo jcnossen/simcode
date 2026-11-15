@@ -188,7 +188,7 @@ def process_file(rd, fr, ctx, a, fi, nfr):
                on=np.ones(n, bool), kin=C['kin'], ton=C['ton'], toff=C['toff'], chi2=C['chi2'], dof=dof, good=good, chi2_on=C['chi2_on'], chi2_free=C['chi2_kin'],
                Phi0=Phi0.cpu().numpy(), zprior=R['z'], szprior=np.exp(R['ls'][:, 2]), xprior=Xp[:, 0], yprior=Xp[:, 1], cx=R['cx'], cy=R['cy'],
                w=R['w'], frame=R['w'] * T, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
-    if a.unwrap_r_px > 0: out['wrap'] = C['wrap']
+    if a.unwrap_r_px > 0: out['wrap'] = C['wrap']; out['zref'] = C['zref']
     g2 = good & (Tsum > 2000) & (Tsum < 4000)
     px = ctx['px_nm']
     summ = dict(n=n, per_window=n / (nfr // T), good_frac=float(good.mean()), kin_frac=float(C['kin'].mean()), field_R=diag['R'],
@@ -201,20 +201,22 @@ def process_file(rd, fr, ctx, a, fi, nfr):
 def unwrap(C, cx, cy, zprior, Tsum, a, resolve, T):
     """4Pi period from the structure: reference z = median z of the nearest (<= 30) bright rows within unwrap_r_px whose z
     agrees with their own astigmatic prior (|z - zprior| < unwrap_tol um); a row whose z is more than half a period
-    (z_period_um) from its reference is solved again started one or more periods over (on-through rows only; the new
-    solution is kept). C is updated in place; -> the period shift k per row (int8)"""
+    (z_period_um) from its reference and does not agree with its own prior is solved again started one or more periods over (on-through rows only; the new
+    solution is kept). C is updated in place (and C['zref'] = the reference z, NaN without 5 references: the table column
+    zref; |z - zref| > half a period marks a localization whose period the structure contradicts); -> the period shift k per row (int8)"""
     from scipy.spatial import cKDTree
     th = C['th']; X = cx + th[:, 0]; Y = cy + th[:, 1]; z = th[:, 2]; L = a.z_period_um
     ref = (np.abs(z - zprior) < a.unwrap_tol) & (Tsum > 1000) & ~C['kin']
-    k = np.zeros(len(z), np.int8)
+    k = np.zeros(len(z), np.int8); C['zref'] = np.full(len(z), np.nan)
     if ref.sum() < 50: return k
     d, q = cKDTree(np.c_[X[ref], Y[ref]]).query(np.c_[X, Y], k=31, distance_upper_bound=a.unwrap_r_px)
     zr = z[ref]; ok = np.isfinite(d) & (d > 1e-6)                                     # not the row itself
     zz = np.where(ok, zr[np.minimum(q, len(zr) - 1)], np.nan)
     cnt = ok.sum(1); zref = np.where(cnt >= 5, np.nanmedian(np.where(cnt[:, None] >= 5, zz, 0.0), 1), np.nan)
+    C['zref'] = zref
     kk = np.where(np.isfinite(zref), np.round((zref - z) / L), 0).astype(int)
     kk = np.where(np.abs(kk) <= a.unwrap_kmax, kk, 0)                               # farther: not a period slip, left as is
-    redo = np.nonzero((kk != 0) & ~C['kin'])[0]
+    redo = np.nonzero((kk != 0) & ~C['kin'] & (np.abs(z - zprior) > a.unwrap_tol))[0]     # rows that agree with their own prior stay
     for i in range(0, len(redo), a.batch):
         j = redo[i:i + a.batch]
         r, bgc = resolve(j, np.clip(z[j] + kk[j] * L, -0.98, 0.98))
