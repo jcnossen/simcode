@@ -19,9 +19,10 @@ editing it. Everything is taken from existing calibration / summary files only (
             4.3 px, lag-1 0.5) -- scaled for the 0.5 nM presets
   emitters  Poisson DNA-PAINT events (ON density per frame per px), on-time lognormal (median tau), z lognormal
             (median ~50 nm, clipped 0-200 nm), brightness lognormal x TIRF exp(-z / 82 nm), per-emitter angle factor
-            [2026-11-15: a calibration with fitted spot heights (emitter_z_quantiles_um, in-situ PSF v2) sets z instead:
-            piecewise-linear inverse CDF of its quantiles (height_quantiles), LUT range widened to it (below 0 if the
-            fit placed spots there), no TIRF factor (tirf_factor); the read-noise map is the calibration's camera map]
+            [2026-11-15: a calibration with fitted spot heights (emitter_z_quantiles_um, in-situ PSF v2: the fits not
+            pinned at the fit limits) sets z instead: piecewise-linear inverse CDF of its quantiles (height_quantiles),
+            clipped to its emitter_z_range_um (the v2 calibrations: 0-0.40 um), LUT range widened to it, no TIRF factor
+            (tirf_factor); the read-noise map is the calibration's camera map]
             (log-sd 0.18), per-emitter per-step factor (sd 0.05), per-frame multiplicative jitter (sd 0.03);
             geometry: uniform or microtubule-like smooth filaments (fraction per preset)
 Ground truth gt['phot'] [N,T] = the actual per-frame photons (all factors included).
@@ -190,10 +191,13 @@ class AcquisitionSim:
         # the height distribution (height_quantiles / draw_z) and widens the LUT range to it; None = the presets' TIRF draw
         c = json.load(open(_cfg.resolve(self.p['calib'])))
         self.zq = height_quantiles(c)
+        # physical range of the drawn heights (calibration key emitter_z_range_um, e.g. [0, 0.40]; draws are clipped to it)
+        self.zclip = [float(v) for v in c['emitter_z_range_um']] if (self.zq is not None and c.get('emitter_z_range_um')) else None
         zmin = 0.0
         if self.zq is not None:
-            zmin = min(0.0, math.floor(float(self.zq[1][0]) / 0.01 - 1e-6) * 0.01)
-            zmax = max(zmax, math.ceil(float(self.zq[1][-1]) / 0.01 - 1e-6) * 0.01)
+            zlo, zhi = self.zclip if self.zclip else (float(self.zq[1][0]), float(self.zq[1][-1]))
+            zmin = min(0.0, math.floor(zlo / 0.01 + 1e-6) * 0.01)
+            zmax = max(zmax, math.ceil(zhi / 0.01 - 1e-6) * 0.01)
         # PSF rendered on a 41 x 41 ROI (critic review 26 #3: 19 % of the real PSF energy lies outside 11 x 11, 8 % beyond 21 x 21)
         # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (simulate/batches.TrainingBatches) uses Z_RANGE_UM
         self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax, zmin=zmin,
@@ -317,10 +321,11 @@ class AcquisitionSim:
         training generator simulate/batches.TrainingBatches) that fraction of the emitters is uniform over [0, zmax] instead, so the z output of
         the head is trained over the whole height range of the TIRF data. The brightness follows from z (TIRF factor).
         A calibration with fitted heights (self.zq, height_quantiles) replaces all of this: z = its piecewise-linear inverse CDF
-        at u ~ U(0, 1) (one uniform draw per emitter; z_unif does not apply)."""
+        at u ~ U(0, 1) (one uniform draw per emitter; z_unif does not apply), clipped to the calibration's emitter_z_range_um."""
         p = self.p
         if self.zq is not None:
-            return interp1(torch.rand(n, device=dev), *self.zq)
+            z = interp1(torch.rand(n, device=dev), *self.zq)
+            return z.clamp(*self.zclip) if self.zclip else z
         z = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(n, device=dev))).clamp(0.0, self.zmax)
         fu = float(p.get('z_unif', 0.0))
         if fu > 0:

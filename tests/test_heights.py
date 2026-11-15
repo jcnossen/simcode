@@ -3,8 +3,9 @@ Emitter heights from the calibration (2026-11-15 rule: a calibration with fitted
 height distribution of the simulator and the training batches; no flag). GPU (the simulator is CUDA-only); needs only the
 calibration jsons / camera maps in models/insitu. Run: python tests/test_heights.py (or pytest tests)
   - height_quantiles: nodes = the calibration's quantiles + linear tails to probability 0 / 1; None without quantiles
-  - draw_z of a v2 calibration reproduces its quantiles (inverse CDF), the LUT covers the whole range (below 0 too),
-    tirf_factor = 1; the read-noise map is the calibration's camera map
+  - draw_z of a v2 calibration reproduces its quantiles (inverse CDF) inside its emitter_z_range_um and is clipped to that
+    range (point masses at the ends), the LUT covers the range, tirf_factor = 1; the read-noise map is the calibration's
+    camera map; without the range key the draws follow the extended nodes (below 0 too)
   - a calibration without quantiles keeps the presets' draw: lognormal (same random draws as the explicit formula), LUT
     0 .. zmax, the TIRF factor, the preset's read-noise map
   - Simulator LUT with zmin < 0: rendering at a LUT plane gives that plane
@@ -43,12 +44,24 @@ def test_v2_calibration_heights():
     q = c['emitter_z_quantiles_um']
     rs = AcquisitionSim('2.5nM', 32, 32, 6, npsf=1, calib=_cal(V2), zmax=0.3, z_unif=0.5)
     assert rs.zq is not None
+    lo, hi = c['emitter_z_range_um']
+    assert rs.zclip == [lo, hi] and rs.zmin == lo and abs(rs.zmax - hi) < 1e-9
     torch.manual_seed(0)
     z = rs.draw_z(400000).cpu().numpy()
     for k, v in q.items():
-        assert abs(np.quantile(z, float(k[1:]) / 100) - v) < 0.004, (k, v, np.quantile(z, float(k[1:]) / 100))
-    assert rs.zmin <= z.min() and z.max() <= rs.zmax + 1e-6 and rs.zmin < 0 and rs.zmax >= max(q.values())
-    assert rs.sim.lut.shape[0] == int(round((rs.zmax - rs.zmin) / 0.01)) + 1
+        e = np.quantile(z, float(k[1:]) / 100)
+        assert abs(e - min(max(v, lo), hi)) < 0.004, (k, v, e)
+    assert z.min() == lo and z.max() == hi and rs.sim.lut.shape[0] == int(round((rs.zmax - rs.zmin) / 0.01)) + 1
+    # without emitter_z_range_um: no clip, the LUT reaches the extended nodes (below 0 here)
+    import tempfile
+    c2 = dict(c); c2.pop('emitter_z_range_um'); c2['camera'] = dict(c['camera'], maps=os.path.join(os.path.dirname(_cal(V2)), c['camera']['maps']))
+    with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
+        json.dump(c2, f)
+    rs2 = AcquisitionSim('2.5nM', 32, 32, 6, npsf=1, calib=f.name, zmax=0.3)
+    os.unlink(f.name)
+    z2 = rs2.draw_z(100000).cpu().numpy()
+    assert rs2.zclip is None and rs2.zmin < 0 and z2.min() < 0 and rs2.zmin <= z2.min() and z2.max() <= rs2.zmax + 1e-6
+    assert abs(np.quantile(z2, 0.05) - q['q05']) < 0.004
     assert torch.all(rs.tirf_factor(torch.tensor([-0.1, 0.0, 0.5], device='cuda')) == 1)
     maps = np.load(os.path.join(os.path.dirname(_cal(V2)), c['camera']['maps']))['readnoise_e']
     assert np.allclose(rs.rn_map.cpu().numpy(), maps)
@@ -85,10 +98,10 @@ def test_training_batches_heights():
     torch.manual_seed(1)
     gen = TrainingBatches(32, 32, 6, seed=0, calib=[_cal(V2)])
     h = gen.heights()[0]
-    assert h != 'presets' and h['lut_um'][0] < 0
+    c = json.load(open(_cal(V2)))
+    assert h != 'presets' and h['clip_um'] == c['emitter_z_range_um']
     zs = torch.cat([gen.detector_batch(8)['gt']['z'] for _ in range(4)]).cpu().numpy()
-    q = json.load(open(_cal(V2)))['emitter_z_quantiles_um']
-    assert abs(np.median(zs) - q['q50']) < 0.05 and zs.min() < 0
+    assert abs(np.median(zs) - c['emitter_z_quantiles_um']['q50']) < 0.05 and zs.min() >= 0 and zs.max() <= 0.40 + 1e-6
 
 
 if __name__ == '__main__':

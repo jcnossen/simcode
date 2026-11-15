@@ -91,7 +91,7 @@ class TrainingBatches:
         out = []
         for r in ([d_['0.5nM'] for d_ in self.rsm] if self.calibs else [self.rs['0.5nM']]):
             out.append('presets' if r.zq is None else dict(p=[round(float(v), 4) for v in r.zq[0]], z_um=[round(float(v), 4) for v in r.zq[1]],
-                                                           lut_um=[round(r.zmin, 3), round(r.zmax, 3)]))
+                                                           clip_um=r.zclip, lut_um=[round(r.zmin, 3), round(r.zmax, 3)]))
         return out
 
     def all_rs(self):
