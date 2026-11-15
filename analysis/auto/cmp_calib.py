@@ -7,7 +7,6 @@ import json, os, sys
 import numpy as np, torch
 from simcode import config
 from simcode import psf as spsf
-from simcode.calibration import cam_maps
 
 
 def model(path, angle, R=15, dev='cuda'):

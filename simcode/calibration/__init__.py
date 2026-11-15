@@ -17,10 +17,3 @@ def data(p):
 def out(*f):
     """default output path under <out>/insitu"""
     return os.path.join(config.out_dir('insitu'), *f)
-
-
-def cam_maps(calib_path, cam):
-    """camera-map file of a calibration (calib json: the npz, relative paths relative to the json; psf.zip: the zip itself;
-    simcode.psf.camera_maps_path). Read the maps with simcode.psf.camera_maps(calib_path)."""
-    from simcode.psf import camera_maps_path
-    return camera_maps_path(calib_path, dict(camera=cam))

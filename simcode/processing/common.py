@@ -41,13 +41,6 @@ def load_pass1_rows(out, chunks, crop=None, prior_off=None, cols=('wstart', 'x',
     return R
 
 
-def camera_maps_path(path, c=None):
-    """file holding the camera maps of a calibration (simcode.psf.camera_maps_path: the npz of a calib json, 'camera.maps'
-    relative to the json's directory unless absolute; the psf.zip itself)"""
-    from simcode.psf import camera_maps_path as _cmp
-    return _cmp(path, c)
-
-
 def load_calib(path, dev='cuda'):
     """camera maps + PSF from a calibration (calib json or psf.zip; camera / PSF entries only)."""
     from simcode.config import resolve

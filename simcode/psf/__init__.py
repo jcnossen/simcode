@@ -8,8 +8,8 @@ json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf
 FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset (localizations: torch_psf.dataset; SIMCODE's
 layer is simcode/dataset.py), TiffMovie, ArrayMovie, open_movie, solve_linear (closed-form I / bg of the variable
 projection; torch_psf.fit), Tracks, extract_rois, fit_tracks (in-situ PSF fit on tracks; torch_psf.estimation),
-spot_deviance, filter_frames, photosel_tensor, gauss_blur_os, dipole_tensor, noll_to_nm, emitter_height_pos_fn,
-PSFZip / save_zip / is_psf_zip / convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
+spot_deviance, filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
+convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
 
 SIMCODE-specific:
 
@@ -36,12 +36,9 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
   camera_maps(path, c=None)   -> {'offset_adu': [H, W], 'readnoise_e': [H, W], ...} (float32) or None: the npz of a calib
                                  json or the camera arrays (+ camera.extra_arrays) of a psf.zip.
   camera_maps_path(path, c)   -> the file that holds the maps (the npz; the zip itself for a psf.zip), or None.
-  calib_gaps(path)            -> where the zip's blocks differ from its converted_from json (tests / report).
   write_calib_zip(json, out)  -> psf.zip of a calib json (torch_psf convert_calibration; report= passed to save_zip).
   fourpi_state(path)          -> the psf4pi state dict of a 4Pi PSF file: json {'psf': state} or a psf.zip (FourPiPSF /
                                  FourPiSplinePSF with its source).
-  fourpi_psf(state)           -> torch_psf FourPiPSF of a state whose state() returns that state verbatim plus the 'raw'
-                                 parameter block (save_zip then stores the fitted values exactly; see fourpi_psf).
 """
 import json, os
 import numpy as np
@@ -53,11 +50,10 @@ from torch_psf.fit import solve_linear
 from torch_psf.spots import Tracks, extract_rois
 from torch_psf.detect import filter_frames
 from torch_psf.estimation import fit_tracks, spot_deviance
-from torch_psf.vectorial import photosel_tensor, gauss_blur_os, dipole_tensor
-from torch_psf.zernike import noll_to_nm
+from torch_psf.vectorial import gauss_blur_os, dipole_tensor
 from torch_psf.spline import emitter_height_pos_fn
 from torch_psf import psfzip as _pz
-from torch_psf.psfzip import PSFZip, save_zip, is_psf_zip, convert_calibration
+from torch_psf.psfzip import save_zip, is_psf_zip, convert_calibration
 
 ANGLE_KEYS = ('psf_dipole_M_angle', 'psf_blur_angle_px2')
 ZIP_MAPS = '<psf.zip camera arrays>'        # camera.maps of a psf.zip calibration: the maps are arrays inside the zip
@@ -142,11 +138,6 @@ def calib_from_psfjson(meta):
     return c
 
 
-def _converted_from(meta):
-    cf = (meta.get('provenance') or {}).get('converted_from') or {}
-    return cf.get('json') if isinstance(cf.get('json'), dict) else None
-
-
 def read_calib(path):
     """SIMCODE calibration dict (calib-json layout) of a calib json or a psf.zip (module doc; a zip: its blocks,
     calib_from_psfjson)"""
@@ -156,28 +147,6 @@ def read_calib(path):
             return json.load(f)
     meta, _ = _pz.read_zip(path)
     return calib_from_psfjson(meta)
-
-
-def calib_gaps(path):
-    """{key: (value from the zip's blocks, value of the converted_from json)} for every top-level / camera / pattern key
-    where the blocks differ from the original calibration json (keys missing in the blocks: value None; camera.maps =
-    ZIP_MAPS for a json with maps is no gap); {} for a json or a zip without converted_from. For zips of torch-psf >=
-    52c75c5 only keys the json left to the defaults, which the zip states (npupil, oversample, roisize, saf,
-    z_range_um, camera type / excess_noise: json side None)"""
-    if not is_psf_zip(str(path)): return {}
-    meta, _ = _pz.read_zip(str(path))
-    orig = _converted_from(meta)
-    if orig is None: return {}
-    c = calib_from_psfjson(meta); out = {}
-    for k in sorted(set(orig) | set(c)):
-        a, b = c.get(k), orig.get(k)
-        if isinstance(a, dict) and isinstance(b, dict):
-            for kk in sorted(set(a) | set(b)):
-                if k == 'camera' and kk == 'maps' and a.get(kk) == ZIP_MAPS and b.get(kk): continue   # maps in the zip
-                if a.get(kk) != b.get(kk): out[f'{k}.{kk}'] = (a.get(kk), b.get(kk))
-        elif a != b:
-            out[k] = (a, b)
-    return out
 
 
 def camera_maps_path(path, c=None):
@@ -218,19 +187,6 @@ def write_calib_zip(json_path, out=None, **kw):
 
 
 # ============================================================================================ 4Pi PSF files
-def fourpi_psf(state, device=None, z_range=(-0.6, 0.6), **kw):
-    """torch_psf FourPiPSF of a psf4pi state (bit-identical to simcode.fourpi.psf4pi.psf_from_state). Its state() is the
-    given state verbatim plus torch_psf's 'raw' block (the internal parameters, which a reader takes for a bit-exact
-    model): torch_psf's own natural values recompute tau = softmax(log tau) and float32-round NA / n, so they do not
-    reproduce the fitted values; this way save_zip stores the fitted state as it is and the exact parameters."""
-    p = FourPiPSF.from_state(state, device=device, z_range=z_range, **kw)
-    s0 = json.loads(json.dumps(state)); s0.pop('raw', None)
-    raw = p.state().get('raw')
-    if raw is not None: s0['raw'] = raw
-    p.state = lambda: json.loads(json.dumps(s0))
-    return p
-
-
 def fourpi_state(path, root=None):
     """psf4pi state dict of a 4Pi PSF file: a json with key 'psf' (out/4pi/psf4pi/*.json), or a psf.zip of a FourPiPSF
     (top-level source) / FourPiSplinePSF (its source block; without torch_psf's 'raw' parameter block). path: a file, or a name looked up as

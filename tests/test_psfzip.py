@@ -3,7 +3,7 @@ The paper PSFs as psf.zip (models/**/*.psf.zip, analysis/psfzip/convert_paper_ps
 CPU (env SIMCODE_TEST_DEVICE to change); needs only this checkout's models/ (json, camera maps, zips; no networks).
 Run: python tests/test_psfzip.py (or pytest tests/test_psfzip.py)
   - read_calib(zip) (the zip's blocks) gives every key of the calib json with the json's value (camera.maps = ZIP_MAPS),
-    plus only the defaults torch-psf writes explicitly (EXTRA_OK; calib_gaps lists nothing else)
+    plus only the defaults torch-psf writes explicitly (EXTRA_OK)
   - camera_maps(zip) == the json's npz (every entry: offset_adu, readnoise_e and the extra entries; values and dtype)
   - PSF.load(zip) renders bit-identically to PSF.load(json) (roisize 11 / oversample 3 and the stored defaults, angle
     average), the solve spline (simcode.psf.spline) has identical knots, the Simulator's LUT and pattern are identical,
@@ -45,14 +45,14 @@ def test_read_calib():
     for js, zp in _pairs():
         J = json.load(open(js)); C = spsf.read_calib(zp)
         if J.get('camera', {}).get('maps'): J['camera']['maps'] = spsf.ZIP_MAPS
-        gaps = spsf.calib_gaps(zp)
-        assert all(b is None and EXTRA_OK.get(k, object()) == a for k, (a, b) in gaps.items()), (zp, gaps)
         for k, v in J.items():
             if isinstance(v, dict):
                 assert all(C[k][kk] == vv for kk, vv in v.items()), (zp, k)
             else:
                 assert C[k] == v, (zp, k)
         assert set(C) - set(J) <= set(EXTRA_OK) and set(C['camera']) - set(J['camera']) <= {'type', 'excess_noise'}, zp
+        assert all(C[k] == EXTRA_OK[k] for k in set(C) - set(J)), zp          # the defaults the zip states
+        assert all(C['camera'][k] == EXTRA_OK['camera.' + k] for k in set(C['camera']) - set(J['camera'])), zp
 
 
 def test_camera_maps():

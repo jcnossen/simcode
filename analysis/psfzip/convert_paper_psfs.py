@@ -16,7 +16,7 @@ json files stay; SIMCODE reads both through simcode.psf.read_calib / PSF.load / 
       sign in acquisition, the fit json in provenance.converted_from)
   <fourpi>/psf4pi/NPC_f_dxy15.json (the 4Pi PSF of the paper: also the state inside head4pi_v10.pt / v3L.pt) ->
       fourpi/NPC_f_dxy15.psf.zip: FourPiPSF (coupled model, 4 source_output channels with their camera crop / mirror;
-      the fitted state verbatim plus torch_psf's 'raw' parameters, simcode.psf.fourpi_psf);
+      the fitted state verbatim plus torch_psf's 'raw' parameters, fourpi_psf below);
       fourpi/NPC_f_dxy15_spline.psf.zip (--spline): its FourPiSplinePSF as the 4Pi heads build it
       (simcode/fourpi/lut4pi.LUT4Pi: 15 px, 4 x oversampled, z -0.6 .. 0.6 um, 10 nm, zpad 3) with the FourPiPSF as
       source; --spline-knots rebuild (default: no knots stored, the reader tabulates the source on the grid; on the GPU
@@ -80,11 +80,24 @@ def beads(dev):
     print(out, flush=True)
 
 
+def fourpi_psf(state, device=None, z_range=(-0.6, 0.6), **kw):
+    """torch_psf FourPiPSF of a psf4pi state (bit-identical to simcode.fourpi.psf4pi.psf_from_state) whose state() is the
+    given state verbatim plus torch_psf's 'raw' block (the internal parameters, which a reader takes for a bit-exact
+    model): torch_psf's own state() (still at 0fee3c3) recomputes tau = softmax(log tau) and float32-rounds NA / n, so it does not
+    reproduce the fitted values; this way save_zip stores the fitted state as it is and the exact parameters."""
+    p = spsf.FourPiPSF.from_state(state, device=device, z_range=z_range, **kw)
+    s0 = json.loads(json.dumps(state)); s0.pop('raw', None)
+    raw = p.state().get('raw')
+    if raw is not None: s0['raw'] = raw
+    p.state = lambda: json.loads(json.dumps(s0))
+    return p
+
+
 def fourpi(dev, spline, knots='rebuild'):
     P4 = config.root('fourpi')
     js = os.path.join(P4, 'psf4pi', 'NPC_f_dxy15.json')
     J = json.load(open(js)); st = J['psf']
-    p = spsf.fourpi_psf(st, device=dev)
+    p = fourpi_psf(st, device=dev)
     chans = [dict(name=f'c{i}', crop=dict(x0=x, y0=0, w=360, h=200), flip=m) for i, (x, m) in enumerate(zip(FOURPI_X0, FOURPI_MIRROR))]
     prov = dict(estimator='4Pi bead z-stack fit (analysis/fourpi/fit_psf4pi.py; NPC cell, dxy 15)',
                 converted_from=dict(file=os.path.basename(js), json=J),
