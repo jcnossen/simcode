@@ -509,7 +509,7 @@ def simflux_pattern_rows(base, ep=0, me_thr=0.1, chunk=500000):
     e = (ep - fr) % npat
     y = I[np.arange(len(fr)), e] / I.sum(1)
     m = mp.mod[ep]
-    return dict(x=x, y=y, inc=me < me_thr, curve=lambda t: m['relint'] * (1 + m['depth'] * np.sin(t)), sin_conv=True,
+    return dict(x=x, y=y, inc=me < me_thr, isum=I.sum(1), curve=lambda t: m['relint'] * (1 + m['depth'] * np.sin(t)), sin_conv=True,
                 relint=float(m['relint']), depth=float(m['depth']), pitch_nm=float(2 * np.pi / np.hypot(*k[ep]) * 108.33),
                 n=int(len(fr)), n_inc=int((me < me_thr).sum()), rule=f'modulation error < {me_thr} (own pattern, SMLM per-frame intensities at the SMLM position; the SIMFLUX input filter)',
                 base='SMLM fits accepted by the baseline (chi^2 <= 4 x ROI^2 on the 8 x 8 px ROI, smlm.npy) in the crop',
@@ -535,10 +535,10 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
         np.isfinite(F['x_prior']) & np.isfinite(F['y_prior'])
     gi = np.nonzero(good)[0]; n = len(gi)
     a = ep // 3; rn = rel / rel.sum()
-    x = np.empty(n); xs = np.empty(n); y = np.empty(n); gam = np.empty(n)
+    x = np.empty(n); xs = np.empty(n); y = np.empty(n); gam = np.empty(n); isum = np.empty(n)
     for c0 in range(0, n, chunk):
         ii = gi[c0:c0 + chunk]
-        w = F['frame'][ii].astype(np.int64); Ic = I[ii].astype(np.float64); Ic = Ic / Ic.sum(1, keepdims=True)
+        w = F['frame'][ii].astype(np.int64); Ic = I[ii].astype(np.float64); isum[c0:c0 + chunk] = Ic.sum(1); Ic = Ic / Ic.sum(1, keepdims=True)
         xp = F['x_prior'][ii].astype(np.float64); yp = F['y_prior'][ii].astype(np.float64)
         ft = w[:, None] + np.arange(T6)[None]; st = ft % 6; at = st // 3
         E = eps_at(pat, ft)                                                       # [2, n, 6]
@@ -552,7 +552,7 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
         y[c0:c0 + chunk] = Ic[np.arange(len(ii)), j]
     inc = gam < me_thr
     r0 = rn[ep]
-    return dict(x=x, x_solved=xs, y=y, inc=inc, gamma=gam, paper_sel=sel[gi], curve=lambda tt: r0 * (1 + m[a] * np.cos(tt)),
+    return dict(x=x, x_solved=xs, y=y, inc=inc, gamma=gam, isum=isum, paper_sel=sel[gi], curve=lambda tt: r0 * (1 + m[a] * np.cos(tt)),
                 sin_conv=False, relint=float(r0), depth=float(m[a]), pitch_nm=float(2 * np.pi / np.hypot(*K[a]) * 108.33), n=int(n),
                 n_inc=int(inc.sum()), rule=f'modulation error < {me_thr} (own pattern, pass-1 intensities at the pass-1 head position)',
                 base='detections p >= 0.63 in the crop (no precision cut), finite positive intensities',
@@ -567,7 +567,7 @@ def cached_rows(meth, ds, ep, outdir):
     cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
     import hashlib
     src = cfg['base'] if meth == 'SIMFLUX' else cfg['run']
-    ver = '_gamma'                                                                # the common modulation-error rule (2026-11-15)
+    ver = '_gamma2'                                                               # the common modulation-error rule (2026-11-15)
     cf = os.path.join(cd, f'{ds}_{meth}_p{ep}_{hashlib.md5(src.encode()).hexdigest()[:8]}{ver}.npz')     # keyed on the source path too
     if os.path.exists(cf):
         z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
@@ -583,7 +583,7 @@ def cached_rows(meth, ds, ep, outdir):
     return R
 
 
-def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_pattern_plots'):
+def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_pattern_plots', min_phot=300.0):
     """A (SIMFLUX) | B (SIMCODE) side by side, one row per dataset (2026-11-15 layout request: page aspect h / w ~0.8 with
     two datasets); pattern ep (default 0 = angle 0, step 0)"""
     nd = len(datasets)
@@ -592,11 +592,16 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
                             gridspec_kw=dict(hspace=0.36, wspace=0.22, left=0.12 if nd > 1 else 0.09, right=0.98,
                                              top=0.93 if nd > 1 else 0.88, bottom=0.15 if nd > 1 else 0.22))
     rng = np.random.default_rng(seed)
-    V = dict(pattern=ep, n_show_per_panel=n_show, sampling='one random sample of the base population per panel (true proportions); red drawn first, blue on top', seed=seed, panels={}, layout='A SIMFLUX | B SIMCODE; rows = datasets')
+    V = dict(pattern=ep, min_phot=min_phot, n_show_per_panel=n_show, sampling='one random sample of the base population per panel (true proportions); red drawn first, blue on top', seed=seed, panels={}, layout='A SIMFLUX | B SIMCODE; rows = datasets')
     for ri, ds in enumerate(datasets):
         cfg = DS[ds]
         for ci, meth in enumerate(('SIMFLUX', 'SIMCODE')):
             R = cached_rows(meth, ds, ep, outdir); ax = axs[ri, ci]
+            # the pattern estimation's photon cut (min_phot, detected photons, on the 6-frame sum of the method's own per-frame
+            # intensities; pattern_estimation.select), applied to both bases
+            n_before = int(R['n']); keep = R['isum'] >= min_phot
+            R = {k_: (v[keep] if isinstance(v, np.ndarray) and v.shape[:1] == keep.shape else v) for k_, v in R.items()}
+            R['n'] = int(keep.sum()); R['n_inc'] = int(R['inc'].sum())
             if not R['sin_conv']:
                 # SIMCODE rows are in the code's cos convention (phase k_a.r - psi_s - eps_a(t)); plot them in the preprint's sin
                 # convention, phase q_i.(x, y) - phi_ij - eps_i(t) with phi_ij = psi_s - pi/2, as the SIMFLUX panels
@@ -604,7 +609,7 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
                 for k_ in ('x', 'x_solved'):
                     if k_ in R: R[k_] = (R[k_] + np.pi / 2) % (2 * np.pi)
                 R['curve'] = lambda t, r0_=r0_, dep_=dep_: r0_ * (1 + dep_ * np.sin(t)); R['sin_conv'] = True
-            P = dict(files=R['files'], rule=R['rule'], base=R.get('base'), n=R['n'], n_included=R['n_inc'],
+            P = dict(files=R['files'], rule=R['rule'], base=R.get('base'), n_before_photon_cut=n_before, min_phot=min_phot, n=R['n'], n_included=R['n_inc'],
                      frac_included=R['n_inc'] / R['n'], depth=R['depth'], relint=R['relint'], pitch_nm=R['pitch_nm'])
             if 'paper_sel' in R:
                 ps = R['paper_sel'].astype(bool)
@@ -662,14 +667,16 @@ def caption_pattern_preprint(V):
          'estimated pattern. SIMFLUX: per-frame intensities of the SMLM ROI fits and the SMLM position; population = the SMLM fits '
          'accepted by the baseline (chi^2 <= 4 x ROI^2, 8 x 8 px ROI). SIMCODE: pass-1 network intensities and the pass-1 network '
          'position (before the pattern is used); population = the detections with score p >= 0.63 (no precision cut). Both inside '
-         'the field of view x, y in [5, 115) px. '
+         f'the field of view x, y in [5, 115) px, and both with at least {V["min_phot"]:.0f} detected photons summed over the 6 frames of '
+         'the method\'s own per-frame intensities (the photon threshold of the pattern estimation; both in photo-electrons with '
+         'the same v2 camera gain and offset map). '
          f'{V["n_show_per_panel"]} random localizations per panel, in their true proportions (red drawn first, blue on top); the '
          'panel text gives the fraction within 0.1 of the whole population. Black: the estimated illumination pattern of each method (SIMFLUX: depth fixed to '
          '0.9, as in the SIMFLUX pipeline; SIMCODE: the estimated depth), r_ij (1 + m_i sin(phase)).',
          '', 'NUMBERS (si_pattern_plots_values.json; m_eff = effective modulation depth, least-squares sine fit of y / relint over '
          'ALL rows of the class)']
     for k, p in P.items():
-        L.append(f'  {k}: base {p["n"]} ({p.get("base")}); within 0.1: {p["n_included"]} ({100 * p["frac_included"]:.1f} %); '
+        L.append(f'  {k}: base {p["n"]} after the {p["min_phot"]:.0f}-photon cut (before: {p["n_before_photon_cut"]}; {p.get("base")}); within 0.1: {p["n_included"]} ({100 * p["frac_included"]:.1f} %); '
                  f'pattern depth {p["depth"]:.3f}, pitch {p["pitch_nm"]:.1f} nm; m_eff < 0.1 {p["m_eff_included"]:.3f} '
                  f'(peak offset {p["phase_offset_deg_included"]:.1f} deg), >= 0.1 {p["m_eff_excluded"]:.3f}' +
                  (f'; reference: paper selection = {100 * p["paper_selection_frac_of_base"]:.1f} % of the base, of which '
@@ -682,6 +689,9 @@ def caption_pattern_preprint(V):
           'nor the plotted phase uses a pattern-solved position, but the included points lie near the curve by construction for '
           'both methods (they are selected on their distance to it); the fraction within 0.1 and m_eff of the excluded rows are '
           'the informative numbers.',
+          'Isolation (nn >= 3 px within the same window) and the on-through-window link of the pattern estimation are NOT applied: '
+          'each method would use its own detection list (different detectors, densities and window grids), so the cut would remove '
+          'different emitters per method; the modulation-error rule already flags crowded windows for both.',
           'Conventions: both panels in the preprint\'s sin convention, model r_ij (1 + m_i sin(phase)): SIMFLUX (smlmtorch) relint '
           '(1 + depth sin phase) as is; SIMCODE\'s code model rel_s (1 + m_a cos(k_a.r - psi_s - eps_a(t))) is plotted with phase + '
           'pi/2 (phi_ij = psi_s - pi/2).',
