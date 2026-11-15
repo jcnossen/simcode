@@ -301,7 +301,7 @@ def main():
                  fontweight='bold', ha='right', va='bottom')
         axy.text(0.0, -0.12, panel_text(psf_info, psf_cond), transform=axy.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
-            + (' FRC-optimal selection: each method additionally cut at its own max(sigma_x, sigma_y) <= '
+            + (' Precision cut: each method additionally cut at its own max(sigma_x, sigma_y) <= '
                + ', '.join(f"{LABELS[KINDS.index(k)]} " + ('no cut' if SEL[k]['sigma_max_px'] >= FF.SIGMA_MAX else f"{SEL[k]['sigma_max_px'] * FF.PX:.1f} nm") for k in KINDS if k in SEL)
                + f' ({SEL_RULE}; drift of the uncut sets); K: kept (solid) and removed by that cut (light).' if SEL else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
