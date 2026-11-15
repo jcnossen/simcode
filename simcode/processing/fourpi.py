@@ -50,6 +50,7 @@ def context(c):
     from simcode.detector.select import select_points as dselect
     f = c['fourpi']
     net, ck = load_emitter(f['emitter'])
+    net.use_cs = f['learned_cs']
     det, _ = dload(f['detector'])
     if net.T != f['window'] or det.T != f['window']:
         raise ValueError(f"{c['name']}: networks for {net.T} / {det.T} frames, config fourpi.window = {f['window']}")

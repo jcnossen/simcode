@@ -31,7 +31,8 @@ def acquisition(cell, movies):
         fourpi=dict(frame_dt_s=0.05, xlim=[4, 188], file_field=-2, z_period_um=0.24,
                     psf=f'{W4}/psf/psf4pi_{cell}_astig.json',
                     detector=f'{W4}/models/det/final.pt', emitter=f'{W4}/models/emitter.pt',
-                    tile=12.0, tblk=200, coh=1.0, min_photons=150.0, sb=1.0),
+                    tile=12.0, tblk=200, coh=1.0, min_photons=150.0, sb=1.0,
+                    zstarts=[0.0], unwrap_r_px=8.0),           # the astigmatic prior's 4Pi period, then the structure's (STATUS.md)
         fourpi_train=dict(bg=[24.1, 19.6, 23.2, 20.0], emitter_size=128, emitter_scenes=16, emitter_steps=12000,
                           reg_shift_sd=0.02, reg_lin_sd=0.01),
         gpus=[0])

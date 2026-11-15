@@ -211,6 +211,7 @@ class FourPiEmitterNet(nn.Module):
         self.lut = None
         self.vread = vread      # read variance per pixel (e^2); K x for K summed frames (set by the caller)
         self.excess = excess
+        self.use_cs = True      # False: the learned window change and background with the analytic covariance (scale 1)
 
     def train(self, mode=True):
         super().train(mode)
@@ -264,7 +265,7 @@ class FourPiEmitterNet(nn.Module):
             D = D - torch.einsum('nckj,ncpj->nckp', torch.einsum('nckp,ncpj->nckj', D, Q), Q)   # no response to the emitter itself
             Wp = W + D.reshape(n, 4, K, P, P)
             bgc = bm + 0.3 * dbg * (bm.abs() + 1).sqrt()
-            cs = 1.0 + F.softplus(cq - 3.0)
+            cs = 1.0 + F.softplus(cq - 3.0) if self.use_cs else torch.ones(n, device=dev)
         else:
             Wp = W; bgc = bm; cs = torch.ones(n, device=dev)
         y = img - bgc[:, None, :, None, None]

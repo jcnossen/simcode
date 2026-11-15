@@ -24,7 +24,8 @@ camera.offset_map, optics.pixel_um, channels, registration):
                 (refine_keep_best: keep the lower objective; the objectives of different window sets are not comparable,
                 so off by default)
   learned       the emitter network's learned window change, background and covariance scale (false: the fixed
-                canonical windows at the network's prior, border background, analytic covariance)
+                canonical windows at the network's prior, border background, analytic covariance); learned_cs false:
+                the learned windows and background with the analytic covariance (scale 1)
   file_field    which '_'-separated field of a movie file name is the file number (-1: Cell03_561_000_005.dcimg -> 5)
   det_batch     windows per detector batch
   zstack, bead_align   file globs of the bead z-stack / bead-align recordings of the acquisition (PSF / registration
@@ -46,7 +47,7 @@ from simcode.setups.base import Setup
 
 DEFAULTS = dict(frame_dt_s=5.575e-3, xlim=[55, 305], patch=15, window=6, pattern=True, delta_deg=None, z_period_um=0.257, sb=0.2,
                 sig_scale=[1.0, 1.0, 1.0], learned=True, refine=0, refine_keep_best=False, zstarts=[-0.5, 0.0, 0.5],
-                unwrap_r_px=0.0, unwrap_tol=0.12, unwrap_kmax=2,
+                unwrap_r_px=0.0, unwrap_tol=0.12, unwrap_kmax=2, learned_cs=True,
                 file_field=-1, det_batch=20, zstack=None, bead_align=None, psf=None,
                 pattern_ref=None, detector=None, emitter='v10', files=None, nframes=0,
                 chunk=600, p_min=0.5, tile=12.0, tblk=50, dnll=9.21, chi2_max=2.5, coh=1.0, iters=15, batch=1500,
