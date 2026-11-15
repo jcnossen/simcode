@@ -111,7 +111,7 @@ def sf_pf_model(psf, P, mod):
     return f
 
 
-def classical(S, R6, psf, rng):
+def classical(S, R6, psf, rng, start='gt'):
     P = CELL; n = S['n']
     lo, hi = [torch.tensor(v, device=dev) for v in PP.limits(P)]
     xl = torch.as_tensor(S['x'] - S['cx0'], device=dev, dtype=torch.float32); yl = torch.as_tensor(S['y'] - S['cy0'], device=dev, dtype=torch.float32)
@@ -124,13 +124,21 @@ def classical(S, R6, psf, rng):
     with torch.no_grad():
         th_gt = torch.stack([xl, yl, ph, bgv.sum(1)], 1)
         mu, J = PP.smlm_model(psf, P)(th_gt); out['crlb_smlm'] = crlb(mu, J)[:, :2]
-        th0 = torch.stack([xl + jit[:, 0], yl + jit[:, 1], ph, bgv.sum(1)], 1)
+        if start == 'smlmfit':      # paper_pipeline: SMLM start = centroid / border-median init of the 6-frame sum
+            th0 = torch.maximum(torch.minimum(PP.init_smlm(d6.sum(1), P), hi), lo)
+        else:
+            th0 = torch.stack([xl + jit[:, 0], yl + jit[:, 1], ph, bgv.sum(1)], 1)
         th, info = PP.lm_mle(PP.smlm_model(psf, P), d6.sum(1).flatten(1), th0, lo, hi, 50)
+        th_smlm = th.clone()
         out['smlm'] = th[:, :2] - torch.stack([xl, yl], 1); out['smlm_sig'] = info['crlb'][:, :2]
         th_gt1 = torch.stack([xl, yl, ph, bgv.mean(1)], 1)
         mu, J = PP.sf_model(psf, P, mod)(th_gt1); out['crlb_sf'] = crlb(mu, J)[:, :2]
         mu, J = sf_pf_model(psf, P, mod)(torch.cat([th_gt1[:, :3], bgv], 1)); out['crlb_sf_pfbg'] = crlb(mu, J)[:, :2]
-        th0 = torch.stack([xl + jit[:, 0], yl + jit[:, 1], ph, bgv.mean(1)], 1)
+        if start == 'smlmfit':      # paper_pipeline (init 'fixed'): SIMFLUX start = the SMLM fit of the 6-frame sum, bg / 6
+            th0 = torch.cat([th_smlm[:, :3], th_smlm[:, 3:4] / 6], 1)
+            th0 = torch.maximum(torch.minimum(th0, hi), lo)
+        else:
+            th0 = torch.stack([xl + jit[:, 0], yl + jit[:, 1], ph, bgv.mean(1)], 1)
         th, info = PP.lm_mle(PP.sf_model(psf, P, mod), d6.flatten(1), th0, lo, hi, 50)
         out['sf'] = th[:, :2] - torch.stack([xl, yl], 1); out['sf_sig'] = info['crlb'][:, :2]
         # (not in the preprint) SIMFLUX MLE with one bg per frame, start bg_t = the frame's ROI-border median
@@ -211,6 +219,9 @@ def main():
                     "height, detected photons; module doc) or 'gauss1.3' (the preprint's PSF: rendering AND the SMLM / SIMFLUX fits)")
     ap.add_argument('--tag', default='', help='output name (default: see usage)')
     ap.add_argument('--nets', type=int, default=1, help='0: classical methods only (network rows nan)')
+    ap.add_argument('--start', default='gt', choices=['gt', 'smlmfit'],
+                    help="SMLM / SIMFLUX start: gt = GT + U(-0.5, 0.5) px (preprint script); smlmfit = paper_pipeline: SMLM from the "
+                         "centroid / border-median init of the 6-frame sum, SIMFLUX (both bg models) from that SMLM fit")
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-s10')
     from simcode.config import model_set
@@ -234,7 +245,7 @@ def main():
     res = dict(protocol=dict(photons=PHOTONS.tolist(), n_per_bin=nfov * NC * NC, trim_keep=TRIM_KEEP, roi=CELL, edge=EDGE, fov=FOV,
                              pitch_nm=C.PITCH_NM, depth=C.DEPTH, psf=a.psf if gauss else (C.PSF_CALIB_V2 if v2 else C.PSF_CALIB), z_um=R.z, model=a.model, nets=ns, units='px',
                              photons_are=('detected (intensity parameter = photons / %.4f, the 41 x 41 px PSF image sum at z)' % coll) if v2 else 'intensity parameter',
-                             collected_at_z=coll), cond={})
+                             collected_at_z=coll, classical_start=a.start), cond={})
     fn = os.path.join(a.out, f's10_{tag}.json')
     if os.path.exists(fn):
         old = json.load(open(fn)); res['cond'] = old.get('cond', {})
@@ -246,7 +257,7 @@ def main():
             gen = torch.Generator(device=dev); gen.manual_seed(a.seed * 1000 + bi * 10 + (0 if cond == 'const1' else 1))
             S = scene(nfov, ph / coll, cond, rng)
             frames = render(S, R, gen)
-            cl = classical(S, rois(frames, S), psf, rng)
+            cl = classical(S, rois(frames, S), psf, rng, a.start)
             patt = torch.as_tensor(S['patt'], device=dev, dtype=torch.float32)
             if nets is not None:
                 r1, r2 = nets.run(frames, patt)
@@ -258,6 +269,10 @@ def main():
                        crlb_sf_pfbg=np.mean(cl['crlb_sf_pfbg'], 0).tolist(), bg_mean=float(S['bg'].mean()))
             out['smlm'] = summarize(cl['smlm'], cl['smlm_sig']); out['sf'] = summarize(cl['sf'], cl['sf_sig'])
             out['sf_pfbg'] = summarize(cl['sf_pfbg'], cl['sf_pfbg_sig'])
+            pp_ = C.PITCH_NM / C.PX_NM          # fringe off: |error| > half a pattern period along x or y (the pattern axes 0 / 90 deg)
+            for k in ('smlm', 'sf', 'sf_pfbg'):
+                e = cl[k]; ok = np.isfinite(e).all(1)
+                out[k]['fringe_off_frac'] = float((np.abs(e[ok]).max(1) > pp_ / 2).mean()) if ok.any() else float('nan')
             for nm, r, xk, yk, sk in (('nn_p1', r1, 'x_prior', 'y_prior', 's_prior'), ('v2_p1', r1, 'x_sc', 'y_sc', 'scal_sc'),
                                       ('nn_p2', r2, 'x', 'y', 's_prior'), ('v2_p2', r2, 'x_sc', 'y_sc', 'scal_sc')):
                 if r is None:
