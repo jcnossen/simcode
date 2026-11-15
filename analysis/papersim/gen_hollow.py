@@ -23,6 +23,9 @@ v2-PSF set (2026-11-15, --v2psf 1; common.py "v2-PSF movie sets"; the Dexp<d>_v2
   threshold of the brightness fit -> 228, background per 6-sum b -> (b / 0.56 - 6 x 4.6256 ADU) x 0.4256 = 0.76 b - 11.81
   (median 30.8 -> 11.6 per 6-sum = 1.94 photons / px / frame); PSF v2 at one height per GT point (v2 calibration rule), v2 camera.
 usage: CUDA_VISIBLE_DEVICES=2 python analysis/papersim/gen_hollow.py --radius_nm 25 --phot_scale 1 [--cond 1809_2] [--nframes 30000] [--v2psf 1]
+--gt wsm:<seed>:<dx>:<dy> (2026-11-15, the *_wsm sets): the webSMLM microtubule field of wsm_gt.py instead of the preprint
+  tubules (labels as webSMLM places them; one v2-rule height per label as above; gen.json 'zoom_crop' = the figures' zoom box);
+  --device cpu renders on the CPU (the random stream differs from cuda).
 outputs (out/papersim/hollow/<cond>_R<r>_x<s>/): movie.tif, gt.npz (pts = tube points, centre = centreline points, tub = tubule id,
 events with ev_I6), calib_sim.json, camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
 import argparse, hashlib, json, os, sys, time
@@ -97,6 +100,9 @@ def main():
     ap.add_argument('--seed', type=int, default=1)
     ap.add_argument('--block', type=int, default=600)
     ap.add_argument('--out', default=None)
+    ap.add_argument('--gt', default='preprint', help="'preprint' (default: common.preprint_tubules) or 'wsm:<seed>:<dx>:<dy>' = the webSMLM "
+                    "microtubule field of wsm_gt.py (seed, offset in um from webSMLM's start view); --radius_nm must be 0 with wsm")
+    ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     ap.add_argument('--v2psf', type=int, default=0, help='1 = the v2-PSF set: PSF v2, v2 camera, heights from the v2 calibration, real-data statistics converted to v2 units')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-hollow')
@@ -111,10 +117,17 @@ def main():
                  bg_sum6_per_px={k: float(C.bg_v2(v, 6)) for k, v in S['bg_sum6_per_px'].items()})
         thr = 300.0 * C.PHOT_V2
     W = 40
-    centre, knots = C.preprint_tubules()
-    tub = tube_ids(centre)
-    rng = np.random.default_rng([a.seed, int(a.radius_nm * 10)])          # tube angles: same for every photon level
-    pts = project_to_tube(centre, tub, a.radius_nm / C.PX_NM, rng)
+    wsm = None
+    if a.gt.startswith('wsm'):           # webSMLM field (wsm_gt.py): label positions already carry the tube + binder + linker geometry
+        import wsm_gt
+        assert a.radius_nm == 0, '--gt wsm takes the webSMLM label geometry as is (--radius_nm 0)'
+        wsm = wsm_gt.load(a.gt.split(':', 1)[1])
+        pts = wsm['pts']; centre = pts; tub = wsm['mt']; knots = np.zeros((0, 2))
+    else:
+        centre, knots = C.preprint_tubules()
+        tub = tube_ids(centre)
+        rng = np.random.default_rng([a.seed, int(a.radius_nm * 10)])          # tube angles: same for every photon level
+        pts = project_to_tube(centre, tub, a.radius_nm / C.PX_NM, rng)
     # kinetics + brightness: identical events for every radius and photon level (same seed), brightness scaled
     rng = np.random.default_rng([a.seed, 77])
     area = (W * C.PX_NM / 1000) ** 2
@@ -135,14 +148,14 @@ def main():
     if a.v2psf:
         zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev[o]]]
-        R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+        R = C.RendererV2(W, W, dev=a.device); R.z = float(np.median(zpt))
         cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
         ph = ph / cpt[ids[ev[o]]]
     else:
-        R = C.Renderer(W, W)
-    gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(a.radius_nm * 10) * 31 + int(a.phot_scale * 100))
+        R = C.Renderer(W, W, dev=a.device)
+    gen = torch.Generator(device=a.device); gen.manual_seed(a.seed * 7919 + int(a.radius_nm * 10) * 31 + int(a.phot_scale * 100))
     bounds = np.searchsorted(fr, np.arange(0, a.nframes + a.block, a.block))
-    bgt = torch.as_tensor(np.repeat(bg6, 6)[:a.nframes], device='cuda', dtype=torch.float32)
+    bgt = torch.as_tensor(np.repeat(bg6, 6)[:a.nframes], device=a.device, dtype=torch.float32)
 
     def blocks():
         for i, f0 in enumerate(range(0, a.nframes, a.block)):
@@ -153,6 +166,7 @@ def main():
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     wp = window_photons(t0e, t1e, I6, a.nframes)
     xtra = dict(pts_z_um=zpt, pts_collected=cpt) if a.v2psf else {}
+    if wsm is not None: xtra['wsm_z_nm'] = wsm['wsm_z_nm']
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, centre=centre, tub=tub, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1],
                         ev_t0=t0e, ev_t1=t1e, ev_I6=I6, bg6=bg6, k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z,
                         nframes=a.nframes, W=W, radius_px=a.radius_nm / C.PX_NM, **xtra)
@@ -172,7 +186,9 @@ def main():
                         z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
                         photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected); ev_I6 = detected',
                         collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if a.v2psf else {}),
-                gt_points_md5=hashlib.md5(np.ascontiguousarray(pts).tobytes()).hexdigest(), s=round(time.time() - t00, 1))
+                gt=a.gt, **(dict(gt_source='webSMLM microtubules (cells) = inSiliScope CellField (analysis/fourpi_sim/mt_cells.py), wsm_gt.py',
+                                 wsm=wsm['stats'], zoom_crop=wsm['zoom_crop'][0]) if wsm is not None else {}),
+                device=a.device, gt_points_md5=hashlib.md5(np.ascontiguousarray(pts).tobytes()).hexdigest(), s=round(time.time() - t00, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)
 

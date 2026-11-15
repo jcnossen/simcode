@@ -10,14 +10,19 @@ and zoom (the same 16 px crop, fig_density.CROP). Changed for the v2 data / meth
   - render titles: GT-FRC (FRC against the ground truth) instead of the half-split FRC
   - counts: split into localizations with an emitter ON within 3 σ in their window and false positives
   - G FRC curves -> GT-FRC curves; H Jaccard vs frames -> GT-FRC resolution vs frames (time to fidelity)
-  - the per-density summary is the SI table of fig_sim_main.py (out/papersim/figures/fig_sim_Dexp_v2psf_table.{md,csv})
+  - the per-density summary is the SI table of fig_sim_main.py (out/papersim/figures/fig_sim_<prefix><suffix>_table.{md,csv})
+2026-11-15 (the *_wsm sets, reviewer request): A = the ground truth on a plain black background (no illumination pattern); a
+ground-truth zoom (B: all labelling sites, rendered exactly as the method zooms) next to the method zooms; the PSF panel moved
+to the bottom row. The zoom box = the movie's gen.json 'zoom_crop' (webSMLM GT: picked at a filament crossing) or the preprint's
+crop. Layout: A GT | B GT zoom | C SMLM | D SIMFLUX / E counts | F DECODE | G SIMCODE (preprint) | H SIMCODE v2 /
+I PSF | J GT-FRC curves | K GT-FRC vs frames.
 usage: python analysis/papersim/fig_sim_fig2.py [--density 1] [--prefix Dexp] [--suffix _v2psf] [--model m1809v2]
 output: out/paper_figs_v2/fig_sim_<prefix><suffix>.{pdf,svg,png}, _caption.txt"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C, metrics as M
-from fig_density import render, CROP, COL
+from fig_density import render, crop_of, gt_desc, COL
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 from matplotlib.patches import Rectangle
@@ -45,27 +50,29 @@ def main():
     R = json.load(open(os.path.join(run, 'full', f'metrics_{a.model}.json')))
     G = json.load(open(os.path.join(run, 'full', f'gtfrc_{a.model}.json')))['methods']
     gt = np.load(os.path.join(run, 'gt.npz')); W = int(R['W']); nfr = int(R['nframes'])
-    (cx, cy), w = CROP
+    (cx, cy), w = crop_of(run)
     lab = dict(METH)
 
     fig = plt.figure(figsize=(13.0, 10.6))
     outer = GridSpec(2, 1, figure=fig, height_ratios=[2, 1.0], hspace=0.30, left=0.055, right=0.985, top=0.935, bottom=0.065)
     gs = outer[0].subgridspec(2, 4, hspace=0.30, wspace=0.12)
 
-    # A: ground truth (all labelling sites) over the illumination of frame 0 (angle 1, step 1), zoom box
-    A = fig.add_subplot(gs[0, 0]); n = 400
-    u = (np.arange(n) + 0.5) / n * W; X, Y = np.meshgrid(u, u)
-    ill = C.illum(dict(k=gt['k'], phi=gt['phi'], m=gt['m'], rel=gt['rel']), X.ravel(), Y.ravel(), np.zeros(X.size, int)).reshape(n, n)
-    A.imshow(ill / ill.max(), cmap='gray', vmin=0, vmax=3.2, extent=[0, W, W, 0], interpolation='bilinear')
+    # A: ground truth (all labelling sites) on black, zoom box. Field = pixel edges -0.5 .. W - 0.5 (pixel centre = integer)
+    A = fig.add_subplot(gs[0, 0]); A.set_facecolor('k')
     p = gt['pts']; A.plot(p[:, 0], p[:, 1], ',', color='#ffb070', alpha=0.9, ms=0.5, rasterized=True)
     A.add_patch(Rectangle((cx, cy), w, w, fill=False, ec='w', lw=2.5))
-    A.set_xlim(0, W); A.set_ylim(W, 0); A.set_xticks([]); A.set_yticks([])
+    A.set_xlim(-0.5, W - 0.5); A.set_ylim(W - 0.5, -0.5); A.set_xticks([]); A.set_yticks([])
     L = 2000 / C.PX_NM; A.plot([0.05 * W, 0.05 * W + L], [0.93 * W] * 2, 'w-', lw=4, solid_capstyle='butt')
     A.text(0.05 * W, 0.90 * W, '2000 nm', color='w', fontsize=10, va='bottom')
-    A.set_title('Ground truth\n+ illumination pattern', fontsize=FS); letter(A, 'A')
+    A.set_title('Ground truth\n(all labelling sites)', fontsize=FS); letter(A, 'A')
 
-    # renders (B, C top row; F, G, H second row) of the preprint's zoom
-    slots = {'smlm': (0, 1, 'B'), 'sf': (0, 2, 'C'), 'decode': (1, 1, 'F'), 'v1': (1, 2, 'G'), 'v2sig': (1, 3, 'H')}
+    # B: the ground-truth zoom, rendered as the method zooms (same box, renderer, colormap)
+    A = fig.add_subplot(gs[0, 1]); A.set_xticks([]); A.set_yticks([])
+    A.imshow(render(p[:, 0], p[:, 1], (cx, cy), w), cmap='inferno')
+    A.set_title('Ground truth (zoom)', fontsize=FS); letter(A, 'B'); scalebar(A, w, 500)
+
+    # method renders of the zoom (C, D top row; F, G, H second row)
+    slots = {'smlm': (0, 2, 'C'), 'sf': (0, 3, 'D'), 'decode': (1, 1, 'F'), 'v1': (1, 2, 'G'), 'v2sig': (1, 3, 'H')}
     cnt = {}
     for k, lab_k in METH:
         r, c, L = slots[k]; A = fig.add_subplot(gs[r, c]); A.set_xticks([]); A.set_yticks([])
@@ -76,12 +83,13 @@ def main():
         assert G[k]['n'] == R['methods'][k]['n_frc'], (k, G[k]['n'], R['methods'][k]['n_frc'])
         cnt[k] = (G[k]['n'], G[k]['ghost']['ghost_fraction'])
 
-    # D: PSF panel (top-right slot): xy | xz, two-line label
+    # I: PSF panel (bottom row, left): xy | xz, two-line label
     import psfpanel
     info = psfpanel.sim_psf_info(run, a.prefix == 'Dexp')
-    gp = gs[0, 3].subgridspec(2, 2, height_ratios=[1.0, 0.30], wspace=0.75, hspace=0.05)
+    gb = outer[1].subgridspec(1, 3, wspace=0.26, width_ratios=[0.85, 1.25, 1.25])
+    gp = gb[0].subgridspec(2, 2, height_ratios=[1.0, 0.30], wspace=0.75, hspace=0.05)
     axy, axz, axt = fig.add_subplot(gp[0, 0]), fig.add_subplot(gp[0, 1]), fig.add_subplot(gp[1, :])
-    psfpanel.draw(axy, axz, info, fontsize=8); axz.set_box_aspect(1); letter(axy, 'D', dx=-0.12, dy=1.12)
+    psfpanel.draw(axy, axz, info, fontsize=8); axz.set_box_aspect(1); letter(axy, 'I', dx=-0.12, dy=1.12)
     axt.axis('off'); axt.text(0.0, 0.9, psfpanel.panel_label(info), transform=axt.transAxes, fontsize=FS - 1, va='top', ha='left', linespacing=1.2)
 
     # E: localization counts (FRC set), split into correct and false positives
@@ -94,22 +102,21 @@ def main():
     A.set_ylabel('Counts (x 10$^5$)', fontsize=11); A.tick_params(axis='y', labelsize=10); A.legend(fontsize=8, frameon=False, loc='upper left')
     A.set_ylim(0, nn.max() * 1.3); A.set_title('Localizations', fontsize=FS); letter(A, 'E', dx=-0.17)
 
-    # I: GT-FRC curves; J: GT-FRC resolution vs frames (time to fidelity)
-    gb = outer[1].subgridspec(1, 2, wspace=0.22)
-    A = fig.add_subplot(gb[0]); B = fig.add_subplot(gb[1])
+    # J: GT-FRC curves; K: GT-FRC resolution vs frames (time to fidelity)
+    A = fig.add_subplot(gb[1]); B = fig.add_subplot(gb[2])
     for k in keys:
         g = G[k]; lw = 2.4 if k == 'v2sig' else 1.5
         A.plot(g['gt_frc']['freq'][2:], g['gt_frc']['curve'][2:], color=COL[k], lw=lw, label=f"{lab[k]}  {g['gt_frc']['res_nm']:.1f} nm")
         t = g['ttf']; B.plot(np.array(t['frames']) / 1e3, t['res_nm'], '-o', color=COL[k], lw=lw, ms=4 if k != 'v2sig' else 5, label=lab[k])
     A.axhline(1 / 7, color='grey', ls='--', lw=1); A.set_xlim(0, 0.09); A.set_ylim(-0.03, 1.0)
     A.set_xlabel('Spatial freq. [nm$^{-1}$]', fontsize=11); A.set_ylabel('GT-FRC', fontsize=11); A.tick_params(labelsize=10)
-    A.set_title('FRC against the ground truth', fontsize=FS); A.legend(fontsize=9, frameon=True, loc='upper right'); letter(A, 'I', dx=-0.09)
+    A.set_title('FRC against the ground truth', fontsize=FS); A.legend(fontsize=9, frameon=True, loc='upper right'); letter(A, 'J', dx=-0.12)
     B.set_xscale('log'); B.set_yscale('log'); B.axhline(30, color='0.5', lw=1, ls=':')
     B.text(60, 30.8, '30 nm', color='0.4', fontsize=9, ha='right', va='bottom')
     B.set_xticks([0.25, 1, 4, 15, 60]); B.set_xticklabels(['0.25', '1', '4', '15', '60']); B.set_ylim(12, 150)
     B.set_yticks([15, 20, 30, 50, 100]); B.set_yticklabels(['15', '20', '30', '50', '100']); B.minorticks_off(); B.tick_params(labelsize=10)
     B.set_xlabel('frames (x 1000)', fontsize=11); B.set_ylabel('GT-FRC resolution (nm)', fontsize=11)
-    B.set_title('GT-FRC vs frames (time to fidelity)', fontsize=FS); letter(B, 'J', dx=-0.09)
+    B.set_title('GT-FRC vs frames (time to fidelity)', fontsize=FS); letter(B, 'K', dx=-0.12)
 
     os.makedirs(a.out, exist_ok=True); out = os.path.join(a.out, f'fig_sim_{a.prefix}{a.suffix}')
     # caption material
@@ -123,26 +130,30 @@ def main():
            f"experimental photons and background of 1809/2 (median {g0['brightness_fit']['fit_median']:.0f} detected photons per 6-frame window, "
            f"background {g0['bg_per_frame']['mean']:.2f} photons/px/frame); mean on-time {g0['avg_on_time']:g} frames; pattern 2 angles x 3 phase steps, "
            f"pitch {C.PITCH_NM:g} nm, modulation depth {C.DEPTH:g}.",
-           "(A) Ground truth: all labelling sites of the randomly generated microtubules (orange) over the illumination pattern of the first frame "
-           "(angle 1, phase step 1; grey); white box = the zoom of B, C, F-H (the preprint's zoom, "
-           f"{w * C.PX_NM / 1000:.2f} µm).",
-           "(B, C, F, G, H) Renders of the zoom by (B) SMLM, (C) SIMFLUX, (F) DECODE, (G) SIMCODE as in the preprint and (H) SIMCODE v2; same rendering "
-           "for all (5.4 nm pixels, 1-pixel Gaussian blur, 99.5 % clip). Rendered = each method's comparison set: one localization per emitter and "
+           f"(A) Ground truth: all labelling sites of the {gt_desc(run)} (orange); white box = the zoom of B-D, F-H ("
+           + (f"{w * C.PX_NM / 1000:.2f} µm, centred on filament crossings" if g0.get('zoom_crop') else f"the preprint's zoom, {w * C.PX_NM / 1000:.2f} µm") + ")"
+           + (". Ground truth from webSMLM (microtubules (cells) sample, which embeds the inSiliScope world model), webSMLM defaults except the label "
+              "efficiency (0.5 labels per nm of filament as in the preprint ground truth); the labels sit on the 13-protofilament lattice with a 12 nm "
+              "binder and 2-5 nm linker (~25-30 nm from the tube axis), their heights are drawn from the experimental height distribution as for every "
+              "emitter (see above)." if g0.get('wsm') else "."),
+           "(B) The ground truth of the zoom (all labelling sites), rendered exactly as the reconstructions. "
+           "(C, D, F, G, H) Renders of the zoom by (C) SMLM, (D) SIMFLUX, (F) DECODE, (G) SIMCODE as in the preprint and (H) SIMCODE v2; same rendering "
+           "for B-D, F-H (5.4 nm pixels, 1-pixel Gaussian blur, 99.5 % clip). Rendered = each method's comparison set: one localization per emitter and "
            "disjoint 6-frame window, estimated precision < 0.15 px; SIMCODE v2 additionally p >= 0.63 and calibrated max(σx, σy) <= 12 nm. "
            "SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does (true-pattern results: SI table). "
            "SMLM and DECODE get 6-frame sums; DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
            "GT-FRC in the titles = resolution from the FRC between the rendered reconstruction and the rendered ground truth (5 nm pixels, 1/7 threshold, "
            "full field, 60 000 frames).",
-           psfpanel.caption_text(info, what='(D)').replace('(D):', '(D)', 1),
+           psfpanel.caption_text(info, what='(I)').replace('(I):', '(I)', 1),
            f"(E) Number of localizations in the comparison set: {', '.join(f'{lab[k]} {cnt[k][0]}' for k in keys)}; hatched = false "
            f"positives (no emitter ON in the localization's window within 3 σ, σ = the localization's own precision): "
            f"{', '.join(f'{lab[k]} {100 * cnt[k][1]:.1f} %' for k in keys)}.",
-           "(I) FRC curves of each method's reconstruction against the ground truth (60 000 frames); dashed line = 1/7; resolution in the legend; curves smoothed with a 5-sample moving average (as for the resolution values), the first two frequency samples (edge of the smoothing) not drawn. "
+           "(J) FRC curves of each method's reconstruction against the ground truth (60 000 frames); dashed line = 1/7; resolution in the legend; curves smoothed with a 5-sample moving average (as for the resolution values), the first two frequency samples (edge of the smoothing) not drawn. "
            "Replaces the preprint's half-split FRC curves (half-split FRC of the same sets: SI table).",
-           f"(J) Time to fidelity: GT-FRC resolution on the first N frames (N = 250 ... 60 000); dotted line = 30 nm. Frames to 30 nm: {ftt}. "
+           f"(K) Time to fidelity: GT-FRC resolution on the first N frames (N = 250 ... 60 000); dotted line = 30 nm. Frames to 30 nm: {ftt}. "
            "Replaces the preprint's Jaccard index vs frames; the per-density summary (0.5 / 1 / 2 / 4 emitters/µm²/frame: localizations, GT-FRC, "
            "frames to 30 nm, half-split FRC, 10 nm Jaccard, false-positive fraction, with and without the true pattern) is the SI table "
-           "out/papersim/figures/fig_sim_Dexp_v2psf_table.{md,csv} (fig_sim_main.py)."]
+           f"out/papersim/figures/fig_sim_{a.prefix}{a.suffix}_table.{{md,csv}} (fig_sim_main.py)."]
     open(out + '_caption.txt', 'w').write('\n'.join(cap) + '\n')
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', **kw); print(f'{out}.{ext}')

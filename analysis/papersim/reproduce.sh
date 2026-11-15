@@ -28,6 +28,10 @@
 #                                    figures fig_moving_pp.py (preprint layout) -> out/paper_figs_v2/si_simulated_live_smlm{,_internal}.*
 #                                    and fig_moving_main.py (extended)
 #   s10_v2psf "m1809"                S10 precision vs CRLB on the in-situ PSF v2 (s10.py --psf v2 -> s10_<model>v2) + si_crlb_figure.py (extended) + si_crlb_figure_pp.py (preprint layout)
+#   wsm_movies "Dexp D"              (2026-11-15) the webSMLM-GT sets <P><d>_v2psf_wsm: the generator settings of <P><d>_v2psf with the
+#                                    webSMLM microtubule field wsm:11:3:3 (wsm_gt.py; picked from out/papersim/websmlm_gt/candidates.png)
+#   wsm "Dexp1 Dexp0.5 ..."          all methods on <item>_v2psf_wsm as v2psf (no old-PSF reference row), metrics, GT-FRC
+#   wsm_figs                         Fig 2 (fig_sim_fig2.py), SI figure + table (fig_sim_main.py), overview, fig_density of the _wsm sets
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
 PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
@@ -108,5 +112,26 @@ case $what in
       $PY analysis/papersim/si_crlb_figure.py --tag ${NS}v2
       $PY analysis/papersim/si_crlb_figure_pp.py --tag ${NS}v2
     done ;;
-  *) sed -n 2,34p "$0"; exit 1 ;;
+  wsm_movies)
+    for P in $items; do for D in 0.5 1 2 4; do
+      if [ $P = Dexp ]; then [ -f $O/Dexp${D}_v2psf_wsm/gen.json ] || $PY analysis/papersim/gen_hollow.py --radius_nm 0 --density $D --nframes 60000 --v2psf 1 --gt wsm:11:3:3 --out $O/Dexp${D}_v2psf_wsm > $O/logs/gen_Dexp${D}_v2psf_wsm.log 2>&1
+      else [ -f $O/D${D}_v2psf_wsm/gen.json ] || $PY analysis/papersim/gen_density.py --density $D --nframes 60000 --psf v2 --gt wsm:11:3:3 --out $O/D${D}_v2psf_wsm > $O/logs/gen_D${D}_v2psf_wsm.log 2>&1; fi
+      echo "$(date) movie ${P}${D}_v2psf_wsm rc $?"
+    done; done ;;
+  wsm)
+    for D in $items; do
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf_wsm --steps base,v1,v1gt,decode --psf models/insitu/calib_1809_2_psf_v2.json --decode_name dec_sim1809v2 >> $O/logs/full_${D}_v2psf_wsm.log 2>&1
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf_wsm --steps v2,metrics,gtfrc --model ${MODEL:-m1809} --name ${NAME:-m1809v2} --gt_diag 0 >> $O/logs/full_${D}_v2psf_wsm.log 2>&1
+      rc=$?; rm -rf $O/${D}_v2psf_wsm/full/base/work
+      echo "$(date) done ${D}_v2psf_wsm rc $rc"
+    done ;;
+  wsm_figs)
+    N=${NAME:-m1809v2}
+    $PY analysis/papersim/fig_sim_fig2.py --prefix Dexp --suffix _v2psf_wsm --model $N
+    for P in ${items:-Dexp}; do
+      $PY analysis/papersim/fig_sim_main.py --prefix $P --suffix _v2psf_wsm --model $N
+      $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm --model $N
+      $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf_wsm --model $N
+    done ;;
+  *) sed -n 2,38p "$0"; exit 1 ;;
 esac

@@ -75,9 +75,12 @@ def bg_v2(b_old, nframes=1):
 
 def heights_v2(n, rng, calib=PSF_CALIB_V2):
     """[n] emitter heights (um) by the v2 calibration rule (simcode.simulate.acquisition.height_quantiles / draw_z, numpy draw)"""
-    from simcode.simulate.acquisition import height_quantiles
+    import torch
+    import simcode.simulate.acquisition as acq
     c = json.load(open(calib))
-    P, Z = (t.cpu().numpy().astype(np.float64) for t in height_quantiles(c))
+    d0 = acq.dev; acq.dev = torch.device('cpu')            # the quantile nodes only (CPU-only generation works too)
+    try: P, Z = (t.numpy().astype(np.float64) for t in acq.height_quantiles(c))
+    finally: acq.dev = d0
     z = np.interp(rng.random(n), P, Z)
     lo, hi = c['emitter_z_range_um']
     return np.clip(z, lo, hi)
