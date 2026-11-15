@@ -8,7 +8,7 @@ Estimator (one for the real data and the simulation): half-split FRC of the loca
   histograms with 5 nm pixels in 250 nm y-slabs, z window +-300 nm around the median (sim +-450), correlation pooled over the
   slabs before normalisation (= the simulation's GT-FRC x-z estimator); rings of width 1 / (largest side), 5-ring moving
   average, 1/7 threshold; resolution = the INTERPOLATED crossing by the sustained rule (first frequency after which the curve
-  stays below 1/7 for 0.01 / nm; si_4pi_sim e); the first-crossing value (figures' rule) is stored too. Raw values per N
+  stays below 1/7 for 0.01 / nm; the rule of all 4Pi figures); the first-crossing value is stored too. Raw values per N
   (no running minimum). Three ways to choose the N frames and the two halves:
   blk     first N frames; halves = alternating blocks of b six-frame windows, b = min(500, max(1, N / 6 / 10)) (>= 10 blocks
           for every N, blocks shorter than N; 500 windows = the figures' blocks from N = 30 000 frames on). For N < 30 000 the

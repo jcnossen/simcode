@@ -141,11 +141,9 @@ def timeline_caption(S, region, total):
     w10 = lambda k: (lambda v: 'not reached' if v is None else f'{v:,.0f}')(S[k]['frames_to_within_10pct_of_final'])
     return (f"FRC resolution versus the number of frames ({region}; the first N frames of the series; two halves = alternating blocks of "
             "min(500, N / 12) six-frame windows, i.e. the two halves of the N frames below 6000 frames and the titles' 500-window blocks from "
-            "6000 frames on; same 4 nm pixels and 5-ring smoothing as the titles' FRC). Drawn: the 1/7 crossing interpolated between rings, taken "
-            "where the curve stays below 1/7 for 0.01 /nm (the rule of the simulation figure's FRC timeline): with the titles' first-crossing "
-            "rule the timeline jumps at the dips of the structure's own spectrum (ring / tube size) instead of following the sampling; at all "
-            f"{total:,} frames the two rules give " + ' / '.join(f"{S[k]['final_nm']:.1f}" for k in K3) + " and " +
-            ' / '.join(f"{S[k]['first_crossing']['final_nm']:.1f}" for k in K3) + " nm (titles). Values above 300 nm not drawn; dotted: 25 / 20 / 15 nm. "
+            f"6000 frames on; otherwise the FRC of the titles, so the last point (all {total:,} frames) is the titles' value; the sustained crossing "
+            "rule keeps the timeline from jumping at the dips of the structure's own spectrum (ring / tube size)). Values above 300 nm not drawn; "
+            "dotted: 25 / 20 / 15 nm. "
             "Frames until the FRC stays at or below 25 / 20 / 15 nm: "
             + '; '.join(f"{LAB[k]} {s(k, 25)} / {s(k, 20)} / {s(k, 15)} (within 10 % of its all-frames value from {w10(k)} frames)" for k in K3)
             + ". What the timeline measures: the half-split FRC is the agreement of two independent halves of the data. On DNA-PAINT data it is set by "
@@ -272,7 +270,11 @@ def fig_npc(a):
     zcbar(fig, [0.06, 0.966 - ha - 0.03, 0.2, 0.008], zr, 'z (nm), a')
     # (b) zooms, coloured by z, same box
     OPK = {'net': 'network, all kept (good & N >= 1000)', 'net_m': 'network, matched count (combined sigma)', 'cl': 'classical published-style'}
-    FRCn = {k: ref['operating_points'][OPK[k]]['frc'] for k in K3}                 # central 10 x 10 um, select_curve_npc.metrics
+    cx, cy = 0.5 * (fb[0] + fb[1]), 0.5 * (fb[2] + fb[3]); frc_box = (cx - 5000, cx + 5000, cy - 5000, cy + 5000)   # select_curve_npc frc_box
+    FT = frc_timeline({k: T[k] for k in K3}, frc_box, 38 * FPF, 'npc')
+    FRC1 = {k: ref['operating_points'][OPK[k]]['frc'] for k in K3}                  # first crossing, select_curve_npc.metrics (central 10 x 10 um)
+    for k in K3: assert abs(FT['frc_first'][k][-1] - FRC1[k]) < 0.05, (k, FT['frc_first'][k][-1], FRC1[k])    # same rows / halves as the reference
+    FRCn = {k: FT['frc'][k][-1] for k in K3}                                         # titles: sustained interpolated crossing, all frames
     zlist = [('net', f"4Pi-SIMCODE\n{int(inrect(T['net']['x'], T['net']['y'], zb).sum()):,} locs"),
              ('net_m', f"4Pi-SIMCODE, matched count\n{int(inrect(T['net_m']['x'], T['net_m']['y'], zb).sum()):,} locs"),
              ('cl', f"4Pi-SIMFLUX\n{int(inrect(T['cl']['x'], T['cl']['y'], zb).sum()):,} locs")]
@@ -332,21 +334,19 @@ def fig_npc(a):
     ax.set_ylim(0.2, 1.05); ax.set_yticks([0.4, 0.6, 0.8, 1.0])
     ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.3, handletextpad=0.4, borderaxespad=0.2, labelspacing=0.15)
     letter(ax, 'f', -0.1)
-    cx, cy = 0.5 * (fb[0] + fb[1]), 0.5 * (fb[2] + fb[3]); frc_box = (cx - 5000, cx + 5000, cy - 5000, cy + 5000)   # select_curve_npc frc_box
-    FT = frc_timeline({k: T[k] for k in K3}, frc_box, 38 * FPF, 'npc')
     ax = fig.add_axes([xr[2], yb2, w2, h2]); frc_timeline_panel(ax, FT, K3, FT['N'][-1])
     ax.legend(loc='upper right', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
     ax.set_title('central 10 × 10 µm, first N frames', fontsize=6.3, pad=2)
     letter(ax, 'g', -0.1)
     TS = timeline_summary(FT)
-    for k in K3: assert abs(FT['frc_first'][k][-1] - FRCn[k]) < 0.05, (k, FT['frc_first'][k][-1], FRCn[k])    # first crossing at all frames = the titles' FRC
     save(fig, 'si_4pi_npc')
     # numbers
     sc = json.load(open(f'{P4}/net/cmp_v10/compare_NPC_v10.json')) if os.path.exists(f'{P4}/net/cmp_v10/compare_NPC_v10.json') else None
     val = dict(lines={k: LAB[k] for k in K3}, pore_metrics={k: PM[k] for k in K3}, n_rows={k: int(len(T[k]['x'])) for k in K3}, n_overview=int(len(S['x'])),
                zoom_box_nm=list(map(float, zb)), info=info, reference_json=f'{P4}/fig/NPC_selection_curves_v10.json',
+               frc_titles_nm=FRCn, frc_first_crossing_nm=FRC1,
                panel_g_frc_vs_frames=dict(frc_box_nm=list(map(float, frc_box)), frames=FT['N'], frc_nm=FT['frc'], frc_first_nm=FT['frc_first'], n_locs=FT['n'], summary=TS,
-                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn), frc_first_nm = first crossing (titles)'),
+                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn, titles), frc_first_nm = first crossing (earlier titles)'),
                panel_f_valley_peak_vs_kept={k: [dict(n_keep=r['n_keep'], valley_peak=r.get('z_dip'), ring_z_sd_nm=r.get('ring_z_sd_nm'))
                                                 for r in ref['curves'][k]['combined sigma']] for k in ('net', 'cl')},
                reference_operating_points={k: {q: ref['operating_points'][OPK[k]].get(q) for q in ('n_keep', 'locs_per_pore', 'ring_radius_median_nm', 'radial_width_nm',
@@ -372,8 +372,7 @@ def caption_npc(v):
          "published rejections). "
          "(a) Overview of the nucleus, 4Pi-SIMCODE localizations in the validated range (|z| <= 0.3 um), colour = z. "
          "(b) Zoom (white box in a), the three analyses, with the localizations in the zoom and the FRC resolution of each analysis (x-y, over "
-         "the central 10 x 10 um of the nucleus; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC "
-         "smoothed over 5 rings, 1/7 threshold, first crossing; simcode/evaluation/frc.py). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
+         "the central 10 x 10 um of the nucleus; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC smoothed over 5 rings, 1/7 threshold, crossing interpolated between rings and taken where the curve stays below 1/7 for 0.01 /nm (the sustained rule of all FRC values in the 4Pi figures, also the simulation's); simcode/evaluation/frc.py). (c) Averaged pore (x-y) of the matched-count 4Pi-SIMCODE localizations; "
          f"{I['n_pores']:,} pores found once on the 4Pi-SIMFLUX table, the same centres for every analysis. (d) Side views (x-z, |y| < 30 nm) of the "
          "averaged pore. (e) z histogram of the ring (radius 25-85 nm) about each pore's mean z: the two Nup96 rings; valley / peak = the "
          "lowest count between the two ring peaks divided by the lower peak (lower = better separated rings). "
@@ -388,7 +387,8 @@ def caption_npc(v):
          f"Localizations in the field (pores' footprint): 4Pi-SIMCODE {v['n_rows']['net']:,}, matched count {v['n_rows']['net_m']:,}, "
          f"4Pi-SIMFLUX {v['n_rows']['cl']:,}; overview rows (validated range) {v['n_overview']:,}.",
          f"Adjacent-window precision (DAFL, x / y / z, all pairs): 4Pi-SIMCODE {d(rn)}, matched count {d(rm)}, 4Pi-SIMFLUX {d(rc)}. "
-         f"FRC (central 10 x 10 um): {rn['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} nm. Fringe hops (adjacent windows, |dz| > 80 nm): "
+         f"FRC (central 10 x 10 um): {v['frc_titles_nm']['net']:.1f} / {v['frc_titles_nm']['net_m']:.1f} / {v['frc_titles_nm']['cl']:.1f} nm "
+         f"(first-crossing rule: {v['frc_first_crossing_nm']['net']:.1f} / {v['frc_first_crossing_nm']['net_m']:.1f} / {v['frc_first_crossing_nm']['cl']:.1f} nm). Fringe hops (adjacent windows, |dz| > 80 nm): "
          f"{100 * rn['fringe_hop']:.1f} % / {100 * rm['fringe_hop']:.2f} % / {100 * rc['fringe_hop']:.1f} %.",
          f"Registration network -> 4Pi-SIMFLUX on {I['registration']['n_matched']:,} matched emitters (same window, < 64 nm): "
          f"{I['registration']['dx_median_nm']:.1f} / {I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed; "
@@ -475,7 +475,10 @@ def fig_mt(a):
     ZT = dict(net='4Pi-SIMCODE', net_m='matched count', cl='4Pi-SIMFLUX')
     zoom_matched = []
     refm = json.load(open(f'{P4}/fig/MT_selection_curves_v10_full.json'))['operating_points']
-    FRCm = {k: refm[o]['frc'] for k, o in (('net', 'all'), ('net_m', 'matched count'), ('cl', 'classical published (same files)'))}   # box 0 = region b
+    FRC1 = {k: refm[o]['frc'] for k, o in (('net', 'all'), ('net_m', 'matched count'), ('cl', 'classical published (same files)'))}   # first crossing, box 0
+    FT = frc_timeline({k: T[k] for k in K3}, cores[0], 100 * FPF, 'mt')
+    for k in K3: assert abs(FT['frc_first'][k][-1] - FRC1[k]) < 0.05, (k, FT['frc_first'][k][-1], FRC1[k])    # same rows / halves as the reference
+    FRCm = {k: FT['frc'][k][-1] for k in K3}                                         # titles: sustained interpolated crossing, all frames, box 0 = region b
     for r, (cc, s) in enumerate(zooms):
         y0 = top - hc - r * (hc + 0.05)
         zr_ = (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)
@@ -510,12 +513,10 @@ def fig_mt(a):
         else: ax.set_yticklabels([])
         ax.set_title(f"{LAB[k]}\n({int(m.sum()):,} locs)", fontsize=6.3, pad=2, color=COL[k])
     # (f) FRC resolution vs frames (box 0 = the region of the zoom-1 FRC values)
-    FT = frc_timeline({k: T[k] for k in K3}, cores[0], 100 * FPF, 'mt')
     ax = fig.add_axes([0.755, ye, 0.23, 0.205]); frc_timeline_panel(ax, FT, K3, FT['N'][-1])
     ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
     ax.set_title('box 0, first N frames', fontsize=6.3, pad=2); letter(ax, 'f', -0.12)
     TS = timeline_summary(FT)
-    for k in K3: assert abs(FT['frc_first'][k][-1] - FRCm[k]) < 0.05, (k, FT['frc_first'][k][-1], FRCm[k])    # first crossing at all frames = the zoom-1 titles' FRC
     # (g) tube cross-sections + (h) profiles
     yf = 0.07; wf = 0.16; hf = wf * AR
     prof = {}
@@ -552,8 +553,9 @@ def fig_mt(a):
                profiles={k: {q: v for q, v in p.items() if q not in ('lat', 'ax')} for k, p in prof.items()},
                n_overview=int(Z['ov_n']), n_rows_region={k: int(inreg(T[k]).sum()) for k in K3}, info=info, lines={k: LAB[k] for k in K3},
                reference_json=f'{P4}/fig/MT_selection_curves_v10_full.json',
+               frc_titles_nm=FRCm, frc_first_crossing_nm=FRC1,
                panel_f_frc_vs_frames=dict(frc_box_nm=list(map(float, cores[0])), frames=FT['N'], frc_nm=FT['frc'], frc_first_nm=FT['frc_first'], n_locs=FT['n'], summary=TS,
-                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn), frc_first_nm = first crossing (titles)'),
+                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn, titles), frc_first_nm = first crossing (earlier titles)'),
                reference_operating_points={k: {q: ref['operating_points'][o].get(q) for q in ('n_keep', 'fwhm_lat', 'fwhm_ax', 'dip', 'dafl', 'dafl_2_4k', 'fringe_hop', 'frc')}
                                            for k, o in (('net', 'all'), ('net_m', 'matched count'), ('cl', 'classical published (same files)'))})
     json.dump(val, open(f'{OUT}/si_4pi_mt_values.json', 'w'), indent=1, default=float)
@@ -574,8 +576,7 @@ def caption_mt(v):
          f"4Pi-SIMFLUX keeps, {v['n_matched']:,}); and 4Pi-SIMFLUX, the analysis as published (published-style pipeline with its published rejections). "
          "(a) The whole field, 4Pi-SIMCODE localizations coloured by z. (b) The 6 x 6 um region of box 0 (white box in a), 4Pi-SIMCODE. (c) Zoom 1, "
          f"a crossing of two microtubules {G['zoom1']['dz_nm']:.0f} nm apart in z, the three analyses, each with its FRC resolution "
-         "(x-y, over the whole region of b = box 0; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC "
-         "smoothed over 5 rings, 1/7 threshold, first crossing; simcode/evaluation/frc.py); in the zooms (c, d) the matched count is taken "
+         "(x-y, over the whole region of b = box 0; 4 nm histogram pixels, two halves = alternating blocks of 500 six-frame windows, ring FRC smoothed over 5 rings, 1/7 threshold, crossing interpolated between rings and taken where the curve stays below 1/7 for 0.01 /nm (the sustained rule of all FRC values in the 4Pi figures, also the simulation's); simcode/evaluation/frc.py); in the zooms (c, d) the matched count is taken "
          "WITHIN each zoom (the most precise 4Pi-SIMCODE localizations of that zoom, as many as 4Pi-SIMFLUX has there: "
          + ' / '.join(f"{q['n']:,} (combined precision <= {q['threshold_nm']:.2f} nm)" for q in v['zoom_matched'])
          + " for zooms 1 / 2); everywhere else (e-h, numbers) it is the global match over boxes 0 and 1. "
@@ -593,7 +594,8 @@ def caption_mt(v):
          f"4Pi-SIMFLUX {v['n_rows_region']['cl']:,}; whole field (a) {v['n_overview']:,}.",
          f"Adjacent-window precision (DAFL x / y / z nm, boxes 0 + 1): 4Pi-SIMCODE {d(ra)}, matched count {d(rm)}, 4Pi-SIMFLUX {d(rc)}. "
          f"Fringe hops: {100 * ra['fringe_hop']:.1f} / {100 * rm['fringe_hop']:.1f} / {100 * rc['fringe_hop']:.1f} %. "
-         f"FRC (box 0): {ra['frc']:.1f} / {rm['frc']:.1f} / {rc['frc']:.1f} nm.",
+         f"FRC (box 0): {v['frc_titles_nm']['net']:.1f} / {v['frc_titles_nm']['net_m']:.1f} / {v['frc_titles_nm']['cl']:.1f} nm "
+         f"(first-crossing rule: {v['frc_first_crossing_nm']['net']:.1f} / {v['frc_first_crossing_nm']['net_m']:.1f} / {v['frc_first_crossing_nm']['cl']:.1f} nm).",
          f"Registration network -> 4Pi-SIMFLUX on {I['registration']['n_matched']:,} matched emitters: {I['registration']['dx_median_nm']:.1f} / "
          f"{I['registration']['dy_median_nm']:.1f} / {I['registration']['dz_median_nm']:.1f} nm removed. Sample z drift {I['zdrift_ptp_nm']:.0f} nm ptp "
          "(structure-based, 4Pi-SIMFLUX table), the same curve subtracted from every row.",
