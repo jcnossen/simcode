@@ -44,7 +44,7 @@ OUTD = os.path.join(C.OUT, 'frcopt')
 
 
 # ------------------------------------------------------------------------------------------------ loading
-def v2_rows(d, W, pagg_file=None):
+def v2_rows(d, W, pagg_file=None, crop=None):
     """pass-2 rows of a SIMCODE run (simcode.table.load_rows of est2 = the row order of locs_p2.hdf5) -> dict with x, y, f, p,
     sx0, sy0 (calibrated, before the selection-aware rescale), p_agg (nan without the stage file) and the rescale g(u) helper"""
     from simcode.table import load_rows, tile_rank, model_sig_u
@@ -58,7 +58,7 @@ def v2_rows(d, W, pagg_file=None):
         assert np.array_equal(S['p2_wstart'].astype(np.int64), T['f'])
         T['p_agg'] = S['p2_p_agg'].astype(np.float64)
     su = json.load(open(model_sig_u(d, 'est2')))
-    crop = (0.0, 0.0, float(W))
+    crop = (0.0, 0.0, float(W)) if crop is None else tuple(float(v) for v in crop)
 
     def sigma(base):
         """sx, sy rescaled by g(u), u = per-tile rank within base (only base rows are rescaled, as build_table)"""
