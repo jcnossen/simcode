@@ -15,6 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import common as C
 import metrics as M
+import gtfrc as G
+_ff = lambda r: float('nan') if G.fair_frc_nm(r) is None else G.fair_frc_nm(r)      # half-split FRC under the shared rule G.RULE
 
 ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2c']      # table order; figures: FIG_ORDER
 FIG_ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v2sig']
@@ -66,13 +68,13 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     for i, k in enumerate(ks):
         T = M.load_method(k, R['methods'][k]['path']); _, _, f = M.frc_set(T, R['W'], R['nframes'])
         ax = fig.add_subplot(gs[0, i + 1]); ax.imshow(render(T['x'][f], T['y'][f], (cx, cy), w), cmap='inferno'); ax.axis('off')
-        r = R['methods'][k]; gl = f", GT-FRC {GF[k]['gt_frc']['res_nm']:.1f}" if k in GF else ''
-        ax.set_title(f"{LAB[k]}\nFRC {r.get('frc_nm', float('nan')):.1f} nm{gl}, J {r['jaccard_end']:.2f}", fontsize=7)
+        r = R['methods'][k]; gl = f", GT-FRC {G.res(GF[k]['gt_frc']):.1f}" if k in GF else ''
+        ax.set_title(f"{LAB[k]}\nFRC {_ff(r):.1f} nm{gl}, J {r['jaccard_end']:.2f}", fontsize=7)
     n4 = len(ks) + 1; q = n4 // 4
     a1 = fig.add_subplot(gs[1, 0:q]); a2 = fig.add_subplot(gs[1, q:2 * q]); a3 = fig.add_subplot(gs[1, 2 * q:3 * q]); a4 = fig.add_subplot(gs[1, 3 * q:])
     for k in ks:
         r = R['methods'][k]
-        if 'frc_curve' in r: a1.plot(r['frc_freq'], r['frc_curve'], color=COL[k], label=f"{LAB[k].split(' (')[0] if k != 'sf_gtp' else 'SIMFLUX GTp'} {r['frc_nm']:.1f}")
+        if 'frc_curve' in r: a1.plot(r['frc_freq'], r['frc_curve'], color=COL[k], label=f"{LAB[k].split(' (')[0] if k != 'sf_gtp' else 'SIMFLUX GTp'} {_ff(r):.1f}")
         a4.plot(np.array(r['jaccard_frames']) / 1000, r['jaccard'], color=COL[k], lw=1.8)
     a1.axhline(1 / 7, color='grey', ls='--'); a1.set_xlim(0, 0.08); a1.set_xlabel('1/nm'); a1.set_title('FRC (fair protocol)', fontsize=8); a1.legend(fontsize=5.5)
     a2.bar(range(len(ks)), [R['methods'][k]['n_frc'] / 1e3 for k in ks], color=[COL[k] for k in ks]); a2.set_title('localizations (FRC set, x1000)', fontsize=8)
@@ -102,13 +104,13 @@ def main():
         GF = R.get('_gtfrc', {}); fk = lambda v: '-' if v is None else (f'<= {v / 1e3:g}k' if v <= 250 else f'{v / 1e3:.1f}k')
         for k in [k for k in ORDER if k in R['methods']]:
             r = R['methods'][k]; g = r['gt_match']
-            rows.append(dict(density=d, method=k, n_all=r['n_all'], n_frc=r['n_frc'], frc_nm=r.get('frc_nm'), frc_ideal_nm=r.get('frc_ideal_nm'), frc_ideal_shuffled_nm=r.get('frc_ideal_shuffled_nm'), sigma_robust_nm=r.get('sigma_robust_nm'), jaccard=r['jaccard_end'],
+            rows.append(dict(density=d, method=k, n_all=r['n_all'], n_frc=r['n_frc'], frc_nm=G.fair_frc_nm(r), frc_ideal_nm=r.get('frc_ideal_nm'), frc_ideal_shuffled_nm=r.get('frc_ideal_shuffled_nm'), sigma_robust_nm=r.get('sigma_robust_nm'), jaccard=r['jaccard_end'],
                              rms_nm=g.get('rms_nm'), recall=g.get('recall_gt_ph150'), med_sigma_nm=g.get('median_sigma_nm')))
-            md_lines.append(f"| {d:g} | {LAB[k]} | {r['n_all']} | {r['n_frc']} | {r.get('frc_nm', float('nan')):.1f} | {r.get('frc_ideal_nm', float('nan')):.1f} / {r.get('frc_ideal_shuffled_nm', float('nan')):.1f} | {r.get('sigma_robust_nm', float('nan')):.1f} | {g.get('frc_err_gt30', g.get('frac_err_gt30', float('nan'))):.3f} | {r['jaccard_end']:.3f} | "
+            md_lines.append(f"| {d:g} | {LAB[k]} | {r['n_all']} | {r['n_frc']} | {_ff(r):.1f} | {r.get('frc_ideal_nm', float('nan')):.1f} / {r.get('frc_ideal_shuffled_nm', float('nan')):.1f} | {r.get('sigma_robust_nm', float('nan')):.1f} | {g.get('frc_err_gt30', g.get('frac_err_gt30', float('nan'))):.3f} | {r['jaccard_end']:.3f} | "
                             f"{','.join(f'{v:.1f}' for v in g.get('rms_nm', []))} | {g.get('recall_gt_ph150', float('nan')):.3f} | {','.join(f'{v:.1f}' for v in g.get('median_sigma_nm', []))} | "
-                            + (f"{GF[k]['gt_frc']['res_nm']:.1f} | {fk(GF[k]['ttf']['frames_to']['40'])} / {fk(GF[k]['ttf']['frames_to']['30'])} / {fk(GF[k]['ttf']['frames_to'].get('20'))} | {GF[k]['sigma_jaccard']['jaccard']:.3f} | "
+                            + (f"{G.res(GF[k]['gt_frc']):.1f} | {fk(GF[k]['ttf']['frames_to']['40'])} / {fk(GF[k]['ttf']['frames_to']['30'])} / {fk(GF[k]['ttf']['frames_to'].get('20'))} | {GF[k]['sigma_jaccard']['jaccard']:.3f} | "
                                f"{GF[k]['ghost']['ghost_fraction']:.3f} | {GF[k]['coverage']['excess_cv']:.2f} |" if k in GF else '| | | | |'))
-            if k in GF: rows[-1].update(gt_frc_nm=GF[k]['gt_frc']['res_nm'], frames_to_40=GF[k]['ttf']['frames_to']['40'], frames_to_30=GF[k]['ttf']['frames_to']['30'],
+            if k in GF: rows[-1].update(gt_frc_nm=G.res(GF[k]['gt_frc']), frames_to_40=GF[k]['ttf']['frames_to']['40'], frames_to_30=GF[k]['ttf']['frames_to']['30'],
                                         sigma_jaccard=GF[k]['sigma_jaccard']['jaccard'], ghost=GF[k]['ghost']['ghost_fraction'], coverage_excess_cv=GF[k]['coverage']['excess_cv'])
     json.dump(rows, open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.json'), 'w'), indent=1)
     open(os.path.join(C.OUT, f'summary_density_{a.prefix}{a.suffix}_{a.model}.md'), 'w').write('\n'.join(md_lines) + '\n')

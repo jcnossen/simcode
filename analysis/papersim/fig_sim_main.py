@@ -9,12 +9,14 @@ C  GT-FRC (60k frames) vs density, one line per method.
 D  frames to 30 nm GT-FRC vs density (the time-to-fidelity data of gtfrc_run.py), one line per method.
 SI table (next to the figure, .md + .csv): per density and method, incl. the true-pattern rows: n, GT-FRC, frames to 30 nm,
 fair FRC, 10 nm Jaccard, false-positive fraction.
+All FRC values (GT-FRC, frames to 30 nm, fair FRC) under the shared crossing rule gtfrc.RULE (sustained 1/7 crossing),
+stated in the caption and the table legend; run / model names and paths only in _notes_internal.txt.
 usage: python analysis/papersim/fig_sim_main.py [--prefix Dexp] [--suffix _v2psf] [--model m1809v2]
 output: out/papersim/figures/fig_sim_<prefix><suffix>.{pdf,svg,png}, _caption.txt, _table.md, _table.csv"""
 import os, sys, json, csv, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import common as C, metrics as M
+import common as C, metrics as M, gtfrc as GR
 from fig_density import render, crop_of, gt_desc, COL
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -53,8 +55,12 @@ def main():
             for k, ck in (('smlm', 'smlm'), ('sf', 'sf'), ('sf_gtp', 'sf_gtp'), ('decode', 'decode'), ('v1', 'v1'), ('v2c', 'v2')):
                 if k in G[i] and ck in CRm:
                     assert G[i][k]['n'] == CRm[ck]['n'], (r, k, G[i][k]['n'], CRm[ck]['n'])
-                    G[i][k]['gt_frc'] = dict(G[i][k]['gt_frc'], res_nm=CRm[ck]['gt_sust'], res_nm_first=CRm[ck]['gt_first'])
-                    G[i][k]['ttf'] = CRm[ck]['ttf']; G[i][k]['ghost'] = dict(ghost_fraction=CRm[ck]['fp'])
+                    rr = dict(first=CRm[ck]['gt_first'], sustained=CRm[ck]['gt_sust'])
+                    G[i][k]['gt_frc'] = dict(G[i][k]['gt_frc'], res_nm=rr[GR.RULE], res_nm_first=rr['first'], res_nm_sustained=rr['sustained'], rule=GR.RULE)
+                    G[i][k]['ttf'] = dict(CRm[ck]['ttf'], rule=CRm[ck]['ttf'].get('rule', 'sustained'))       # common_rule.ttf: sustained
+                    G[i][k]['ghost'] = dict(ghost_fraction=CRm[ck]['fp'])
+                    hs = dict(first=CRm[ck].get('hs_first'), sustained=CRm[ck].get('hs_sust'))
+                    if hs[GR.RULE] is not None: G[i][k]['fair_frc_nm'] = hs[GR.RULE]      # half-split FRC of the common-rule rows
     (cx, cy), w = crop_of(runs[0])
     nc = len(METH) + 1; tw = 2.3
     fig = plt.figure(figsize=(nc * tw + 5.6, len(DENS) * tw + 1.0))
@@ -75,7 +81,7 @@ def main():
                 A.set_facecolor('k'); A.text(0.5, 0.5, 'no result', color='w', ha='center', transform=A.transAxes); continue
             r = R[i]['methods'][k]; T = M.load_method(k, r['path']); _, _, f = M.frc_set(T, R[i]['W'], R[i]['nframes'])
             A.imshow(render(T['x'][f], T['y'][f], (cx, cy), w), cmap='inferno')
-            gl = f"GT-FRC {G[i][k]['gt_frc']['res_nm']:.1f} nm\n" if k in G[i] else ''
+            gl = f"GT-FRC {GR.res(G[i][k]['gt_frc']):.1f} nm\n" if k in G[i] else ''
             A.text(0.03, 0.03, f"{gl}{r['n_frc'] / 1e3:.0f}k localizations", transform=A.transAxes, color='w', fontsize=9, va='bottom',
                    bbox=dict(facecolor='k', alpha=0.55, pad=1.5, lw=0))
     # right column: B PSF, C GT-FRC vs density, D frames to 30 nm vs density
@@ -91,9 +97,9 @@ def main():
     fmax = R[0]['nframes']
     for k in keys:
         lw, ms = (2.4, 6) if k == a.v2key else (1.4, 4.5)
-        y = [G[i][k]['gt_frc']['res_nm'] if k in G[i] else np.nan for i in range(len(DENS))]
+        y = [GR.res(G[i][k]['gt_frc']) if k in G[i] else np.nan for i in range(len(DENS))]
         A.plot(DENS, y, '-o', color=COL['v2sig' if k == a.v2key else k], lw=lw, ms=ms, label=labs[k].replace('\n', ' '))
-        t = [G[i][k]['ttf']['frames_to'].get('30') if k in G[i] else None for i in range(len(DENS))]
+        t = [GR.ttf(G[i][k]['ttf'])['frames_to'].get('30') if k in G[i] else None for i in range(len(DENS))]
         yt = np.array([np.nan if v is None else max(v, G[i][k]['ttf']['frames'][0]) for i, v in enumerate(t)], float)
         B.plot(DENS, yt / 1e3, '-o', color=COL['v2sig' if k == a.v2key else k], lw=lw, ms=ms)
         nr = [i for i, v in enumerate(t) if v is None and k in G[i]]       # not reached in the movie: open marker above the end
@@ -114,27 +120,30 @@ def main():
         for k, lab in TABLE:
             if k not in R[i]['methods']: continue
             m = R[i]['methods'][k]; g = G[i].get(k, {})
-            ft = g.get('ttf', {}).get('frames_to', {}).get('30') if g else None
-            rows.append(dict(density=d, method=lab, n_frc=m['n_frc'], gt_frc_nm=g['gt_frc']['res_nm'] if g else None,
-                             frames_to_30nm=None if ft is None else round(max(ft, g['ttf']['frames'][0])), fair_frc_nm=m.get('frc_nm'),
+            ft = GR.ttf(g['ttf'])['frames_to'].get('30') if g else None
+            rows.append(dict(density=d, method=lab, n_frc=m['n_frc'], gt_frc_nm=GR.res(g['gt_frc']) if g else None,
+                             frames_to_30nm=None if ft is None else round(max(ft, g['ttf']['frames'][0])),
+                             fair_frc_nm=g['fair_frc_nm'] if 'fair_frc_nm' in g else GR.fair_frc_nm(m),
                              jaccard_10nm=m.get('jaccard_end'), false_positive_fraction=g['ghost']['ghost_fraction'] if g else None))
     with open(out + '_table.csv', 'w', newline='') as fh:
         W = csv.DictWriter(fh, fieldnames=list(rows[0])); W.writeheader(); W.writerows(rows)
     f1 = lambda v, s='{:.1f}': '-' if v is None else s.format(v)
-    md = [f'# Simulation table ({a.prefix}{a.suffix}, {SC} = {a.model}; 60 000 frames)', '',
-          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px' + ('; SIMCODE p >= 0.63, calibrated σ' if a.v2key == 'v2c' else '') + '); GT-FRC = FRC(reconstruction, ground truth), 1/7' + (' sustained crossing (stays below 1/7 for 0.01 nm^-1)' if a.v2key == 'v2c' else '') + '; '
+    g0 = json.load(open(os.path.join(runs[0], 'gen.json')))
+    cond = (f"experimental photons and background of 1809/2 (median {g0['brightness_fit']['fit_median']:.0f} detected photons per 6-frame window, "
+            f"{g0['bg_per_frame']['mean']:.2f} photons/px/frame)" if a.prefix == 'Dexp' else
+            (f"preprint condition ({g0['intensity_per_6frames']:.0f} photons per 6-frame window, background {g0['bg']:g} photons/px/frame)" if a.internal else
+             f"{g0['intensity_per_6frames']:.0f} detected photons per 6-frame window, background {g0['bg']:g} photons/px/frame"))
+    md = [f"# Simulation table ({cond}; 60 000 frames)" if not a.internal else f'# Simulation table ({a.prefix}{a.suffix}, {SC} = {a.model}; 60 000 frames)', '',
+          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px' + ('; SIMCODE p >= 0.63, calibrated σ' if a.v2key == 'v2c' else '') + '); GT-FRC = FRC(reconstruction, ground truth), 1/7; '
           'frames to 30 nm GT-FRC ("-" = not reached in 60 000 frames, values <= 250 = reached in the first 250 frames); fair FRC = half-split FRC; '
-          'Jaccard at 10 nm; false positive = a localization with no emitter ON in its window within 3 own σ.', '',
+          'Jaccard at 10 nm; false positive = a localization with no emitter ON in its window within 3 own σ. '
+          'GT-FRC, frames to 30 nm and fair FRC: ' + GR.RULE_CAPTION, '',
           '| density | method | n | GT-FRC (nm) | frames to 30 nm | fair FRC (nm) | Jaccard 10 nm | false positive fraction |', '|---|---|---|---|---|---|---|---|']
     for r in rows:
         md.append(f"| {r['density']:g} | {r['method']} | {r['n_frc']} | {f1(r['gt_frc_nm'])} | {f1(r['frames_to_30nm'], '{:.0f}')} | "
                   f"{f1(r['fair_frc_nm'])} | {f1(r['jaccard_10nm'], '{:.3f}')} | {f1(r['false_positive_fraction'], '{:.3f}')} |")
     open(out + '_table.md', 'w').write('\n'.join(md) + '\n')
     # caption
-    g0 = json.load(open(os.path.join(runs[0], 'gen.json')))
-    cond = (f"experimental photons and background of 1809/2 (median {g0['brightness_fit']['fit_median']:.0f} detected photons per 6-frame window, "
-            f"{g0['bg_per_frame']['mean']:.2f} photons/px/frame)" if a.prefix == 'Dexp' else
-            f"preprint condition ({g0['intensity_per_6frames']:.0f} photons per 6-frame window, background {g0['bg']:g} photons/px/frame)")
     zd = g0.get('z_dist_um')
     hts = (f"emitter heights = the labels' own 3D positions on the filaments ({zd['p05'] * 1e3:.0f}-{zd['p95'] * 1e3:.0f} nm, 5th-95th percentile, "
            f"median {zd['p50'] * 1e3:.0f} nm)" if zd and str(g0.get('gt', '')).startswith('wsm3d') else
@@ -147,11 +156,18 @@ def main():
            "the same precision cut as every method" if a.v2key == 'v2c' else "") + "). "
            + ("SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; " if a.internal else
               "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
-           "Results with the true pattern, the fair half-split FRC, the Jaccard index and the false-positive fraction are in the SI table.",
+           "Results with the true pattern, the fair half-split FRC, the Jaccard index and the false-positive fraction are in the SI table. "
+           + GR.RULE_CAPTION,
            psfpanel.caption_text(info, what='(B)'),
            "(C) GT-FRC on the full movie vs emitter density. (D) Frames needed to reach 30 nm GT-FRC (GT-FRC on the first N frames, log-interpolated); "
            "open markers above the dotted line: not reached within the 60 000 frames."]
     open(out + '_caption.txt', 'w').write('\n'.join(cap) + '\n')
+    open(out + '_notes_internal.txt', 'w').write('\n'.join([
+        f"generator: python analysis/papersim/fig_sim_main.py --prefix {a.prefix} --suffix {a.suffix} --model {a.model} --v2key {a.v2key} --internal {a.internal}",
+        f"SIMCODE = method key {a.v2key}, networks {a.model}; runs: " + ', '.join(runs),
+        f"crossing rule: gtfrc.RULE = {GR.RULE!r} (GT-FRC, frames to 30 nm, fair FRC = gtfrc.fair_frc_nm on the stored half-split curve; "
+        "v2c: the common_rule.py values of that rule)",
+        "methods missing per density (no result): " + '; '.join(f"{d:g}: " + ','.join(k for k, _ in TABLE if k not in R[i]['methods']) for i, d in enumerate(DENS))]) + '\n')
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', **kw); print(f'{out}.{ext}')
     print(out + '_caption.txt'); print(out + '_table.md'); print(out + '_table.csv')

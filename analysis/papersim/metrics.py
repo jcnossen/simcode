@@ -31,7 +31,8 @@ Metrics:
            of their ON emitter + Gaussian noise at its robust sigma (frc_ideal_nm) / plain RMS (frc_ideal_rms_nm) / its own error
            vectors shuffled between rows (frc_ideal_shuffled_nm); frc_floor = all GT events at 1 / 5 / 10 nm (sigma 0 never crosses 1/7).
   frc_nm_sustained: the first frequency after which the curve stays below 1/7 for 0.01 / nm (hollow tubes have a spectral
-           null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm).
+           null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm). frc_nm_rule = the value under
+           the shared papersim rule gtfrc.RULE (frc_rule); figures / tables take gtfrc.fair_frc_nm (the rule on the stored curve).
   Moving (S3): per 1000-frame block Jaccard at 10 / 20 / 40 nm, GT = the trajectory points of the block (as
            smlmtorch fig_moving_tubules.py compute_jaccards; frames strictly inside (i bs, (i + 1) bs) as there).
 usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--model m1809] [--kind density|moving]
@@ -43,6 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE); sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'paper'))
 import common as C
+import gtfrc as G
 
 SIGMA_MAX = 0.15
 BLK = 300
@@ -123,6 +125,10 @@ def method_paths(run, model='m1809'):
     P['v2siggt'] = f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
     from simcode.dataset import decode_table      # DECODE: locs_fixed.npz (frame-label fix, 2026-11-15) when it exists
     for k in ('decode', 'decode_sim', 'decode_pre'): P[k] = decode_table(P[k])
+    # preprint SIMCODE (internal only): only when its step finished (v1_info.json, written last), so a crashed / running v1
+    # step neither blocks nor half-loads
+    for k in ('v1', 'v1gt'):
+        if not os.path.exists(os.path.join(os.path.dirname(P[k]), 'v1_info.json')): P.pop(k)
     return {k: v for k, v in P.items() if os.path.exists(v)}
 
 
@@ -154,15 +160,7 @@ def gt_windows(gt, nframes, starts):
     return out
 
 
-def frc_sustained(freq, curve, width=0.01):
-    """resolution (nm) at the first frequency after which the FRC stays below 1/7 for `width` (1/nm). = the usual first crossing
-    for a smooth curve; differs when the structure's spectrum has a null (hollow tubes: J0 zero at f = 2.405 / (2 pi R), 65 nm
-    for R = 25 nm) where the curve dips below 1/7 and recovers"""
-    freq = np.asarray(freq); c = np.asarray(curve); w = max(int(width / max(freq[1] - freq[0], 1e-12)), 1)
-    for i in range(3, len(c) - w):
-        if (c[i:i + w] < 1 / 7).all():
-            return float(1 / freq[i])
-    return float('nan')
+frc_sustained = G.frc_sustained      # moved to gtfrc.py (the shared crossing rule G.RULE), kept here for the old callers
 
 
 def row_truth(T, m, GW, rmax=150 / C.PX_NM, ph_min=30.0):
@@ -266,6 +264,7 @@ def density_metrics(run, md, nframes, model, timebins=120, only=None):
             r['frc_nm'] = res; r['frc_curve'] = curve.tolist(); r['frc_freq'] = freq.tolist()
             r['frc_nm_nofilter'] = frc_fair.frc_halves(T['x'][disj], T['y'][disj], T['f'][disj])[0]
             r['frc_nm_sustained'] = frc_sustained(freq, curve)
+            r['frc_rule'] = G.RULE; r['frc_nm_rule'] = G.resolution(freq, curve)     # the paper's rule (frc_nm = the first crossing)
         pos = np.c_[T['x'], T['y']]
         fb, jac = jaccard_timeline(pos[full], T['f'][full], pts, nframes, timebins)
         r['jaccard_frames'] = fb.tolist(); r['jaccard'] = jac.tolist(); r['jaccard_end'] = float(jac[-1]); r['jaccard_peak'] = float(np.nanmax(jac))

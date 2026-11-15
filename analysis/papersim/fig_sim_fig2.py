@@ -19,12 +19,15 @@ I PSF | J GT-FRC curves | K GT-FRC vs frames.
 2026-11-15 (paper version, default): no preprint column and no version labels (the method is 'SIMCODE'); the freed tile puts the
 PSF panel back in the top-right slot and the bottom row is the preprint's two curve panels: A GT | B GT zoom | C SMLM | D PSF /
 E counts | F SIMFLUX | G DECODE | H SIMCODE / I GT-FRC curves | J GT-FRC vs frames.
+2026-11-15 (b): every GT-FRC value (titles, curve legend, time to fidelity, frames to 30 nm) under the shared crossing rule
+gtfrc.RULE (sustained 1/7 crossing; the hollow-tube spectral null), stated in the caption; all numbers of the figure in
+_values.json; file paths / run names only in _notes_internal.txt (not in the caption).
 usage: python analysis/papersim/fig_sim_fig2.py [--density 1] [--prefix Dexp] [--suffix _v2psf] [--model m1809v2] [--internal 0|1]
-output: out/paper_figs_v2/fig_sim_<prefix><suffix>.{pdf,svg,png}, _caption.txt"""
+output: out/paper_figs_v2/fig_sim_<prefix><suffix>.{pdf,svg,png}, _caption.txt, _values.json, _notes_internal.txt"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import common as C, metrics as M
+import common as C, metrics as M, gtfrc as GR
 from fig_density import render, crop_of, gt_desc, COL
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -93,7 +96,7 @@ def main():
         r, c, L = slots[k]; A = fig.add_subplot(gs[r, c]); A.set_xticks([]); A.set_yticks([])
         T = M.load_method(k, R['methods'][k]['path']); _, _, f = M.frc_set(T, W, nfr)
         A.imshow(render(T['x'][f], T['y'][f], (cx, cy), w), cmap='inferno')
-        A.set_title(f"{lab_k}\nGT-FRC = {G[k]['gt_frc']['res_nm']:.1f} nm", fontsize=FS); letter(A, L)
+        A.set_title(f"{lab_k}\nGT-FRC = {GR.res(G[k]['gt_frc']):.1f} nm", fontsize=FS); letter(A, L)
         scalebar(A, w, 500)
         assert G[k]['n'] == R['methods'][k]['n_frc'], (k, G[k]['n'], R['methods'][k]['n_frc'])
         cnt[k] = (G[k]['n'], G[k]['ghost']['ghost_fraction'])
@@ -126,8 +129,8 @@ def main():
     A = fig.add_subplot(gc); B = fig.add_subplot(gt_)
     for k in keys:
         g = G[k]; lw = 2.4 if k == 'v2sig' else 1.5
-        A.plot(g['gt_frc']['freq'][2:], g['gt_frc']['curve'][2:], color=COL[k], lw=lw, label=f"{lab[k]}  {g['gt_frc']['res_nm']:.1f} nm")
-        t = g['ttf']; B.plot(np.array(t['frames']) / 1e3, t['res_nm'], '-o', color=COL[k], lw=lw, ms=4 if k != 'v2sig' else 5, label=lab[k])
+        A.plot(g['gt_frc']['freq'][2:], g['gt_frc']['curve'][2:], color=COL[k], lw=lw, label=f"{lab[k]}  {GR.res(g['gt_frc']):.1f} nm")
+        t = GR.ttf(g['ttf']); B.plot(np.array(t['frames']) / 1e3, t['res_nm'], '-o', color=COL[k], lw=lw, ms=4 if k != 'v2sig' else 5, label=lab[k])
     A.axhline(1 / 7, color='grey', ls='--', lw=1); A.set_xlim(0, 0.09); A.set_ylim(-0.03, 1.0)
     A.set_xlabel('Spatial freq. [nm$^{-1}$]', fontsize=11); A.set_ylabel('GT-FRC', fontsize=11); A.tick_params(labelsize=10)
     A.set_title('FRC against the ground truth', fontsize=FS); A.legend(fontsize=9, frameon=True, loc='upper right'); letter(A, LC, dx=ldx)
@@ -141,7 +144,7 @@ def main():
     os.makedirs(a.out, exist_ok=True); out = os.path.join(a.out, f'fig_sim_{a.prefix}{a.suffix}' + ('_internal' if a.internal else ''))
     # caption material (paper version: no reference to the preprint / earlier versions)
     g0 = json.load(open(os.path.join(run, 'gen.json'))); zd = g0['z_dist_um']
-    ft = {k: G[k]['ttf']['frames_to'].get('30') for k in keys}
+    ft = {k: GR.ttf(G[k]['ttf'])['frames_to'].get('30') for k in keys}
     f30 = lambda k, v: 'not reached' if v is None else '{:.1f}k'.format(max(v, G[k]['ttf']['frames'][0]) / 1e3)
     ftt = ', '.join(f"{lab[k]} {f30(k, v)}" for k, v in ft.items())
     I = a.internal; zl = 'B-D, F-H' if I else 'B, C, F-H'; rl = 'C, D, F, G, H' if I else 'C, F, G, H'
@@ -168,22 +171,62 @@ def main():
               "SIMFLUX uses the pattern estimated from the data, as SIMCODE does (true-pattern results: SI table). ") +
            "SMLM and DECODE get 6-frame sums; DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
            "GT-FRC in the titles = resolution from the FRC between the rendered reconstruction and the rendered ground truth (5 nm pixels, 1/7 threshold, "
-           "full field, 60 000 frames).",
+           "full field, 60 000 frames). " + GR.RULE_CAPTION,
            psfpanel.caption_text(info, what=f'({LP})').replace(f'({LP}):', f'({LP})', 1),
            f"(E) Number of localizations in the comparison set: {', '.join(f'{lab[k]} {cnt[k][0]}' for k in keys)}; hatched = false "
            f"positives (no emitter ON in the localization's window within 3 σ, σ = the localization's own precision): "
            f"{', '.join(f'{lab[k]} {100 * cnt[k][1]:.1f} %' for k in keys)}.",
            f"({LC}) FRC curves of each method's reconstruction against the ground truth (60 000 frames); dashed line = 1/7; resolution in the legend; curves smoothed with a 5-sample moving average (as for the resolution values), the first two frequency samples (edge of the smoothing) not drawn. "
            + ("Replaces the preprint's half-split FRC curves (half-split FRC of the same sets: SI table)." if I else "Half-split FRC of the same sets: SI table."),
-           f"({LT}) Time to fidelity: GT-FRC resolution on the first N frames (N = 250 ... 60 000); dotted line = 30 nm. Frames to 30 nm: {ftt}. "
+           f"({LT}) Time to fidelity: GT-FRC resolution (same crossing rule) on the first N frames (N = 250 ... 60 000); dotted line = 30 nm. "
+           f"Frames to 30 nm (log-interpolated between the N): {ftt}. "
            + ("Replaces the preprint's Jaccard index vs frames; the" if I else "The") +
            " per-density summary (0.5 / 1 / 2 / 4 emitters/µm²/frame: localizations, GT-FRC, "
-           "frames to 30 nm, half-split FRC, 10 nm Jaccard, false-positive fraction, with and without the true pattern) is the SI table "
-           f"out/papersim/figures/fig_sim_{a.prefix}{a.suffix}_table.{{md,csv}} (fig_sim_main.py)."]
+           "frames to 30 nm, half-split FRC, 10 nm Jaccard, false-positive fraction, with and without the true pattern) is in the "
+           "Supplementary Information."]
     open(out + '_caption.txt', 'w').write('\n'.join(cap) + '\n')
+    # internal notes (paths, run / model names: never in the caption)
+    open(out + '_notes_internal.txt', 'w').write('\n'.join([
+        f"generator: python analysis/papersim/fig_sim_fig2.py --density {a.density:g} --prefix {a.prefix} --suffix {a.suffix} --model {a.model} --internal {a.internal}",
+        f"inputs: {os.path.join(run, 'full', f'metrics_{a.model}.json')}, {os.path.join(run, 'full', f'gtfrc_{a.model}.json')}",
+        f"SIMCODE rows: {R['methods']['v2sig']['path']} (method key v2sig, networks {a.model})",
+        f"crossing rule: gtfrc.RULE = {GR.RULE!r} (gtfrc.frc_sustained, width {GR.SUSTAIN_WIDTH} / nm); first-crossing values in _values.json",
+        f"per-density SI table: out/papersim/figures/fig_sim_{a.prefix}{a.suffix}_table.{{md,csv}} (fig_sim_main.py); SI overview: "
+        f"out/papersim/overview_{a.prefix}{a.suffix}_{a.model}.* (fig_overview.py)",
+        f"values: {out}_values.json"]) + '\n')
+    # every number of the figure (and of its caption)
+    gj = lambda k: G[k]['gt_frc']; best = lambda ks: min(ks, key=lambda k: GR.res(gj(k)))
+    others = [k for k in keys if k != 'v2sig']; nb = best(others)
+    V = dict(figure=os.path.basename(out), density=a.density, nframes=nfr, field_px=W, px_nm=C.PX_NM, field_um=W * C.PX_NM / 1000,
+             crossing_rule=GR.RULE, crossing_rule_text=GR.RULE_CAPTION, threshold=GR.THRESHOLD, sustain_width_per_nm=GR.SUSTAIN_WIDTH,
+             zoom_box_px=dict(x0=cx, y0=cy, w=w), zoom_um=w * C.PX_NM / 1000, scalebars_nm=dict(A=2000, zooms=500),
+             conditions=dict(median_photons_per_window=g0['brightness_fit']['fit_median'] if 'brightness_fit' in g0 else g0.get('intensity_per_6frames'),
+                             bg_photons_px_frame=g0['bg_per_frame']['mean'] if 'bg_per_frame' in g0 else g0.get('bg'),
+                             z_median_nm=zd['p50'] * 1e3, avg_on_time_frames=g0['avg_on_time'], pitch_nm=C.PITCH_NM, depth=C.DEPTH),
+             psf_panel_label=psfpanel.panel_label(info), psf_caption=psfpanel.caption_text(info, what=f'({LP})'),
+             panels=dict(zooms={lab[k]: slots[k][2] for k in keys}, psf=LP, counts='E', gtfrc_curves=LC, time_to_fidelity=LT),
+             methods={}, next_best=lab[nb],
+             simcode_gain_over_next_best=(GR.res(gj(nb)) - GR.res(gj('v2sig'))) / GR.res(gj(nb)),
+             simcode_gain_over={lab[k]: (GR.res(gj(k)) - GR.res(gj('v2sig'))) / GR.res(gj(k)) for k in others})
+    for k in keys:
+        g = G[k]; t = GR.ttf(g['ttf']); n, gf = cnt[k]; f3 = t['frames_to'].get('30')
+        V['methods'][lab[k]] = dict(
+            key=k, n_comparison_set=n, false_positive_fraction=gf, n_false_positive=int(round(n * gf)), n_on_within_3sigma=n - int(round(n * gf)),
+            gt_frc_nm=GR.res(g['gt_frc']), gt_frc_first_nm=GR.resolution(g['gt_frc']['freq'], g['gt_frc']['curve'], 'first'),
+            gt_frc_sustained_nm=GR.resolution(g['gt_frc']['freq'], g['gt_frc']['curve'], 'sustained'),
+            frames_to_30nm=f3, frames_to_30nm_plotted=None if f3 is None else max(f3, t['frames'][0]),
+            frames_to=t['frames_to'], frames_to_first=t.get('frames_to_first'), frames_to_sustained=t.get('frames_to_sustained'),
+            ttf_frames=t['frames'], ttf_res_nm=t['res_nm'],
+            jaccard_10nm=R['methods'][k].get('jaccard_end'), sigma_jaccard=g['sigma_jaccard']['jaccard'],
+            fair_frc_nm=GR.fair_frc_nm(R['methods'][k]), fair_frc_first_nm=R['methods'][k].get('frc_nm'),
+            gt_frc_curve=dict(freq_per_nm=g['gt_frc']['freq'][2:], frc=g['gt_frc']['curve'][2:]))
+    s30 = V['methods'][SC]['frames_to_30nm']
+    V['frames_to_30nm_ratio_vs_simcode'] = {lab[k]: (None if (V['methods'][lab[k]]['frames_to_30nm'] is None or not s30) else
+                                                     V['methods'][lab[k]]['frames_to_30nm'] / s30) for k in others}
+    json.dump(V, open(out + '_values.json', 'w'), indent=1)
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', **kw); print(f'{out}.{ext}')
-    print(out + '_caption.txt')
+    print(out + '_caption.txt'); print(out + '_values.json'); print(out + '_notes_internal.txt')
 
 
 if __name__ == '__main__':

@@ -11,7 +11,8 @@ import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C
-from fig_density import LAB, COL, ORDER
+import gtfrc as GR
+from fig_density import LAB, COL, ORDER, _ff
 
 LAB = dict(LAB, v2sig='SIMCODE v2 (3D, 15 Nov), σ <= 12 nm', v2sig_ref='SIMCODE v2 (2D, 13 Nov), σ <= 12 nm')
 COL = dict(COL, v2sig_ref='grey')
@@ -47,17 +48,17 @@ def main():
         for k in [k for k in TORDER if k in G['methods']]:
             r = G['methods'][k]; m = Mr.get('v2sig', {}) if k == 'v2sig_ref' else Mn.get(k, {})
             t = r['ttf']; sj = r['sigma_jaccard']; cv = r['coverage']
-            rows.append(dict(density=d, method=k, n=r['n'], gt_frc_nm=r['gt_frc']['res_nm'], frames_to_40=t['frames_to']['40'], frames_to_30=t['frames_to']['30'], frames_to_20=t['frames_to'].get('20'),
+            rows.append(dict(density=d, method=k, n=r['n'], gt_frc_nm=GR.res(r['gt_frc']), frames_to_40=t['frames_to']['40'], frames_to_30=t['frames_to']['30'], frames_to_20=t['frames_to'].get('20'),
                              ttf_frames=t['frames'], ttf_res_nm=t['res_nm'], sigma_jaccard=sj['jaccard'], frac_correct=sj['frac_correct'],
                              ghost=r['ghost']['ghost_fraction'], coverage_cv=cv['cv'], coverage_poisson_cv=cv['poisson_cv'], coverage_excess_cv=cv['excess_cv'],
-                             frc_nm=m.get('frc_nm'), jaccard10=m.get('jaccard_end')))
-            md.append(f"| {d:g} | {LAB[k]} | {r['n']} | {r['gt_frc']['res_nm']:.1f} | {fk(t['frames_to']['40'], t['frames'][0])} | {fk(t['frames_to']['30'], t['frames'][0])} | {fk(t['frames_to'].get('20'), t['frames'][0])} | "
+                             frc_nm=GR.fair_frc_nm(m), jaccard10=m.get('jaccard_end')))
+            md.append(f"| {d:g} | {LAB[k]} | {r['n']} | {GR.res(r['gt_frc']):.1f} | {fk(t['frames_to']['40'], t['frames'][0])} | {fk(t['frames_to']['30'], t['frames'][0])} | {fk(t['frames_to'].get('20'), t['frames'][0])} | "
                       f"{sj['jaccard']:.3f} ({sj['frac_correct']:.3f}) | {r['ghost']['ghost_fraction']:.3f} | {cv['cv']:.2f} ({cv['poisson_cv']:.2f}, {cv['excess_cv']:.2f}) | "
-                      f"{m.get('frc_nm', float('nan')):.1f} | {m.get('jaccard_end', float('nan')):.3f} |")
+                      f"{_ff(m):.1f} | {m.get('jaccard_end', float('nan')):.3f} |")
             ax[0, j].plot(np.array(t['frames']) / 1e3, t['res_nm'], marker='o', ms=3, color=COL[k], lw=2.2 if k == 'v2sig' else 1.3,
                           ls='--' if k in ('v2sig_ref', 'v1gt') else '-', label=LAB[k])
             ax[1, j].plot(r['gt_frc']['freq'], r['gt_frc']['curve'], color=COL[k], lw=2.2 if k == 'v2sig' else 1.2, ls='--' if k in ('v2sig_ref', 'v1gt') else '-',
-                          label=f"{LAB[k].replace(', σ <= 12 nm', '')} {r['gt_frc']['res_nm']:.1f}")
+                          label=f"{LAB[k].replace(', σ <= 12 nm', '')} {GR.res(r['gt_frc']):.1f}")
         A = ax[0, j]; A.set_xscale('log'); A.set_yscale('log'); A.set_title(f'density {d:g}: GT-FRC vs frames', fontsize=9)
         [A.axhline(v, color='0.6', lw=0.7, ls=':') for v in (40, 30, 20)]
         A.set_xticks([0.25, 1, 4, 15, 60]); A.set_xticklabels(['0.25', '1', '4', '15', '60']); A.minorticks_off()
