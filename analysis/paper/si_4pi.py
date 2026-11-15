@@ -22,7 +22,7 @@ Usage (CPU only; SIMCODE_CONFIG must point at the main checkout's simcode.json s
   export SIMCODE_CONFIG=~/simcode2/simcode.json
   python analysis/paper/si_4pi.py prep_npc      # ~10 min, ~20 GB RAM -> out/paper_figs_v2/cache_si_4pi/npc.npz
   python analysis/paper/si_4pi.py prep_mt       # ~20 min, ~40 GB RAM -> cache_si_4pi/mt.npz, mt_geom.json
-  python analysis/paper/si_4pi.py npc | mt | sim
+  python analysis/paper/si_4pi.py npc | mt | sim | sim_share   (sim_share: temporary share variant, not for the SI)
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -480,16 +480,25 @@ ZOOM2 = ((4800.0, 2330.0), 1200.0)                       # 4-5 tubes
 
 
 def fig_sim(a):
+    """a.share: the temporary share variant si_4pi_sim_share (not for the SI): no x-z row, only the zoom box (labelled 'zoom') in a,
+    no strip lines in b, panels re-lettered a-e"""
+    share = bool(getattr(a, 'share', False))
     Es = {t: json.load(open(f'{SW}/{t}/eval.json')) for t in DENS}
     gt = np.load(f'{P4}/simmovie/{SHOW[0]}/gt_sites.npz')['sites']; gx, gy, gz = gt[:, 0] * NM, gt[:, 1] * NM, gt[:, 2] * 1000
     W, H = 7.2, 7.6
     fig = plt.figure(figsize=(W, H))
     ncol = 1 + len(SHOW); gap = 0.006; x0 = 0.075; wcol = (1 - x0 - 0.005 - gap * (ncol - 1)) / ncol; hcol = wcol * W / H
     ext = HI - LO; zr = (-200, 200)
-    rows = [('ov', 'x-y, colour = z'), ('z2net', 'zoom 2'), ('z2cl', 'zoom 2'), ('sec', 'x-z')]
+    rows = [('ov', 'x-y, colour = z'), ('z2net', 'zoom'), ('z2cl', 'zoom'), ('sec', 'x-z')]
     ytop = 0.975
     yrow = [ytop - hcol, ytop - 2 * hcol - 0.012, ytop - 3 * hcol - 0.024]
     hsec = hcol * 0.62; yrow.append(yrow[2] - 0.022 - hsec)
+    drop = (0.022 + hsec + 0.017) if share else 0.0                     # share: the x-z row is removed, upper rows move down
+    Hs = H * (1 - drop)
+    if share: fig.set_size_inches(W, Hs)
+    up = lambda y: (y - drop) * H / Hs                                  # upper block (rows a-c, colour bar) -> figure fraction
+    lo_ = lambda y: y * H / Hs                                          # lower block (summary panels)
+    hh_ = lambda h: h * H / Hs
     def L(t, nm): return np.load(f'{SW}/{t}/locs_{nm}.npz')
     for j in range(ncol):
         xl = x0 + j * (wcol + gap)
@@ -501,8 +510,8 @@ def fig_sim(a):
             ttl = f"{E['dens_fov']:.2f} ON /µm²/frame\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
                 else f"{E['dens_fov']:.2f} ON /µm²/frame"
         x, y, z = data['net']
-        ax = fig.add_axes([xl, yrow[0], wcol, hcol]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
-        for (cc, s), lab in ((ZOOM1, '1'), (ZOOM2, '2')):
+        ax = fig.add_axes([xl, up(yrow[0]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
+        for (cc, s), lab in ((ZOOM2, 'zoom'),):                       # only the zoom-2 box, labelled 'zoom' (user 2026-11-15)
             ax.add_patch(plt.Rectangle(((cc[0] - s / 2 - LO) / 8, (cc[1] - s / 2 - LO) / 8), s / 8, s / 8, fill=False, ec='w', lw=0.5))
             ax.text((cc[0] + s / 2 - LO) / 8 + 2, (cc[1] - s / 2 - LO) / 8, lab, color='w', fontsize=5.5, va='top')
         if j == 0: scalebar(ax, 1000 / ext, '1 µm'); letter(ax, 'a', -0.02)
@@ -510,21 +519,22 @@ def fig_sim(a):
             r = Es[t]['methods'][BEST[t]]
             ax.text(0.97, 0.03, f"{len(x):,} locs\n{SELTXT[BEST[t]]}", transform=ax.transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
         cc, s = ZOOM2
-        ax = fig.add_axes([xl, yrow[1], wcol, hcol]); ax.imshow(zrgb(x, y, z, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0)); noaxis(ax)
-        ax.axhline((s / 2 - 100) / 4, color='w', lw=0.4, ls=':'); ax.axhline((s / 2 + 100) / 4, color='w', lw=0.4, ls=':')
+        ax = fig.add_axes([xl, up(yrow[1]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0)); noaxis(ax)
+        if not share: ax.axhline((s / 2 - 100) / 4, color='w', lw=0.4, ls=':'); ax.axhline((s / 2 + 100) / 4, color='w', lw=0.4, ls=':')
         if j == 0: scalebar(ax, 200 / s, '200 nm'); letter(ax, 'b', -0.02)
-        ax = fig.add_axes([xl, yrow[2], wcol, hcol])
+        ax = fig.add_axes([xl, up(yrow[2]), wcol, hh_(hcol)])
         if data['cl'] is not None:
             xc, yc, zc_ = data['cl']; ax.imshow(zrgb(xc, yc, zc_, cc[0] - s / 2, cc[1] - s / 2, s, 4.0, zr, 1.0))
             ax.text(0.97, 0.03, f"{int(inrect(xc, yc, (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum()):,}", transform=ax.transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
         else:
             ax.set_visible(False)
         noaxis(ax)
-        if j == 0: fig.text(x0 - 0.02 * wcol, yrow[2] + hcol * 1.02, 'c', fontsize=9, weight='bold', va='bottom', ha='right')
+        if j == 0: fig.text(x0 - 0.02 * wcol, up(yrow[2] + hcol * 1.02), 'c', fontsize=9, weight='bold', va='bottom', ha='right')
         if j > 0:
             n_ = int(inrect(x, y, (cc[0] - s / 2, cc[0] + s / 2, cc[1] - s / 2, cc[1] + s / 2)).sum())
             fig.axes[-2].text(0.97, 0.03, f"{n_:,}", transform=fig.axes[-2].transAxes, color='w', fontsize=5.3, ha='right', va='bottom')
-        # x-z section through zoom 1 (crossing, dz 256 nm) + zoom 2, 200 nm y-strip, network
+        # x-z section along the 200 nm y-strip through the centre of the zoom (ZOOM2; dotted in b), network
+        if share: continue
         ax = fig.add_axes([xl, yrow[3], wcol, hsec])
         cc, s = ZOOM2
         m = np.abs(y - cc[1]) < 100
@@ -535,9 +545,11 @@ def fig_sim(a):
         if j == 0: ax.set_ylabel('z (nm)', labelpad=0); letter(ax, 'd', -0.02)
         else: ax.set_yticklabels([])
     # row labels
-    for yy, hh, t in ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, '4Pi-SIMCODE\nzoom 2'), (yrow[2], hcol, '4Pi-SIMFLUX\nzoom 2'), (yrow[3], hsec, '4Pi-SIMCODE\nx-z')):
-        fig.text(0.008 if hh != hsec else 0.0, yy + hh / 2, t, rotation=90, ha='center', va='center', fontsize=6.5)
-    zcbar(fig, [x0 + 0.01, yrow[3] - 0.062, 0.17, 0.007], zr, 'z (nm)')
+    zl = 'zoom'
+    rl = ((yrow[0], hcol, '4Pi-SIMCODE'), (yrow[1], hcol, f'4Pi-SIMCODE\n{zl}'), (yrow[2], hcol, f'4Pi-SIMFLUX\n{zl}'))
+    for yy, hh, t in (rl if share else rl + ((yrow[3], hsec, '4Pi-SIMCODE\nx-z'),)):
+        fig.text(0.008 if hh != hsec else 0.0, up(yy + hh / 2), t, rotation=90, ha='center', va='center', fontsize=6.5)
+    zcbar(fig, [x0 + 0.01, up(yrow[2] - 0.045) if share else yrow[3] - 0.062, 0.17, hh_(0.007)], zr, 'z (nm)')
     # summary panels
     ys = 0.05; hs = 0.15; ws = 0.19
     cm = plt.get_cmap('viridis')
@@ -545,7 +557,7 @@ def fig_sim(a):
     TF = {t: json.load(open(f'{SW}/{t}/ttf_fp.json')) for t in DENS}       # analysis/fourpi_sim/sweep4pi_ttf_fp.py
     from matplotlib.lines import Line2D
     for i, (key, ttl) in enumerate((('ttf_xy', 'GT-FRC x-y (nm)'), ('ttf_xz', 'GT-FRC x-z sections (nm)'))):
-        ax = fig.add_axes([0.075 + i * 0.255, ys, ws, hs])
+        ax = fig.add_axes([0.075 + i * 0.255, lo_(ys), ws, hh_(hs)])
         for t in DENS:
             F = TF[t]; g = np.array(F['grid']) * FRAME_S
             ax.plot(g, F['methods'][BEST[t]][key], color=cols[t], lw=1.2, label=f"{F['dens_fov']:.2f} ON /µm²/frame")
@@ -559,10 +571,10 @@ def fig_sim(a):
             h_, l_ = ax.get_legend_handles_labels()
             h_ += [Line2D([], [], color='k', lw=1.2), Line2D([], [], color='k', lw=0.9, ls=':')]
             l_ += ['4Pi-SIMCODE (solid)', '4Pi-SIMFLUX (dotted)']
-            fig.legend(h_, l_, frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.27, ys + hs + 0.025),
+            fig.legend(h_, l_, frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.27, lo_(ys + hs + 0.025)),
                        ncol=4, handlelength=1.8, columnspacing=1.0, labelspacing=0.2)
-            letter(ax, 'e', -0.15)
-    ax = fig.add_axes([0.075 + 2 * 0.255 + 0.03, ys, 0.215, hs])
+            letter(ax, 'd' if share else 'e', -0.15)
+    ax = fig.add_axes([0.075 + 2 * 0.255 + 0.03, lo_(ys), 0.215, hh_(hs)])
     D = np.array([Es[t]['dens_fov'] for t in DENS])
     def g(t, nm, k):
         if k == 'recall': return Es[t]['methods'][nm]['recall']
@@ -578,7 +590,10 @@ def fig_sim(a):
     hl = [Line2D([], [], color=COL['net'], lw=1.1, label='4Pi-SIMCODE'), Line2D([], [], color=COL['cl'], lw=1.1, label='4Pi-SIMFLUX'),
           Line2D([], [], color='k', ls='-', lw=0.9, label='recall'), Line2D([], [], color='k', ls='--', lw=0.9, label='false positives')]
     ax.legend(handles=hl, frameon=False, fontsize=5.3, loc='upper right', handlelength=1.8, labelspacing=0.15)
-    letter(ax, 'f', -0.15)
+    letter(ax, 'e' if share else 'f', -0.15)
+    if share:
+        for ext_ in ('pdf', 'png'): fig.savefig(f'{OUT}/si_4pi_sim_share.{ext_}', bbox_inches='tight', **({'dpi': 220} if ext_ == 'png' else {}))
+        plt.close(fig); lg(f'-> {OUT}/si_4pi_sim_share.(pdf|png)'); return
     save(fig, 'si_4pi_sim')
     val = {}
     for t in DENS:
@@ -611,8 +626,9 @@ def caption_sim(V):
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
          "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported max(sigma_x, sigma_y) < 5 nm and sigma_z < 12 nm, on top of the base filters). "
-         "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = localizations "
-         "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution in x-y and in x-z sections "
+         "(b, c) The zoom (white box in a; four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = "
+         "localizations in the zoom. (d) 4Pi-SIMCODE x-z sections taken along the 200 nm wide y-strip through the centre of the zoom (between the "
+         "dotted lines in b), over the zoom's full x range. (e) Ground-truth FRC resolution in x-y and in x-z sections "
          "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
          "of the 5-shell smoothed curve, interpolated between shells, taken where the curve stays below 1/7 for 0.01 /nm, best value up to that time. "
          "The step from ~65 to ~35 nm is the hollow-tube spectrum (Bessel zero at 1/64 nm for 24.6 nm radius): the curve crosses 1/7 before that null "
@@ -667,7 +683,8 @@ def caption_sim(V):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('what', choices=['prep_npc', 'prep_mt', 'npc', 'mt', 'sim'])
+    ap.add_argument('what', choices=['prep_npc', 'prep_mt', 'npc', 'mt', 'sim', 'sim_share'])
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    dict(prep_npc=prep_npc, prep_mt=prep_mt, npc=fig_npc, mt=fig_mt, sim=fig_sim)[a.what](a)
+    if a.what == 'sim_share': a.share = True
+    dict(prep_npc=prep_npc, prep_mt=prep_mt, npc=fig_npc, mt=fig_mt, sim=fig_sim, sim_share=fig_sim)[a.what](a)
