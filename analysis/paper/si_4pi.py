@@ -2,9 +2,11 @@
 
   si_4pi_npc   real 4Pi-SIMFLUX Nup96 (NPC) movie, 38 files: 4Pi-SIMCODE (head v10) vs the classical 4Pi-SIMFLUX
                pipeline as published (published-style): overview coloured by z, pore zooms, averaged pore (x-y, x-z side views),
-               two-ring z histogram, ring metrics vs number of localizations kept.
+               two-ring z histogram, ring metrics vs number of localizations kept, FRC resolution vs frames (g).
   si_4pi_mt    real 4Pi-SIMFLUX microtubule movie, 100 files: network overview of the cell, box-0 region coloured by z, a
-               crossing zoom, y-z section through overlapping tubes, tube cross-section (14 isolated segments) + profiles.
+               crossing zoom, y-z section through overlapping tubes, FRC resolution vs frames (f), tube cross-section (14 isolated
+               segments) + profiles. FRC timelines cached in cache_si_4pi/frc_timeline_{npc,mt}.json (~10 / 20 min to make);
+               the full analysis (x-z, spread, structure, simulation) is si_4pi_frc.py -> si_4pi_frc_vs_frames.
   si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
                emitters / um^2 / frame: renders per density (network, one sigma selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
@@ -52,6 +54,106 @@ mpl.rcParams.update({'font.size': 7, 'axes.labelsize': 7, 'axes.titlesize': 7, '
                      'ytick.major.size': 2.5, 'pdf.fonttype': 42})
 t0 = time.time()
 def lg(s): print(f'[{time.time() - t0:6.0f}s] {s}', flush=True)
+
+
+# ======================================================================================== FRC resolution vs frames (NPC g, MT f)
+FRC_YMAX = 300.0
+
+
+def frc_timeline(T, box, n_frames, name):
+    """FRC (the figures' FRC curve: x-y, 4 nm pixels, 5-ring smoothing, 1/7; simcode/evaluation/frc.py) of the localizations in box
+    from the FIRST N frames, N = 1000 * 2^(k/2) .. all; halves = alternating blocks of min(500, N / 12) six-frame windows (two halves
+    of N / 2 below 6000 frames, the figures' 500-window blocks from 6000 frames on). Two read-outs of the same curve: 'frc' = the
+    interpolated crossing by the sustained rule of si_4pi_sim e (the curve stays below 1/7 for 0.01 / nm; the structural dips of the
+    ring / tube spectrum are not taken as the resolution), 'frc_first' = the first crossing of the titles (last point = the titles' FRC).
+    Cached in cache_si_4pi/frc_timeline_<name>.json (keyed by the row counts and the box)."""
+    from simcode.evaluation.frc import frc as _frc
+    fn = f'{CACHE}/frc_timeline_{name}.json'
+    key = {k: int(len(U['x'])) for k, U in T.items()}
+    if os.path.exists(fn):
+        c = json.load(open(fn))
+        if c.get('rows') == key and c.get('box') == list(map(float, box)) and 'frc_first' in c: return c
+    grid = [int(round(1000 * 2 ** (k / 2))) for k in range(60) if 1000 * 2 ** (k / 2) < n_frames] + [int(n_frames)]
+    out = dict(rows=key, box=list(map(float, box)), N=grid, frc={}, frc_first={}, n={})
+    for k, U in T.items():
+        m0 = inrect(U['x'], U['y'], box); x, y, w = U['x'][m0], U['y'][m0], U['frame'][m0] // 6
+        r, r1, n = [], [], []
+        for N in grid:
+            b = int(min(500, max(1, N // 6 // 2))); m = w < N // 6; h = (w[m] // b) % 2 == 0
+            ok = h.sum() >= 50 and (~h).sum() >= 50
+            if ok:
+                v1, f, c = _frc(x[m][h], y[m][h], x[m][~h], y[m][~h], px=4.0, units='nm', return_curve=True); vs = crossing_sustained(f, c)
+            else: v1 = vs = float('nan')
+            r.append(float(vs)); r1.append(float(v1)); n.append(int(m.sum()))
+        out['frc'][k] = r; out['frc_first'][k] = r1; out['n'][k] = n
+        lg(f'FRC vs frames {name} {k}: ' + ' '.join(f'{N}:{v:.0f}' for N, v in zip(grid, r)))
+    json.dump(out, open(fn, 'w'), indent=1)
+    return out
+
+
+def crossing_sustained(f, c, start=3, width=0.01, thr=1 / 7):
+    """interpolated 1/7 crossing, sustained rule (analysis/fourpi_sim/sweep4pi_ttf_fp.crossing_interp; si_4pi_sim e)"""
+    f = np.asarray(f); c = np.asarray(c)
+    if len(c) <= start: return float('nan')
+    w = max(int(width / max(f[1] - f[0], 1e-12)), 1)
+    for i in range(start, len(c)):
+        if (c[i:min(i + w, len(c))] < thr).all():
+            if i == start or c[i - 1] < thr: return float(1 / f[i])
+            u = (c[i - 1] - thr) / (c[i - 1] - c[i])
+            return float(1 / (f[i - 1] + u * (f[i] - f[i - 1])))
+    return float(1 / f[-1])
+
+
+def frames_to(N, r, t):
+    """first N from which the FRC stays <= t (log-interpolated with the point before); None if never"""
+    N = np.asarray(N, float); r = np.asarray(r, float); ok = np.isfinite(r) & (r <= t)
+    if not ok[-1]: return None
+    bad = np.nonzero(~ok)[0]; i = 0 if len(bad) == 0 else bad[-1] + 1
+    if i == 0 or not np.isfinite(r[i - 1]): return float(N[i])
+    u = (r[i - 1] - t) / (r[i - 1] - r[i])
+    return float(np.exp(np.log(N[i - 1]) + u * (np.log(N[i]) - np.log(N[i - 1]))))
+
+
+def timeline_summary(F, targets=(25, 20, 15)):
+    out = {}
+    for k, r in F['frc'].items():
+        fin = r[-1]
+        r1 = F['frc_first'][k]
+        out[k] = dict(final_nm=fin, frames_to={str(t): frames_to(F['N'], r, t) for t in targets}, frames_to_within_10pct_of_final=frames_to(F['N'], r, 1.1 * fin),
+                      frames_total=F['N'][-1], frc_by_frames={str(N): v for N, v in zip(F['N'], r)},
+                      first_crossing=dict(final_nm=r1[-1], frames_to={str(t): frames_to(F['N'], r1, t) for t in targets}, frc_by_frames={str(N): v for N, v in zip(F['N'], r1)}))
+    return out
+
+
+def frc_timeline_panel(ax, F, keys, xmax):
+    for k in keys:
+        r = np.array(F['frc'][k], float); r[r > FRC_YMAX] = np.nan
+        ax.plot(F['N'], r, marker='o', ms=1.8, lw=0.9 if k == 'net' else 1.0, ls='--' if k == 'net' else '-', color=COL[k], label=LAB[k])
+    for t in (25, 20, 15): ax.axhline(t, color='0.6', lw=0.4, ls=':', zorder=0)
+    ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlim(800, xmax * 1.25); ax.set_ylim(8, FRC_YMAX)
+    ax.set_yticks([10, 15, 20, 25, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '50', '100', '200'])
+    ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
+    ax.set_xlabel('frames', labelpad=1); ax.set_ylabel('FRC resolution (nm)', labelpad=1); ax.grid(alpha=0.25, lw=0.4, which='major')
+
+
+def timeline_caption(S, region, total):
+    s = lambda k, t: (lambda v: 'not reached' if v is None else f'{v:,.0f}')(S[k]['frames_to'][str(t)])
+    w10 = lambda k: (lambda v: 'not reached' if v is None else f'{v:,.0f}')(S[k]['frames_to_within_10pct_of_final'])
+    return (f"FRC resolution versus the number of frames ({region}; the first N frames of the series; two halves = alternating blocks of "
+            "min(500, N / 12) six-frame windows, i.e. the two halves of the N frames below 6000 frames and the titles' 500-window blocks from "
+            "6000 frames on; same 4 nm pixels and 5-ring smoothing as the titles' FRC). Drawn: the 1/7 crossing interpolated between rings, taken "
+            "where the curve stays below 1/7 for 0.01 /nm (the rule of the simulation figure's FRC timeline): with the titles' first-crossing "
+            "rule the timeline jumps at the dips of the structure's own spectrum (ring / tube size) instead of following the sampling; at all "
+            f"{total:,} frames the two rules give " + ' / '.join(f"{S[k]['final_nm']:.1f}" for k in K3) + " and " +
+            ' / '.join(f"{S[k]['first_crossing']['final_nm']:.1f}" for k in K3) + " nm (titles). Values above 300 nm not drawn; dotted: 25 / 20 / 15 nm. "
+            "Frames until the FRC stays at or below 25 / 20 / 15 nm: "
+            + '; '.join(f"{LAB[k]} {s(k, 25)} / {s(k, 20)} / {s(k, 15)} (within 10 % of its all-frames value from {w10(k)} frames)" for k in K3)
+            + ". What the timeline measures: the half-split FRC is the agreement of two independent halves of the data. On DNA-PAINT data it is set by "
+            "how densely the localizations sample the labelled structure (docking sites revisited in both halves) and by the localization precision; "
+            "the halves are kept apart in blocks of up to 500 windows because short blocks put the repeated detections of one binding event into both "
+            "halves, and the FRC then measures precision (si_4pi_frc_vs_frames). It is not a ground-truth resolution: it does not see structure that "
+            "is missing or misplaced in both halves alike. A curve that still falls at the end of the series means that the later frames still added "
+            "sampling.")
 
 
 def save(fig, name):
@@ -206,9 +308,9 @@ def fig_npc(a):
         ax.text(0.04, 0.96, f"{PM[k]['locs_per_pore']:.0f} / pore", transform=ax.transAxes, color='w', fontsize=5.5, va='top')
         axs.append(ax)
     letter(axs[0], 'd', -0.2)
-    # (e) ring z histograms, (f) two-ring valley / peak vs number kept (same size)
-    yb2 = 0.06; h2 = 0.215; w2 = 0.40
-    ax = fig.add_axes([0.07, yb2, w2, h2])
+    # (e) ring z histograms, (f) two-ring valley / peak vs number kept, (g) FRC vs frames: one row, same size
+    yb2 = 0.06; h2 = 0.215; w2 = 0.255; xr = [0.07, 0.40, 0.73]
+    ax = fig.add_axes([xr[0], yb2, w2, h2])
     for k in rows:
         ring = (V[k]['r'] > 25) & (V[k]['r'] < 85)
         hz_, ez = np.histogram(V[k]['dz'][ring], bins=np.arange(-100, 101, 2)); cz = 0.5 * (ez[1:] + ez[:-1])
@@ -218,7 +320,7 @@ def fig_npc(a):
     ax.set_yticks([0, 0.5, 1]); ax.tick_params(length=2, pad=1)
     ax.legend(loc='upper center', frameon=False, fontsize=5.3, handlelength=1.8, borderaxespad=0.1, labelspacing=0.2)
     letter(ax, 'e', -0.1)
-    ax = fig.add_axes([0.585, yb2, w2, h2])
+    ax = fig.add_axes([xr[1], yb2, w2, h2])
     Cv = ref['curves']
     for k, sn, lab in (('net', 'combined sigma', '4Pi-SIMCODE'), ('cl', 'combined sigma', '4Pi-SIMFLUX')):
         c = Cv[k][sn]; ax.plot([r['n_keep'] / 1e6 for r in c], [r.get('z_dip', np.nan) for r in c], '-o', ms=2, lw=1.0, color=COL[k], label=lab)
@@ -230,11 +332,21 @@ def fig_npc(a):
     ax.set_ylim(0.2, 1.05); ax.set_yticks([0.4, 0.6, 0.8, 1.0])
     ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.3, handletextpad=0.4, borderaxespad=0.2, labelspacing=0.15)
     letter(ax, 'f', -0.1)
+    cx, cy = 0.5 * (fb[0] + fb[1]), 0.5 * (fb[2] + fb[3]); frc_box = (cx - 5000, cx + 5000, cy - 5000, cy + 5000)   # select_curve_npc frc_box
+    FT = frc_timeline({k: T[k] for k in K3}, frc_box, 38 * FPF, 'npc')
+    ax = fig.add_axes([xr[2], yb2, w2, h2]); frc_timeline_panel(ax, FT, K3, FT['N'][-1])
+    ax.legend(loc='upper right', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
+    ax.set_title('central 10 × 10 µm, first N frames', fontsize=6.3, pad=2)
+    letter(ax, 'g', -0.1)
+    TS = timeline_summary(FT)
+    for k in K3: assert abs(FT['frc_first'][k][-1] - FRCn[k]) < 0.05, (k, FT['frc_first'][k][-1], FRCn[k])    # first crossing at all frames = the titles' FRC
     save(fig, 'si_4pi_npc')
     # numbers
     sc = json.load(open(f'{P4}/net/cmp_v10/compare_NPC_v10.json')) if os.path.exists(f'{P4}/net/cmp_v10/compare_NPC_v10.json') else None
     val = dict(lines={k: LAB[k] for k in K3}, pore_metrics={k: PM[k] for k in K3}, n_rows={k: int(len(T[k]['x'])) for k in K3}, n_overview=int(len(S['x'])),
                zoom_box_nm=list(map(float, zb)), info=info, reference_json=f'{P4}/fig/NPC_selection_curves_v10.json',
+               panel_g_frc_vs_frames=dict(frc_box_nm=list(map(float, frc_box)), frames=FT['N'], frc_nm=FT['frc'], frc_first_nm=FT['frc_first'], n_locs=FT['n'], summary=TS,
+                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn), frc_first_nm = first crossing (titles)'),
                panel_f_valley_peak_vs_kept={k: [dict(n_keep=r['n_keep'], valley_peak=r.get('z_dip'), ring_z_sd_nm=r.get('ring_z_sd_nm'))
                                                 for r in ref['curves'][k]['combined sigma']] for k in ('net', 'cl')},
                reference_operating_points={k: {q: ref['operating_points'][OPK[k]].get(q) for q in ('n_keep', 'locs_per_pore', 'ring_radius_median_nm', 'radial_width_nm',
@@ -266,7 +378,8 @@ def caption_npc(v):
          "averaged pore. (e) z histogram of the ring (radius 25-85 nm) about each pore's mean z: the two Nup96 rings; valley / peak = the "
          "lowest count between the two ring peaks divided by the lower peak (lower = better separated rings). "
          "(f) Two-ring valley / peak (as in e) versus the number of localizations kept: each method's localizations ranked by its own reported "
-         "combined precision, the most precise kept first (dotted line: the 4Pi-SIMFLUX count; square: 4Pi-SIMCODE at matched count).",
+         "combined precision, the most precise kept first (dotted line: the 4Pi-SIMFLUX count; square: 4Pi-SIMCODE at matched count). "
+         "(g) " + timeline_caption(v['panel_g_frc_vs_frames']['summary'], 'central 10 x 10 um, as in b', v['panel_g_frc_vs_frames']['frames'][-1]),
          '',
          'NUMBERS (si_4pi_npc_values.json; same recipe as out/4pi/fig/NPC_selection_curves_v10.json)',
          f"4Pi-SIMCODE: {f('net')}.",
@@ -383,7 +496,7 @@ def fig_mt(a):
             if i == 0: scalebar(ax, 200 / s, '200 nm', x=0.2); letter(ax, 'cd'[r], -0.08, 1.3)
     # (e) section through zoom 2: three methods
     sec = G['section']; cc, s = zooms[1]
-    ye = 0.40; he = 0.105; we = 0.29; xe = [0.075, 0.39, 0.705]
+    ye = 0.40; he = 0.105; we = 0.19; xe = [0.075, 0.28, 0.485]
     for i, k in enumerate(K3):
         U = T[k]
         if sec['along'] == 'x': m = (U['y'] >= sec['a0']) & (U['y'] < sec['a1']); al = U['x'][m] - (cc[0] - s / 2)
@@ -395,8 +508,15 @@ def fig_mt(a):
         ax.set_xlabel(f"{sec['along']} along zoom 2 (µm)", labelpad=1)
         if i == 0: ax.set_ylabel('z (nm)', labelpad=1); letter(ax, 'e', -0.04)
         else: ax.set_yticklabels([])
-        ax.set_title(f"{LAB[k]} ({int(m.sum()):,} locs)", fontsize=6.3, pad=2, color=COL[k])
-    # (f) tube cross-sections + (g) profiles
+        ax.set_title(f"{LAB[k]}\n({int(m.sum()):,} locs)", fontsize=6.3, pad=2, color=COL[k])
+    # (f) FRC resolution vs frames (box 0 = the region of the zoom-1 FRC values)
+    FT = frc_timeline({k: T[k] for k in K3}, cores[0], 100 * FPF, 'mt')
+    ax = fig.add_axes([0.755, ye, 0.23, 0.205]); frc_timeline_panel(ax, FT, K3, FT['N'][-1])
+    ax.legend(loc='lower left', frameon=False, fontsize=5.0, handlelength=1.8, borderaxespad=0.1, labelspacing=0.15)
+    ax.set_title('box 0, first N frames', fontsize=6.3, pad=2); letter(ax, 'f', -0.12)
+    TS = timeline_summary(FT)
+    for k in K3: assert abs(FT['frc_first'][k][-1] - FRCm[k]) < 0.05, (k, FT['frc_first'][k][-1], FRCm[k])    # first crossing at all frames = the zoom-1 titles' FRC
+    # (g) tube cross-sections + (h) profiles
     yf = 0.07; wf = 0.16; hf = wf * AR
     prof = {}
     for i, k in enumerate(K3):
@@ -405,7 +525,7 @@ def fig_mt(a):
         ax.imshow(dens(u, v, -70, 70, -70, 70, 2.0, 1.0)[::-1], cmap='Greys_r', extent=(-70, 70, -70, 70), vmin=0, vmax=1)
         ax.set_xticks([-50, 0, 50]); ax.set_yticks([-50, 0, 50]); ax.tick_params(length=2, pad=1)
         ax.set_xlabel('across tube (nm)', labelpad=1)
-        if i == 0: ax.set_ylabel('axial (nm)', labelpad=1); letter(ax, 'f', -0.12)
+        if i == 0: ax.set_ylabel('axial (nm)', labelpad=1); letter(ax, 'g', -0.12)
         else: ax.set_yticklabels([])
         ax.set_title(LAB[k].replace(', ', ',\n'), fontsize=6.3, pad=2, color=COL[k])
         lat = u[np.abs(v) < 60]; axl = v[np.abs(u) < 40]
@@ -424,7 +544,7 @@ def fig_mt(a):
         ax.set_xlabel('offset (nm)', labelpad=1); ax.tick_params(length=2, pad=1)
         ax.set_title(ttl, fontsize=6.3, pad=2); ax.grid(alpha=0.25, lw=0.4)
         ax.legend(title='FWHM', title_fontsize=5.0, loc='upper right', frameon=False, fontsize=5.0, handlelength=1.3, borderaxespad=0.0, labelspacing=0.1)
-        if j == 0: ax.set_ylabel('norm. count', labelpad=1); letter(ax, 'g', -0.2)
+        if j == 0: ax.set_ylabel('norm. count', labelpad=1); letter(ax, 'h', -0.2)
         else: ax.set_yticklabels([])
     save(fig, 'si_4pi_mt')
     ref = json.load(open(f'{P4}/fig/MT_selection_curves_v10_full.json'))
@@ -432,6 +552,8 @@ def fig_mt(a):
                profiles={k: {q: v for q, v in p.items() if q not in ('lat', 'ax')} for k, p in prof.items()},
                n_overview=int(Z['ov_n']), n_rows_region={k: int(inreg(T[k]).sum()) for k in K3}, info=info, lines={k: LAB[k] for k in K3},
                reference_json=f'{P4}/fig/MT_selection_curves_v10_full.json',
+               panel_f_frc_vs_frames=dict(frc_box_nm=list(map(float, cores[0])), frames=FT['N'], frc_nm=FT['frc'], frc_first_nm=FT['frc_first'], n_locs=FT['n'], summary=TS,
+                                          rule='first N frames; halves = alternating blocks of min(500, N/12) six-frame windows; frc(px=4, units=nm) curve; frc_nm = sustained interpolated crossing (drawn), frc_first_nm = first crossing (titles)'),
                reference_operating_points={k: {q: ref['operating_points'][o].get(q) for q in ('n_keep', 'fwhm_lat', 'fwhm_ax', 'dip', 'dafl', 'dafl_2_4k', 'fringe_hop', 'frc')}
                                            for k, o in (('net', 'all'), ('net_m', 'matched count'), ('cl', 'classical published (same files)'))})
     json.dump(val, open(f'{OUT}/si_4pi_mt_values.json', 'w'), indent=1, default=float)
@@ -456,10 +578,11 @@ def caption_mt(v):
          "smoothed over 5 rings, 1/7 threshold, first crossing; simcode/evaluation/frc.py); in the zooms (c, d) the matched count is taken "
          "WITHIN each zoom (the most precise 4Pi-SIMCODE localizations of that zoom, as many as 4Pi-SIMFLUX has there: "
          + ' / '.join(f"{q['n']:,} (combined precision <= {q['threshold_nm']:.2f} nm)" for q in v['zoom_matched'])
-         + " for zooms 1 / 2); everywhere else (e-g, numbers) it is the global match over boxes 0 and 1. "
+         + " for zooms 1 / 2); everywhere else (e-h, numbers) it is the global match over boxes 0 and 1. "
          f"(d) Zoom 2, microtubules overlapping in x-y at different heights; dotted: the {int(G['section']['a1'] - G['section']['a0'])} nm strip of e. "
-         f"(e) {G['section']['along']}-z sections along that strip. (f) Tube cross-section pooled over {P['net']['nseg']} isolated straight segments in "
-         "boxes 0 and 1 (in-plane offset across the tube x axial offset, each segment's own centre line). (g) Lateral and axial profiles of f with their "
+         f"(e) {G['section']['along']}-z sections along that strip. (f) " + timeline_caption(v['panel_f_frc_vs_frames']['summary'], 'box 0 = the region of b, as the FRC in c', v['panel_f_frc_vs_frames']['frames'][-1]) + " "
+         f"(g) Tube cross-section pooled over {P['net']['nseg']} isolated straight segments in "
+         "boxes 0 and 1 (in-plane offset across the tube x axial offset, each segment's own centre line). (h) Lateral and axial profiles of g with their "
          "FWHM (dashed: 4Pi-SIMCODE); valley / peak = the lowest count between the two walls of the hollow tube divided by the lower wall peak "
          "(lower = better separated walls). Regions, zooms, section strip and segments are chosen automatically on the 4Pi-SIMFLUX table, so they do "
          "not favour 4Pi-SIMCODE.",
@@ -478,7 +601,7 @@ def caption_mt(v):
          'CONDITIONS',
          "4Pi-SIMCODE: det4pi detector, emitter network v10, explicit 4Pi solve with the in-situ SIM pattern and 4Pi phase field per file; lateral drift: "
          "own DME. 4Pi-SIMFLUX: our implementation of the published pipeline, published-style analysis with its rejections (out/4pi/classical/STATUS.md). "
-         "Panels b-g: 4Pi-SIMFLUX rows and 4Pi-SIMCODE share the 4Pi-SIMFLUX z-drift curve and are registered on matched emitters; panel a uses the "
+         "Panels b-h: 4Pi-SIMFLUX rows and 4Pi-SIMCODE share the 4Pi-SIMFLUX z-drift curve and are registered on matched emitters; panel a uses the "
          "4Pi-SIMCODE table's own drift and z drift.",
          'CODE: analysis/paper/si_4pi.py (prep_mt, mt); recipe imported from analysis/fourpi/showcase_real_mt.py.']
     return '\n'.join(L) + '\n'
