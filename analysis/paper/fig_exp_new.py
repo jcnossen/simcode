@@ -176,7 +176,14 @@ def main():
     ap.add_argument('--outdir', default=None, help='output directory (default out/paper2/fig)')
     ap.add_argument('--reuse_drift', default=None, help='prefix of earlier drift caches for the methods other than v2')
     ap.add_argument('--psf', default=None, help='calib json of the PSF panel (needs --v2 = a run directory)')
+    ap.add_argument('--select', default=None, help="(2026-11-15) <prefix>_frcopt.json of frcopt_real.py: every method's rows = its "
+                    "fair-FRC set further cut at max(sx, sy) <= select[k]['sigma_max_px'] (the half-split-FRC-optimal threshold); drift "
+                    "from the caches of the unfiltered sets; panel K = rows kept (solid) and removed by the cut (light) per method")
     a = ap.parse_args()
+    SELJ = json.load(open(a.select)) if a.select else {}
+    SEL = SELJ.get('select'); SEL_RULE = SELJ.get('rule', 'the threshold minimizing its half-split FRC')
+    if SEL and a.v2_sigma_max is not None:       # v2 rows loaded up to the larger of the two thresholds (then cut below)
+        a.v2_sigma_max = max(a.v2_sigma_max, SEL['v2']['sigma_max_px'] * FF.PX + 1e-6)
     S = SETS[a.dataset]; F = a.nframes or S['nframes']
     dflt = dict(smlm=f'{P2}/{a.dataset}/smlm/smlm.npy', sf=f'{P2}/{a.dataset}/sf/sf.hdf5',
                 decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2')
@@ -198,6 +205,12 @@ def main():
         if a.reuse_drift and k != 'v2' and not os.path.exists(f'{out}_{k}_drift.npy'):
             shutil.copyfile(f'{a.reuse_drift}_{k}_drift.npy', f'{out}_{k}_drift.npy')
         R = FF.evaluate(T, F, drift_cache=f'{out}_{k}_drift.npy')
+        if SEL and k in SEL:
+            m = R['mask'] & (np.maximum(T['sx'], T['sy']) <= SEL[k]['sigma_max_px'])
+            R['n_frc_unfiltered'] = SEL[k]['n_current']; R['frc_nm_unfiltered'] = SEL[k]['frc_current']
+            R['frc_nm'], R['freq'], R['curve'] = FF.frc_halves(R['x_dc'][m], R['y_dc'][m], T['f'][m])
+            R['n_frc'] = int(m.sum()); R['mask'] = m
+            assert SEL[k].get('n') is None or R['n_frc'] == SEL[k]['n'] and abs(R['frc_nm'] - SEL[k]['frc_nm']) < 1e-6, (k, R['n_frc'], R['frc_nm'], SEL[k])
         m = R['mask']
         dsets.append(to_dataset(R['x_dc'][m], R['y_dc'][m], T['f'][m], T['sx'][m], T['sy'][m], T['photons'][m]))
         res.append(R)
@@ -266,6 +279,12 @@ def main():
     ax = fig.add_subplot(bot[1])
     cnt = np.array([R['n_frc'] for R in res]) * 1e-6
     ax.bar(range(NM), cnt, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
+    if SEL:     # rows removed by the FRC-optimal cut (light) on top of the kept ones; the current selection's count marked
+        c0 = np.array([R.get('n_frc_unfiltered', R['n_frc']) for R in res]) * 1e-6
+        ax.bar(range(NM), np.maximum(c0 - cnt, 0), bottom=cnt, color=COLORS, alpha=0.3)
+        for i in range(NM):
+            ax.text(i, max(c0[i], cnt[i]) + 0.02 * max(c0.max(), cnt.max()), f'{100 * cnt[i] / c0[i]:.0f}%', ha='center', va='bottom', fontsize=8)
+        ax.set_ylim(0, 1.15 * max(c0.max(), cnt.max()))
     ax.set_title('Localizations\n($10^6$)', fontsize=13); letter(ax, dx=-0.3)
     ax = fig.add_subplot(bot[2])
     ax.bar(range(NM), pc, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
@@ -282,6 +301,9 @@ def main():
                  fontweight='bold', ha='right', va='bottom')
         axy.text(0.0, -0.12, panel_text(psf_info, psf_cond), transform=axy.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
+            + (' FRC-optimal selection: each method additionally cut at its own max(sigma_x, sigma_y) <= '
+               + ', '.join(f"{LABELS[KINDS.index(k)]} " + ('no cut' if SEL[k]['sigma_max_px'] >= FF.SIGMA_MAX else f"{SEL[k]['sigma_max_px'] * FF.PX:.1f} nm") for k in KINDS if k in SEL)
+               + f' ({SEL_RULE}; drift of the uncut sets); K: kept (solid) and removed by that cut (light).' if SEL else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     txt = (lambda t: t) if a.v1 else paper_text     # paper version (no --v1): no version labels in the caption / table text
     if psf_info is not None:
@@ -305,6 +327,7 @@ def main():
                                  detected_photons=psf_info['detected_photons'],
                                  crlb_nm=jsonable(psf_info['crlb']), text=panel_text(psf_info, psf_cond))
     if a.reuse_drift: vals['drift_reused_from'] = a.reuse_drift
+    if SEL: vals['select'] = SEL; vals['n_frc_unfiltered'] = [R.get('n_frc_unfiltered') for R in res]
     json.dump(vals, open(out + '_values.json', 'w'), indent=1)
     print(json.dumps({k: vals[k] for k in ('frc_nm', 'n_frc', 'pearson', 'aois')}), flush=True)
 
