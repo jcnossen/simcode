@@ -1,14 +1,14 @@
 {
  "m25": {
   "psf": "calib_2p5nM_m2_psf3d_avg.json",
-  "det": "det_m25.pt",
-  "head": "hd_m25.pt",
+  "detector": "det_m25.pt",
+  "emitter": "hd_m25.pt",
   "cal_sim": "calib/calib_sc_hd_m25.json",
   "cal_real": "calib/calib_sc_hd_m25_real.json",
-  "p2_det": "p2det_m25.pt",
-  "p2_head": "p2headL_m25.pt",
-  "p2_cal_sim": "calib/calib_p2L_m25.json",
-  "p2_cal_real": "calib/calib_p2L_m25_real.json",
+  "detector_pass2": "p2det_m25.pt",
+  "emitter_pass2": "p2headL_m25.pt",
+  "cal_sim_pass2": "calib/calib_p2L_m25.json",
+  "cal_real_pass2": "calib/calib_p2L_m25_real.json",
   "sig_u": "calib/sigu_p1_m25.json,calib/sigu_p2_m25.json"
  },
  "_recipe": {
@@ -23,7 +23,7 @@
    "mtime": "2026-11-14T21:22:29+0100",
    "sha256": "bb32f41b736dc8ec7b0abb22cca5f4c71b400b0ad8129d4f9c82fa63f6bfeae9",
    "params": {
-    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_2p5nM_m2_sc.json",
+    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif: fit_psf_tracks on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_2p5nM_m2_sc.json",
     "pixelsize_um": 0.10833,
     "wavelength_um": 0.7,
     "NA": 1.4900000095367432,
@@ -46,7 +46,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/calib_2p5nM_m2_psf3d_avg.json"
   },
-  "det": {
+  "detector": {
    "path": "det_m25.pt",
    "size": 7266957,
    "mtime": "2026-11-14T21:22:29+0100",
@@ -83,7 +83,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/det_m25.pt"
   },
-  "head": {
+  "emitter": {
    "path": "hd_m25.pt",
    "size": 5519185,
    "mtime": "2026-11-14T21:22:29+0100",
@@ -183,7 +183,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/calib_sc_hd_m25_real.json"
   },
-  "p2_det": {
+  "detector_pass2": {
    "path": "p2det_m25.pt",
    "size": 7289096,
    "mtime": "2026-11-14T21:22:29+0100",
@@ -213,7 +213,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/p2det_m25.pt"
   },
-  "p2_head": {
+  "emitter_pass2": {
    "path": "p2headL_m25.pt",
    "size": 5560783,
    "mtime": "2026-11-14T21:22:29+0100",
@@ -244,7 +244,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/p2headL_m25.pt"
   },
-  "p2_cal_sim": {
+  "cal_sim_pass2": {
    "path": "calib/calib_p2L_m25.json",
    "size": 1592,
    "mtime": "2026-11-14T21:22:29+0100",
@@ -273,7 +273,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m25/model_files/calib_p2L_m25.json"
   },
-  "p2_cal_real": {
+  "cal_real_pass2": {
    "path": "calib/calib_p2L_m25_real.json",
    "size": 2648,
    "mtime": "2026-11-14T21:22:29+0100",

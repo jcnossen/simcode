@@ -62,7 +62,7 @@ def bg_crlb(G, o, psS, tg, Ie):
 
 def run(ck, name, scenes, seeds, ntarget=3500):
     sim, rpsf, lut = CD.models(T)
-    det, _ = DM.load(config.DET); det.eval()
+    det, _ = DM.load(config.DETECTOR); det.eval()
     head = SCM.load(ck); col = SCM.PSFCol(sim)
     for sc in scenes:
         rows = []

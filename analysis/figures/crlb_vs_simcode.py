@@ -1,6 +1,6 @@
 """RMSD vs GT window photons on the gate scenes: our sc front-ends vs SIMCODE (paper network L48 + eq.-2 pattern fit + MVU
-merge, simcode/benchmark/preprint_gate.py), with the CRLB lines. Matching as gate_report_xdet: one-to-one within 1 px on the
-detection position (x_det), targets with CRLB_SF_multi < 25 nm only (as gate_report_xdet), score >= 0.5; RMSD per axis of the final estimate (incl. outliers). -> <out>/plots/crlb_vs_simcode.png"""
+merge, simcode/benchmark/preprint_gate.py), with the CRLB lines. Matching as gate_report_detector_matched: one-to-one within 1 px on the
+detection position (x_det), targets with CRLB_SF_multi < 25 nm only (as gate_report_detector_matched), score >= 0.5; RMSD per axis of the final estimate (incl. outliers). -> <out>/plots/crlb_vs_simcode.png"""
 import argparse, os
 from simcode import config
 ap = argparse.ArgumentParser(description=__doc__)
@@ -26,7 +26,7 @@ for j, sc in enumerate(scenes):
     for tag, lab, col, ls in meths:
         if not glob.glob(f'{D}/{sc}__s30*{tag}.npz'): continue
         R, nf = load(D, sc, tag)
-        tgt = (R['gt_target'] > 0) & np.isfinite(R['gt_sf_m']).all(1) & (np.hypot(*np.nan_to_num(R['gt_sf_m'], nan=1e9).T) / np.sqrt(2) * PX < 25)   # as gate_report_xdet
+        tgt = (R['gt_target'] > 0) & np.isfinite(R['gt_sf_m']).all(1) & (np.hypot(*np.nan_to_num(R['gt_sf_m'], nan=1e9).T) / np.sqrt(2) * PX < 25)   # as gate_report_detector_matched
         if first:
             ph = R['gt_phot'][tgt]
             for key, st, l_ in (('gt_sm_m', 'k--', 'CRLB SMLM multi'), ('gt_sf_i', 'k:', 'CRLB SIMFLUX isolated'), ('gt_sf_m', 'k-', 'CRLB SIMFLUX multi')):

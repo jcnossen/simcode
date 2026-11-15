@@ -1,5 +1,5 @@
 """(development sc6/sim_movie.py; the m05q / m05qh / m25qh movies, analysis/simreal/recipes.sh)
-Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --frontend sc).
+Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --pass2_mode solve).
 rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
 jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,

@@ -1,4 +1,4 @@
-"""Like-for-like comparison of the SIMCODE paper pipeline (run_simcode.py) and our pipeline (run_uncalibrated --frontend sc)
+"""Like-for-like comparison of the SIMCODE paper pipeline (run_simcode.py) and our pipeline (run_uncalibrated --pass2_mode solve)
 on a simulated movie (sc6/sim_movie.py) against the GT.
 Common protocol:
   windows   W3 = 6-frame windows starting at frame w = 0 mod 3 (our pass-1 grid). SIMCODE emits a localization list for every
@@ -185,7 +185,7 @@ def evaluate(G, M, GW, crf, kappa, simcode_like):
         er = np.hypot(*ee.T); zc = er / (np.sqrt(2) * cc)
         r = dict(n=int(m.sum()), rms_nm=float(np.sqrt(np.mean(ee ** 2)) * PX), crlb_nm=float(np.sqrt(np.mean(cc ** 2)) * PX))
         r['rms_over_crlb'] = r['rms_nm'] / r['crlb_nm']
-        k = (er / cc) <= 5       # radial |e| / per-axis CRLB_ref <= 5 (as gate_report_xdet: hypot(e / c) <= 5)
+        k = (er / cc) <= 5       # radial |e| / per-axis CRLB_ref <= 5 (as gate_report_detector_matched: hypot(e / c) <= 5)
         r['trim_over_crlb'] = float(np.sqrt(np.mean(ee[k] ** 2)) / np.sqrt(np.mean(cc[k] ** 2)))
         r['med_abs_nm'] = float(np.median(er) * PX)
         r['bias_nm'] = (np.mean(bias_raw[m], 0) * PX).tolist()

@@ -1,5 +1,5 @@
 """
-Output modes for the per-window sc pipeline (2026-11-09, duplicates / overlapping windows; run_uncalibrated --frontend sc).
+Output modes for the per-window sc pipeline (2026-11-09, duplicates / overlapping windows; run_uncalibrated --pass2_mode solve).
 The pass-2 list has one localization per (emitter, 6-frame window) at stride 3, so consecutive windows w, w + 3 share 3
 frames of photons and an emitter that is on for many frames appears in every window. The per-window (dynamic) list is
 kept unchanged (pass2_<tag>_<f0>.npz); these functions derive

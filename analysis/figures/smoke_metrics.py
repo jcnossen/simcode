@@ -1,5 +1,5 @@
 """Pre-registered smoke-test metrics (critic 30 #4; revised iteration 32 for critic 31 #3) for a run_uncalibrated
---frontend sc run on a real chunk, against SIMCODE's localizations of the same frames (read-only hdf5). Expectations are
+--pass2_mode solve run on a real chunk, against SIMCODE's localizations of the same frames (read-only hdf5). Expectations are
 fixed before the run in smoke_expectations.txt (same directory).
   M0 global pre-fit: loose one-to-one match (|frame diff| <= 3, 1.5 px) of ours vs SIMCODE and vs SIMCODE with x <-> y
      swapped; the configuration with more pairs is kept, its median offset is removed from SIMCODE, then re-match at 0.5 px.

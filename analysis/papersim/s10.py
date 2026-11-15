@@ -143,12 +143,12 @@ class Nets:
         self.SCM, self.SV, self.DU = SCM, SV, DU
         sim = Simulator(C.resolve_calib(ns) if hasattr(C, 'resolve_calib') else ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
-        det, _ = DM.load(ns['det'])
-        self.p1 = (det, SCM.load(config.resolve(ns['head'])), self.col,
+        det, _ = DM.load(ns['detector'])
+        self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col,
                    json.load(open(config.resolve(ns['cal_sim']))))
-        d2, _ = DM.load(ns['p2_det'])
-        self.p2 = (d2, SCM.load(config.resolve(ns['p2_head'])), True)
-        self.p2cal = json.load(open(config.resolve(ns['p2_cal_sim'])))
+        d2, _ = DM.load(ns['detector_pass2'])
+        self.p2 = (d2, SCM.load(config.resolve(ns['emitter_pass2'])), True)
+        self.p2cal = json.load(open(config.resolve(ns['cal_sim_pass2'])))
 
     @torch.no_grad()
     def run(self, frames, patt):

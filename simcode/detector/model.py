@@ -15,12 +15,14 @@ Candidate selection: detector/select.py.
 
 Checkpoints ({'model': state dict, 'args': training arguments, 'step'}) are read by load(): pass 1 or pass 2 follows from
 the state dict (the illumination weights cin_il), the channel widths from the args; every detector checkpoint since
-2026-11-09 has the native-grid output (args 'up' = 1).
+2026-11-09 has the native-grid output (args 'up' = 1); since 2026-11-15 the args carry the tag arch = ARCH.
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode.layers.blocks import ResBlock, norm_photons
+
+ARCH = 'detector'       # architecture tag of the checkpoints trained since 2026-11-15 (training args 'arch'; earlier ones carry none)
 
 
 class Detector(nn.Module):
@@ -124,7 +126,7 @@ def load(ck, dev='cuda'):
     from simcode.config import resolve
     c = torch.load(resolve(ck), map_location=dev, weights_only=False)
     a = c.get('args') or {}
-    if a.get('up', 1) != 1 or a.get('inp', 'stem') != 'stem':
-        raise ValueError(f"{ck}: detector with output grid up={a.get('up')} / input {a.get('inp')!r} is not supported (native grid, per-frame stem)")
+    if a.get('arch', ARCH) != ARCH or a.get('up', 1) != 1 or a.get('inp', 'stem') != 'stem':
+        raise ValueError(f"{ck}: detector arch {a.get('arch')!r} / output grid up={a.get('up')} / input {a.get('inp')!r} is not supported (native grid, per-frame stem)")
     net = build(a, illum=is_pass2(c['model'])).to(dev); net.load_state_dict(c['model']); net.eval()
     return net, a

@@ -105,15 +105,27 @@ def model_sets():
     return _nets
 
 
+# file keys of a model definition before 2026-11-15 (det / head / p2_*): refused with the name of the migration script
+OLD_KEYS = ('det', 'head', 'p2_det', 'p2_head', 'p2_cal_sim', 'p2_cal_real')
+
+
+def _check_keys(name, M, where):
+    old = [k for k in M if k in OLD_KEYS]
+    if old: raise ValueError(f'{where}: model {name!r} uses the key names before 2026-11-15 {old}; rewrite the file with '
+                             'analysis/maintenance/rename_model_keys.py')
+
+
 def model_folder(path):
     """a model folder (or its model.json) -> model dict with absolute file paths, 'name' and 'folder'. model.json holds one
-    entry {name: {det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u, psf}} with paths relative to
+    entry {name: {detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2, cal_sim_pass2, cal_real_pass2, sig_u, psf}}
+    with paths relative to
     the folder (absolute paths are kept), plus '_recipe' / '_files' (training record, hashes)."""
     f = os.path.join(path, MODEL_JSON) if os.path.isdir(path) else path
     S = json.load(open(f)); base = os.path.dirname(os.path.abspath(f))
     ent = [(k, v) for k, v in S.items() if not k.startswith('_')]
     if len(ent) != 1: raise ValueError(f'{f}: a model.json defines exactly one model, found {[k for k, _ in ent]}')
     name, M = ent[0]
+    _check_keys(name, M, f)
     ab = lambda v: v if os.path.isabs(v) else os.path.join(base, v)
     d = {}
     for k, v in M.items():
@@ -131,8 +143,8 @@ def is_model_folder(p):
 
 
 def model_set(name=None):
-    """model -> dict with the files det, head, cal_sim, cal_real, p2_det, p2_head, p2_cal_sim, p2_cal_real, sig_u
-    ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
+    """model -> dict with the files detector, emitter (pass-1 networks), cal_sim, cal_real (their solve calibrations),
+    detector_pass2, emitter_pass2, cal_sim_pass2, cal_real_pass2 (pass 2), sig_u ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
     directory), or the path of a model folder / model.json (absolute file names; also 'folder'). None: env SIMCODE_MODEL,
     else '_default' of models.json (the default is for the package's own gate scenes and trainers; simcode.run and the
     pipeline require an explicit model)."""
@@ -140,6 +152,7 @@ def model_set(name=None):
     name = name or env('MODEL') or S['_default']
     if not name.startswith('_') and name in S:
         d = {k: v for k, v in S[name].items() if not k.startswith('_')}
+        _check_keys(name, d, MODELS_FILE)
         d['name'] = name
         return d
     if is_model_folder(name): return model_folder(os.path.expanduser(name))
@@ -153,17 +166,16 @@ def production():
 
 # files of the default model (models directory, relative names)
 _S = model_set()
-DET = _S['det']                                                # pass-1 detector
-HEAD = _S['head']                                              # pass-1 head (EmitterNet, neighbour-aware)
-P2_DET = _S['p2_det']                                          # pass-2 (pattern-aware) detector
-P2_HEAD = _S['p2_head']                                        # pass-2 head (p2L)
-CAL_P1_REAL = _S['cal_real']                                   # pass-1 solve calibration, real-data sigma (fixed c)
-CAL_P1_SIM = _S['cal_sim']                                     # same, sim sigma table (gate scenes)
-CAL_P2_REAL = _S['p2_cal_real']                                # pass-2 solve calibration, real-data sigma
-CAL_P2_SIM = _S['p2_cal_sim']                                  # pass-2, sim sigma (gate scenes)
-CAL_P2_GATE = CAL_P2_SIM
-# calibrations that exist only for the earlier default head (hd_sc5nb): the sigma table of the opt-in automatic-(c, c_a)
-# solve (run --autoc 1), and the templates from which the calibration of a new set is fitted (analysis/psfmatch/fit_cal_set.py)
-CAL_P1_AUTOC = 'calib/calib_sc_hd_sc5nbb15_pm_autoc1.json'
-CAL_P1_AUTOC_START = 'calib/calib_sc_hd_sc5nbb15_pm_bright.json'
+DETECTOR = _S['detector']                                      # pass-1 detector
+EMITTER = _S['emitter']                                        # pass-1 emitter network
+DETECTOR_PASS2 = _S['detector_pass2']                          # pass-2 (pattern-aware) detector
+EMITTER_PASS2 = _S['emitter_pass2']                            # pass-2 emitter network
+CAL_REAL = _S['cal_real']                                      # pass-1 solve calibration, real-data sigma (fixed c)
+CAL_SIM = _S['cal_sim']                                        # same, sim sigma table (gate scenes)
+CAL_REAL_PASS2 = _S['cal_real_pass2']                          # pass-2 solve calibration, real-data sigma
+CAL_SIM_PASS2 = _S['cal_sim_pass2']                            # pass-2, sim sigma (gate scenes)
+# calibrations that exist only for the earlier default emitter network (hd_sc5nb): the sigma table of the opt-in automatic-(c, c_a)
+# estimator (solve/autoc.py), and the templates from which the calibration of a new model is fitted (analysis/psfmatch/fit_cal_set.py)
+CAL_AUTOC = 'calib/calib_sc_hd_sc5nbb15_pm_autoc1.json'
+CAL_AUTOC_START = 'calib/calib_sc_hd_sc5nbb15_pm_bright.json'
 INSITU_05 = 'insitu/calib_0.5nM.json'                          # in-situ PSF + camera calibration, 0.5 nM movie (default PSF of the gate scenes)

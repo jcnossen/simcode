@@ -1,14 +1,14 @@
 {
  "g13": {
   "psf": "calib_gauss1.3.json",
-  "det": "det_g13.pt",
-  "head": "hd_g13.pt",
+  "detector": "det_g13.pt",
+  "emitter": "hd_g13.pt",
   "cal_sim": "calib/calib_sc_hd_g13.json",
   "cal_real": "calib/calib_sc_hd_g13_real.json",
-  "p2_det": "p2det_g13.pt",
-  "p2_head": "p2headL_g13.pt",
-  "p2_cal_sim": "calib/calib_p2L_g13.json",
-  "p2_cal_real": "calib/calib_p2L_g13_real.json",
+  "detector_pass2": "p2det_g13.pt",
+  "emitter_pass2": "p2headL_g13.pt",
+  "cal_sim_pass2": "calib/calib_p2L_g13.json",
+  "cal_real_pass2": "calib/calib_p2L_g13_real.json",
   "sig_u": "calib/sigu_p1_g13.json,calib/sigu_p2_g13.json"
  },
  "_recipe": {
@@ -41,7 +41,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_gauss1.3.json"
   },
-  "det": {
+  "detector": {
    "path": "det_g13.pt",
    "size": 7266957,
    "mtime": "2026-11-14T23:00:46+0100",
@@ -79,7 +79,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/det_g13.pt"
   },
-  "head": {
+  "emitter": {
    "path": "hd_g13.pt",
    "size": 5519185,
    "mtime": "2026-11-14T23:00:46+0100",
@@ -181,7 +181,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_sc_hd_g13_real.json"
   },
-  "p2_det": {
+  "detector_pass2": {
    "path": "p2det_g13.pt",
    "size": 7289160,
    "mtime": "2026-11-14T23:00:46+0100",
@@ -213,7 +213,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/p2det_g13.pt"
   },
-  "p2_head": {
+  "emitter_pass2": {
    "path": "p2headL_g13.pt",
    "size": 5560783,
    "mtime": "2026-11-14T23:00:46+0100",
@@ -244,7 +244,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/p2headL_g13.pt"
   },
-  "p2_cal_sim": {
+  "cal_sim_pass2": {
    "path": "calib/calib_p2L_g13.json",
    "size": 1934,
    "mtime": "2026-11-14T23:00:46+0100",
@@ -274,7 +274,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13/model_files/calib_p2L_g13.json"
   },
-  "p2_cal_real": {
+  "cal_real_pass2": {
    "path": "calib/calib_p2L_g13_real.json",
    "size": 3090,
    "mtime": "2026-11-14T23:00:46+0100",

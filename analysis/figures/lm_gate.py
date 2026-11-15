@@ -32,7 +32,7 @@ def main():
     CD.a.calib = config.model(config.INSITU_05)   # = the development calib_inputs/calib_0.5nM.json
     T = 6
     sim, rpsf, lut = CD.models(T)
-    det, _ = DM.load(config.DET); det.eval()
+    det, _ = DM.load(config.DETECTOR); det.eval()
     ZF = os.environ.get('LM_ZFREE', '0') == '1'; zt = 'z' if ZF else ''      # z free (tag suffix 'z') or fixed 50 nm
     BG = os.environ.get('LM_BG', 'frame'); zt += 'a' if BG == 'angle' else ''     # critic 34: LM_BG=angle -> one bg per pattern angle (tag suffix 'a')
     lm = LMRef(sim, P, zfree=ZF, bg=BG)

@@ -3,7 +3,7 @@ paper photons + bright tail, pairs, dens / med of the paper models), detector ca
 Two z distributions: 'real' (the presets' lognormal, median 50-55 nm) and 'train' (+ uniform 0-0.3 um share, simulate/batches.Z_UNIF).
 Metrics: x, y prior RMSE (nm) and z-score RMS, intensity NLL, modulation slope; z (3D heads): RMSE (nm) of the prior z and
 of z | true x, y vs the GT spread, z-score RMS, by photon bin and z bin.
-usage: python analysis/z3d/eval_head.py --heads a.pt,b.pt --det det_m1809.pt --calib <psf json> [--nb 40] [--out x.json]"""
+usage: python analysis/z3d/eval_head.py --heads a.pt,b.pt --detector det_m1809.pt --calib <psf json> [--nb 40] [--out x.json]"""
 import argparse, json
 import numpy as np, torch
 from simcode import config
@@ -18,11 +18,11 @@ from simcode.layers.blocks import extract_patches
 from simcode.detector.select import select_subpixel
 
 ap = argparse.ArgumentParser()
-ap.add_argument('--heads', required=True); ap.add_argument('--det', required=True); ap.add_argument('--calib', required=True)
+ap.add_argument('--heads', required=True); ap.add_argument("--detector", required=True); ap.add_argument("--calib", required=True)
 ap.add_argument('--nb', type=int, default=40); ap.add_argument('--seed', type=int, default=777); ap.add_argument('--out', default='')
 a = ap.parse_args()
 dev = 'cuda'
-det, _ = DM.load(a.det)
+det, _ = DM.load(a.detector)
 heads = {h: SCM.load(h) for h in a.heads.split(',')}
 gen = D.TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(a.calib)])
 sim = gen.rsm[0]['0.5nM'].sim; col = PSFCol(sim); PX = sim.c['pixelsize_um'] * 1000

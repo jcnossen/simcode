@@ -19,7 +19,7 @@ for sc in iso pair1 pair2 rs05qm $XS; do
   last=${sd##*,}
   if [ ! -f $G/${sc}__s${last}_hd_cur.npz ]; then
     say "gate $N $sc"
-    SIMCODE_GATE_CALIB=$C bash $A/r24_gpu.sh 4 $W simcode.benchmark.gate --scen $sc --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
+    SIMCODE_GATE_CALIB=$C bash $A/r24_gpu.sh 4 $W simcode.benchmark.gate --scen $sc --fronts sc --emitter hd_sc5nb.pt --cal $B1 \
       --tag _hd_cur --out $G --ntarget 3500 --seeds $sd >> $LG/gate_$sc.log 2>&1 || { say "FAILED gate $sc (see $LG/gate_$sc.log)"; exit 1; }
   fi
   if [ ! -f $FE/${sc}__s${last}_$fn.npz ]; then

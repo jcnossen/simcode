@@ -48,7 +48,7 @@ def checkpoints(md):
         if not isinstance(c, dict) or 'model' not in c: continue
         sd = c['model']; a = c.get('args') or {}
         if 'cin.weight' in sd and 'e0.0.c1.weight' in sd: dets.append(f)
-        elif 'wmap.0.weight' in sd and (a.get('arch') == 'sc4n' or 'no_illum' in a): nets.append(f)
+        elif 'wmap.0.weight' in sd and (a.get('arch') in ('sc4n', 'emitter_net') or 'no_illum' in a): nets.append(f)
     return dets, nets
 
 

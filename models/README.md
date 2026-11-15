@@ -58,23 +58,23 @@ anything in the tree): the mixture set `psf3dmix` and its close-pair variant, th
 C=models/insitu/calib_1809_2_psf3d_avg.json      # the averaged PSF of the model
 python -m simcode.detector.train --out runs/S/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 \
     --seed 0 --calib $C
-python -m simcode.emitter.train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det runs/S/det/final.pt \
-    --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
+python -m simcode.emitter.train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --detector runs/S/det/final.pt \
+    --tau 15,80 --hold <out>/emitter_heldout/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --ckpt_every 6000 --calib $C
 # pass 2 (generic pattern draw, share --p_std of the SIMCODE pattern): detector, then its continuation
 python -m simcode.detector.train --out runs/S/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
     --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C --p_std 0.25
 python -m simcode.detector.train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 \
     --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
-# pass-2 emitter network: three stages (candidates from the first pass-2 detector runs/S/p2det; a pass-2 --det makes it a pass-2
+# pass-2 emitter network: three stages (candidates from the first pass-2 detector runs/S/p2det; a pass-2 --detector makes it a pass-2
 # network, zero-initialised from the pass-1 network runs/S/hd)
-python -m simcode.emitter.train --out runs/S/p2head --det runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
+python -m simcode.emitter.train --out runs/S/p2head --detector runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 \
     --pert_model v1 --calib $C --p_std 0.25
-python -m simcode.emitter.train --out runs/S/p2headL --det runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
+python -m simcode.emitter.train --out runs/S/p2headL --detector runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
     --hold_v1 15 --calib $C --p_std 0.25
-python -m simcode.emitter.train --out runs/S/p2headL2 --det runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
+python -m simcode.emitter.train --out runs/S/p2headL2 --detector runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 41 --eval_every 5000 --ckpt_every 10000 --no_illum 0 \
     --hold_v1 0 --calib $C --p_std 0.5
 # -> det_S.pt, hd_S.pt = runs/S/det, hd; p2det_S.pt = runs/S/p2det_c; p2headL_S.pt = runs/S/p2headL2 (final.pt)
@@ -87,7 +87,7 @@ accepts any measured two-orientation pattern (nanoruler, 4-step, random phases),
 earlier pass 2 trained on the SIMCODE pattern only (out/p2generic/STATUS.md, out/z3d/STATUS.md).
 One trainer per network, for both passes (`simcode.detector.train`, `simcode.emitter.train`; until 2026-11-15
 `simcode.det.up2` / `simcode.p2.det2` and `simcode.hd.sc4` / `simcode.p2.head2`, docs/CLEANUP_LOG.md): the pass follows from the
-checkpoints (detector: `--illum 1`, or a pass-2 `--init`; emitter network: a pass-2 `--det`, or a pass-2 `--init`), and the
+checkpoints (detector: `--illum 1`, or a pass-2 `--init`; emitter network: a pass-2 `--detector`, or a pass-2 `--init`), and the
 flags whose defaults differ between the passes (lr, seed, steps, ...) take the default of that pass. Since 2026-11-14 the
 trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,2500`, `--arch sc4n`, `--paper 1`,
 `--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.

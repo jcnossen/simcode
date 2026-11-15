@@ -34,7 +34,7 @@ def main():
     CD.a.calib = config.model(config.INSITU_05)   # = the development calib_inputs/calib_0.5nM.json
     T = 6
     sim, rpsf, lut = CD.models(T)
-    det, _ = DM.load(config.DET); det.eval()
+    det, _ = DM.load(config.DETECTOR); det.eval()
     for sc in scenes:
         # kinetics: default OFF on every scene (one B per window). The on-interval model (SF_KIN=1, tag k1) was tested and is
         # worse: iso 1.2x vs 1.0x CRLB (t0 / t1 start inside the window on always-on emitters), rs05q nn > 6 px robust 1.3-1.5 vs 1.1-1.15

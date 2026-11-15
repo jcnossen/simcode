@@ -193,8 +193,8 @@ def test_config_names():
     assert S['_default'] in sets and config.model_set()['name'] == (config.env('MODEL') or S['_default'])
     for n in sets:
         N = config.model_set(n)
-        assert all(k in N for k in ('det', 'head', 'cal_sim', 'cal_real', 'p2_det', 'p2_head', 'p2_cal_sim', 'p2_cal_real', 'sig_u', 'psf'))
-        for k in ('cal_sim', 'cal_real', 'p2_cal_sim', 'p2_cal_real'):             # the calibration json files are in the repository
+        assert all(k in N for k in ('detector', 'emitter', 'cal_sim', 'cal_real', 'detector_pass2', 'emitter_pass2', 'cal_sim_pass2', 'cal_real_pass2', 'sig_u', 'psf'))
+        for k in ('cal_sim', 'cal_real', 'cal_sim_pass2', 'cal_real_pass2'):             # the calibration json files are in the repository
             assert os.path.exists(os.path.join(config.REPO, 'models', N[k])), (n, N[k])
     for ds, D in config.production()['datasets'].items():
         assert D['model'] is None or D['model'] in sets
@@ -207,10 +207,13 @@ def test_config_names():
     # a model folder: model.json with one model, file names relative to the folder (absolute ones kept)
     with tempfile.TemporaryDirectory() as d:
         M = dict(config.model_set('m1809')); M.pop('name')
-        json.dump({'mfold': dict(M, det='det_x.pt', head=os.path.abspath(config.model(M['head']))), '_recipe': {}}, open(f'{d}/model.json', 'w'))
+        json.dump({'mfold': dict(M, detector='det_x.pt', emitter=os.path.abspath(config.model(M['emitter']))), '_recipe': {}}, open(f'{d}/model.json', 'w'))
         for p in (d, f'{d}/model.json'):
             F = config.model_set(p)
-            assert F['name'] == 'mfold' and F['det'] == os.path.join(d, 'det_x.pt') and F['head'] == os.path.abspath(config.model(M['head'])) and F['folder'] == d
+            assert F['name'] == 'mfold' and F['detector'] == os.path.join(d, 'det_x.pt') and F['emitter'] == os.path.abspath(config.model(M['emitter'])) and F['folder'] == d
+        json.dump({'old': dict(M, det='det_x.pt')}, open(f'{d}/old.json', 'w'))      # the key names before 2026-11-15 are refused
+        try: config.model_set(f'{d}/old.json'); assert False
+        except ValueError: pass
         json.dump({'a': M, 'b': M}, open(f'{d}/two.json', 'w'))
         try: config.model_set(f'{d}/two.json'); assert False
         except ValueError: pass

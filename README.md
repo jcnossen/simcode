@@ -137,7 +137,7 @@ The crop of the selection and of the sigma-rescale tiles is the output region of
 Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
 
-The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--frontend sc|sc2p`, `--stages`,
+The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--pass2_mode solve|networks`, `--stages`,
 `--ref_pattern` for a comparison solve with a given pattern, batch sizes).
 
 Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. Pass 2

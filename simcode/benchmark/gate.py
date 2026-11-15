@@ -14,11 +14,11 @@ Each scene x eval seed (301, 302, 303; tuning used 202 / 5202) stores the GT tab
 targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / isolated CRLBs; dim emitters are
 'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
 a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_report.py).
-Front-end: sc = detector (--det) + head (--sc) + the explicit pattern solve with the calibration --sccal (defaults: the default
+Front-end: sc = detector (--detector) + emitter network (--emitter) + the explicit pattern solve with the calibration --cal (defaults: the default
 model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
 SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
 Other front-ends (SIMCODE: simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
-Reports: python -m simcode.benchmark.gate_report_xdet --dir <out> --tag <tag> --scen iso,...
+Reports: python -m simcode.benchmark.gate_report_detector_matched --dir <out> --tag <tag> --scen iso,...
 usage: python -m simcode.benchmark.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
 """
 import argparse, json, math, os, time
@@ -159,9 +159,9 @@ def main():
     ap.add_argument('--seeds', default='301,302,303')
     ap.add_argument('--ntarget', type=int, default=3500)     # visible interior targets per seed
     ap.add_argument('--tag', default='')
-    ap.add_argument('--det', default=config.DET)
-    ap.add_argument('--sc', default=config.HEAD)
-    ap.add_argument('--sccal', default=config.CAL_P1_SIM)
+    ap.add_argument('--detector', default=config.DETECTOR)
+    ap.add_argument('--emitter', default=config.EMITTER)
+    ap.add_argument('--cal', default=config.CAL_SIM)
     ap.add_argument('--out', default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -172,8 +172,8 @@ def main():
     assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE: simcode.benchmark.preprint_gate; pass 2: simcode.processing.gate_dump)'
     from simcode.emitter import model as EM
     from simcode.detector import model as DM
-    det_, _ = DM.load(a.det)
-    SC = (det_, EM.load(config.resolve(a.sc)), EM.PSFCol(sim), json.load(open(config.resolve(a.sccal))) if a.sccal else {})
+    det_, _ = DM.load(a.detector)
+    SC = (det_, EM.load(config.resolve(a.emitter)), EM.PSFCol(sim), json.load(open(config.resolve(a.cal))) if a.cal else {})
     for sc in a.scen.split(','):
         for seed in [int(s_) for s_ in a.seeds.split(',')]:
             t0 = time.time(); GT, OUTS = [], {f: [] for f in fronts}; need = a.ntarget; it = 0; fov0 = 0

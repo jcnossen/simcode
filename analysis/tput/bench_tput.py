@@ -6,7 +6,7 @@
 Original-path stage times include its per-stage syncs (as logged by the pipeline); fast-path stage times are GPU busy times
 from CUDA events (the stages overlap with 2 streams) and 'wall' is the chunk wall time.  same stages / timing code on the simcode modules. The
 datasets are a json file (default analysis/tput/datasets.json; $TPUT_DATA overrides): name -> movie, calib (in-situ), f0, f1,
-pattern (a pattern_est.pt of a full run of that movie, e.g. <out>/pattern_est.pt of simcode.run), sc_cal, p2_cal; relative
+pattern (a pattern_est.pt of a full run of that movie, e.g. <out>/pattern_est.pt of simcode.run), cal, cal_pass2; relative
 movie paths resolve against the simcode data root, calibrations against the models dir (simcode/config.py). Networks =
 simcode defaults (det_n1, hd_sc5nb, p2_det, p2_head_long). Output: <simcode out>/tput/bench_<name>.json ($TPUT_OUT overrides).
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/tput/bench_tput.py <name> [variants: orig,fast,fastc,heads] [--pattern <pattern_est.pt>]
@@ -25,13 +25,13 @@ if '--pattern' in ARGS:
     i = ARGS.index('--pattern'); PAT = ARGS[i + 1]; del ARGS[i:i + 2]
 DATA = json.load(open(os.environ.get('TPUT_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets.json')))
 R_ = lambda p: config.resolve(p)
-HEAD, DET = R_(config.HEAD), R_(config.DET)
-P2H, P2D, PFH = R_(config.P2_HEAD), R_(config.P2_DET), R_(config.HEAD)
+HEAD, DET = R_(config.EMITTER), R_(config.DETECTOR)
+P2H, P2D, PFH = R_(config.EMITTER_PASS2), R_(config.DETECTOR_PASS2), R_(config.EMITTER)
 name = ARGS[0]
 variants = (ARGS[1] if len(ARGS) > 1 else 'orig,fast,fastc,heads').split(',')
 D = {k: v for k, v in DATA[name].items() if not k.startswith('_')}
 D['movie'] = config.resolve(D['movie'], 'data')
-for k in ('calib', 'sc_cal', 'p2_cal'): D[k] = R_(D[k])
+for k in ('calib', 'cal', 'cal_pass2'): D[k] = R_(D[k])
 if PAT: D['pattern'] = PAT
 OD = os.environ.get('TPUT_OUT') or config.out_dir('tput'); os.makedirs(OD, exist_ok=True)
 out = os.path.join(OD, f'bench_{name}.json')
@@ -66,18 +66,18 @@ def diffs(Ra, Rb):
 
 
 # warm-up (cuDNN / allocator / module load) on a short chunk, not timed
-p1o = SF.Pass1Front(D['calib'], head=HEAD, det=DET); p1f = SFF.Pass1FrontFast(D['calib'], head=HEAD, det=DET)
+p1o = SF.Pass1Front(D['calib'], emitter=HEAD, detector=DET); p1f = SFF.Pass1FrontFast(D['calib'], emitter=HEAD, detector=DET)
 p1f.det = p1o.det; p1f.front.det = p1o.det
 p1o.run_chunk(movie, cal, D['f0'], D['f0'] + 300); p1f.run_chunk(movie, cal, D['f0'], D['f0'] + 300)
 R1 = None
 if 'orig' in variants:
     tm = {}; (R1, info), w = timed(lambda: p1o.run_chunk(movie, cal, D['f0'], D['f1'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_pass1'] = dict(r2(tm), n_det=int(len(R1['x'])), n_out=int(R1['out'].sum())); save(); print('orig pass1', REP['orig_pass1'], flush=True)
-    tm = {}; _, w = timed(lambda: SF.run_chunk_pattern_solve(R1, info, Pt, D['sc_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+    tm = {}; _, w = timed(lambda: SF.run_chunk_pattern_solve(R1, info, Pt, D['cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_solve'] = r2(tm); save(); print('orig pattern solve', REP['orig_solve'], flush=True)
-    p2o = FR.Pass2Front(D['calib'], head=P2H, det=P2D, pf_head=PFH)
-    p2o.run_chunk(movie, cal, D['f0'], D['f0'] + 300, Pt, D['p2_cal'])
-    tm = {}; O, w = timed(lambda: p2o.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['p2_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+    p2o = FR.Pass2Front(D['calib'], emitter=P2H, detector=P2D, pf_head=PFH)
+    p2o.run_chunk(movie, cal, D['f0'], D['f0'] + 300, Pt, D['cal_pass2'])
+    tm = {}; O, w = timed(lambda: p2o.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['cal_pass2'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_pass2'] = dict(r2(tm), n=int(len(O['x_hy0']))); save(); print('orig pass2', REP['orig_pass2'], flush=True)
     del p2o
 for v in ('fast', 'fastc'):
@@ -88,12 +88,12 @@ for v in ('fast', 'fastc'):
     if R1 is not None: REP[f'{v}_pass1']['vs_orig'] = diffs(R1, Rf)
     save(); print(v, 'pass1', REP[f'{v}_pass1'], flush=True)
     if comp == 'on':     # compile warm-up
-        Lw = dict(Rf); Lw['out'] = Rf['out'] & (np.cumsum(Rf['out']) <= 20000); SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, D['sc_cal'], compile='on')
-    tm = {}; _, w = timed(lambda: SFF.run_chunk_pattern_solve_fast(Rf, info, Pt, D['sc_cal'], timing=tm, compile=comp)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+        Lw = dict(Rf); Lw['out'] = Rf['out'] & (np.cumsum(Rf['out']) <= 20000); SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, D['cal'], compile='on')
+    tm = {}; _, w = timed(lambda: SFF.run_chunk_pattern_solve_fast(Rf, info, Pt, D['cal'], timing=tm, compile=comp)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP[f'{v}_solve'] = r2(tm); save(); print(v, 'pattern solve', REP[f'{v}_solve'], flush=True)
-    p2f = SFF.Pass2FrontFast(D['calib'], head=P2H, det=P2D, pf_head=PFH, compile=comp)
-    p2f.run_chunk(movie, cal, D['f0'], D['f0'] + 600, Pt, D['p2_cal'])
-    tm = {}; O, w = timed(lambda: p2f.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['p2_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+    p2f = SFF.Pass2FrontFast(D['calib'], emitter=P2H, detector=P2D, pf_head=PFH, compile=comp)
+    p2f.run_chunk(movie, cal, D['f0'], D['f0'] + 600, Pt, D['cal_pass2'])
+    tm = {}; O, w = timed(lambda: p2f.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['cal_pass2'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP[f'{v}_pass2'] = dict(r2(tm), n=int(len(O['x_hy0']))); save(); print(v, 'pass2', REP[f'{v}_pass2'], flush=True)
     del p2f
 if 'heads' in variants:
@@ -112,7 +112,7 @@ if 'heads' in variants:
     tm = {}; (Rh, _), w = timed(lambda: p1f.run_chunk(movie, cal, D['f0'], f1h, timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['head_cudnn_benchmark'] = dict(r2(tm), frames=f1h - D['f0'], vs_orig=diffs(Rref, Rh)); save(); print('cudnn.benchmark', REP['head_cudnn_benchmark'], flush=True)
     torch.backends.cudnn.benchmark = False
-    p1c = SFF.Pass1FrontFast(D['calib'], head=HEAD, det=DET, channels_last=True); p1c.det = p1o.det; p1c.front.det = p1o.det
+    p1c = SFF.Pass1FrontFast(D['calib'], emitter=HEAD, detector=DET, channels_last=True); p1c.detector = p1o.detector; p1c.front.detector = p1o.detector
     p1c.run_chunk(movie, cal, D['f0'], D['f0'] + 300)
     tm = {}; (Rh, _), w = timed(lambda: p1c.run_chunk(movie, cal, D['f0'], f1h, timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['head_channels_last'] = dict(r2(tm), frames=f1h - D['f0'], vs_orig=diffs(Rref, Rh)); save(); print('channels_last', REP['head_channels_last'], flush=True)

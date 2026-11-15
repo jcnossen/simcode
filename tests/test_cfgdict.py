@@ -23,14 +23,14 @@ def raises(exc, fn, *a, **k):
 
 def _base():
     return ConfigDict(name='a', optics=dict(pixel_um=0.1, NA=1.49), psf=dict(init=['zero', 'beads'], iters=600),
-                      train=dict(steps=dict(det=10, hd=20)), gpus=[1, 2])
+                      train=dict(steps=dict(detector=10, emitter=20)), gpus=[1, 2])
 
 
 def test_access():
     c = _base()
     assert c.name == 'a' and c['name'] == 'a'
     assert isinstance(c.optics, ConfigDict) and c.optics.NA == 1.49 and c['optics']['NA'] == 1.49 and c['optics.NA'] == 1.49
-    assert c.train.steps.hd == 20 and c['train.steps.hd'] == 20
+    assert c.train.steps.emitter == 20 and c['train.steps.emitter'] == 20
     assert 'optics' in c and 'optics.NA' in c and 'optics.na' not in c and 'nope' not in c
     assert list(c) == ['name', 'optics', 'psf', 'train', 'gpus'] and len(c) == 5
     assert dict(c.optics) == dict(pixel_um=0.1, NA=1.49) and dict(**c.optics)['NA'] == 1.49
@@ -63,10 +63,10 @@ def test_merge_updated():
     assert c.name == 'b' and c.psf.iters == 300 and c.psf.init == ['zero', 'beads']        # nested keys merged
     assert c.optics == dict(pixel_um=0.1, NA=1.49, wavelength_um=0.7) and c.gpus == [0]    # lists replaced
     assert b.name == 'a' and b.psf.iters == 600 and 'wavelength_um' not in b.optics and b.gpus == [1, 2]   # base untouched
-    c.psf.init.append('x'); c.train.steps.det = 1
-    assert b.psf.init == ['zero', 'beads'] and b.train.steps.det == 10                    # no shared lists / sections
-    c = b.updated({'psf.iters': 5, 'train.steps.det': 7}, {'name': 'c'}, movie='m.tif')
-    assert c.psf.iters == 5 and c.train.steps == dict(det=7, hd=20) and c.name == 'c' and c.movie == 'm.tif'
+    c.psf.init.append('x'); c.train.steps.detector = 1
+    assert b.psf.init == ['zero', 'beads'] and b.train.steps.detector == 10                    # no shared lists / sections
+    c = b.updated({'psf.iters': 5, 'train.steps.detector': 7}, {'name': 'c'}, movie='m.tif')
+    assert c.psf.iters == 5 and c.train.steps == dict(detector=7, emitter=20) and c.name == 'c' and c.movie == 'm.tif'
     assert b.updated(psf=None).psf is None                                # a non-dict replaces a section
     assert b.replaced(psf=dict(iters=1)).psf == dict(iters=1)            # whole-section replacement
     assert b.updated(b.updated(name='z')).name == 'z'                    # merging another ConfigDict
@@ -144,12 +144,12 @@ def test_python_loader_and_schema():
 
 def test_schema_of_derived_config():
     base = ConfigDict(movie='m.tif', out='o', optics=dict(pixel_um=0.065), pattern=dict(frame_order='interleaved'))
-    c = base.updated(name='x', train=dict(steps=dict(det=5)), camera=dict(offset_adu=np.float32(100.0)), process=dict(crop=(5, 5, 390)))
+    c = base.updated(name='x', train=dict(steps=dict(detector=5)), camera=dict(offset_adu=np.float32(100.0)), process=dict(crop=(5, 5, 390)))
     r = AC.load(c)
     assert type(r) is dict and r['optics']['pixel_um'] == 0.065 and r['optics']['NA'] == 1.49 and r['_file'] is None
     assert r['camera']['offset_adu'] == 100.0 and type(r['camera']['offset_adu']) is float and r['process']['crop'] == [5, 5, 390]
-    assert r['train']['steps'] == dict(AC.DEFAULTS['train']['steps'], det=5) and AC.needs_reorder(r)
-    assert r == AC.load(c.to_dict()) and c.train.steps == dict(det=5)     # same as the dict form; the input is not changed
+    assert r['train']['steps'] == dict(AC.DEFAULTS['train']['steps'], detector=5) and AC.needs_reorder(r)
+    assert r == AC.load(c.to_dict()) and c.train.steps == dict(detector=5)     # same as the dict form; the input is not changed
     assert AC.load(r) == r                                                # a resolved config resolves to itself
     with tempfile.TemporaryDirectory() as d:                              # same as the yaml / json forms
         for ext in ('yaml', 'json'):

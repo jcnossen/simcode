@@ -1,5 +1,5 @@
 {
- "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + per-pattern-angle traceless blur (angle_delta); camera / pattern blocks copied from calib_2p5nM_m2_sc.json [ALTERNATIVE: per-angle traceless blur instead of photoselection; the recommended calib is the file without _ad]",
+ "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif: fit_psf_tracks on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + per-pattern-angle traceless blur (angle_delta); camera / pattern blocks copied from calib_2p5nM_m2_sc.json [ALTERNATIVE: per-angle traceless blur instead of photoselection; the recommended calib is the file without _ad]",
  "pixelsize_um": 0.10833,
  "wavelength_um": 0.7,
  "NA": 1.4900000095367432,

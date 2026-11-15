@@ -1,12 +1,12 @@
 """In-situ PSF fit of the automatic pipeline (stage d; docs/AUTO_PIPELINE.md sections 2 and 4).
 
-fit(tracks, out, ...) = simcode/calibration/fit_insitu2.py as a function (same algorithm, defaults, random draws), but with the
-optics and the camera constants as arguments (fit_insitu2 hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
+fit(tracks, out, ...) = simcode/calibration/fit_psf_tracks.py as a function (same algorithm, defaults, random draws), but with the
+optics and the camera constants as arguments (fit_psf_tracks hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
 read noise 1.9 e). The fit itself is torch_psf.insitu.fit_tracks (variable projection: per-frame I and per-(sample, pattern
 angle) bg solved in closed form, per-sample x, y, z and the PSF parameters by Adam); here: the sample selection, the camera
 conversion, the pattern-angle groups (frame % 6 // 3) and the photoselection hook. Supported terms: Zernike 5-21 + focus,
 blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base (frozen = learning rate 0), checkerboard split.
-Writes <out>_psf.pt / _psf.json in the fit_insitu2 format.
+Writes <out>_psf.pt / _psf.json in the fit_psf_tracks format.
 
 lut=True: the alternating fit of section 4. Per iteration the knots of a Catmull-Rom spline table (torch_psf.CubicSplinePSF)
 of the CURRENT vectorial model are built with autograd to the PSF parameters; all per-sample PSF evaluations
@@ -62,7 +62,7 @@ class Fit:
         self.EXTRA = [v for v in (self.BL, self.GAM, self.ZETA) if v is not None]
         self.blur_mode, self.photosel = blur, photosel
 
-    # ---- per-angle PSF terms (= fit_insitu2.dip_tensor / blur_cov / psf_of)
+    # ---- per-angle PSF terms (= fit_psf_tracks.dip_tensor / blur_cov / psf_of)
     def dip_tensor(self, k):
         e = torch.zeros(3, device=self.dev); e[:2] = self.EDIR[k]
         Z = self.ZETA
@@ -165,7 +165,7 @@ def _opt(F, S):
 
 
 def select(D, nsamples, split='', tile=16, seed=0):
-    """= fit_insitu2's sample selection (np.random.seed(0) state)"""
+    """= fit_psf_tracks's sample selection (np.random.seed(0) state)"""
     np.random.seed(seed)
     Ball = len(D['rois'])
     if split:
@@ -285,7 +285,7 @@ def _fit_lut(F, S, gain, npx, chunks, iters, lut_sub, lut_inner, lut_polish, log
 
 
 def model_from_pt(pt, R, dev='cuda'):
-    """frozen Fit object from a _psf.pt (this module's or fit_insitu2's; optics default = the DMD setup)"""
+    """frozen Fit object from a _psf.pt (this module's or fit_psf_tracks's; optics default = the DMD setup)"""
     S = torch.load(pt, weights_only=False) if isinstance(pt, str) else pt
     o = S.get('optics') or dict(pixel_um=0.10833, NA=float(S['NA']), wavelength_um=0.70, n_imm=1.518, n_med=1.33)
     o = dict(o); o['NA'] = float(S['NA'])

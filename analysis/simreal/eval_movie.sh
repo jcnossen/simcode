@@ -8,8 +8,8 @@ D=$(cd "$(dirname "$0")" && pwd); REPO=$(cd "$D/../.." && pwd)
 export CUDA_VISIBLE_DEVICES=${GPU:-1} TORCH_DISABLE_NATIVE_JIT=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True PYTHONPATH=$REPO${PYTHONPATH:+:$PYTHONPATH}
 PY=${PY:-python}
 mkdir -p "$o"
-$PY -u -m simcode.processing.run_uncalibrated --movie "$d/sim_movie.tif" --calib insitu/calib_0.5nM.json --out "$o/ours" --frontend sc2p \
-  --sc_cal calib/calib_sc_hd_sc5nbb15_pm_bright.json --p2_cal calib/calib_p2L_movie_b10.json \
+$PY -u -m simcode.processing.run_uncalibrated --movie "$d/sim_movie.tif" --calib insitu/calib_0.5nM.json --out "$o/ours" --pass2_mode networks \
+  --cal calib/calib_sc_hd_sc5nbb15_pm_bright.json --cal_pass2 calib/calib_p2L_movie_b10.json \
   --chunk 6000 --crop 5,5,110 --stages pass1,pattern,pass2
 $PY "$REPO/analysis/baselines/run_simcode.py" "$d" "$o/simcode_${md}_fix.npz" --model "$md" --cam paper --fix_sign 1 --net_cache "$o/simcode_${md}_net.npy"
 if [ -n "$dec" ]; then (cd "$REPO/analysis/baselines/decode" && $PY decode_infer.py "$d" "$dec" sum6 "$o/decode_${dec}_sum6.npz"); fi

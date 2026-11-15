@@ -4,8 +4,8 @@ seed 401; heldout5: + rs05p / rs25p, >= 150 photons, the pass-1 detector's candi
 target -> projected efficiency (median of (w.e)^2 / w C_or w over chi2_1 median) and Sigma_net calibration along the
 B-profiled phase-gradient directions, nll_I, slope, I_lin / I_gt and |I - I_lin| / I_gt, prior z, per nn bin; prepared once
 (prep), evaluated during training from the stored patches (eval_hold).
-usage: python -m simcode.emitter.heldout            -> <out>/sc4/heldout4.pt
-       python -m simcode.emitter.heldout --set 5    -> <out>/sc4/heldout5.pt (the set of the model recipe)
+usage: python -m simcode.emitter.heldout            -> <out>/emitter_heldout/heldout4.pt
+       python -m simcode.emitter.heldout --set 5    -> <out>/emitter_heldout/heldout5.pt (the set of the model recipe)
 """
 import argparse, os, time
 import numpy as np, torch
@@ -14,8 +14,8 @@ from simcode.layers.blocks import extract_patches
 from simcode.emitter.model import PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, mod_slope
 
 dev = 'cuda'
-HOLD = os.path.join(config.root('out'), 'sc4', 'heldout4.pt')      # stage 'prep' output (not shipped: 0.2-0.3 GB)
-HOLD5 = os.path.join(config.root('out'), 'sc4', 'heldout5.pt')      # iteration 30b: det_n1 candidates, + rs05p / rs25p, >= 150 ph
+HOLD = os.path.join(config.root('out'), 'emitter_heldout', 'heldout4.pt')      # stage 'prep' output (not shipped: 0.2-0.3 GB)
+HOLD5 = os.path.join(config.root('out'), 'emitter_heldout', 'heldout5.pt')      # iteration 30b: det_n1 candidates, + rs05p / rs25p, >= 150 ph
 SC5_SCEN = (('iso', 13000), ('pair2', 5000), ('rs25x', 5000), ('rs05p', 6000), ('rs25p', 6000))
 PHB = ((200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 1e9))
 
@@ -35,7 +35,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
     CD.a.calib = config.model(config.INSITU_05)
     os.environ.setdefault('SIMCODE_GATE_CALIB', CD.a.calib)    # the scenes with the same PSF (the gate default is the model's PSF since 2026-11-14)
     sim, rpsf, _ = CD.models(T)
-    det, _ = load_det(config.DET)
+    det, _ = load_det(config.DETECTOR)
     col = PSFCol(sim)
     H = {}
     for sc, ntarget in scen:

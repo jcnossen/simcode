@@ -29,8 +29,8 @@ b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs
       GD=$P/gate_$pr; FE=$P/fe_$pr; mkdir -p $GD $FE; g=$(gpu)
       export P2G_PRESET=$P/presets/$pr.json
       last=${SCN##*,}
-      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate --scen $SCN --fronts sc --sc hd_sc5nb.pt \
-        --sccal calib/calib_sc_hd_sc5nbb15_pm_bright.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
+      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate --scen $SCN --fronts sc --emitter hd_sc5nb.pt \
+        --cal calib/calib_sc_hd_sc5nbb15_pm_bright.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
       SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.processing.gate_dump --scen $SCN --seeds 301,302,303 --fronts $F3 --out $FE || { say FAILED dump $pr; exit 1; }
       unset P2G_PRESET
       CUDA_VISIBLE_DEVICES=$g python $A/eval_cmp.py $FE $SCN $CMP $CALS $P/eval_$pr$SX.json > $P/eval_$pr$SX.txt && say "$part $pr done"

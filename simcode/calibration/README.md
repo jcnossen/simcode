@@ -41,7 +41,7 @@ python -m simcode.calibration.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
 #    solved exactly (torch_psf.varpro) each iteration, x, y, z per sample + Zernike 5..21 + focus by Adam (600 iterations,
 #    8000 samples), gain 0.56 / offset 99.3 / rn 1.9 fixed, z in [0, 0.2] um. Writes <tag>_psf.json/.pt and the
 #    per-frame intensities of all samples (<tag>_intensities.pt, PSF frozen) for stage B.
-python -m simcode.calibration.fit_insitu2 --gain 0.56 --zmax 0.2 --out <out>/insitu/insitu2_0.5nM
+python -m simcode.calibration.fit_psf_tracks --gain 0.56 --zmax 0.2 --out <out>/insitu/insitu2_0.5nM
 
 # 5. stage B, pattern (initial estimate): I = A relint_s (1 + m_s cos(k_a.r - phi_s - dphi_a(t))) on fully-on frames,
 #    k / phases initialised from the SIMCODE pipeline's sf_fits_cfg.pickle, piecewise-linear phase drift (1500-frame knots).
@@ -89,7 +89,7 @@ copied to `<out>/insitu/legacy/`; that front-end is not part of simcode.
 
 - `camera_maps --nframes 10000` reproduces `models/insitu/camera_maps_0.5nM.npz` exactly (all arrays).
 - `extract_tracks` (defaults) reproduces the development track file exactly (52863 samples; copy in `<out>/insitu/tracks_0.5nM_dev.npz`).
-- `fit_insitu2` on the development track file reproduces `calib_0.5nM.json` exactly (focus and all 17 Zernikes, residual
+- `fit_psf_tracks` on the development track file reproduces `calib_0.5nM.json` exactly (focus and all 17 Zernikes, residual
   variance 0.996).
 - An independent subset of 8000 other samples from the same tracks: focus 0.1127 vs 0.1128 um, Zernikes within 0.003 waves
   (rms 0.0014).
@@ -98,7 +98,7 @@ copied to `<out>/insitu/legacy/`; that front-end is not part of simcode.
 
 ## 3D PSF extension (psf3d, 2026-11-11; opt-in, defaults unchanged)
 
-`fit_insitu2` has extra in-situ PSF freedom. A calib json without the new keys gives exactly the old PSF.
+`fit_psf_tracks` has extra in-situ PSF freedom. A calib json without the new keys gives exactly the old PSF.
 
 | flag | calib key | model |
 |---|---|---|

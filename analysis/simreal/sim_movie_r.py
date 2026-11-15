@@ -16,7 +16,7 @@ per-position pattern phase field phi_a(r) and depth factor f_a(r) are injected i
 (il = rel (1 + m f_a(r) cos(k.r - phase - phi_a(r)))); no extra random draws (same seed = same events / noise as the
 field-free movie). The true field is saved as <out>/true_field.pt.
 
-Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --frontend sc).
+Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --pass2_mode solve).
 rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
 jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,

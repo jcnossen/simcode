@@ -2,7 +2,7 @@
 Trainer of the emitter network (emitter/model.EmitterNet), pass 1 and pass 2 (one trainer; the pass follows from the
 checkpoints, see --illum).
 
-Common: candidates of a given detector (--det) on simulated batches (simulate/batches.TrainingBatches), matched one-to-one to
+Common: candidates of a given detector (--detector) on simulated batches (simulate/batches.TrainingBatches), matched one-to-one to
 the ground truth (simulate/targets.match_gt, < 1 px, detector p >= 0.5); losses with the nn-bin weights
 (simulate/targets.nn_weights: < 1.5 / 1.5-2.5 / 2.5-4 / > 4 px carry 0.15 / 0.25 / 0.25 / 0.35 of each window's weight):
   full-covariance NLL of the GT per-frame photons (nll_full) / 6 + the position-prior NLL vs the TRUE position (x, y) + the
@@ -18,10 +18,10 @@ Pass 2 (illum 1): illumination_batch ('paper' mix, pair curriculum, the pattern-
   from a pass-1 --init, so it starts exactly at that network); the detector gets the same estimated pattern when it is a
   pass-2 detector. Held-out: fixed seeded batches (make_pattern_hold): nll_I, |I - I_gt| / I_gt, prior RMSE / z per nn bin
   and photon bin, with the default model's pass-1 network on its pass-1 detector as reference (eval_ref.json).
---illum: default = 1 if --det is a pass-2 detector, else 1 if --init is a pass-2 network, else 0. Checkpoints:
+--illum: default = 1 if --detector is a pass-2 detector, else 1 if --init is a pass-2 network, else 0. Checkpoints:
   {'model', 'args' (arch tag model.ARCH, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/hd --det runs/det/final.pt --calib <psf.json> ...
-       CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/p2head --det runs/p2det/final.pt --init runs/hd/final.pt ...
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/hd --detector runs/det/final.pt --calib <psf.json> ...
+       CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/p2head --detector runs/p2det/final.pt --init runs/hd/final.pt ...
        python -m simcode.emitter.train --check 1        (zero-init check: a pass-2 network from a pass-1 one == that network)
 (models/README.md: the recipe of a model.)
 """
@@ -38,9 +38,9 @@ from simcode.simulate.targets import nn_weights, match_gt, emitter_targets
 
 dev = 'cuda'
 # defaults that differ between the passes (None in the parser)
-DEFAULTS = {0: dict(det='det_n1.pt', init='', steps=100000, lr=5e-4, pct=0.05, seed=0, eval_every=2000, ckpt_every=10000,
+DEFAULTS = {0: dict(detector='det_n1.pt', init='', steps=100000, lr=5e-4, pct=0.05, seed=0, eval_every=2000, ckpt_every=10000,
                     tau='15,80', dens='0.0005,0.04'),
-            1: dict(det=None, init=config.model(config.HEAD), steps=40000, lr=1.5e-4, pct=0.1, seed=21, eval_every=4000,
+            1: dict(detector=None, init=config.model(config.EMITTER), steps=40000, lr=1.5e-4, pct=0.1, seed=21, eval_every=4000,
                     ckpt_every=10000, tau='', dens='')}
 
 
@@ -115,7 +115,7 @@ def eval_pattern_hold(det, head, col, H, il_on=True):
     was = head.training; head.eval()
     acc = {}
     for o in H:
-        il = o['illum_p2'] if il_on else torch.zeros_like(o['illum_p2'])
+        il = o['illum_input'] if il_on else torch.zeros_like(o['illum_input'])
         c, nbr, lgm = detect_candidates(det, o['frames'], il)
         c5 = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))
         m = match_gt(o, c5)
@@ -146,8 +146,8 @@ def eval_pattern_hold(det, head, col, H, il_on=True):
 def parser():
     ap = argparse.ArgumentParser(description='trainer of the emitter network (pass 1 and pass 2)')
     ap.add_argument('--out', default='')
-    ap.add_argument('--illum', type=int, default=None, help='1: pass-2 network (illumination inputs); default: from --det / --init')
-    ap.add_argument('--det', default=None, help="detector of the candidates (pass 1 default 'det_n1.pt'; required for pass 2)")
+    ap.add_argument('--illum', type=int, default=None, help='1: pass-2 network (illumination inputs); default: from --detector / --init')
+    ap.add_argument('--detector', default=None, help="detector of the candidates (pass 1 default 'det_n1.pt'; required for pass 2)")
     ap.add_argument('--init', default=None, help='start checkpoint (pass 1 default: none; pass 2 default: the default model\'s pass-1 network)')
     ap.add_argument('--steps', type=int, default=None)
     ap.add_argument('--batch', type=int, default=16)
@@ -184,9 +184,9 @@ def parser():
 
 
 def infer_illum(a):
-    """--illum default: a pass-2 detector or a pass-2 init checkpoint -> 1"""
+    """--illum default: a pass-2 detector (--detector) or a pass-2 init checkpoint -> 1"""
     from simcode.detector.model import is_pass2 as det_is_pass2
-    if a.det and det_is_pass2(torch.load(config.resolve(a.det), map_location='cpu', weights_only=False)['model']): return 1
+    if a.detector and det_is_pass2(torch.load(config.resolve(a.detector), map_location='cpu', weights_only=False)['model']): return 1
     if a.init and is_pass2(torch.load(config.resolve(a.init), map_location='cpu', weights_only=False)['model']): return 1
     return 0
 
@@ -198,7 +198,7 @@ def main(argv=None):
     if a.illum is None: a.illum = infer_illum(a)
     for k, v in DEFAULTS[a.illum].items():
         if getattr(a, k) is None: setattr(a, k, v)
-    if a.illum and not a.det: raise SystemExit('--det is required for a pass-2 network')
+    if a.illum and not a.detector: raise SystemExit('--detector is required for a pass-2 network')
     from simcode.util.proctitle import auto; auto('train-p2head' if a.illum else 'train-head')     # name in nvidia-smi / ps
     (train_pass2 if a.illum else train_pass1)(a)
 
@@ -213,7 +213,7 @@ def train_pass1(a):
     args.update(z3d=1, z_range_um=list(Z_RANGE_UM), z_unif=Z_UNIF)
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    det, _ = load_det(a.det)
+    det, _ = load_det(a.detector)
     gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
     head = EmitterNet(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
     if a.init:      # a 2D init (e.g. hd_sc5nb.pt) gets the zero z rows (pad_out): it starts at exactly its 2D outputs
@@ -307,7 +307,7 @@ def train_pass2(a):
     psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
-    det, _ = load_det(a.det)
+    det, _ = load_det(a.detector)
     head = load_for_training(a.init, True, a.ch, bool(a.bf16))
     col = PSFCol(gen.rs['0.5nM'].sim)
     if getattr(gen, 'calibs', None): col = [PSFCol(r['0.5nM'].sim) for r in gen.rsm]    # per-calib template columns
@@ -315,10 +315,10 @@ def train_pass2(a):
     Hd = make_pattern_hold(gen, pert_model=a.pert_model)
     Hv1 = make_pattern_hold(gen, n=a.hold_v1, seed=919) if a.hold_v1 else None
     ilon = not a.no_illum
-    # references: the default model's pass-1 network on its pass-1 detector's candidates (config.HEAD / config.DET; evaluation
+    # references: the default model's pass-1 network on its pass-1 detector's candidates (config.EMITTER / config.DETECTOR; evaluation
     # only), and the initial network on this detector
-    n1, _ = load_det(config.model(config.DET))
-    ref = dict(p1_ref=eval_pattern_hold(n1, load_net(config.model(config.HEAD)), col, Hd), init=eval_pattern_hold(det, head, col, Hd, ilon))
+    n1, _ = load_det(config.model(config.DETECTOR))
+    ref = dict(p1_ref=eval_pattern_hold(n1, load_net(config.model(config.EMITTER)), col, Hd), init=eval_pattern_hold(det, head, col, Hd, ilon))
     if Hv1: ref['init_v1'] = eval_pattern_hold(det, head, col, Hv1, ilon)
     del n1
     json.dump(ref, open(a.out + '/eval_ref.json', 'w'), indent=1)
@@ -330,7 +330,7 @@ def train_pass2(a):
         with torch.no_grad():
             o = gen.illumination_batch(a.batch, mix='paper', pair_curr=True, pert_model=a.pert_model, **psub)
             col = cols[o['calib_i']] if isinstance(cols, list) else cols
-            fr = o['frames']; il = o['illum_p2'] if ilon else torch.zeros_like(o['illum_p2'])
+            fr = o['frames']; il = o['illum_input'] if ilon else torch.zeros_like(o['illum_input'])
             c, nbr, lgm = detect_candidates(det, fr, il)
             c5 = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))
             m = match_gt(o, c5)
@@ -365,14 +365,14 @@ def check():
     torch.manual_seed(0)
     gen = TrainingBatches(64, 64, 6, seed=0, p_std=0.5)
     o = gen.illumination_batch(4, pair_curr=True)
-    det, _ = load_det(config.model(config.DET))
+    det, _ = load_det(config.model(config.DETECTOR))
     col = PSFCol(gen.rs['0.5nM'].sim)
-    c, nbr, lgm = detect_candidates(det, o['frames'], o['illum_p2'])
+    c, nbr, lgm = detect_candidates(det, o['frames'], o['illum_input'])
     p = torch.sigmoid(c['logit'])
-    h0 = load_net(config.model(config.HEAD)); h1 = load_for_training(config.model(config.HEAD), True).eval()
+    h0 = load_net(config.model(config.EMITTER)); h1 = load_for_training(config.model(config.EMITTER), True).eval()
     with torch.no_grad():
-        a = apply_to_candidates(h0, col, o['frames'], o['illum_p2'], c['b'], c['iy'], c['ix'], c['x'], c['y'], nbr, p)
-        b = apply_to_candidates(h1, col, o['frames'], o['illum_p2'], c['b'], c['iy'], c['ix'], c['x'], c['y'], nbr, p)
+        a = apply_to_candidates(h0, col, o['frames'], o['illum_input'], c['b'], c['iy'], c['ix'], c['x'], c['y'], nbr, p)
+        b = apply_to_candidates(h1, col, o['frames'], o['illum_input'], c['b'], c['iy'], c['ix'], c['x'], c['y'], nbr, p)
     print(len(p), 'cands; max |dI|', float((a['I'] - b['I']).abs().max()), 'max |dx|', float((a['x'] - b['x']).abs().max()))
 
 

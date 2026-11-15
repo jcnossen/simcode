@@ -1,5 +1,5 @@
 """SIMCODE (paper model + eq.-2 pattern fit + MVU merge) as a front-end on the gate scenes (simcode/benchmark/gate.py), written in
-the gate npz format (front 'sc' keys) so simcode/benchmark/gate_report_xdet.py reports it like our sc front-ends.
+the gate npz format (front 'sc' keys) so simcode/benchmark/gate_report_detector_matched.py reports it like our sc front-ends.
   network   ~/smlmtorch/scripts/models/sf_conv_g1.3_tio2_L48/checkpoint_3.pt (the paper's model, see
             <out>/simcode_base/run_simcode.py), on the gate frames (photons, clamped >= 0 as MovieProcessor);
             LocalizationDetector prob_threshold 0.7, use_prob_weights False -> x, y, sigma_xy, N0..N5, sigma_N0..5

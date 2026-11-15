@@ -5,7 +5,7 @@ candidate cut, crop, batches), no package code changed. Per chunk: <out>/head_<f
 x_det, y_det; region coordinates), bw (window index into PW), PW [nW,6,5] (pattern per window), and the production output rows
 (wstart, frame, p, phot, X0, Y0, and the production solve x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy as the reference for variant A).
 usage: CUDA_VISIBLE_DEVICES=2 python analysis/ablation_cov/capture.py --run <pipeline out dir> --movie <tif> --calib <json> --out <dir>
-          --p2_cal <calib json> [--crop 5,5,110] [--chunks 0,6000] [--model m1809]
+          --cal_pass2 <calib json> [--crop 5,5,110] [--chunks 0,6000] [--model m1809]
 (--model: a name of simcode/models.json or a model folder; its pass-2 detector and head are used)"""
 import argparse, json, os, sys, time
 import numpy as np, torch
@@ -18,7 +18,7 @@ from simcode.util import proctitle
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--run', required=True); ap.add_argument('--movie', required=True); ap.add_argument('--calib', required=True)
-    ap.add_argument('--out', required=True); ap.add_argument('--p2_cal', required=True)
+    ap.add_argument('--out', required=True); ap.add_argument('--cal_pass2', required=True)
     ap.add_argument('--crop', default='5,5,110'); ap.add_argument('--chunks', default=''); ap.add_argument('--chunk', type=int, default=6000)
     ap.add_argument('--model', default='m1809'); ap.add_argument('--cand_pmin', type=float, default=0.3)
     ap.add_argument('--pattern', default='')
@@ -35,9 +35,9 @@ def main():
     crop = tuple(int(v) for v in a.crop.split(','))
     nf = movie.n
     chunks = [int(v) for v in a.chunks.split(',')] if a.chunks else list(range(0, nf, a.chunk))
-    p2 = _scff.Pass2FrontFast(calib, head=config.resolve(N['p2_head']), det=config.resolve(N['p2_det']), compile='auto')
+    p2 = _scff.Pass2FrontFast(calib, emitter=config.resolve(N['emitter_pass2']), detector=config.resolve(N['detector_pass2']), compile='auto')
     Pt = torch.load(a.pattern or f'{a.run}/pattern_est.pt')
-    scal = config.resolve(a.p2_cal)
+    scal = config.resolve(a.cal_pass2)
     for f0 in chunks:
         fn = f'{a.out}/head_{f0}.npz'
         if os.path.exists(fn): continue

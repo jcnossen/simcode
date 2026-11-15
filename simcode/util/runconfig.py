@@ -35,7 +35,11 @@ import contextlib, hashlib, json, os, platform, shlex, socket, subprocess, sys, 
 import numpy as np
 from simcode import config
 
-FORMAT = 'simcode.run_config/1'
+FORMAT = 'simcode.run_config/2'
+# format 1 (records written before 2026-11-15) named the files of a model det / head / p2_det / p2_head / p2_cal (+ sig_u_p1 /
+# sig_u_p2; fixed head_batch / compile_head): load / update read it and convert the names (upgrade)
+KEYS_FORMAT1 = dict(det='detector', head='emitter', p2_det='detector_pass2', p2_head='emitter_pass2', p2_cal='cal_pass2',
+                    p2_cal_sim='cal_sim_pass2', p2_cal_real='cal_real_pass2', sig_u_p1='sig_u_pass1', sig_u_p2='sig_u_pass2')
 NAME = 'run_config.json'
 REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
@@ -207,11 +211,12 @@ def model_file(path):
 
 
 def model_record(name, definition, files):
-    """files: {role: absolute path} of the files actually used (det, head, cal, p2_det, p2_head, p2_cal, sig_u_p1, sig_u_p2)"""
+    """files: {role: absolute path} of the files actually used (detector, emitter, cal, detector_pass2, emitter_pass2, cal_pass2,
+    sig_u_pass1, sig_u_pass2)"""
     F = {k: model_file(v) for k, v in files.items() if v}
     d = {k: config.resolve(v) for k, v in (definition or {}).items() if isinstance(v, str) and k not in ('name', 'psf', 'sig_u')}
-    used = dict(det='det', head='head', p2_det='p2_det', p2_head='p2_head')
-    same = all(os.path.abspath(files[r]) == os.path.abspath(d[k]) for r, k in used.items() if r in files and k in d)
+    used = ('detector', 'emitter', 'detector_pass2', 'emitter_pass2')
+    same = all(os.path.abspath(files[r]) == os.path.abspath(d[r]) for r in used if r in files and r in d)
     r = dict(name=name, definition=definition, files_are_the_models=bool(same), files=F)
     if not same: r['note'] = 'the network files given on the command line are not those of the named model: the files below are what was used'
     if definition and definition.get('psf'): r['training_psf'] = file_record(config.resolve(definition['psf']))
@@ -324,10 +329,28 @@ def locked(out):
         finally: fcntl.flock(lf, fcntl.LOCK_UN)
 
 
+def upgrade(R):
+    """a record of format 1 -> the present format (file keys renamed, KEYS_FORMAT1); other records unchanged"""
+    if not R or R.get('format') != 'simcode.run_config/1': return R
+    ren = lambda d: {KEYS_FORMAT1.get(k, k): v for k, v in d.items()} if isinstance(d, dict) else d
+    R = dict(R, format=FORMAT, converted_from='simcode.run_config/1')
+    if 'settings' in R: R['settings'] = ren(R['settings'])
+    if isinstance(R.get('fixed'), dict):
+        R['fixed'] = {dict(head_batch='emitter_batch', compile_head='compile_emitter').get(k, k): v for k, v in R['fixed'].items()}
+        if isinstance(R['fixed'].get('solve_c'), str): R['fixed']['solve_c'] = R['fixed']['solve_c'].replace('/ p2_cal,', '/ cal_pass2,')
+    if isinstance(R.get('model'), dict):
+        R['model'] = dict(R['model'], definition=ren(R['model'].get('definition')), files=ren(R['model'].get('files') or {}))
+    if R.get('earlier_settings'):
+        R['earlier_settings'] = [dict(e, settings=ren(e.get('settings')),
+                                      model=dict(e['model'], definition=ren(e['model'].get('definition')), files=ren(e['model'].get('files') or {}))
+                                      if isinstance(e.get('model'), dict) else e.get('model')) for e in R['earlier_settings']]
+    return R
+
+
 def load(path):
-    """a run_config.json, or the one of a run directory"""
+    """a run_config.json, or the one of a run directory (a format-1 record converted, upgrade)"""
     if os.path.isdir(path): path = os.path.join(path, NAME)
-    return json.load(open(path))
+    return upgrade(json.load(open(path)))
 
 
 def _yaml_text(R):
@@ -351,7 +374,7 @@ def update(out, fn):
     """locked read-modify-write of <out>/run_config.json; fn(record or None) -> record"""
     with locked(out):
         p = os.path.join(out, NAME)
-        try: R = json.load(open(p))
+        try: R = upgrade(json.load(open(p)))
         except (OSError, ValueError): R = None
         R = fn(R); write(out, R)
     return R
@@ -504,8 +527,10 @@ def _old_run_args(argv):
         D = RUN.PROD['datasets'][a.dataset]
         a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.model = a.model or D['model']
     N = config.model_set(a.model or None)
-    for r in ('det', 'head', 'p2_det', 'p2_head'): setattr(a, r, getattr(a, r) or N[r])
-    a.p2_cal = a.p2_cal or N[f'p2_cal_{a.cal_kind}']
+    # the single-file options of the old command line -> the model's files
+    for old, r in (('det', 'detector'), ('head', 'emitter'), ('p2_det', 'detector_pass2'), ('p2_head', 'emitter_pass2')):
+        setattr(a, r, getattr(a, old) or N[r])
+    a.cal_pass2 = a.p2_cal or N[f'cal_{a.cal_kind}_pass2']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
     if a.sigma_max is None: a.sigma_max = SP.SIGMA_MAX_NM
     if a.subset is None: a.subset = f'{a.sigma_max:g}'
@@ -526,16 +551,18 @@ def backfill(out, write_file=True):
         a, N, cal = _old_run_args(runs[0][3] + ['--sig_u', ''])
         # the model name is not in the old command lines: the model of models.json whose network files were used
         name = next((k for k, v in config.model_sets().items() if not k.startswith('_') and all(
-            os.path.abspath(config.resolve(v[r])) == os.path.abspath(config.resolve(getattr(a, r))) for r in ('det', 'head', 'p2_det', 'p2_head'))), None)
+            os.path.abspath(config.resolve(v[r])) == os.path.abspath(config.resolve(getattr(a, r))) for r in ('detector', 'emitter', 'detector_pass2', 'emitter_pass2'))), None)
         Nd = config.model_set(name) if name else None
         S = RUN.settings_of(a, cal); S['model'] = name; S['out'] = out_abs
         RTJ = json.load(open(os.path.join(out, 'runtime.json'))); SUM = json.load(open(os.path.join(out, 'summary.json')))
         fast = RTJ.get('fast', {})
         fixed = RUN.fixed_values()
-        fixed.update(det_batch=fast.get('det_batch'), head_batch=fast.get('head_batch'), solve_batch=fast.get('solve_batch'),
-                     compile=fast.get('compile'), compile_head=fast.get('compile_head'), cand_pmin=SUM.get('cand_pmin'))
+        fixed.update(det_batch=fast.get('det_batch'), emitter_batch=fast.get('head_batch'), solve_batch=fast.get('solve_batch'),
+                     compile=fast.get('compile'), compile_emitter=fast.get('compile_head'), cand_pmin=SUM.get('cand_pmin'))
         fixed['_source'] = 'batch sizes / compile / cand_pmin from runtime.json and summary.json of the run; the other values are those of the present code'
-        files = dict(det=RTJ['sc']['det'], head=RTJ['sc']['head'], cal=RTJ['sc']['cal'], p2_det=RTJ['p2']['det'], p2_head=RTJ['p2']['head'], p2_cal=RTJ['p2']['cal'])
+        # runtime.json of a run made before 2026-11-14 (its keys of that time: sc / p2, det / head / cal)
+        files = dict(detector=RTJ['sc']['det'], emitter=RTJ['sc']['head'], cal=RTJ['sc']['cal'], detector_pass2=RTJ['p2']['det'],
+                     emitter_pass2=RTJ['p2']['head'], cal_pass2=RTJ['p2']['cal'])
         steps = []; sel = {}
         for t, g, mod, av in stricts:
             sa = SP.build_parser().parse_known_args(av)[0]         # (options of that time that no longer exist are ignored)
@@ -543,10 +570,10 @@ def backfill(out, write_file=True):
             steps.append(dict(step='strict', time=t, command=f'python -m {mod} ' + shlex.join(av), reconstructed=True,
                               settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, format=sa.format, crop=sa.crop),
                               files=dict(sig_u=file_record(su)) if su else {}))
-            files['sig_u_p1' if sa.tag == 'est' else 'sig_u_p2'] = su
+            files['sig_u_pass1' if sa.tag == 'est' else 'sig_u_pass2'] = su
         # the tables were built by the logged simcode.table commands with these rescales; simcode.run now does the same in its
         # table stage, so the pair goes into the settings (a re-run from this record then builds the same kind of tables)
-        S['sig_u'] = ','.join(files.get(k, '') for k in ('sig_u_p1', 'sig_u_p2')) if any(files.get(k) for k in ('sig_u_p1', 'sig_u_p2')) else ''
+        S['sig_u'] = ','.join(files.get(k, '') for k in ('sig_u_pass1', 'sig_u_pass2')) if any(files.get(k) for k in ('sig_u_pass1', 'sig_u_pass2')) else ''
         iso = lambda t: time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(t))
         t_cmd = os.path.getmtime(os.path.join(out, 'command.txt'))
         unlogged = {f: time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(os.path.getmtime(os.path.join(out, f)))) for f in sorted(os.listdir(out))

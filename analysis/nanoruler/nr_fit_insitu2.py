@@ -1,4 +1,4 @@
-"""NANORULER COPY of simcode/calibration/fit_insitu2.py (package file not edited). Only change: the optics / camera constants that are
+"""NANORULER COPY of simcode/calibration/fit_psf_tracks.py (package file not edited). Only change: the optics / camera constants that are
 hard-coded for the DMD-SIMFLUX setup come from the environment: NR_PX (pixel size um, 0.065), NR_WL (emission wavelength um, 0.68),
 NR_OFFSET (ADU, 100.0), NR_RN (read noise e, start / fixed value of the fit, 1.6). Original docstring follows.
 
@@ -40,7 +40,7 @@ ap.add_argument('--fit-apod', type=int, default=0)
 ap.add_argument('--fit-na', type=int, default=0)
 ap.add_argument('--out', default=out('insitu2_0.5nM'))
 ap.add_argument('--blur', default='none', choices=['none', 'global', 'line', 'angle', 'angle_line', 'angle_delta'])
-ap.add_argument('--init-fit', default='')     # start from a previous fit_insitu2 _psf.pt (Zernikes, focus, its global blur as fixed base)
+ap.add_argument('--init-fit', default='')     # start from a previous fit_psf_tracks _psf.pt (Zernikes, focus, its global blur as fixed base)
 ap.add_argument('--freeze-base', type=int, default=0)   # with --init-fit: train only the new extra terms
 ap.add_argument('--dipole', default='none', choices=['none', 'global', 'angle'])
 ap.add_argument('--fit-saf', type=int, default=0)

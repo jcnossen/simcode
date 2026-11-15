@@ -21,8 +21,8 @@ echo "$(date) chain $S base $B calib $C p_std $PS pref $PREF"
 PD=$!
 until [ -f $D/p2det/ckpt_25000.pt ] || [ -f $D/p2det/final.pt ]; do kill -0 $PD 2>/dev/null || [ -f $D/p2det/final.pt ] || { echo "p2det died"; exit 1; }; sleep 30; done
 P25=$D/p2det/ckpt_25000.pt; [ -f $P25 ] || P25=$D/p2det/final.pt
-stage $S p2head 10 "${PREF2:-2 0}" env P2G_TITLE=p2gen-hd-$S $W $NRW simcode.emitter.train --out $D/p2head --det $P25 --init $MD/hd_$B.pt --steps 24000 --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 --pert_model v1 --calib $C --p_std $PS $XT || exit 1
+stage $S p2head 10 "${PREF2:-2 0}" env P2G_TITLE=p2gen-hd-$S $W $NRW simcode.emitter.train --out $D/p2head --detector $P25 --init $MD/hd_$B.pt --steps 24000 --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 --pert_model v1 --calib $C --p_std $PS $XT || exit 1
 wait $PD || { echo "p2det failed"; exit 1; }
-stage $S p2headL 10 "$PREF" env P2G_TITLE=p2gen-hL-$S $W $NRW simcode.emitter.train --out $D/p2headL --det $D/p2det/final.pt --init $D/p2head/final.pt --steps 50000 --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 --pert_model ${PM:-real} --hold_v1 15 --calib $C --p_std $PS $XT || exit 1
+stage $S p2headL 10 "$PREF" env P2G_TITLE=p2gen-hL-$S $W $NRW simcode.emitter.train --out $D/p2headL --detector $D/p2det/final.pt --init $D/p2head/final.pt --steps 50000 --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 --pert_model ${PM:-real} --hold_v1 15 --calib $C --p_std $PS $XT || exit 1
 for n in p2det p2headL; do cp -n $D/$n/final.pt models/${n}_$S.pt; done
 echo "$(date) chain $S done"

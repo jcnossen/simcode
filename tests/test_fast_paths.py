@@ -19,12 +19,12 @@ import numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode import config
 CALIB = config.model('insitu/calib_1809_2_psf3d.json')
-HEAD = config.model(config.HEAD)
-DET = config.model(config.DET)
-P2H = config.model(config.P2_HEAD)
-P2D = config.model(config.P2_DET)
-SCAL = config.model(config.CAL_P1_REAL)
-P2CAL = config.model(config.CAL_P2_SIM)
+EMITTER = config.model(config.EMITTER)
+DETECTOR = config.model(config.DETECTOR)
+EMITTER_PASS2 = config.model(config.EMITTER_PASS2)
+DETECTOR_PASS2 = config.model(config.DETECTOR_PASS2)
+CAL = config.model(config.CAL_REAL)
+CAL_PASS2 = config.model(config.CAL_SIM_PASS2)
 PATT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'pattern_est_1809_2.pt')   # pattern estimate of the 1809/2 movie (m1809 set)
 _C = {}
 # bf16 tolerances (production precision): the bf16 head output depends on the batch composition through the cuDNN algorithm
@@ -87,19 +87,19 @@ def _pass1(fp32, **kw):
     from simcode.processing.front_fast import Pass1FrontFast
     mov, cal = sim_movie()
     if 'p1' not in _C:
-        A = Pass1Front(CALIB, head=HEAD, det=DET)
-        B = Pass1FrontFast(CALIB, head=HEAD, det=DET)
-        B.det = A.det; B.head = A.head; B.front.det = A.det
-        B.front.heads = {'h': A.head}
+        A = Pass1Front(CALIB, emitter=EMITTER, detector=DETECTOR)
+        B = Pass1FrontFast(CALIB, emitter=EMITTER, detector=DETECTOR)
+        B.detector = A.detector; B.emitter = A.emitter; B.front.detector = A.detector
+        B.front.emitters = {'h': A.emitter}
         _C['p1'] = (A, B)
     A, B = _C['p1']
-    A.head.bf16 = not fp32
+    A.emitter.bf16 = not fp32
     ctx = fp32_mode() if fp32 else contextlib.nullcontext()
     with ctx:
         Ra, _ = A.run_chunk(mov, cal, 0, mov.n)
         Rb, _ = B.run_chunk(mov, cal, 0, mov.n, **kw)
         Rr = None
-    A.head.bf16 = True
+    A.emitter.bf16 = True
     return Ra, Rb, Rr
 
 
@@ -126,7 +126,7 @@ def _check_pass1(fp32, **kw):
 
 
 def test_pass1_fp32():
-    for kw in (dict(), dict(streams=False), dict(det_batch=16, head_batch=1024), dict(det_batch=7, head_batch=333)):
+    for kw in (dict(), dict(streams=False), dict(det_batch=16, emitter_batch=1024), dict(det_batch=7, emitter_batch=333)):
         _check_pass1(True, **kw)
 
 
@@ -147,7 +147,7 @@ def test_pattern_solve():
     from simcode.solve import solve as SV
     from simcode.processing.common import pattern_frames
     Ra, _, _ = _pass1(False)
-    cal = json.load(open(SCAL))
+    cal = json.load(open(CAL))
     pat = torch.load(PATT, weights_only=False)
     keep = np.nonzero(Ra['out'])[0][:8192]
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
@@ -170,16 +170,16 @@ def test_pass2_p2_fp32():
     from simcode.processing.front_fast import Pass2FrontFast
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
-    A = Pass2Front(CALIB, head=P2H, det=P2D)
-    B = Pass2FrontFast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
-    B.det = A.det; B.head = A.head
+    A = Pass2Front(CALIB, emitter=EMITTER_PASS2, detector=DETECTOR_PASS2)
+    B = Pass2FrontFast(CALIB, emitter=EMITTER_PASS2, detector=DETECTOR_PASS2, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
+    B.detector = A.detector; B.emitter = A.emitter
     from simcode.processing.front_fast import Pass1FrontFast
-    P1, _ = Pass1FrontFast(CALIB, head=HEAD, det=DET).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
-    A.head.bf16 = False
+    P1, _ = Pass1FrontFast(CALIB, emitter=EMITTER, detector=DETECTOR).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
+    A.emitter.bf16 = False
     with fp32_mode():
-        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, P2CAL, P1, SCAL)
-        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, P2CAL, P1, SCAL)
-    A.head.bf16 = True
+        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, CAL_PASS2, P1, CAL)
+        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, CAL_PASS2, P1, CAL)
+    A.emitter.bf16 = True
     Ra, Rb = canon(Ra), canon(Rb)
     ok, dd = same_cands(Ra, Rb, 1e-4)
     assert ok, f'pass-2 rows differ ({len(Ra["x_det"])} vs {len(Rb["x_det"])}, {dd:.2e})'

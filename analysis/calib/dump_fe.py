@@ -48,7 +48,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     CD.a.calib = GA.gate_calib()
     sim, _, _ = CD.models(6)
-    det, _ = DM.load(_cfg.model(_cfg.DET)); det.eval()   # as the gate runs (SC_DET) and the pipeline
+    det, _ = DM.load(_cfg.model(_cfg.DETECTOR)); det.eval()   # as the gate runs (SC_DET) and the pipeline
     head = SCM.load(a.head); col = SCM.PSFCol(sim)
     for sc in a.scen.split(','):
         for seed in [int(s) for s in a.seeds.split(',')]:

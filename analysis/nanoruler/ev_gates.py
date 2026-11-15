@@ -33,14 +33,14 @@ for L in open(f'{O}/accept_{S}.txt'):
     if cur and ('pair' in cur) and ('s2 (A) vs c2' in cur or 's1 (A) vs c1' in cur) and ('200-2000' in L or '800-2500' in L or 'detect' in L):
         print(f'(3) {cur} | {" ".join(L.split())[:170]}')
 E_ = dict(_doc='PSF-matched set nr80 for the nanoruler movie of the original SIMFLUX setup (65 nm px, pitch 3.38 px; calib out/nanoruler/calib_nr80.json; '
-               'm1809 recipe + --dens 0.0005,0.06, --tau 3,80, trainers through analysis/nanoruler/nrwrap.py). Absolute paths. cal_real / p2_cal_real: '
+               'm1809 recipe + --dens 0.0005,0.06, --tau 3,80, trainers through analysis/nanoruler/nrwrap.py). Absolute paths. cal_real / cal_real_pass2: '
                'the real-data sigma multiplier is COPIED from the other setup (not re-measured). sig_u fitted on cycle-aligned windows of the '
                'simulated nanoruler movie nr_a frames [0, 6000) (analysis/nanoruler/ev_sigcal.py). Runs of this setup must go through '
                'analysis/nanoruler/ev_run.py (pitch search range, crop).',
           _gates='PASS' if ok else 'FAIL',
-          det=f'{M}/det_{S}.pt', head=f'{M}/hd_{S}.pt', cal_sim=f'{M}/calib/calib_sc_hd_{S}.json', cal_real=f'{M}/calib/calib_sc_hd_{S}_real.json',
-          p2_det=f'{M}/p2det_{S}.pt', p2_head=f'{M}/p2headL_{S}.pt', p2_cal_sim=f'{M}/calib/calib_p2L_{S}.json',
-          p2_cal_real=f'{M}/calib/calib_p2L_{S}_real.json', sig_u=f'{M}/calib/sigu_p1_{S}.json,{M}/calib/sigu_p2_{S}.json')
+          detector=f'{M}/det_{S}.pt', emitter=f'{M}/hd_{S}.pt', cal_sim=f'{M}/calib/calib_sc_hd_{S}.json', cal_real=f'{M}/calib/calib_sc_hd_{S}_real.json',
+          detector_pass2=f'{M}/p2det_{S}.pt', emitter_pass2=f'{M}/p2headL_{S}.pt', cal_sim_pass2=f'{M}/calib/calib_p2L_{S}.json',
+          cal_real_pass2=f'{M}/calib/calib_p2L_{S}_real.json', sig_u=f'{M}/calib/sigu_p1_{S}.json,{M}/calib/sigu_p2_{S}.json')
 miss = [p for k, v in E_.items() if not k.startswith('_') for p in v.split(',') if not os.path.exists(p)]
 if miss: print('model: MISSING files', miss); ok = False
 else:

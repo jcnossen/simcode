@@ -20,8 +20,8 @@ from field_maps import G0, CS, NC, SHIFT, smooth_fit, wcorr
 from check1_offsets import DS, PX
 
 OUT = config.out_dir('field')
-CAL = config.model(config.CAL_P1_REAL)
-CALSIM = config.model(config.CAL_P1_SIM)
+CAL = config.model(config.CAL_REAL)
+CALSIM = config.model(config.CAL_SIM)
 NB = 100
 
 

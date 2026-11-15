@@ -684,7 +684,7 @@ and the full old -> new table are in `docs/LAYOUT.md` (section "Renamed"). In sh
 `simulate/batches.py` (TrainingBatches), `sim/` -> `simulate/`; `hd/gate*.py`, `eff/` -> `benchmark/`; `insitu/` ->
 `calibration/`, `evalproto/` -> `evaluation/`, `nn/` -> `layers/`, `fileio/` -> `io/`, `fastutil.py` -> `util/compile.py`,
 `strict.py` -> `table.py`; `p2/` removed. Trainer command lines: `python -m simcode.detector.train` (pass 2: `--illum 1
---init <pass-1 detector>`, `--init_n1` -> `--pass1_ref`), `python -m simcode.emitter.train` (pass 2 when `--det` / `--init` is
+--init <pass-1 detector>`, `--init_n1` -> `--pass1_ref`), `python -m simcode.emitter.train` (pass 2 when `--detector` / `--init` is
 a pass-2 checkpoint), `python -m simcode.emitter.heldout` (was `simcode.hd.sc4 prep` / `prep5`).
 Checks (GPU 0): every checkpoint under models/ (33 detectors, 34 emitter networks: models.json models, model folders,
 archive_2d, archive_p2dedicated, the other weights) and the 4Pi detector / heads v10, v3L give bit-identical outputs on a
@@ -692,3 +692,40 @@ fixed batch before / after (973 tensors, `tests/check_model_outputs.py`); `simco
 bit-identical to the z3d code (every chunk file and table); the merged trainers run (6 smoke trainings of the recipe
 stages + the zero-init checks), with the same batches, targets and step-0 losses as the former trainers up to the GPU's
 run-to-run noise; pytest, `tests/test_fast_paths.py`, `tests/check_imports.py`.
+
+## 2026-11-15: the remaining old names (user approved)
+
+Every remaining name from the internal codes is descriptive now (table in `docs/LAYOUT.md`, "Renamed"):
+- model definition keys det / head / p2_det / p2_head / p2_cal_sim / p2_cal_real -> detector / emitter / detector_pass2 /
+  emitter_pass2 / cal_sim_pass2 / cal_real_pass2 (simcode/models.json, models/*/model.json; the loader reads only the new
+  keys and refuses the old ones with the name of the converter `analysis/maintenance/rename_model_keys.py`); config.DET /
+  HEAD / P2_DET / P2_HEAD / CAL_P1_* / CAL_P2_* -> DETECTOR / EMITTER / DETECTOR_PASS2 / EMITTER_PASS2 / CAL_REAL / CAL_SIM /
+  CAL_REAL_PASS2 / CAL_SIM_PASS2 / CAL_AUTOC*.
+- run record format `simcode.run_config/2` with the same key names (settings, model files, fixed emitter_batch /
+  compile_emitter); records of format 1 are converted when read (`util/runconfig.upgrade`), so `simcode.run --config <old
+  record>` still re-runs them (checked on a record written by the code before).
+- CLI: run_uncalibrated `--frontend sc|sc2p` -> `--pass2_mode solve|networks`, `--sc_det / --sc_head / --sc_cal / --p2_det /
+  --p2_head / --p2_cal / --head_batch` -> `--detector / --emitter / --cal / --detector_pass2 / --emitter_pass2 / --cal_pass2 /
+  --emitter_batch`; benchmark.gate `--det / --sc / --sccal` -> `--detector / --emitter / --cal`; emitter.train `--det` ->
+  `--detector`; pipeline training stages det / hd / p2det / p2det_c / p2head / p2headL / p2headL2 -> detector / emitter /
+  detector_pass2 / detector_pass2_cont / emitter_pass2 / emitter_pass2_long / emitter_pass2_final (acquisition config
+  train.steps / init / extra).
+- batch keys patt_p2 / illum_p2 -> patt_input / illum_input; front constructors and attributes head / det -> emitter / detector;
+  head_z -> emitter_z.
+- architecture tags: new emitter-network checkpoints store arch 'emitter_net' (the tag 'sc4n' of the existing checkpoints is
+  read through emitter.model.ARCH_TAGS; no .pt file was rewritten), new detector checkpoints arch 'detector'.
+- files: calibration/fit_insitu2.py -> fit_psf_tracks.py, benchmark/gate_report_xdet.py -> gate_report_detector_matched.py.
+- `if __name__ == '__main__':` guards in the script-like modules (calibration/camera_gain, camera_maps, extract_tracks,
+  fit_pattern, fit_psf_sums, fit_psf_tracks, pipeline/acceptance): importing them no longer runs them.
+- output paths: `<out>/sc4/heldout{4,5}.pt` -> `<out>/emitter_heldout/`, `<out>/p2/fe` -> `<out>/gate_dumps`, `<out>/p2/long` ->
+  `<out>/pass2_gate/long`. The data stay where they are (/mnt/data/dmdsf/simcode2_out/{sc4,p2}): the new names are symlinks
+  next to the old ones in ~/simcode2/out; the old names `out/sc4` and `out/p2` are removed once the z3d workers that use them
+  are done.
+- Still to do at the merge (the z3d workers read them with the old code): the model.json files of the live models directory
+  (~/simcode2/models/{m1809,m25,g13}/model.json and models/archive_*/*/model.json, not in git there) are rewritten with
+  `python analysis/maintenance/rename_model_keys.py ~/simcode2/models` (`--check` lists the files that still have old keys).
+Not renamed (data formats on disk): run-output file names and columns (pass1_<f0>.npz, pass2_est2_<f0>.npz, locs_p*.npz),
+gate npz / dump columns and front labels (sc_*, s1 / s2 / p1 / p2L), checkpoint file names, output directories of finished
+studies (out/p2generic, out/z3d, ...). simcode/fourpi/ is left for the 4Pi refactor.
+Checks: every checkpoint bit-identical (973 tensors, tests/check_model_outputs.py), simcode.run --dataset 1809_2 --nframes
+2000 bit-identical to the code before, pytest, tests/test_fast_paths.py, tests/check_imports.py.

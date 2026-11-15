@@ -1,5 +1,5 @@
 """
-Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated --frontend sc; the
+Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated --pass2_mode solve; the
 pipeline runs the fast versions in front_fast.py, these are the test oracle). No linear-intensity stage anywhere: no
 pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
 
@@ -27,21 +27,21 @@ from simcode.processing.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
-DET = _cfg.model(_cfg.DET)
-HEAD = _cfg.model(_cfg.HEAD)
-SC_CAL = _cfg.model(_cfg.CAL_P1_REAL)
+DETECTOR = _cfg.model(_cfg.DETECTOR)
+EMITTER = _cfg.model(_cfg.EMITTER)
+CAL = _cfg.model(_cfg.CAL_REAL)
 THR0 = 0.2
 
 
 
 class Pass1Front:
-    def __init__(self, calib_path, head=HEAD, det=DET, dev='cuda'):
+    def __init__(self, calib_path, emitter=EMITTER, detector=DETECTOR, dev='cuda'):
         from simcode.emitter import model as EM
         from simcode.detector import model as DM
         from simcode.simulate.simulator import Simulator
         self.EM = EM
-        self.det, _ = DM.load(det)
-        self.head = EM.load(head)
+        self.detector, _ = DM.load(detector)
+        self.emitter = EM.load(emitter)
         self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
 
@@ -69,7 +69,7 @@ class Pass1Front:
             t_ = time.time()
             x = torch.stack([frames[s0:s0 + T] for s0 in st])
             with torch.autocast('cuda', dtype=torch.bfloat16):
-                dd = self.det(x)
+                dd = self.detector(x)
             lgm = dd['logit'].float(); lgm = lgm[:, 0] if lgm.dim() == 4 else lgm
             c = select_subpixel(lgm, dd['dxy'].float(), k_cand, p_min=THR0, radius=0.7)
             keep = torch.isfinite(c['logit'])
@@ -84,8 +84,8 @@ class Pass1Front:
             outs = []
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
-                oh = EM.apply_to_candidates(self.head, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
-                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **EM.head_z(self.head, oh)))
+                oh = EM.apply_to_candidates(self.emitter, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
+                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **EM.emitter_z(self.emitter, oh)))
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
             I = oh['I']; Ip = I.clamp(min=0)
@@ -121,13 +121,13 @@ def z_inputs(R, idx, tt):
 
 
 @torch.no_grad()
-def run_chunk_pattern_solve(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=None):
+def run_chunk_pattern_solve(R, info, pattern, solve_cal, dev='cuda', chunk=8192, timing=None):
     """pattern solve on the stored pass-1 head outputs of the `out` rows (identical rows for every pattern)"""
     from simcode.solve import solve as SV
     from simcode.solve import z_conditioning as ZC
     timing = timing if timing is not None else {}
     t_ = time.time()
-    cal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
+    cal = json.load(open(solve_cal)) if isinstance(solve_cal, str) else dict(solve_cal)
     keep = R['out'].astype(bool)
     X0, Y0 = info['X0'], info['Y0']
     ws = R['wstart'][keep]

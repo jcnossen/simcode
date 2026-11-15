@@ -17,8 +17,9 @@ bf16 autocast for the CNN trunk, fp32 for the output layers, the readout and the
 The final position is always the explicit intensity-domain pattern solve (solve/solve.solve_emitters) on these outputs.
 
 Checkpoints ({'model': state dict, 'args', 'step'}): load() reads every emitter-network checkpoint: the architecture tag
-args['arch'] = 'sc4n' (pass-1 checkpoints; the pass-2 ones carry none), pass 1 or pass 2 from the state dict (cin_il), a 2D
-checkpoint (before 2026-11-14, no z rows) with zero z rows (pad_out; net.z3d False).
+args['arch'] = ARCH (checkpoints trained since 2026-11-15; the earlier pass-1 checkpoints store the tag 'sc4n' of the same
+network, ARCH_TAGS maps it, the earlier pass-2 ones store none), pass 1 or pass 2 from the state dict (cin_il), a 2D checkpoint
+(before 2026-11-14, no z rows) with zero z rows (pad_out; net.z3d False).
 """
 import torch
 import torch.nn as nn
@@ -27,11 +28,12 @@ from simcode.layers.blocks import ResBlock, extract_patches, norm_photons
 
 dev = 'cuda'
 PP = 21                 # patch size (px)
-ARCH = 'sc4n'           # architecture tag of the checkpoints of this network (training args 'arch')
+ARCH = 'emitter_net'    # architecture tag of the checkpoints of this network (training args 'arch')
+ARCH_TAGS = {'sc4n': ARCH}   # tags stored in earlier checkpoints of this network -> ARCH
 NBR_PMIN = 0.2          # candidates in the neighbour splat (= the gate detection threshold THR0)
 SIG_SPLAT = 0.5
 OFFS = torch.arange(-3, 4)
-HEAD_Z = ('z', 'lsz', 'bz')       # the network's z outputs carried by the pipeline
+EMITTER_Z = ('z', 'lsz', 'bz')       # the network's z outputs carried by the pipeline
 
 
 # ------------------------------------------------------------------------------------------------ neighbour inputs
@@ -268,9 +270,9 @@ def apply_to_candidates(net, col, frames, illum, b, iy, ix, x, y, nbr, p):
     return o
 
 
-def head_z(net, o):
+def emitter_z(net, o):
     """the network's z outputs (z, lsz, bz) of o; NaN for a 2D checkpoint (net.z3d False: zero z rows, not an estimate)"""
-    r = {k: o[k].float() for k in HEAD_Z}
+    r = {k: o[k].float() for k in EMITTER_Z}
     if not getattr(net, 'z3d', True):
         r = {k: torch.full_like(v, float('nan')) for k, v in r.items()}
     return r
@@ -288,7 +290,7 @@ def load(ck):
     from simcode.config import resolve
     c = torch.load(resolve(ck), map_location=dev, weights_only=False)
     a = c.get('args') or {}
-    if a.get('arch', ARCH) != ARCH:
+    if ARCH_TAGS.get(a.get('arch', ARCH), a.get('arch', ARCH)) != ARCH:
         raise ValueError(f"{ck}: emitter network arch {a.get('arch')!r} is not supported (only the neighbour-aware {ARCH!r} network)")
     net = EmitterNet(6, a.get('ch', 96), P=PP, bf16=bool(a.get('bf16', 1)), illum=is_pass2(c['model'])).to(dev)
     net.z3d = is_3d(c['model'])

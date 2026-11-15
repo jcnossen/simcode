@@ -1,4 +1,4 @@
-"""(2026-11-11 in-situ 3D PSF) Assemble a calib json from a fit_insitu2 _psf.pt (+ opt-in extras) and an existing calib of the
+"""(2026-11-11 in-situ 3D PSF) Assemble a calib json from a fit_psf_tracks _psf.pt (+ opt-in extras) and an existing calib of the
 same movie (camera block + maps, pattern block, optics constants are copied from it). Writes a NEW file.
 PSF fields written: zernike_waves, focus_um, NA, apod (emitter_z_median_um, tirf_depth_um stay those of the base calib); extras -> psf_blur_px2 (global blur),
 psf_dipole_M_angle (per-angle photoselection tensors, when the fit has them), saf, and a 'psf3d' provenance block.

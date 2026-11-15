@@ -1,14 +1,14 @@
 {
  "m1809": {
   "psf": "calib_1809_2_psf3d_avg.json",
-  "det": "det_m1809.pt",
-  "head": "hd_m1809.pt",
+  "detector": "det_m1809.pt",
+  "emitter": "hd_m1809.pt",
   "cal_sim": "calib/calib_sc_hd_m1809.json",
   "cal_real": "calib/calib_sc_hd_m1809_real.json",
-  "p2_det": "p2det_m1809.pt",
-  "p2_head": "p2headL_m1809.pt",
-  "p2_cal_sim": "calib/calib_p2L_m1809.json",
-  "p2_cal_real": "calib/calib_p2L_m1809_real.json",
+  "detector_pass2": "p2det_m1809.pt",
+  "emitter_pass2": "p2headL_m1809.pt",
+  "cal_sim_pass2": "calib/calib_p2L_m1809.json",
+  "cal_real_pass2": "calib/calib_p2L_m1809_real.json",
   "sig_u": "calib/sigu_p1_m1809.json,calib/sigu_p2_m1809.json"
  },
  "_recipe": {
@@ -28,7 +28,7 @@
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "a8d8f832575bf5e6e50f47491b2efa84d8444ce8816e7668e64ee1e1a71c4b2a",
    "params": {
-    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_1809_2.json",
+    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif: fit_psf_tracks on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_1809_2.json",
     "pixelsize_um": 0.10833,
     "wavelength_um": 0.7,
     "NA": 1.4900000095367432,
@@ -50,7 +50,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_1809_2_psf3d_avg.json"
   },
-  "det": {
+  "detector": {
    "path": "det_m1809.pt",
    "size": 7266957,
    "mtime": "2026-11-14T23:49:03+0100",
@@ -87,7 +87,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/det_m1809.pt"
   },
-  "head": {
+  "emitter": {
    "path": "hd_m1809.pt",
    "size": 5519185,
    "mtime": "2026-11-14T23:49:03+0100",
@@ -189,7 +189,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_sc_hd_m1809_real.json"
   },
-  "p2_det": {
+  "detector_pass2": {
    "path": "p2det_m1809.pt",
    "size": 7293667,
    "mtime": "2026-11-14T23:49:03+0100",
@@ -222,7 +222,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/p2det_m1809.pt"
   },
-  "p2_head": {
+  "emitter_pass2": {
    "path": "p2headL_m1809.pt",
    "size": 5560847,
    "mtime": "2026-11-14T23:49:03+0100",
@@ -253,7 +253,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/p2headL_m1809.pt"
   },
-  "p2_cal_sim": {
+  "cal_sim_pass2": {
    "path": "calib/calib_p2L_m1809.json",
    "size": 1943,
    "mtime": "2026-11-14T23:49:03+0100",
@@ -283,7 +283,7 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_p2L_m1809.json"
   },
-  "p2_cal_real": {
+  "cal_real_pass2": {
    "path": "calib/calib_p2L_m1809_real.json",
    "size": 3096,
    "mtime": "2026-11-14T23:49:03+0100",

@@ -27,7 +27,7 @@ T = 6
 def run(P, scenes, seeds, ntarget=3500):
     CD.a.calib = config.model(config.INSITU_05)   # = the development calib_inputs/calib_0.5nM.json
     sim, rpsf, lut = CD.models(T)
-    det, _ = DM.load(config.DET); det.eval()
+    det, _ = DM.load(config.DETECTOR); det.eval()
     ZF = os.environ.get('LM_ZFREE', '0') == '1'; zt = 'z' if ZF else ''      # z free (tag suffix 'z') or fixed 50 nm
     lm = LMRef(sim, P, zfree=ZF)
     for sc in scenes:

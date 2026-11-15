@@ -90,8 +90,8 @@ def resolve(ap, argv):
         N = config.model_set(a.model)
     except (KeyError, ValueError, OSError) as e:
         ap.error(str(e))
-    a.det, a.head, a.p2_det, a.p2_head = N['det'], N['head'], N['p2_det'], N['p2_head']
-    a.p2_cal = N[f'p2_cal_{a.cal_kind}']
+    a.detector, a.emitter, a.detector_pass2, a.emitter_pass2 = N['detector'], N['emitter'], N['detector_pass2'], N['emitter_pass2']
+    a.cal_pass2 = N[f'cal_{a.cal_kind}_pass2']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
     if a.sigma_max is None:
         from simcode import table as SP
@@ -106,7 +106,8 @@ def settings_of(a, cal):
     from simcode import table as SP
     r = config.resolve
     return dict(dataset=a.dataset, movie=r(a.movie, 'data'), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
-                det=r(a.det), head=r(a.head), cal=r(cal), p2_det=r(a.p2_det), p2_head=r(a.p2_head), p2_cal=r(a.p2_cal),
+                detector=r(a.detector), emitter=r(a.emitter), cal=r(cal), detector_pass2=r(a.detector_pass2), emitter_pass2=r(a.emitter_pass2),
+                cal_pass2=r(a.cal_pass2),
                 sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',
                 crop=a.crop, chunk=a.chunk, chunk_list=a.chunk_list, nframes=a.nframes,
                 sigma_max=a.sigma_max, drift=os.path.abspath(a.drift) if a.drift else '', subset=a.subset, format=a.format,
@@ -121,9 +122,9 @@ def fixed_values():
     d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
     return dict(stages='pass 1, pattern estimation, pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
                 window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, autoc=0,
-                solve_c='fixed c: cmult / cmult_ang of the solve calibrations (model.files.cal / p2_cal, params)',
-                code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_head='off',
-                margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], head_batch=d['head_batch'],
+                solve_c='fixed c: cmult / cmult_ang of the solve calibrations (model.files.cal / cal_pass2, params)',
+                code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_emitter='off',
+                margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], emitter_batch=d['emitter_batch'],
                 solve_batch=d['solve_batch'], pattern_pitch_search_px=list(PE.estimate_k.__defaults__[0]),
                 crop_default=list(SP.CROP),
                 table_files='locs_p1 = tag est (sig_u pass 1), locs_p2 = tag est2 (sig_u pass 2)')
@@ -142,9 +143,9 @@ def _from_config(path, rest):
         # become a model of their own, '<name>@record'
         S = REC['settings']; k = S.get('cal_kind', 'real'); name = f"{M['name']}@record"
         D = {kk: v for kk, v in M['definition'].items() if kk not in ('name', 'folder')}
-        D.update({r: S[r] for r in ('det', 'head', 'p2_det', 'p2_head') if S.get(r)})
+        D.update({r: S[r] for r in ('detector', 'emitter', 'detector_pass2', 'emitter_pass2') if S.get(r)})
         if S.get('cal'): D[f'cal_{k}'] = S['cal']
-        if S.get('p2_cal'): D[f'p2_cal_{k}'] = S['p2_cal']
+        if S.get('cal_pass2'): D[f'cal_{k}_pass2'] = S['cal_pass2']
         config.model_sets()[name] = D
         REC = dict(REC, settings=dict(S, model=name))
         print(f'simcode.run --config: the record used files other than those of model {M["name"]}: re-run with them as model {name}', flush=True)
@@ -173,8 +174,8 @@ def main(argv=None):
     # ---- the run record (run_config.json): written now with status 'running', completed at the end
     S = settings_of(a, cal); FX = fixed_values()
     su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
-    files = dict(det=S['det'], head=S['head'], cal=S['cal'], p2_det=S['p2_det'], p2_head=S['p2_head'], p2_cal=S['p2_cal'],
-                 sig_u_p1=config.resolve(su[0]) if su[0] else '', sig_u_p2=config.resolve(su[1]) if su[1] else '')
+    files = dict(detector=S['detector'], emitter=S['emitter'], cal=S['cal'], detector_pass2=S['detector_pass2'], emitter_pass2=S['emitter_pass2'],
+                 cal_pass2=S['cal_pass2'], sig_u_pass1=config.resolve(su[0]) if su[0] else '', sig_u_pass2=config.resolve(su[1]) if su[1] else '')
     rerun_of = None
     if REC is not None:
         warn = RC.verify(REC, fixed=FX)
@@ -198,22 +199,22 @@ def _stages(a, N, cal, Units, atomic_json):
     t00 = time.time(); ST = {}
     common = ['--movie', a.movie, '--calib', a.calib, '--out', a.out, '--crop', a.crop, '--chunk', str(a.chunk),
               '--prefetch', str(a.prefetch), '--redo', str(a.redo),
-              '--claim', str(a.claim), '--min_free_gb', str(a.min_free_gb), '--sc_det', a.det, '--sc_head', a.head]
+              '--claim', str(a.claim), '--min_free_gb', str(a.min_free_gb), '--detector', a.detector, '--emitter', a.emitter]
     if a.chunk_list: common += ['--chunk_list', a.chunk_list]
     if a.nframes: common += ['--nframes', str(a.nframes)]
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
-    _uncal(common + ['--frontend', 'sc', '--sc_cal', cal, '--stages', 'pass1' + (',pattern' if need_pat else '')])
+    _uncal(common + ['--pass2_mode', 'solve', '--cal', cal, '--stages', 'pass1' + (',pattern' if need_pat else '')])
     ST['pass1_pattern_s'] = time.time() - t0
     # 3: pattern solve of the pass-1 rows
     t0 = time.time()
-    _uncal(common + ['--frontend', 'sc', '--sc_cal', cal, '--stages', 'pass2'])
+    _uncal(common + ['--pass2_mode', 'solve', '--cal', cal, '--stages', 'pass2'])
     ST['solve_s'] = time.time() - t0
     # 4: pass 2
     t0 = time.time()
-    _uncal(common + ['--frontend', 'sc2p', '--sc_cal', cal, '--p2_det', a.p2_det, '--p2_head', a.p2_head,
-                     '--p2_cal', a.p2_cal, '--stages', 'pass2'])
+    _uncal(common + ['--pass2_mode', 'networks', '--cal', cal, '--detector_pass2', a.detector_pass2, '--emitter_pass2', a.emitter_pass2,
+                     '--cal_pass2', a.cal_pass2, '--stages', 'pass2'])
     ST['pass2_s'] = time.time() - t0
     # 5: tables + selections (with --claim 1 the tables are written by one of the copies; the others skip them)
     from simcode import table as SP
@@ -221,7 +222,7 @@ def _stages(a, N, cal, Units, atomic_json):
     crop = tuple(float(v) for v in a.crop.split(','))
     sigma_max = a.sigma_max
     from simcode.processing.common import CAND_PMIN
-    summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.p2_cal, cand_pmin=CAND_PMIN,
+    summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.cal_pass2, cand_pmin=CAND_PMIN,
                 run_config='run_config.json (the complete, resolved settings of this run)')
     tags = [('est', 'locs_p1'), ('est2', 'locs_p2')]
     su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']

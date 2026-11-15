@@ -1,12 +1,12 @@
 """(2026-11-11 in-situ 3D PSF) Held-out evaluation of an in-situ PSF on isolated emitter track samples.
 
 The PSF (and camera: gain / offset / read noise of the stage-A fit) is frozen. Per held-out sample, x, y, z are refit by
-Adam (same parametrisation as fit_insitu2: z = zmax sigmoid), the per-frame I and per-(sample, angle) bg are solved exactly
-(varpro). Per sample it stores the Gaussian-approximation Poisson NLL (as fit_insitu2) and second moments of the data and of
+Adam (same parametrisation as fit_psf_tracks: z = zmax sigmoid), the per-frame I and per-(sample, angle) bg are solved exactly
+(varpro). Per sample it stores the Gaussian-approximation Poisson NLL (as fit_psf_tracks) and second moments of the data and of
 the noise-free model about the fitted centre, after removing the fitted bg, in apertures r < 2.5 / 3 / 4 px, per pattern
 angle: S = sum v, Q = sum v (dx^2 - dy^2), W = sum v (dx^2 + dy^2), X = sum v 2 dx dy (dM = Q / S = Mxx - Myy).
 
-PSF sources: --fit <prefix>_psf.pt (fit_insitu2 output, with its opt-in 'extras') or --calib <calib json> (zernike_waves,
+PSF sources: --fit <prefix>_psf.pt (fit_psf_tracks output, with its opt-in 'extras') or --calib <calib json> (zernike_waves,
 focus_um, apod, NA and the opt-in psf_* keys). Test set: --test cb0 | cb1 = samples of that checkerboard parity (--tile px),
 '' = all; then --nsamples drawn with --seed (the same set for every PSF given the same tracks / test / seed).
 usage: python -m simcode.calibration.psf_heldout --tracks T.npz --fit F_psf.pt --test cb1 --out H.npz

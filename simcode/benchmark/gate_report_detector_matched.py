@@ -11,7 +11,7 @@ Gate report v2 (critic review 27 items 5, 6, 7): as gate_report but
   - intensity efficiency as the MEDIAN per-target ratio (rs scenes are outlier-dominated), all-frame and mean-removed
     (the per-emitter common scale is absorbed by the free B in the solve); the diag free-model CRLB fr_m is the
     reference here (the full-covariance version is in the removed decomposition script decomp.py)
-usage: python -m simcode.benchmark.gate_report_xdet --tag _hd_sc2 --out <out>/decomp/gate_report_xdet_sc2.json
+usage: python -m simcode.benchmark.gate_report_detector_matched --tag _hd_sc2 --out <out>/decomp/gate_report_xdet_sc2.json
 """
 import argparse, glob, json, os
 from simcode import config

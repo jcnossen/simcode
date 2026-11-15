@@ -9,12 +9,12 @@ GT: the gate npz (reused from _hd_sc5nb15pm) is checked identical to the p2 dump
 on the p2 dump's GT. Matching / bins / CIs / zcal exactly as gate_long.py (targets: score >= 0.5, 1 px one-to-one on x_det;
 resolvable; FOV bootstrap 200). SIMCODE sigma for zcal = its merged MVU sigma (s_sc). No global offset removed (SIMCODE's
 offset is < 1 nm on these scenes, simcode_base/gate_paired_offset.txt).
-Inputs: pass-2 gate dumps <out>/p2/fe (p1 / p2L fronts, simcode/processing/gate_dump.py; analysis/calib/plib.py), SIMCODE gate npz
+Inputs: pass-2 gate dumps <out>/gate_dumps (p1 / p2L fronts, simcode/processing/gate_dump.py; analysis/calib/plib.py), SIMCODE gate npz
 <gate dir>/<scene>__s30[123]_scode(nf)_<net>.npz (python -m simcode.benchmark.preprint_gate --model ni6_3 | L64_5 --scen ... writes both tags; gate dir =
 $SIMCODE_GATE_DIR or <out>/gate), optional <out_dir>/merged_d1.json (analysis/gate/merged_d1.py, ideal_C column).
 Calibrations: calib/calib_sc_hd_sc5nbb15_pm_bright.json (p1), calib/calib_p2L.json (p2L).
 Development p2/long/vs_simcode.py; snapshots analysis/results/gate/{gate_long,merged_d1}_vs_simcode.txt.
--> <out_dir>/gate_long_vs_simcode.txt/json, merged_d1_vs_simcode.txt/json (out_dir default <out>/p2/long)
+-> <out_dir>/gate_long_vs_simcode.txt/json, merged_d1_vs_simcode.txt/json (out_dir default <out>/pass2_gate/long)
 usage: python analysis/gate/vs_simcode_p2.py [scenes (pair1,pair1.5,rs05qm,rs25qm)] [out_dir]"""
 import json, os, sys
 import numpy as np
@@ -24,7 +24,7 @@ P = E.P                   # analysis/calib/plib.py
 from simcode import config
 
 SCEN = (sys.argv[1] if len(sys.argv) > 1 else 'pair1,pair1.5,rs05qm,rs25qm').split(',')
-D = sys.argv[2] if len(sys.argv) > 2 else config.out_dir('p2', 'long')
+D = sys.argv[2] if len(sys.argv) > 2 else config.out_dir('pass2_gate', 'long')
 GD = config.env('GATE_DIR') or os.path.join(config.root('out'), 'gate')
 NET = {'pair1': 'ni6_3', 'pair1.5': 'ni6_3', 'rs05qm': 'ni6_3', 'rs25qm': 'L64_5'}
 C = E.cals()

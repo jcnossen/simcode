@@ -5,7 +5,7 @@ Status per target (>= 200 label ph, nearest visible GT neighbour at d = gt_nn): 
 one-to-one on (a) the detector point x_det (identical for p2s and p2L: same detector) and (b) the final solved position
 (explicit solve, own calibration, p >= 0.5). bg for the bound: pair scenes 6.1 (flat 0.5 nM, as bound.py); rs scenes the
 median head bg_t of the candidates in the target's FOV.
-Inputs: the pass-2 gate dumps <out>/p2/fe (analysis/calib/plib.py). Output: <out_dir>/merged_d1.txt / .json (default <out>/p2/long;
+Inputs: the pass-2 gate dumps <out>/gate_dumps (analysis/calib/plib.py). Output: <out_dir>/merged_d1.txt / .json (default <out>/pass2_gate/long;
 vs_simcode_p2.py reads merged_d1.json from there for its ideal_C column). Development p2/long/merged_d1.py.
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/gate/merged_d1.py [scenes (pair1,rs25qm,rs05qm)] [out_dir]"""
 import json, os, sys
@@ -19,7 +19,7 @@ from simcode import config
 
 
 SCEN = (sys.argv[1] if len(sys.argv) > 1 else 'pair1,rs25qm,rs05qm').split(',')
-D = sys.argv[2] if len(sys.argv) > 2 else config.out_dir('p2', 'long')
+D = sys.argv[2] if len(sys.argv) > 2 else config.out_dir('pass2_gate', 'long')
 C = E.cals()
 FR = dict(p1=('p1', 'p1'), p2s=('p2', 'p2s'), p2L=('p2L', 'p2L'))
 dev = 'cuda'

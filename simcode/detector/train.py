@@ -15,7 +15,7 @@ Pass 2 (illum 1): the pass-1 detector + illumination inputs, zero-initialised fr
   share 1 - --p_std of the FOVs. Held-out: fixed seeded batches (make_pattern_hold), recall at p >= 0.5 per nn bin and FP per
   window, with the pass-1 detector --pass1_ref on the same batches as reference (eval_ref.json).
 --illum: default = that of --init (0 without --init). Pass 2 without --init starts from the default model's pass-1 detector.
-Checkpoints {'model', 'args' (ch, stem_ch, up = 1, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
+Checkpoints {'model', 'args' (arch = model.ARCH, ch, stem_ch, up = 1, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
 usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/det --calib <psf.json> ...
        CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/p2det --illum 1 --init runs/det/final.pt --calib <psf.json> ...
        python -m simcode.detector.train --check 1          (zero-init check: a pass-2 detector from a pass-1 one == that detector)
@@ -27,7 +27,7 @@ import numpy as np, torch
 import torch.nn.functional as F
 from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode import config
-from simcode.detector.model import Detector, build, is_pass2, n_params
+from simcode.detector.model import ARCH, Detector, build, is_pass2, n_params
 from simcode.detector.select import select_points
 from simcode.simulate.targets import detector_targets, gt_nn, nn_weights
 
@@ -66,7 +66,7 @@ def make_pattern_hold(gen, n=24, nb=16, seed=777):
         torch.manual_seed(seed)
         for i in range(n):
             o = gen.illumination_batch(nb, mix='paper', pair_sep=(0.3, 3.0))
-            H.append(dict(frames=o['frames'], illum=o['illum_p2'], gt={k: v for k, v in o['gt'].items()}, nb=nb))
+            H.append(dict(frames=o['frames'], illum=o['illum_input'], gt={k: v for k, v in o['gt'].items()}, nb=nb))
     return H
 
 
@@ -177,7 +177,7 @@ def loss_of(out, label, ign, off, pm, w, wmap, w_off):
 def train_pass1(a):
     from simcode.simulate.batches import TrainingBatches, EM_PHOTONS
     os.makedirs(a.out, exist_ok=True)
-    args = vars(a); args.update(up=1, ch=[48, 96, 160], stem_ch=16, fch=32)
+    args = vars(a); args.update(arch=ARCH, up=1, ch=[48, 96, 160], stem_ch=16, fch=32)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
@@ -217,11 +217,11 @@ def train_pass1(a):
 def train_pass2(a):
     from simcode.simulate.batches import TrainingBatches
     from simcode.detector.model import load as load_det
-    init = a.init or config.DET
+    init = a.init or config.DETECTOR
     if not a.pass1_ref:
-        a.pass1_ref = config.DET if is_pass2(torch.load(config.resolve(init), map_location='cpu', weights_only=False)['model']) else init
+        a.pass1_ref = config.DETECTOR if is_pass2(torch.load(config.resolve(init), map_location='cpu', weights_only=False)['model']) else init
     os.makedirs(a.out, exist_ok=True)
-    args = vars(a); args.update(up=1, ch=[48, 96, 160], stem_ch=16)
+    args = vars(a); args.update(arch=ARCH, up=1, ch=[48, 96, 160], stem_ch=16)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], p_std=a.p_std)
@@ -249,7 +249,7 @@ def train_pass2(a):
             label, ign, tid, off = detector_targets(o, 1, S, S)
             pm, w, wmap = weights(o, label, tid)
         with torch.autocast('cuda', dtype=torch.bfloat16):
-            out = net(o['frames'], o['illum_p2'] * (0.0 if a.no_illum else 1.0))
+            out = net(o['frames'], o['illum_input'] * (0.0 if a.no_illum else 1.0))
         loss, l_det, l_off, e, lg = loss_of(out, label, ign, off, pm, w, wmap, a.w_off)
         opt.zero_grad(set_to_none=True)
         if torch.isfinite(loss):
@@ -294,12 +294,12 @@ def check():
     torch.manual_seed(0)
     gen = TrainingBatches(64, 64, 6, seed=0, p_std=0.5)
     o = gen.illumination_batch(4)
-    n1, _ = load_det(config.DET); p2 = load_for_training(config.DET, True).eval()
+    n1, _ = load_det(config.DETECTOR); p2 = load_for_training(config.DETECTOR, True).eval()
     with torch.no_grad():
-        a = n1(o['frames']); b = p2(o['frames'], o['illum_p2'])
+        a = n1(o['frames']); b = p2(o['frames'], o['illum_input'])
     print('max |dlogit|', float((a['logit'] - b['logit']).abs().max()), 'max |ddxy|', float((a['dxy'] - b['dxy']).abs().max()))
-    print('illum maps', o['illum_p2'].shape, float(o['illum_p2'][:, :6].std()), float(o['illum_p2'][:, 6:].std()))
-    print('patt err phase', float((o['patt_p2'][..., 2] - o['patt'][..., 2]).std()), 'depth', float((o['patt_p2'][..., 3] - o['patt'][..., 3]).mean()))
+    print('illum maps', o['illum_input'].shape, float(o['illum_input'][:, :6].std()), float(o['illum_input'][:, 6:].std()))
+    print('patt err phase', float((o['patt_input'][..., 2] - o['patt'][..., 2]).std()), 'depth', float((o['patt_input'][..., 3] - o['patt'][..., 3]).mean()))
 
 
 if __name__ == '__main__':

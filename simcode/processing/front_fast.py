@@ -8,7 +8,7 @@ Queued fixed-size batching (shared by pass 1 and pass 2):
             boolean compaction needed; invalid entries carry p = 0) -> the p >= CAND_PMIN candidates (one index compaction per
             detector batch) are appended to a GPU queue of (window index, pixel, sub-pixel point, logit); the chunk's frames
             and neighbour maps stay on the GPU (zero-padded once per chunk), so a queue entry needs no patch storage
-  head      drains the queue in fixed batches of `head_batch` (default 1024; the last one padded by repeating the last
+  head      drains the queue in fixed batches of `emitter_batch` (default 1024; the last one padded by repeating the last
             entry) -> static shapes; patches are gathered from the padded chunk buffers (identical values to layers.blocks.extract_patches);
             pass 2's illumination patches are evaluated analytically per candidate (= illumination.illum_maps + zero padding)
   streams   detector and head on two CUDA streams (the head of batch k overlaps the detector of batch k+1; the only host
@@ -33,10 +33,10 @@ T = 6
 PP = 21
 THR0 = 0.2
 from simcode import config as _cfg
-DET = _cfg.model(_cfg.DET)
-P2_DET = _cfg.model(_cfg.P2_DET)
-P2_HEAD = _cfg.model(_cfg.P2_HEAD)
-HEAD = _cfg.model(_cfg.HEAD)
+DETECTOR = _cfg.model(_cfg.DETECTOR)
+DETECTOR_PASS2 = _cfg.model(_cfg.DETECTOR_PASS2)
+EMITTER_PASS2 = _cfg.model(_cfg.EMITTER_PASS2)
+EMITTER = _cfg.model(_cfg.EMITTER)
 
 
 # ------------------------------------------------------------------------------------------------ helpers
@@ -103,22 +103,22 @@ class _Ev:
 
 # ------------------------------------------------------------------------------------------------ queued front-end
 class QueuedFront:
-    """detector -> GPU queue -> fixed-size emitter-network batches (see the module doc); heads: dict name -> EmitterNet (a
+    """detector -> GPU queue -> fixed-size emitter-network batches (see the module doc); emitters: dict name -> EmitterNet (a
     pass-2 network, net.illum, also gets the illumination patches; a pass-2 detector, det.illum, the illumination maps)"""
 
-    def __init__(self, det, heads, col, dev='cuda'):
-        self.det, self.col, self.dev = det, col, dev
-        self.heads = dict(heads)
+    def __init__(self, detector, emitters, col, dev='cuda'):
+        self.detector, self.col, self.dev = detector, col, dev
+        self.emitters = dict(emitters)
 
     def _head_call(self, nm, pt, off, nbp, ilp):
-        h = self.heads[nm]
+        h = self.emitters[nm]
         psf = self.col(off) if self.col is not None else None
         if h.illum:
             return h(pt, None, off, psf, nbp, ilp)
         return h(pt, None, off, psf, nbp)
 
     @torch.no_grad()
-    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
+    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, emitter_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
             ev=None):
         """frames [F,S,S] (photons, chunk), starts: window starts (relative frame index), PWall [nW,T,5] (pass 2) ->
         dict of per-candidate GPU tensors (queue order = window order, top-k order within a window, as the originals):
@@ -136,21 +136,21 @@ class QueuedFront:
         main = torch.cuda.current_stream()
         s_det.wait_stream(main); s_head.wait_stream(main)
         Q = {k: [] for k in ('w', 'iy', 'ix', 'x', 'y', 'lg')}
-        res = {nm: {k: [] for k in outs} for nm in self.heads}
+        res = {nm: {k: [] for k in outs} for nm in self.emitters}
         pend = []                      # queued (not yet processed) candidate pieces: dicts of [m] tensors
         npend = 0; keep_alive = []
 
         def drain(final=False):
             nonlocal pend, npend
-            while npend >= head_batch or (final and npend > 0):
+            while npend >= emitter_batch or (final and npend > 0):
                 with torch.cuda.stream(s_head):
                     s_head.wait_stream(s_det)
                     cat = {k: torch.cat([p_[k] for p_ in pend]) for k in pend[0]}
-                    take = min(head_batch, npend)
+                    take = min(emitter_batch, npend)
                     cur = {k: v[:take] for k, v in cat.items()}
                     rest = {k: v[take:] for k, v in cat.items()}
-                    if take < head_batch:                  # pad the final batch to the static size (repeat the last entry)
-                        pad = head_batch - take
+                    if take < emitter_batch:                  # pad the final batch to the static size (repeat the last entry)
+                        pad = emitter_batch - take
                         cur = {k: torch.cat([v, v[-1:].expand(pad, *v.shape[1:])]) for k, v in cur.items()}
                     done = ev.rec('head', s_head)
                     w, iy, ix, xs, ys, lg = (cur[k] for k in ('w', 'iy', 'ix', 'x', 'y', 'lg'))
@@ -162,7 +162,7 @@ class QueuedFront:
                     stmp = own_stamp(off, p.float(), iy, ix, S, S)
                     nbp = torch.stack([(q[:, 0] - stmp).clamp(min=0), q[:, 1]], 1)
                     ilp = illum_patches(PWall[w], iy, ix, S, S) if PWall is not None else None
-                    for nm in self.heads:
+                    for nm in self.emitters:
                         o = self._head_call(nm, pt, off, nbp, ilp)
                         o['x'] = xs + o['dxy'][:, 0]; o['y'] = ys + o['dxy'][:, 1]
                         for k in outs:
@@ -177,11 +177,11 @@ class QueuedFront:
                 done = ev.rec('detector', s_det)
                 x = torch.stack([frames[starts[i]:starts[i] + T] for i in wi])
                 with torch.autocast('cuda', dtype=torch.bfloat16):
-                    if self.det.illum:
+                    if self.detector.illum:
                         from simcode.pattern import illumination as IL
-                        dd = self.det(x, IL.illum_maps(PWall[wi[0]:wi[-1] + 1], S, S))
+                        dd = self.detector(x, IL.illum_maps(PWall[wi[0]:wi[-1] + 1], S, S))
                     else:
-                        dd = self.det(x)
+                        dd = self.detector(x)
                 lgm = dd['logit'].float(); lgm = lgm[:, 0] if lgm.dim() == 4 else lgm
                 c = select_subpixel(lgm, dd['dxy'].float(), k_cand, p_min=THR0, radius=0.7)
                 nb = nbr_map_padded(lgm, c['b'], c['iy'], c['ix'], c['x'], c['y'], c['logit'])
@@ -196,7 +196,7 @@ class QueuedFront:
         drain(final=True)
         main.wait_stream(s_head); main.wait_stream(s_det)
         out = {k: torch.cat(v) if v else torch.zeros(0, device=dev) for k, v in Q.items()}
-        out['heads'] = {nm: {k: torch.cat(v) if v else torch.zeros(0, device=dev) for k, v in r.items()} for nm, r in res.items()}
+        out['emitters'] = {nm: {k: torch.cat(v) if v else torch.zeros(0, device=dev) for k, v in r.items()} for nm, r in res.items()}
         out['_keep'] = keep_alive
         return out
 
@@ -222,19 +222,19 @@ def _np(r):
 class Pass1FrontFast:
     """= front.Pass1Front (same constructor arguments) with the queued front-end"""
 
-    def __init__(self, calib_path, head=HEAD, det=DET, dev='cuda'):
+    def __init__(self, calib_path, emitter=EMITTER, detector=DETECTOR, dev='cuda'):
         from simcode.emitter import model as EM
         from simcode.detector import model as DM
         from simcode.simulate.simulator import Simulator
         self.EM = EM
-        self.det, _ = DM.load(det)
-        self.head = EM.load(head)
+        self.detector, _ = DM.load(detector)
+        self.emitter = EM.load(emitter)
         self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
-        self.front = QueuedFront(self.det, {'h': self.head}, self.col, dev)
+        self.front = QueuedFront(self.detector, {'h': self.emitter}, self.col, dev)
 
     @torch.no_grad()
-    def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, emitter_batch=1024, streams=True,
                   timing=None, keep_gpu=False):
         dev = self.dev
         timing = timing if timing is not None else {}
@@ -251,8 +251,8 @@ class Pass1FrontFast:
         starts = list(range(0, Fn - T + 1, T // 2))
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
-        q = self.front.run(frames, starts, k_cand, det_batch=det_batch, head_batch=head_batch, streams=streams, ev=ev)
-        oh = dict(q['heads']['h']); oh.update(self.EM.head_z(self.head, oh))
+        q = self.front.run(frames, starts, k_cand, det_batch=det_batch, emitter_batch=emitter_batch, streams=streams, ev=ev)
+        oh = dict(q['emitters']['h']); oh.update(self.EM.emitter_z(self.emitter, oh))
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         gx, gy = oh['x'] + X0, oh['y'] + Y0
@@ -274,13 +274,13 @@ class Pass1FrontFast:
 
 # ------------------------------------------------------------------------------------------------ pattern solve (pass-1 rows)
 @torch.no_grad()
-def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_batch=16384, timing=None, compile='auto'):
+def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_batch=16384, timing=None, compile='auto'):
     """= front.run_chunk_pattern_solve (same output columns) with solve_fast.solve_emitters_fast, results kept on the GPU until the
     end of the chunk"""
     from simcode.solve import solve_fast as MF
     timing = timing if timing is not None else {}
     t_ = time.time()
-    cal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
+    cal = json.load(open(solve_cal)) if isinstance(solve_cal, str) else dict(solve_cal)
     keep = R['out'].astype(bool)
     X0, Y0 = info['X0'], info['Y0']
     ws = R['wstart'][keep]
@@ -328,30 +328,30 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
 class Pass2FrontFast:
     """= pass2_front.Pass2Front (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
 
-    def __init__(self, calib_path, head=None, det=None, dev='cuda', compile='auto'):
+    def __init__(self, calib_path, emitter=None, detector=None, dev='cuda', compile='auto'):
         from simcode.emitter import model as EM
         from simcode.detector import model as DM
         from simcode.solve import z_conditioning as ZC
         from simcode.simulate.simulator import Simulator
-        head = head or P2_HEAD; det = det or P2_DET
+        emitter = emitter or EMITTER_PASS2; detector = detector or DETECTOR_PASS2
         self.ZC = ZC
-        self.det, _ = DM.load(det)        # a pattern-free (pass-1) detector or network also works (detector-only pass 2)
-        self.head = EM.load(head)
+        self.detector, _ = DM.load(detector)        # a pattern-free (pass-1) detector or network also works (detector-only pass 2)
+        self.emitter = EM.load(emitter)
         self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
-        self.front = QueuedFront(self.det, dict(h=self.head), self.col, dev)
+        self.front = QueuedFront(self.detector, dict(h=self.emitter), self.col, dev)
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
-    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64,
-                  head_batch=1024, streams=True, solve_batch=16384, timing=None, return_head=False):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, solve_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64,
+                  emitter_batch=1024, streams=True, solve_batch=16384, timing=None, return_head=False):
         """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: z from pass 1
         (= pass2_front.Pass2Front.run_chunk; solve/z_conditioning.pass1_z_columns)"""
         from simcode.solve import solve_fast as MF
         dev = self.dev
         timing = timing if timing is not None else {}
         tw = time.time()
-        scal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
+        scal = json.load(open(solve_cal)) if isinstance(solve_cal, str) else dict(solve_cal)
         front = self.front
         X0, Y0, S = region(movie, crop, margin)
         own0, own1 = f0, min(f1, movie.n)
@@ -368,8 +368,8 @@ class Pass2FrontFast:
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
         outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy')
-        q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, head_batch=head_batch, streams=streams, outs=outs, ev=ev)
-        oh = dict(q['heads']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
+        q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, emitter_batch=emitter_batch, streams=streams, outs=outs, ev=ev)
+        oh = dict(q['emitters']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         tc, fabs, keep = _flags(I, ws, oh['x'] + X0, oh['y'] + Y0, l0, starts[-1], crop, own0, own1, dev)

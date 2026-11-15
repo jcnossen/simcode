@@ -73,8 +73,9 @@ def main():
         t1 = time.time()
         ucmd = [sys.executable, '-m', 'simcode.processing.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
                 '--calib', os.path.join(md, 'calib_sim.json'), '--out', out, '--crop', f'0,0,{W}',
-                '--sc_det', N['det'], '--sc_head', N['head'], '--frontend', 'sc2p', '--sc_cal', N[f'cal_{a.cal_kind}'],
-                '--p2_det', N['p2_det'], '--p2_head', N['p2_head'], '--p2_cal', N[f'p2_cal_{a.cal_kind}'], '--stages', 'pass2',
+                '--detector', N['detector'], '--emitter', N['emitter'], '--pass2_mode', 'networks', '--cal', N[f'cal_{a.cal_kind}'],
+                '--detector_pass2', N['detector_pass2'], '--emitter_pass2', N['emitter_pass2'], '--cal_pass2', N[f'cal_{a.cal_kind}_pass2'],
+                '--stages', 'pass2',
                 '--ref_pattern', os.path.join(md, 'gt_pattern.pt')]
         if a.nframes: ucmd += ['--nframes', str(a.nframes)]
         subprocess.run(ucmd, check=True, cwd=REPO)

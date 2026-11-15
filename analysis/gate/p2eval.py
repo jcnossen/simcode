@@ -2,9 +2,9 @@
 the benchmark runner / calibration fit of that file are not needed by these scripts and are not ported).
   cals()            solve calibrations by name: 'p1' = calib/calib_sc_hd_sc5nbb15_pm_bright.json (pass 1, bright, sim sigma),
                     'p2L' = calib/calib_p2L.json (pass-2 gate calibration), + any development calibrations
-                    <out>/p2/calib_<d2c|p2s|p2a|p2b|ctl>.json that exist (used by merged_d1.py for the p2s columns)
+                    <out>/pass2_gate/calib_<d2c|p2s|p2a|p2b|ctl>.json that exist (used by merged_d1.py for the p2s columns)
   miss_anatomy(R)   per target: matched / merged / undetected on the detector point, and the nearest visible GT neighbour
-The dumps are read by analysis/calib/plib.py (<out>/p2/fe, simcode/processing/gate_dump.py)."""
+The dumps are read by analysis/calib/plib.py (<out>/gate_dumps, simcode/processing/gate_dump.py)."""
 import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))
@@ -15,8 +15,8 @@ FIT = ('d2c', 'p2s', 'p2a', 'p2b', 'ctl')
 
 
 def cals():
-    C = {'p1': json.load(open(config.model(config.CAL_P1_SIM))), 'p2L': json.load(open(config.model(config.CAL_P2_GATE)))}
-    d = os.path.join(config.root('out'), 'p2')
+    C = {'p1': json.load(open(config.model(config.CAL_SIM))), 'p2L': json.load(open(config.model(config.CAL_SIM_PASS2)))}
+    d = os.path.join(config.root('out'), 'pass2_gate')
     for n in FIT:
         if os.path.exists(f'{d}/calib_{n}.json'): C[n] = json.load(open(f'{d}/calib_{n}.json'))
     return C

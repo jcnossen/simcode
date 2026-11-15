@@ -1,5 +1,5 @@
 """Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode.solve.solve.solve_emitters with a
-calibration dict, match targets as gate_report_xdet (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
+calibration dict, match targets as gate_report_detector_matched (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
 RMS / CRLB_SF_multi, zcal, the oracle convex mix with the prior (per-bin optimal alpha), paired FOV-bootstrap CIs."""
 import glob, json, os
 from simcode import config as _cfg

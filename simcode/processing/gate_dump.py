@@ -6,8 +6,8 @@ log s_z|xy, b of a 3D head),
 so the explicit pattern solve, the calibration and all reports run offline. CRLB gt_sf_m copied from an existing gate npz
 of the same scene / seed after checking that the GT is identical.
 Fronts:
-  p1   pass-1 detector + emitter network of the default model (config.DET / HEAD; pattern-free)
-  p2L  pass-2 detector + emitter network of the default model (config.P2_DET / P2_HEAD)
+  p1   pass-1 detector + emitter network of the default model (config.DETECTOR / HEAD; pattern-free)
+  p2L  pass-2 detector + emitter network of the default model (config.DETECTOR_PASS2 / P2_HEAD)
   (other detector / network pairs: --fronts name=det.pt:head.pt)
 Pattern fed (both passes, networks and solve): the scene's patt_est (gate default; exact for iso / pairs, the acquisition simulator errors for
 *qm), or with --pert 1 a perturbed estimate of the truth (pattern/illumination.perturb, the training error model, own seed) with the
@@ -25,10 +25,10 @@ from simcode.detector import model as DM
 
 from simcode import config as _cfg
 
-OUT = os.path.join(_cfg.root('out'), 'p2', 'fe')
+OUT = os.path.join(_cfg.root('out'), 'gate_dumps')
 GATE = _cfg.env('GATE_DIR') or os.path.join(_cfg.root('out'), 'gate')   # env: opt-in (2026-11-11)
-FRONTS = dict(p1=(_cfg.model(_cfg.DET), _cfg.model(_cfg.HEAD)),         # pass 1 of the default model
-              p2L=(_cfg.model(_cfg.P2_DET), _cfg.model(_cfg.P2_HEAD)))  # pass 2 of the default model
+FRONTS = dict(p1=(_cfg.model(_cfg.DETECTOR), _cfg.model(_cfg.EMITTER)),         # pass 1 of the default model
+              p2L=(_cfg.model(_cfg.DETECTOR_PASS2), _cfg.model(_cfg.EMITTER_PASS2)))  # pass 2 of the default model
 
 
 @torch.no_grad()
@@ -46,7 +46,7 @@ def front_out(F, o, il, col, pf_head=None):
         args = (fr, ilx, c['b'][sl], c['iy'][sl], c['ix'][sl], c['x'][sl], c['y'][sl], nbr, p[sl])
         oh = EM.apply_to_candidates(head, col, *args)
         r = {k: oh[k].float() for k in ('I', 'L', 'x', 'y', 'lsxy', 'bg')}
-        r.update(EM.head_z(head, oh))           # 3D networks: z, lsz, bz (NaN for 2D checkpoints)
+        r.update(EM.emitter_z(head, oh))           # 3D networks: z, lsz, bz (NaN for 2D checkpoints)
         if pf_head is not None:
             oa = EM.apply_to_candidates(pf_head, col, *args)
             r.update(pf_x=oa['x'].float(), pf_y=oa['y'].float(), pf_lsxy=oa['lsxy'].float(), pf_I=oa['I'].float(), pf_L=oa['L'].float())
@@ -104,7 +104,7 @@ def main():
         dp, hp = FRONTS[f]
         det, _ = DM.load(dp)
         FR[f] = (det, EM.load(hp), f != 'ctl')
-        if f == 'p2': pf_head = EM.load(_cfg.model(_cfg.HEAD))
+        if f == 'p2': pf_head = EM.load(_cfg.model(_cfg.EMITTER))
     for sc in a.scen.split(','):
         for seed in [int(s) for s in a.seeds.split(',')]:
             fns = {f: f'{a.out}/{sc}__s{seed}_{f}{a.tag}.npz' for f in FR}

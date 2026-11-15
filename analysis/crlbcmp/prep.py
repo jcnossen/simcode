@@ -3,7 +3,7 @@
 with the full CRLB table of the same GT (out/psfmatch/gate_m1809a/<scen>__s<seed>_hd_cur.npz: sm_m, sm_i, sf_m, sf_i, fr_m;
 GT checked identical), run the explicit pattern solve offline (production sim calibration of the set; variant c0 = cmult = cmult_ang = 0),
 and match every GT target to the candidates (score >= 0.5) on the DETECTOR point in three ways:
-  h1  Hungarian one-to-one within 1 px (the gate_report_xdet rule)
+  h1  Hungarian one-to-one within 1 px (the gate_report_detector_matched rule)
   h3  Hungarian one-to-one within 3 px
   n3  nearest candidate within 3 px (not one-to-one)
 (all GT emitters incl. don't-care take part in the assignment; target rows kept).

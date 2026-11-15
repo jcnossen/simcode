@@ -75,7 +75,7 @@ say "ev_chain $S start (pid $$)"
 # 1. gate scenes (CRLB + the current production front as the gate's reference), reference dumps, their calibs on these scenes
 if [ ! -f $G/rs05qm__s303_hd_cur.npz ]; then
   g=$(gpu 4); say "gate scenes on GPU $g"
-  CUDA_VISIBLE_DEVICES=$g SIMCODE_GATE_CALIB=$C $W simcode.benchmark.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal $B1 \
+  CUDA_VISIBLE_DEVICES=$g SIMCODE_GATE_CALIB=$C $W simcode.benchmark.gate --scen $SC --fronts sc --emitter hd_sc5nb.pt --cal $B1 \
     --tag _hd_cur --out $G --ntarget 3500 --seeds $SEEDS >> $LG/gate.log 2>&1 || die "gate (see $LG/gate.log)"
 fi
 [ -f $EV/scenecheck_$S.txt ] || { CUDA_VISIBLE_DEVICES=$(gpu 4) SIMCODE_GATE_CALIB=$C $W $A/ev_scenecheck.py > $EV/scenecheck_$S.txt.tmp 2>> $LG/scenecheck.err \

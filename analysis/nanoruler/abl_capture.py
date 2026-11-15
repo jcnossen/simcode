@@ -3,11 +3,11 @@ pass2_est2_<f0>.npz do not store it), so that the explicit solve can be re-run o
 = analysis/ablation_cov/capture.py for this setup: the pass-2 stage of simcode.run (processing.front_fast.Pass2FrontFast.run_chunk with
 return_head=True; the run's pattern_est.pt, candidate cut 0.3, the run's crop and chunking), detector batch 8 (a 400 x 400 px field
 needs 12-20 GB at the default 64; peak ~5 GB at 8), no package code changed. Networks and the production pass-2 calibration: from
-out/nanoruler/models/netset_nr80.json (p2_det, p2_head, p2_cal_sim) unless given.
+out/nanoruler/models/netset_nr80.json (detector_pass2, emitter_pass2, cal_sim_pass2) unless given.
 Per chunk <out>/head_<f0>.npz: the solve inputs o_I, o_L, o_x, o_y, o_lsxy, o_x_det, o_y_det (region coordinates), X0, Y0, crop, and the
 production rows (wstart, frame, p, phot, x_prior, y_prior, I_net; x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy = the production solve,
 the reference for variant A).
-usage: CUDA_VISIBLE_DEVICES=g python analysis/nanoruler/abl_capture.py <set p2|sima_p2|simc0_p2> [--p2_det f --p2_head f --p2_cal f] [--det_batch 8]"""
+usage: CUDA_VISIBLE_DEVICES=g python analysis/nanoruler/abl_capture.py <set p2|sima_p2|simc0_p2> [--detector_pass2 f --emitter_pass2 f --cal_pass2 f] [--det_batch 8]"""
 import glob, json, os, sys, time
 import numpy as np, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -20,8 +20,8 @@ def main():
     mv = A.MOVIES['real' if S['kind'] == 'real' else os.path.basename(S['sim'])]
     nsf = os.path.join(A.NR, 'models', 'netset_nr80.json'); N = json.load(open(nsf))['nr80'] if os.path.exists(nsf) else {}
     md = os.path.join(A.NR, 'models')
-    p2_det = g('--p2_det', N.get('p2_det', f'{md}/p2det_nr80.pt')); p2_head = g('--p2_head', N.get('p2_head', f'{md}/p2headL_nr80.pt'))
-    p2_cal = g('--p2_cal', N.get('p2_cal_sim', S['prod'])); det_batch = int(g('--det_batch', 8))
+    p2_det = g('--detector_pass2', N.get('detector_pass2', f'{md}/p2det_nr80.pt')); p2_head = g('--emitter_pass2', N.get('emitter_pass2', f'{md}/p2headL_nr80.pt'))
+    p2_cal = g('--cal_pass2', N.get('cal_sim_pass2', S['prod'])); det_batch = int(g('--det_batch', 8))
     from simcode import config
     from simcode.processing import front as _scf, front_fast as _scff
     from simcode.processing import pass2_front as _p2f
@@ -31,7 +31,7 @@ def main():
     out = g('--out', S['head']); os.makedirs(out, exist_ok=True)       # --out, --chunks: smoke tests only
     movie = TiffMovie(mv['movie']); cal = load_calib(mv['calib']); crop = tuple(int(v) for v in mv['crop'].split(','))
     chunks = sorted(int(f.rsplit('_', 1)[1][:-4]) for f in glob.glob(f'{S["run"]}/pass1_*.npz')); step = mv['chunk']
-    p2 = _scff.Pass2FrontFast(mv['calib'], head=config.resolve(p2_head), det=config.resolve(p2_det), compile='auto')
+    p2 = _scff.Pass2FrontFast(mv['calib'], emitter=config.resolve(p2_head), detector=config.resolve(p2_det), compile='auto')
     Pt = torch.load(f'{S["run"]}/pattern_est.pt', weights_only=False); scal = config.resolve(p2_cal)
     json.dump(dict(set=setn, movie=mv['movie'], calib=mv['calib'], crop=crop, p2_det=p2_det, p2_head=p2_head, p2_cal=p2_cal, det_batch=det_batch, pattern=f'{S["run"]}/pattern_est.pt'),
               open(f'{out}/capture.json', 'w'), indent=1)

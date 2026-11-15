@@ -9,11 +9,11 @@ from simcode.processing.front import Pass1Front, run_chunk_pattern_solve
 from simcode.processing.front_fast import Pass1FrontFast, run_chunk_pattern_solve_fast
 from simcode import config
 
-head = sys.argv[1]; det = sys.argv[2] if len(sys.argv) > 2 else TF.DET
+emitter = sys.argv[1]; detector = sys.argv[2] if len(sys.argv) > 2 else TF.DETECTOR
 mov, cal = TF.sim_movie()
-A = Pass1Front(TF.CALIB, head=head, det=det); B = Pass1FrontFast(TF.CALIB, head=head, det=det)
-B.det = A.det; B.head = A.head; B.front.det = A.det; B.front.heads = {'h': A.head}
-assert A.head.z3d
+A = Pass1Front(TF.CALIB, emitter=emitter, detector=detector); B = Pass1FrontFast(TF.CALIB, emitter=emitter, detector=detector)
+B.detector = A.detector; B.emitter = A.emitter; B.front.detector = A.detector; B.front.emitters = {'h': A.emitter}
+assert A.emitter.z3d
 Ra, ia = A.run_chunk(mov, cal, 0, mov.n); Rb, ib = B.run_chunk(mov, cal, 0, mov.n)
 Ra, Rb = TF.canon(Ra), TF.canon(Rb)
 for k in ('z', 'sz', 'bzx', 'bzy'):

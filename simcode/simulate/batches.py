@@ -24,7 +24,7 @@ one generator class TrainingBatches with three batch kinds:
              uniform pair_sep (detector 0.3-3.0 px) or the pair curriculum (emitter network: pair_curr)
     pattern  generic draw (simulate/acquisition.AcquisitionSim._generic: pitch 1.8-4 px, orientations, independent per-frame
              phases, frame order, per-angle depth, power) in a share 1 - p_std of the FOVs, the SIMCODE (DMD) pattern in the
-             others; o['patt_p2'] = illumination.perturb(true pattern) (realistic estimation errors), o['illum_p2'] =
+             others; o['patt_input'] = illumination.perturb(true pattern) (realistic estimation errors), o['illum_input'] =
              illum_maps of it
 TrainingBatches(..., p_std=None) = the pass-1 setup (the presets' intensity noise, the SIMCODE pattern only); p_std = a share
 in [0, 1) = the pass-2 setup (frame_sd 0.09 and the generic pattern draw in a share 1 - p_std of the FOVs; P_STD = 0.5, the
@@ -198,8 +198,8 @@ class TrainingBatches:
             rs.p.clear(); rs.p.update(save)
         o['preset'] = pre; o['bgmode'] = mode
         if self.calibs: o['calib_i'] = self.ci
-        o['patt_p2'] = IL.perturb(o['patt'], self.H, self.W, pert_scale, pert_model)
-        o['illum_p2'] = IL.illum_maps(o['patt_p2'], self.H, self.W)
+        o['patt_input'] = IL.perturb(o['patt'], self.H, self.W, pert_scale, pert_model)
+        o['illum_input'] = IL.illum_maps(o['patt_input'], self.H, self.W)
         return o
 
 

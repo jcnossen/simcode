@@ -28,7 +28,7 @@ def _settings(argv):
 
 def test_settings_roundtrip():
     S = _settings(['--dataset', '1809_2', '--out', 'x', '--nframes', '12000', '--sigma_max', '14', '--sig_u', ''])
-    assert S['sigma_max'] == 14 and 'u_max' not in S and 'strict_q' not in S and S['subset'] == '14' and S['sig_u'] == '' and os.path.isabs(S['det']) and os.path.isabs(S['cal'])
+    assert S['sigma_max'] == 14 and 'u_max' not in S and 'strict_q' not in S and S['subset'] == '14' and S['sig_u'] == '' and os.path.isabs(S['detector']) and os.path.isabs(S['cal'])
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
@@ -43,6 +43,13 @@ def test_settings_roundtrip():
         except SystemExit: pass
     old = dict(settings=dict(S, subset='main,u,strict', u_max=0.45, strict_q=None, det='/x/det.pt'))
     av = RC.rerun_argv(old); assert av[av.index('--subset') + 1] == '12' and '--u_max' not in av and '--det' not in av
+    # a record of format 1 (file keys det / head / p2_* before 2026-11-15) is read with the present names
+    R1 = dict(format='simcode.run_config/1', settings=dict(det='/a.pt', head='/b.pt', p2_det='/c.pt', p2_head='/d.pt', p2_cal='/e.json'),
+              fixed=dict(head_batch=1024), model=dict(name='m', definition=dict(det='/a.pt', p2_cal_real='/e.json'), files=dict(det={}, sig_u_p1={})))
+    U = RC.upgrade(R1)
+    assert U['format'] == RC.FORMAT and U['settings'] == dict(detector='/a.pt', emitter='/b.pt', detector_pass2='/c.pt', emitter_pass2='/d.pt', cal_pass2='/e.json')
+    assert U['model']['definition'] == dict(detector='/a.pt', cal_real_pass2='/e.json') and set(U['model']['files']) == {'detector', 'sig_u_pass1'}
+    assert U['fixed'] == dict(emitter_batch=1024) and RC.upgrade(U) == U
     F = RUN.fixed_values()
     assert F['cand_pmin'] == 0.3 and F['pass2'] is True and F['det_batch'] == 64 and F['pattern_pitch_search_px'] == [1.6, 2.8]
     print('  ok settings -> arguments -> the same settings; fixed values')

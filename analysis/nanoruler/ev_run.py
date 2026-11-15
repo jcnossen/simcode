@@ -9,7 +9,7 @@ MEMORY (no package file is edited), then simcode.run.main runs with the given ar
   3. --crop default '5,5,110' (120 px sensor crop of the other setup) -> must be passed explicitly (x0,y0,size; the loaded
      region adds a 5 px margin, clipped to the sensor): '5,5,246' for the 256 x 256 simulated movies.
 The model: --model out/nanoruler/models/netset_nr80.json (the nr80 model file, one entry, absolute paths); --cal_kind sim
-for the sim-sigma solve calibrations (cal_sim / p2_cal_sim) that the nanoruler runs use.
+for the sim-sigma solve calibrations (cal_sim / cal_sim_pass2) that the nanoruler runs use.
 usage: python -u analysis/nanoruler/ev_run.py --movie ... --calib ... --out ... --crop 5,5,246 --model <model json> --cal_kind sim ..."""
 import os, sys
 sys.path.insert(0, '/home/jc/simcode2')

@@ -74,7 +74,7 @@ All networks are trained only on the experiment-matched simulator (`simulate/acq
 |---|---|---|
 | det_n1 | `python -m simcode.detector.train` | focal loss on the nearest-pixel targets, offset NLL |
 | sc5nb | `python -m simcode.emitter.heldout --set 5` (held-out set), then `python -m simcode.emitter.train --init <sc5n>` | full-covariance Gaussian NLL of the GT per-frame photons, plus a mean-removed anti-shrinkage term and the modulation-slope penalty, plus the position NLL; per-nn-bin target weights |
-| p2_det / p2_head_long | `python -m simcode.detector.train --illum 1`, `python -m simcode.emitter.train` with a pass-2 `--det` (error model `--pert_model real`, the default; v1 for the intermediate p2head stage) | illumination channels zero-initialised from det_n1 / sc5nb |
+| p2_det / p2_head_long | `python -m simcode.detector.train --illum 1`, `python -m simcode.emitter.train` with a pass-2 `--detector` (error model `--pert_model real`, the default; v1 for the intermediate p2head stage) | illumination channels zero-initialised from det_n1 / sc5nb |
 
 ### Exact training commands of the earlier default networks (the ancestors of the models)
 
@@ -96,23 +96,23 @@ export CUDA_VISIBLE_DEVICES=1
 # det_n1 (40k steps)
 python -m simcode.detector.train --out runs/det_n1 --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 \
     --nnw 1 --seed 0
-# held-out set of the head trainer (<out>/sc4/heldout5.pt, det_n1 candidates)
+# held-out set of the head trainer (<out>/emitter_heldout/heldout5.pt, det_n1 candidates)
 python -m simcode.emitter.heldout --set 5
 # hd_sc5n (100k steps from scratch), then hd_sc5nb = 18k-step fine-tune with the bright tail
-python -m simcode.emitter.train --out runs/hd_sc5n --steps 100000 --batch 16 --lr 5e-4 --ch 96 --det det_n1.pt \
-    --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 0 \
+python -m simcode.emitter.train --out runs/hd_sc5n --steps 100000 --batch 16 --lr 5e-4 --ch 96 --detector det_n1.pt \
+    --tau 15,80 --hold <out>/emitter_heldout/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 0 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000
-python -m simcode.emitter.train --out runs/hd_sc5nb --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det det_n1.pt \
-    --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
+python -m simcode.emitter.train --out runs/hd_sc5nb --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --detector det_n1.pt \
+    --tau 15,80 --hold <out>/emitter_heldout/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init runs/hd_sc5n/final.pt --pct 0.1 --ckpt_every 6000
 # p2_det (40k steps; illumination channels zero-initialised from det_n1)
 python -m simcode.detector.train --out runs/p2_det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 \
     --seed 11 --eval_every 2500 --ckpt_every 5000 --illum 1 --init det_n1.pt
-# p2_head (24k steps from hd_sc5nb; its --det was p2_det's 25k-step checkpoint, identical to runs/p2_det/ckpt_25000.pt),
+# p2_head (24k steps from hd_sc5nb; its --detector was p2_det's 25k-step checkpoint, identical to runs/p2_det/ckpt_25000.pt),
 # then p2_head_long = 50k steps from p2_head with the 'real' pattern-error model
-python -m simcode.emitter.train --out runs/p2_head --det runs/p2_det/ckpt_25000.pt --init hd_sc5nb.pt --steps 24000 \
+python -m simcode.emitter.train --out runs/p2_head --detector runs/p2_det/ckpt_25000.pt --init hd_sc5nb.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0
-python -m simcode.emitter.train --out runs/p2_head_long --det runs/p2_det/final.pt --init runs/p2_head/final.pt --steps 50000 \
+python -m simcode.emitter.train --out runs/p2_head_long --detector runs/p2_det/final.pt --init runs/p2_head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
     --pert_model real --hold_v1 15
 ```

@@ -1,5 +1,5 @@
 """(2026-11-11 in-situ 3D PSF) Information matrix of global PSF parameters on held-out track samples, with the per-sample
-nuisances (x, y, z, per-frame I, per-angle bg) profiled out (Schur complement), for a fit_insitu2 _psf.pt.
+nuisances (x, y, z, per-frame I, per-angle bg) profiled out (Schur complement), for a fit_psf_tracks _psf.pt.
 Globals: blur covariance (sxx, syy, sxy), photoselection gamma (and zeta), Noll 5 / 6 astigmatism, focus.
 Prints the SEs (1 / sqrt of the profiled information), the correlation matrix and the eigenvalues of the correlation-scaled
 information (near-zero = near-degenerate combination), and the eigenvector of the smallest one.

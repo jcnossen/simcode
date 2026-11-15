@@ -7,6 +7,6 @@ source /home/jc/simcode2/runs/psfmatch/env.sh
 # $2 = p_std: share of SIMCODE-pattern FOVs (the former presets pgen_v1 = 0.25, pgen_v1s50 = 0.5)
 N=$1; PS=$2; D=runs/p2generic/g1809; O=runs/p2generic/$N; mkdir -p $O
 echo "$(date) cont $N p_std $PS GPU $GPU"
-CUDA_VISIBLE_DEVICES=$GPU P2G_TITLE=p2gen-$N python -u analysis/p2generic/pwrap.py simcode.emitter.train --out $O/p2headL --det $D/p2det/final.pt \
+CUDA_VISIBLE_DEVICES=$GPU P2G_TITLE=p2gen-$N python -u analysis/p2generic/pwrap.py simcode.emitter.train --out $O/p2headL --detector $D/p2det/final.pt \
   --init $D/p2headL/final.pt --steps 50000 --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 41 --eval_every 5000 --ckpt_every 10000 \
   --no_illum 0 --pert_model ${PM:-real} --calib ${PSF[m1809]} --p_std $PS > $O/p2headL.log 2>&1 && echo "$(date) cont $N done" || echo "$(date) cont $N FAILED"

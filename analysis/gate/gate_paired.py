@@ -38,7 +38,7 @@ def st(R, ti, oi):
             1.4826 * np.median(np.abs(e / c)), 1.4826 * np.median(np.abs(e / s)), 100 * np.mean(np.hypot(*(e / s).T) > 4))
 
 
-print("(targets with CRLB_SF_multi < 25 nm, as gate_report_xdet)" + (' ; per-method global offset removed per scene/seed' if OFF else ''))
+print("(targets with CRLB_SF_multi < 25 nm, as gate_report_detector_matched)" + (' ; per-method global offset removed per scene/seed' if OFF else ''))
 print(f'paired {tA} (SIMCODE) vs {tB} (ours): rms / trim / zmed / zcal / gross4s%')
 for sc in sys.argv[3].split(','):
     sd = sorted(set(seeds(sc, tA)) & set(seeds(sc, tB)))

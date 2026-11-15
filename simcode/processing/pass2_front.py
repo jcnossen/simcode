@@ -1,5 +1,5 @@
 """
-Pipeline pass 2 with the pattern-aware networks (run_uncalibrated --frontend sc2p). Pass 1 (pattern-free detector + emitter
+Pipeline pass 2 with the pattern-aware networks (run_uncalibrated --pass2_mode networks). Pass 1 (pattern-free detector + emitter
 network) and the pattern estimation are unchanged (simcode/processing/front.py, pattern_estimation.py on the network
 intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   illumination maps of the ESTIMATED pattern (pattern_est.pt -> processing.common.pattern_frames, loaded-region coordinates)
@@ -23,23 +23,23 @@ from simcode.processing.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
-P2_DET = _cfg.model(_cfg.P2_DET)
-P2_HEAD = _cfg.model(_cfg.P2_HEAD)
+DETECTOR_PASS2 = _cfg.model(_cfg.DETECTOR_PASS2)
+EMITTER_PASS2 = _cfg.model(_cfg.EMITTER_PASS2)
 
 
 
 class Pass2Front:
-    def __init__(self, calib_path, head=P2_HEAD, det=P2_DET, dev='cuda'):
+    def __init__(self, calib_path, emitter=EMITTER_PASS2, detector=DETECTOR_PASS2, dev='cuda'):
         from simcode.emitter import model as EM
         from simcode.detector import model as DM
         from simcode.simulate.simulator import Simulator
-        self.det, _ = DM.load(det)
-        self.head = EM.load(head)      # a pattern-free (pass-1) network also works (detector-only pass 2)
+        self.detector, _ = DM.load(detector)
+        self.emitter = EM.load(emitter)      # a pattern-free (pass-1) network also works (detector-only pass 2)
         self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
 
     @torch.no_grad()
-    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
+    def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, solve_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
         """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: the z columns come
         from pass 1 (z_conditioning.pass1_z_columns: the linked pass-1 candidate's z prior conditioned on the pass-2 solved x, y)"""
         from simcode.pattern import illumination as IL
@@ -49,7 +49,7 @@ class Pass2Front:
         dev = self.dev
         timing = timing if timing is not None else {}
         sync = lambda: torch.cuda.synchronize()
-        scal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
+        scal = json.load(open(solve_cal)) if isinstance(solve_cal, str) else dict(solve_cal)
         X0, Y0, S = region(movie, crop, margin)
         own0, own1 = f0, min(f1, movie.n)
         l0 = max(f0 - pad, 0) // 6 * 6; l1 = min(own1 + pad, movie.n)
@@ -70,7 +70,7 @@ class Pass2Front:
             x = torch.stack([frames[s0:s0 + T] for s0 in st])
             PW = torch.stack([PF[s0:s0 + T] for s0 in st])
             il = IL.illum_maps(PW, S, S)
-            c, nbr, lgm = EM.detect_candidates(self.det, x, il, k=k_cand)
+            c, nbr, lgm = EM.detect_candidates(self.detector, x, il, k=k_cand)
             sync(); timing['detector'] = timing.get('detector', 0) + time.time() - t_
             if len(c['b']) == 0: continue
             t_ = time.time()
@@ -82,7 +82,7 @@ class Pass2Front:
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
-                oh = EM.apply_to_candidates(self.head, self.col, *args)
+                oh = EM.apply_to_candidates(self.emitter, self.col, *args)
                 r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}

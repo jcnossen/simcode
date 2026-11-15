@@ -25,7 +25,7 @@ def export_model(src, dest):
     M['sig_u'] = ','.join(rel); json.dump(D, open(f, 'w'), indent=1, default=str)
     return f
 
-KEYS = ('det', 'head', 'cal_sim', 'cal_real', 'p2_det', 'p2_head', 'p2_cal_sim', 'p2_cal_real')
+KEYS = ('detector', 'emitter', 'cal_sim', 'cal_real', 'detector_pass2', 'emitter_pass2', 'cal_sim_pass2', 'cal_real_pass2')
 
 
 def main():
@@ -33,7 +33,7 @@ def main():
     if '--generic' in sys.argv: return generic(name, E, dry)
     MD = config.models_dir(); MF = os.path.join(E, 'model_files')
     S = json.load(open(config.MODELS_FILE)); old = S[name]
-    if old.get('head', '').startswith(name + '/'): raise SystemExit(f'{name}: already swapped ({old["head"]})')
+    if old.get('emitter', '').startswith(name + '/'): raise SystemExit(f'{name}: already swapped ({old["emitter"]})')
     p1 = name
     ab = lambda f: os.path.join(MD, f)
     # 1. archive of the current (2D) model
@@ -41,10 +41,10 @@ def main():
     a['sig_u'] = ','.join(ab(s) for s in old['sig_u'].split(','))
     srcA = os.path.join(E, 'model_archive_src.json')
     # 2. the new model from the staged files
-    n = dict(psf=os.path.join(MF, os.path.basename(old['psf'])), det=os.path.join(MF, os.path.basename(old['det'])),
-             head=os.path.join(MF, f'hd_{p1}.pt'), cal_sim=os.path.join(MF, f'calib_sc_hd_{p1}.json'), cal_real=os.path.join(MF, f'calib_sc_hd_{p1}_real.json'),
-             p2_det=os.path.join(MF, os.path.basename(old['p2_det'])), p2_head=os.path.join(MF, f'p2headL_{name}.pt'),
-             p2_cal_sim=os.path.join(MF, f'calib_p2L_{name}.json'), p2_cal_real=os.path.join(MF, f'calib_p2L_{name}_real.json'),
+    n = dict(psf=os.path.join(MF, os.path.basename(old['psf'])), detector=os.path.join(MF, os.path.basename(old['detector'])),
+             emitter=os.path.join(MF, f'hd_{p1}.pt'), cal_sim=os.path.join(MF, f'calib_sc_hd_{p1}.json'), cal_real=os.path.join(MF, f'calib_sc_hd_{p1}_real.json'),
+             detector_pass2=os.path.join(MF, os.path.basename(old['detector_pass2'])), emitter_pass2=os.path.join(MF, f'p2headL_{name}.pt'),
+             cal_sim_pass2=os.path.join(MF, f'calib_p2L_{name}.json'), cal_real_pass2=os.path.join(MF, f'calib_p2L_{name}_real.json'),
              sig_u=os.path.join(MF, f'sigu_p1_{p1}.json') + ',' + os.path.join(MF, f'sigu_p2_{name}.json'))
     miss = [v for k, v in list(n.items()) + list(a.items()) for v in v.split(',') if not os.path.isfile(v)]
     if miss: raise SystemExit(f'missing files: {miss}')
@@ -66,29 +66,29 @@ def main():
                    f'the previous 2D model is the folder archive_2d/{name}/ (not referenced by any config)')
     S[name] = {k: ent[k] for k in ['_doc'] + [k for k in ent if k != '_doc']}
     json.dump(S, open(config.MODELS_FILE, 'w'), indent=1); open(config.MODELS_FILE, 'a').write('\n')
-    print('models.json', name, '->', S[name]['head'])
+    print('models.json', name, '->', S[name]['emitter'])
 
 
 def generic(name, E, dry):
     import shutil
     MD = config.models_dir(); MF = os.path.join(E, f'model_files_{name}')
     S = json.load(open(config.MODELS_FILE)); old = S[name]
-    if not old.get('head', '').startswith(name + '/'): raise SystemExit(f'{name}: not a model folder ({old["head"]}); run the 3D swap first')
+    if not old.get('emitter', '').startswith(name + '/'): raise SystemExit(f'{name}: not a model folder ({old["emitter"]}); run the 3D swap first')
     cur = os.path.join(MD, name); arc = os.path.join(MD, 'archive_p2dedicated', name)
     if os.path.exists(arc): raise SystemExit(f'{arc} exists: already swapped?')
     C = json.load(open(os.path.join(cur, 'model.json')))[name]
-    if C['p2_det'] != f'p2det_{name}.pt': raise SystemExit(f'unexpected layout of {cur}/model.json')
-    n = dict(psf=os.path.join(MF, os.path.basename(C['psf'])), det=os.path.join(MF, f'det_{name}.pt'), head=os.path.join(MF, f'hd_{name}.pt'),
+    if C['detector_pass2'] != f'p2det_{name}.pt': raise SystemExit(f'unexpected layout of {cur}/model.json')
+    n = dict(psf=os.path.join(MF, os.path.basename(C['psf'])), detector=os.path.join(MF, f'det_{name}.pt'), emitter=os.path.join(MF, f'hd_{name}.pt'),
              cal_sim=os.path.join(MF, f'calib_sc_hd_{name}.json'), cal_real=os.path.join(MF, f'calib_sc_hd_{name}_real.json'),
-             p2_det=os.path.join(MF, f'p2det_{name}.pt'), p2_head=os.path.join(MF, f'p2headL_{name}.pt'),
-             p2_cal_sim=os.path.join(MF, f'calib_p2L_{name}.json'), p2_cal_real=os.path.join(MF, f'calib_p2L_{name}_real.json'),
+             detector_pass2=os.path.join(MF, f'p2det_{name}.pt'), emitter_pass2=os.path.join(MF, f'p2headL_{name}.pt'),
+             cal_sim_pass2=os.path.join(MF, f'calib_p2L_{name}.json'), cal_real_pass2=os.path.join(MF, f'calib_p2L_{name}_real.json'),
              sig_u=os.path.join(MF, f'sigu_p1_{name}.json') + ',' + os.path.join(MF, f'sigu_p2_{name}.json'))
     miss = [v for v in n.values() for v in v.split(',') if not os.path.isfile(v)]
     if miss: raise SystemExit(f'missing files: {miss}')
     # pass 1 must be the current model's pass 1 (same files)
     from simcode.util import runconfig as RC
     F = json.load(open(os.path.join(cur, 'model.json')))['_files']
-    for k in ('det', 'head', 'cal_sim', 'cal_real', 'psf'):
+    for k in ('detector', 'emitter', 'cal_sim', 'cal_real', 'psf'):
         if RC.model_file(n[k])['sha256'] != F[k]['sha256']: raise SystemExit(f'{k}: staged file differs from the current pass 1')
     chain = (f'/home/jc/simcode2/out/z3d/runs/chain.sh m1809g (logs out/z3d/runs/m1809g/; pass-2 detector = out/p2generic g1809 '
              f'+ dg2s: analysis/p2generic/chain_gen.sh g1809, cont_det.sh dg2s)' if name == 'm1809' else
@@ -115,7 +115,7 @@ def generic(name, E, dry):
                    '(not referenced by any config)')
     S[name] = {k: ent[k] for k in ['_doc'] + [k for k in ent if k != '_doc']}
     json.dump(S, open(config.MODELS_FILE, 'w'), indent=1); open(config.MODELS_FILE, 'a').write('\n')
-    print('models.json', name, '->', S[name]['p2_head'], '| archive', arc)
+    print('models.json', name, '->', S[name]['emitter_pass2'], '| archive', arc)
 
 
 if __name__ == '__main__':
