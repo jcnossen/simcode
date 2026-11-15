@@ -31,9 +31,12 @@ v2-PSF movie sets (2026-11-15, opt-in psf='v2'; the default above is unchanged):
   heights   one height per GT point (a labelling site does not move): the v2 calibration rule of the training simulator
             (simcode.simulate.acquisition.height_quantiles: piecewise-linear inverse CDF of emitter_z_quantiles_um = the
             non-pinned fitted heights of the held-out spots, clipped to emitter_z_range_um = [0, 0.40] um); no TIRF factor.
-  photons   the intensity parameter of the PSF model (as before and as the training simulator / torch_psf): an emitter of
-            I photons at height z gives I x (PSF sum at z) detected photons; the vectorial PSF collects 0.96 / 0.72 / 0.54
-            of them at z = 0 / 0.116 / 0.40 um (supercritical-angle light decays with z).
+  photons   DETECTED photons (coordinator decision 2026-11-15): the condition's numbers (500 per window for D, the real-data
+            medians for Dexp) are the photons that reach the camera. The vectorial PSF's intensity parameter collects only
+            0.96 / 0.72 / 0.54 at z = 0 / 0.116 / 0.40 um (supercritical-angle light decays with z), so every emitter's
+            intensity parameter is the condition's photons / collected(z), collected(z) = the sum of the rendered 41 x 41 px LUT
+            image at height z (RendererV2.collected, linear in z as the render). (The training simulator AcquisitionSim draws
+            its photons as the intensity parameter, i.e. detected = photons x collected(z).)
   camera    the v2 camera of 1809/2 on a fixed 40 x 40 crop (rows / cols 40-80 of models/insitu/camera_maps_1809_2_v2.npz):
             gain 0.4256 e/ADU, offset map (fixed pattern + 103.93 ADU, sd 1.69 ADU), per-pixel Gaussian read noise
             (median 0.90 e, rms 1.34 e); ADU = round((Poisson(mu) + N(0, rn^2)) / gain + offset). calib_sim.json /
@@ -234,6 +237,14 @@ class RendererV2:
         self.R = self.sim.R
         g, off, rn = camera_v2()
         self.gain = g; self.off = torch.tensor(off, device=self.dev); self.rn = torch.tensor(rn, device=self.dev)
+        L = self.sim.lut
+        self.coll = L[:, L.shape[1] // 2, L.shape[2] // 2].sum((-2, -1)).double().cpu().numpy()    # [nz] collected fraction per LUT plane
+        self.coll_z = self.sim.zs.double().cpu().numpy()
+
+    def collected(self, z):
+        """fraction of an emitter's intensity parameter that the rendered PSF image holds at height z (um; linear between the
+        LUT planes, as the render)"""
+        return np.interp(np.asarray(z, float), self.coll_z, self.coll)
 
     def expected(self, f0, nf, fr, x, y, z, ph):
         torch = self.t; dev = self.dev; H, W, R = self.H, self.W, self.R; hr = R // 2

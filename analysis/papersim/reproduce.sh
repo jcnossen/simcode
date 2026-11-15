@@ -19,7 +19,8 @@
 #   v2psf_decode                     DECODE retrain for them (dec_sim1809v2; out/papersim/decode_v2psf/train_dec_sim1809v2.sh, hours)
 #   v2psf "D1 Dexp1 ..."             all methods on <item>_v2psf: SMLM / SIMFLUX with the v2 PSF, SIMCODE v1 (+ GT pattern), DECODE
 #                                    dec_sim1809v2, SIMCODE v2 (MODEL = a models.json name or a model folder, NAME = its output
-#                                    name, default m1809 / m1809v2), metrics, GT-FRC
+#                                    name, default m1809 / m1809v2), metrics, GT-FRC; reference = the previous m1809 (old-PSF
+#                                    networks, models/archive_psf_v1/m1809) as v2_m1809psf1 (REF)
 #   v2psf_figs                       overview / fig_density / summaries / time to fidelity of the v2-PSF sets (NAME as above)
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
@@ -72,8 +73,10 @@ case $what in
     bash $O/decode_v2psf/train_dec_sim1809v2.sh > $O/decode_v2psf/train_dec_sim1809v2.log 2>&1 ;;
   v2psf)
     for D in $items; do
-      $PY analysis/papersim/run_all.py $O/${D}_v2psf --steps base,v1,v1gt,decode,v2,metrics,gtfrc --psf models/insitu/calib_1809_2_psf_v2.json \
-        --decode_name dec_sim1809v2 --model ${MODEL:-m1809} --name ${NAME:-m1809v2} --gt_diag 0 >> $O/logs/full_${D}_v2psf.log 2>&1
+      # reference row first (gtfrc reads it): the previous m1809 (old-PSF networks) -> v2_m1809psf1, metrics_m1809psf1.json
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf --steps base,v1,v1gt,decode --psf models/insitu/calib_1809_2_psf_v2.json --decode_name dec_sim1809v2 >> $O/logs/full_${D}_v2psf.log 2>&1
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf --steps v2,metrics --model models/archive_psf_v1/m1809 --name m1809psf1 --gt_diag 0 >> $O/logs/full_${D}_v2psf.log 2>&1
+      $PY analysis/papersim/run_all.py $O/${D}_v2psf --steps v2,metrics,gtfrc --model ${MODEL:-m1809} --name ${NAME:-m1809v2} --gt_diag 0 --ref ${REF:-m1809psf1} >> $O/logs/full_${D}_v2psf.log 2>&1
       rc=$?; rm -rf $O/${D}_v2psf/full/base/work
       echo "$(date) done ${D}_v2psf rc $rc"
     done ;;
@@ -81,7 +84,7 @@ case $what in
     N=${NAME:-m1809v2}
     for P in D Dexp; do
       $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf --model $N
-      $PY analysis/papersim/fig_gtfrc.py --prefix $P --suffix _v2psf --model $N --ref ''
+      $PY analysis/papersim/fig_gtfrc.py --prefix $P --suffix _v2psf --model $N --ref ${REF:-m1809psf1}
       $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf --model $N
     done ;;
   *) sed -n 2,28p "$0"; exit 1 ;;

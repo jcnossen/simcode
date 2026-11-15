@@ -47,9 +47,10 @@ def _g(psf, xc, yc, P, z):
     return psf.eval(xc, yc, P, z)[0]
 
 
-def _crlb(model, th, steps):
-    """mean over samples of sqrt(diag(F^-1)); F from central differences of model(th) [n, M] (Poisson)"""
-    mu = model(th).clamp_min(1e-9)
+def _crlb(model, th, steps, var_add=0.0):
+    """mean over samples of sqrt(diag(F^-1)); F from central differences of model(th) [n, M] (Poisson; var_add > 0: + Gaussian
+    read noise of that variance per value, as the sCMOS shifted-Poisson approximation: F = J^T J / (mu + var_add))"""
+    mu = model(th).clamp_min(1e-9) + var_add
     J = []
     for i, h in enumerate(steps):
         d = torch.zeros_like(th); d[:, i] = h
@@ -60,9 +61,11 @@ def _crlb(model, th, steps):
     return C.mean(0).float().cpu().numpy()
 
 
-def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, device=None, seed=0):
+def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, device=None, seed=0, rn2_e=0.0, detected=False, zmax=0.2):
+    """(2026-11-15 opt-in) rn2_e: read-noise variance per pixel and frame (e^2) in the CRLB; detected: `photons` are detected
+    photons (the intensity parameter = photons / collected fraction of the 41 x 41 px PSF image at z); zmax: PSF z range (um)"""
     dev = _dev(device)
-    psf = zpsf.load(spec, device=dev)
+    psf = zpsf.load(spec, device=dev, zmax=zmax)
     is3d = not spec.startswith('gauss:')
     z0 = float(psf.z_fit if z_um is None else z_um)
     pattern = dict(dict(pitch_nm=224.0, depth=0.9, angles_deg=(0.0, 90.0)), **(pattern or {}))
@@ -80,7 +83,9 @@ def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, 
     ph0 = torch.as_tensor(rng.uniform(0, 2 * np.pi, (n, len(pattern['angles_deg']))), device=dev, dtype=torch.float32)
     kmag = 2 * np.pi / (pattern['pitch_nm'] / px_nm)
     K = torch.tensor([[kmag * math.cos(math.radians(a)), kmag * math.sin(math.radians(a))] for a in pattern['angles_deg']], device=dev)
-    I = float(photons); B = float(bg_px_frame)
+    I = float(photons); B = float(bg_px_frame); coll = None
+    if detected and is3d:
+        coll = float(_g(psf, zero, zero, 41, torch.full((1,), z0, device=dev))[0].sum()); I = I / coll
     def unpack(th):
         x, y = th[:, 0], th[:, 1]
         if is3d: z, I_, b = th[:, 2], th[:, 3], th[:, 4]
@@ -104,17 +109,17 @@ def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, 
     th = torch.stack(cols, 1)
     steps = [1e-3, 1e-3] + ([1e-3] if is3d else []) + [1e-2 * I, 1e-3 * max(B, 1)]
     with torch.no_grad():
-        cs, cf = _crlb(smlm, th, steps), _crlb(sf, th, steps)
+        cs, cf = _crlb(smlm, th, steps, 6 * rn2_e), _crlb(sf, th, steps, rn2_e)
         cr = dict(smlm=dict(x=cs[0] * px_nm, y=cs[1] * px_nm), sf=dict(x=cf[0] * px_nm, y=cf[1] * px_nm))
         if is3d:
             cr['smlm']['z'] = cs[2] * 1e3; cr['sf']['z'] = cf[2] * 1e3
             # x, y with z known (the 2D fits at the fixed emitter plane)
             th2 = th[:, [0, 1, 3, 4]]; st2 = [steps[0], steps[1], steps[3], steps[4]]
             ins = lambda m: (lambda t: m(torch.cat([t[:, :2], zc[:, None], t[:, 2:]], 1)))
-            c2s, c2f = _crlb(ins(smlm), th2, st2), _crlb(ins(sf), th2, st2)
+            c2s, c2f = _crlb(ins(smlm), th2, st2, 6 * rn2_e), _crlb(ins(sf), th2, st2, rn2_e)
             cr['smlm']['xy_zfixed'] = [c2s[0] * px_nm, c2s[1] * px_nm]; cr['sf']['xy_zfixed'] = [c2f[0] * px_nm, c2f[1] * px_nm]
     return dict(spec=spec, desc=psf.desc, is3d=is3d, z_um=z0, xy=xy, xz=xz, z_grid_um=zs, pixel_nm=px_nm, roi_px=Pi,
-                rms_mwaves=rms_aberration_mwaves(spec), photons=I, bg_px_frame=B, pattern=pattern, crlb=cr,
+                rms_mwaves=rms_aberration_mwaves(spec), photons=float(photons), intensity_param=I, collected=coll, rn2_e=rn2_e, bg_px_frame=B, pattern=pattern, crlb=cr,
                 focus_um=getattr(psf, 'meta', {}).get('focus_um'))
 
 
@@ -143,7 +148,8 @@ def crlb_text(info):
         L.append(f"Gaussian PSF σ {info['spec'][6:]} px; no aberrations")
     else:
         L.append(f"vectorial PSF\n{os.path.splitext(os.path.basename(info['spec']))[0]}\nrms aberration (Noll ≥ 5) {info['rms_mwaves']:.0f} mλ")
-    L.append(f"CRLB at {info['photons']:.0f} ph / 6-frame window,\nbg {info['bg_px_frame']:.2f} ph/px/frame:")
+    L.append(f"CRLB at {info['photons']:.0f} {'detected ' if info.get('collected') else ''}ph / 6-frame window,\nbg {info['bg_px_frame']:.2f} ph/px/frame"
+             + (f", read noise {info['rn2_e']:.2f} e²/px/frame" if info.get('rn2_e') else '') + (f" (z = {info['z_um'] * 1e3:.0f} nm)" if info['is3d'] else '') + ':')
     for k, lab in (('smlm', 'SMLM'), ('sf', 'SIMFLUX')):
         r = c[k]
         if info['is3d']:

@@ -136,6 +136,8 @@ def main():
         zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev[o]]]
         R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+        cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
+        ph = ph / cpt[ids[ev[o]]]
     else:
         R = C.Renderer(W, W)
     gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(a.radius_nm * 10) * 31 + int(a.phot_scale * 100))
@@ -150,7 +152,7 @@ def main():
             yield R.adu(mu, gen)
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     wp = window_photons(t0e, t1e, I6, a.nframes)
-    xtra = dict(pts_z_um=zpt) if a.v2psf else {}
+    xtra = dict(pts_z_um=zpt, pts_collected=cpt) if a.v2psf else {}
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, centre=centre, tub=tub, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1],
                         ev_t0=t0e, ev_t1=t1e, ev_I6=I6, bg6=bg6, k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z,
                         nframes=a.nframes, W=W, radius_px=a.radius_nm / C.PX_NM, **xtra)
@@ -167,7 +169,9 @@ def main():
                 **(dict(v2psf=1, units='v2 camera photons (old real-data statistics converted: photons x %.4f, bg per 6-sum (b / 0.56 - 6 x %.4f) x 0.4256)' % (C.PHOT_V2, C.OFFSET_SHIFT_V2),
                         camera=dict(gain=C.GAIN_V2, offset='v2 map crop %s of %s' % (C.CAM_V2_CROP, os.path.basename(C.CAM_V2)), read_noise='v2 map (median 0.90 e)'),
                         z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
-                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40))) if a.v2psf else {}),
+                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
+                        photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected); ev_I6 = detected',
+                        collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if a.v2psf else {}),
                 gt_points_md5=hashlib.md5(np.ascontiguousarray(pts).tobytes()).hexdigest(), s=round(time.time() - t00, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)

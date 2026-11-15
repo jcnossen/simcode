@@ -61,6 +61,8 @@ def main():
         zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev]]
         R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+        cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
+        ph = ph / cpt[ids[ev]]
     else:
         R = C.Renderer(W, W, psf=a.psf)
     gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(round(a.density * 1000)))
@@ -74,7 +76,7 @@ def main():
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1], ev_t0=t0e, ev_t1=t1e,
                         k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z, nframes=a.nframes, W=W,
-                        **(dict(pts_z_um=zpt) if v2 else {}))
+                        **(dict(pts_z_um=zpt, pts_collected=cpt) if v2 else {}))
     calib = C.write_sim_calib(d, W, W, P, psf=a.psf)
     C.save_pattern_files(P, a.nframes, d)
     info = dict(kind='density', density=a.density, nframes=a.nframes, W=W, px_nm=C.PX_NM, bg=a.bg, intensity_per_6frames=a.intensity,
@@ -87,7 +89,9 @@ def main():
                 psf=C.PSF_CALIB_V2 if v2 else (C.PSF_CALIB if a.psf == 'vectorial' else a.psf), calib=calib, seed=a.seed,
                 **(dict(z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
                         z_rule='v2 calibration emitter_z_quantiles_um (non-pinned fits), clipped to emitter_z_range_um, one height per GT point',
-                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40))) if v2 else {}),
+                        z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
+                        photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected)',
+                        collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if v2 else {}),
                 gt_source=f'smlmtorch {C.GT_COMMIT} scripts/generate_tubules.py + fig_densities2.py (seed 1)', s=round(time.time() - t0, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)
