@@ -13,7 +13,7 @@
                     fixed 3D gate 30 / 30 / 75 nm (x / y / z; = gtfrc.ghost_fraction with sigma 10 / 10 / 25 nm, k = 3), OR
                     when it is matched laterally (simeval4pi.match, 64 nm, per window) to a GT emitter but placed one 4Pi
                     fringe off in z (|dz| > 100 nm). FP fraction = false positives / all kept localizations in the region.
-Methods: the figure's best network selection per density (BEST below) and the classical published-style table (cl_pub).
+Methods: the figure's network selection (net_sig1 = sigma_xy < 5 nm, sigma_z < 12 nm, every density) and the classical published-style table (cl_pub).
 Input:  $P4/sweep4pi/<tag>/locs_<method>.npz (eval's selected region rows), $P4/simmovie/<tag>/gt_*.npz
 Output: $P4/sweep4pi/<tag>/ttf_fp.json
 usage: python analysis/fourpi_sim/sweep4pi_ttf_fp.py [--tags mtc_d01 ...]
@@ -24,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import sweep4pi_eval as E                       # constants, frc_sections, gtfrc module (E.G), gt_units, match
 G = E.G; NM = E.NM
-BEST = dict(mtc_d01='net_sig0', mtc_d03='net_sig0', mtc_d05='net_sig1', mtc_d075='net_sig1', mtc_d15='net_sig1')
+BEST = {t: 'net_sig1' for t in ('mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15')}   # one selection (si_4pi_sim)
 
 
 def crossing_interp(freq, curve, thr=G.THRESHOLD, start=3, width=0.01):

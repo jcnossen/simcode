@@ -6,7 +6,7 @@
   si_4pi_mt    real 4Pi-SIMFLUX microtubule movie, 100 files: network overview of the cell, box-0 region coloured by z, a
                crossing zoom, y-z section through overlapping tubes, tube cross-section (14 isolated segments) + profiles.
   si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
-               emitters / um^2 / frame: renders per density (network best selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
+               emitters / um^2 / frame: renders per density (network, one sigma selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
 
 Tables (all existing, read-only):
@@ -471,7 +471,7 @@ SW = f'{P4}/sweep4pi'
 NM = 128.0; LO, HI = 8 * NM, 52 * NM
 DENS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
 SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
-BEST = dict(mtc_d01='net_sig0', mtc_d03='net_sig0', mtc_d05='net_sig1', mtc_d075='net_sig1', mtc_d15='net_sig1')   # sweep STATUS.md
+BEST = {t: 'net_sig1' for t in ('mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15')}   # ONE selection at every density (user 2026-11-15)
 FRAME_S = 5.575e-3                                       # measured frame interval of the real movies (dcimg time stamps)
 NMIN_CL = 50                                             # fewer kept 4Pi-SIMFLUX localizations: rates not measurable
 SELTXT = dict(net_sig0='σxy < 7, σz < 16 nm', net_sig1='σxy < 5, σz < 12 nm')
@@ -595,7 +595,7 @@ def fig_sim(a):
                 val[t][nm].update(false_pos_3d=q['fp_fraction'], false_pos_wrong_fringe_only=q['fp_wrong_fringe_only'],
                                   frames_to_xy25=q['frames_to_xy'].get('25'), frames_to_xz35=q['frames_to_xz'].get('35'),
                                   gtfrc_end_xy=q['ttf_xy'][-1], gtfrc_end_xz=q['ttf_xz'][-1])
-    json.dump(dict(best=BEST, per_density=val), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
+    json.dump(dict(selection=BEST, per_density=val), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
     open(f'{OUT}/si_4pi_sim_caption.txt', 'w').write(caption_sim(val))
 
 
@@ -610,7 +610,7 @@ def caption_sim(V):
          "4 channels of 60 x 60 px (128 nm), the bead-fitted 4Pi PSF of the real data, measured camera noise and background, the real SIM pattern geometry, "
          "a drifting 4Pi phase field and DNA-PAINT kinetics (mean on-time 10 frames, median 450 photo-electrons per frame). Both pipelines estimate the "
          "SIM pattern and the 4Pi phase field in situ. "
-         "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with the best selection per density, see below). "
+         "(a) x-y renders coloured by z (ground truth = all labelling sites; 4Pi-SIMCODE with one selection at every density: reported sigma_xy < 5 nm and sigma_z < 12 nm, on top of the base filters). "
          "(b, c) Zoom 2 (four to five tubes at 90-190 nm height differences): 4Pi-SIMCODE (b) and 4Pi-SIMFLUX (c); numbers = localizations "
          "in the zoom. (d) x-z sections through zoom 2 (200 nm y-strip, dotted in b). (e) Ground-truth FRC resolution in x-y and in x-z sections "
          "versus acquisition time for every density (solid: 4Pi-SIMCODE, dotted: 4Pi-SIMFLUX; dashed: the 25 / 35 nm fidelity targets): 1/7 crossing "
@@ -649,17 +649,17 @@ def caption_sim(V):
           + ('reaches 25 nm (x-y) and 35 nm (x-z) within 30 000 frames at some density; ' if cl_any else 'never reaches both 25 nm (x-y) and 35 nm (x-z) within 30 000 frames; ')
           + (f"4Pi-SIMCODE reaches both soonest at {rd} ON /um^2/frame, after {ok[tb]:,.0f} frames ({ok[tb] * FRAME_S:.0f} s)" if tb else '4Pi-SIMCODE does not reach both')
           + (f", {ratio:.1f}x faster than at the real-data density (0.11: {fb[t01]:,.0f} frames, {fb[t01] * FRAME_S:.0f} s). " if ratio else '. ')
-          + 'At 0.55 and 0.82 the GT-FRC targets are reached as well ('
-          + ', '.join(f"{V[t]['dens_fov']:.2f}: {sec(both(V[t][BEST[t]]))}" for t in ('mtc_d05', 'mtc_d075'))
-          + '), but only with the stricter sigma selection, which leaves holes along the tubes (coverage excess CV '
-          + ' / '.join(f"{V[t][BEST[t]]['coverage_excess_cv']:.2f}" for t in ('mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15'))
-          + ' at 0.33 / 0.55 / 0.82 / 1.64); at 1.64 x-y 25 nm is not reached and '
-          + f"{100 * V['mtc_d15'][BEST['mtc_d15']]['false_pos_3d']:.0f} % of the kept localizations are false positives "
+          + 'Time to both targets per density (0.11 / 0.33 / 0.55 / 0.82 / 1.64): '
+          + ' / '.join(sec(fb[t]) for t in DENS)
+          + '; coverage excess CV ' + ' / '.join(f"{V[t][BEST[t]]['coverage_excess_cv']:.2f}" for t in DENS)
+          + ' (holes along the tubes grow with density); false positives '
+          + ' / '.join(f"{100 * V[t][BEST[t]]['false_pos_3d']:.1f}" for t in DENS) + ' % (4Pi-SIMFLUX '
+          + ' / '.join(f"{100 * V[t]['cl_pub']['false_pos_3d']:.1f}" for t in DENS) + ' %); at 1.64 the network is out of distribution '
           '(neighbours along the tube bias the astigmatic prior that picks the 4Pi fringe; out/fourpi_sim/sweep/STATUS.md). '
           'The x-z plateau (~31 nm) is set by the in-situ 4Pi phase field (21 nm with the true field at 0.33).',
           'CONDITIONS: detector det4pi, emitter network v10 (trained with <= 3 neighbours within 7 px: out of distribution at >= 0.82), explicit solve with '
-          'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); selection per density chosen in the sweep (sigma cut; the chi2 '
-          f'selection is never the best). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
+          'in-situ pattern + phase field (simlin4pi.py --pattern iter --phi field); one selection at every density: base filters (sigma_z < 25 nm, '
+          f'sigma_x, sigma_y < 0.12 px, N > 300) + reported sigma_xy < 5 nm and sigma_z < 12 nm (net_sig1 of the sweep). 4Pi-SIMFLUX: sim_cl.py published-style with its rejections (rates marked n.m. where it keeps < {NMIN_CL} '
           'localizations: none here). One structure realisation, one movie per density.',
           'CODE: analysis/paper/si_4pi.py (sim); data analysis/fourpi_sim/sweep4pi_{movie,run,eval}.py, panels e / f analysis/fourpi_sim/sweep4pi_ttf_fp.py.']
     return '\n'.join(L) + '\n'
