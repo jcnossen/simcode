@@ -40,6 +40,8 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--tag', default='m1809v2'); ap.add_argument('--example_bin', type=int, default=7)
     ap.add_argument('--psf', default='v2'); ap.add_argument('--outdir', default=os.path.join(os.path.dirname(C.OUT), 'paper_figs_v2'))
     ap.add_argument('--name', default='si_crlb_precision')
+    ap.add_argument('--rmsd', default='rmsd', choices=['rmsd', 'rmsd_trim2', 'rmsd_trim5'],
+                    help="plotted RMSD: rmsd = no trimming (default since 2026-11-15, user), rmsd_trim2 = the 2 %% largest errors removed")
     ap.add_argument('--classical_tag', default='m1809v2_smlmstart',
                     help="s10 json for the SMLM / SIMFLUX MLE rows (default: s10.py --start smlmfit --nets 0: SMLM from the centroid / "
                          "border-median init, SIMFLUX from the SMLM fit of the 6-frame sum); '' = the --tag json (GT-near start)")
@@ -47,7 +49,7 @@ def main():
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     R = json.load(open(os.path.join(C.OUT, 's10', f's10_{a.tag}.json')))
     RC = json.load(open(os.path.join(C.OUT, 's10', f's10_{a.classical_tag}.json'))) if a.classical_tag else R
-    def ser(cond, key, f='rmsd_trim2'):
+    def ser(cond, key, f=a.rmsd):
         src = RC if key in ('smlm', 'sf', 'sf_pfbg') else R
         q = [src['cond'][cond][b] for b in sorted(src['cond'][cond], key=int)]; ph = np.array([x['photons'] for x in q])
         if key.startswith('crlb'): return ph, np.array([x[key][0] for x in q]), None
@@ -64,9 +66,6 @@ def main():
         ph, y, rec = ser('const1', k); low = rec < 0.5 if k in ('nn_p1', 'v2_p2') else np.zeros(len(ph), bool)
         hA += A.plot(ph, y, '-', color=c, marker=mk, ms=5, label=lab, markevery=list(np.nonzero(~low)[0]))
         if low.any(): A.plot(ph[low], y[low], mk, color=c, ms=5, mfc='white', ls='none')
-        if k in ('smlm', 'sf'):         # untrimmed RMSD next to the 2 % trimmed one
-            ph, yu, _ = ser('const1', k, 'rmsd')
-            hA += A.plot(ph, yu, ':', color=c, marker=mk, ms=4, mfc='white', lw=1.2, label=lab + ' (untrimmed)')
     A.set_title('Localization precision vs signal photons (X axis)')
     # B
     hB = []
@@ -103,13 +102,22 @@ def main():
         fig.savefig(f'{out}.{ext}', **kw); print(f'{out}.{ext}')
     cq = lambda cond, k: [RC['cond'][cond][b][k].get('fringe_off_frac') for b in sorted(RC['cond'][cond], key=int)]
     ext = dict(classical_source=f's10_{a.classical_tag or a.tag}.json', classical_start=RC['protocol'].get('classical_start', 'gt'),
-               shown=dict(solid='RMSD with the 2 % largest errors removed (trim 2 %), all methods',
-                          dotted_open='untrimmed RMSD, SMLM MLE and SIMFLUX MLE (panel A)'),
+               shown=('RMSD with NO trimming (all fitted / detected emitters), every method, panels A and B' if a.rmsd == 'rmsd' else
+                      f'RMSD {a.rmsd} (trimmed), every method'),
+               trimming='none' if a.rmsd == 'rmsd' else a.rmsd,
                photons=RC['protocol']['photons'],
                fringe_off_frac={f'{cond}_{k}': cq(cond, k) for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg')},
                fringe_off_definition='|error| > half a pattern period (224 / 2 nm) along x or y',
                rmsd_x_px={f'{cond}_{k}_{f}': [RC['cond'][cond][b][k][f][0] for b in sorted(RC['cond'][cond], key=int)]
                           for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg') for f in ('rmsd_trim2', 'rmsd')})
+    for cond in ('const1', 'unif16'):            # network rows (s10 --tag json) + their ratio to the SIMCODE bound, both trims
+        q = [R['cond'][cond][b] for b in sorted(R['cond'][cond], key=int)]
+        for k in ('nn_p1', 'v2_p2'):
+            for f in ('rmsd', 'rmsd_trim2'):
+                ext['rmsd_x_px'][f'{cond}_{k}_{f}'] = [x[k][f][0] for x in q]
+                ext.setdefault('ratio_to_simcode_bound_x', {})[f'{cond}_{k}_{f}'] = [x[k][f][0] / x['crlb_sf_pfbg'][0] for x in q]
+                ext.setdefault('ratio_to_smlm_crlb_x', {})[f'{cond}_{k}_{f}'] = [x[k][f][0] / x['crlb_smlm'][0] for x in q]
+            ext.setdefault('recall', {})[f'{cond}_{k}'] = [x[k].get('recall') for x in q]
     json.dump(dict(**ext, source=f's10_{a.tag}.json', example=dict(bin=a.example_bin, photons=phx, bg=list(map(float, bg)), x_roi=float(ex), y_roi=float(ey)),
                    simcode_crlb='crlb_sf_pfbg (SIMFLUX model with one background per frame)'), open(out + '_values.json', 'w'), indent=1)
 
