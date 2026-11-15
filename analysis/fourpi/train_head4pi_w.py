@@ -6,6 +6,11 @@ Huber  + w_ro x read-out NLL with the shared covariance scale (keeps the read-ou
 because the per-read-out NLL is what makes a free read-out mix frames).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_head4pi_w.py --tag v10 --steps 20000 --init_v3 out/4pi/models/head4pi_v3L.pt
 Resume: --init out/4pi/models/head4pi_<tag>.pt --steps <remaining>. Checkpoint every 2500 steps (atomic).
+Plain 4Pi (--acq <acquisition config of setup fourpi_plain>[:name]): candidates from full scenes of the config's training
+recipe (MultiChannelAcquisitionSim, patterns=False, FourPiPlainSetup.sim_kw; candidate_patches: the GT emitters with the
+real neighbours, backgrounds and registration error), T = fourpi.window, no pattern in the solve-aware loss, the prior
+trained jointly (no frozen prior of that T exists), read variance from the camera; checkpoint arch 'fourpi_emitter' at
+fourpi.emitter (log next to it), steps fourpi_train.emitter_steps.
 """
 import argparse, json, math, os, sys, time
 import torch
@@ -38,7 +43,11 @@ def main():
     p.add_argument('--ksum', default='1', help='comma list of K (summed windows): per step one K: background 0.2 K - 2 K e/px, read sd 1.14 sqrt(K), offset error 0.2 K')
     p.add_argument('--nbr_in', type=int, default=0, help='1: neighbour-candidate map input (v11)'); p.add_argument('--train_prior', type=int, default=0)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
+    p.add_argument('--log_every', type=int, default=250)
+    p.add_argument('--acq', default='', help='plain 4Pi: acquisition config (file.py[:name]) with the training recipe (fourpi_train)')
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
+    if a.acq:
+        return main_plain(a)
     from simcode.util.proctitle import auto; auto('4pi-train-w')
     torch.manual_seed(a.seed)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
@@ -96,6 +105,70 @@ def main():
             print(s, flush=True); log.write(s + '\n'); log.flush()
         if (it + 1) % 2500 == 0 or it + 1 == a.steps:
             safe_save(dict(state=net.state_dict(), args=vars(a), psf=st, it=it + 1), f'{OUT}/head4pi_{a.tag}.pt')
+
+
+def main_plain(a):
+    """plain 4Pi: scene candidates, T frames, joint prior (see the module doc)"""
+    from simcode.simulate.multichannel import MultiChannelAcquisitionSim
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from train_det4pi import acquisition, setup_of
+    from simcode.util.proctitle import auto; auto('4pi-train-plain')
+    c = acquisition(a.acq); t = c['fourpi_train']; S_ = setup_of(c)
+    T = c['fourpi']['window']; out = c['fourpi']['emitter']; os.makedirs(os.path.dirname(out), exist_ok=True)
+    steps = a.steps if a.steps != 20000 else t['emitter_steps']
+    vread = c['camera']['readnoise_e'] ** 2 + t['offerr'] ** 2
+    a.arch = 'fourpi_emitter'; a.T = T; a.zmax = t['zmax']; a.vread = vread; a.zlut = list(t['zlut']); a.train_prior = 1; a.steps = steps
+    torch.manual_seed(a.seed)
+    dev = 'cuda' if torch.cuda.is_available() else 'cpu'      # cpu: smoke tests only
+    st = json.load(open(c['fourpi']['psf']))['psf']
+    lut = LUT4Pi(st, P=15, zmin=t['zlut'][0], zmax=t['zlut'][1], dev=dev)
+    init, smp = S_.sim_kw(c)
+    sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)
+    net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, train_prior=True, T=T, zmax=t['zmax'], vread=vread).to(dev); net.lut = lut
+    if a.init: net.load_state_dict(torch.load(a.init, weights_only=False)['state'])
+    net.train()
+    sv = FourPiSolve(lut, WINDOWS_K, dev=dev, **S_.solve_kw(c, net)); sv.tab_lim = None
+    opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
+    sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=steps, pct_start=0.05)
+    if a.tag != 'v10': out = out.replace('.pt', f'_{a.tag}.pt')       # --tag: a variant next to the configured file
+    log = open(out.replace('.pt', '.log'), 'a')
+    t0 = time.time(); acc = []; ns = 0
+    for it in range(steps):
+        with torch.no_grad():
+            parts = []; nb = 0
+            while nb < a.batch:       # scenes until the batch is full (the density is drawn per scene)
+                Sc = sim.sample(B=t['emitter_scenes'], det=False, **smp)
+                P_ = sim.candidate_patches(Sc, P=15, min_photons=c['fourpi']['min_photons'])
+                parts.append(P_); nb += len(P_['x']); ns += t['emitter_scenes']
+            S = {k: torch.cat([q[k] for q in parts])[:a.batch] for k in parts[0]}
+        o = net(S['img'], S['doff'])
+        Ystar = torch.einsum('nckuv,ntcuv->ntck', o['W'], S['mu0'])
+        ls_, info = solve_loss(sv, o, S, Ystar, grad_model=True, sb=c['fourpi']['sb'])
+        lp = nll_prior(S['x'], S['y'], S['z'], o) / 3
+        bt = S['bg'][:, 0].mean((-1, -2))
+        lb = F.huber_loss((o['bgc'] - bt) / (0.1 * (bt.abs() + 1).sqrt()), torch.zeros_like(bt), delta=3.0, reduction='none').mean(1)
+        lr_ = 0.5 * info['r2'].clamp(max=50.0) + torch.log(o['cs'])
+        L = (ls_ / 3 + lp + a.w_bg * lb + a.w_ro * lr_).mean()
+        if not torch.isfinite(L):
+            print(f'it {it + 1}: non-finite loss, step skipped', flush=True); opt.zero_grad(); sch.step(); continue
+        opt.zero_grad(); L.backward()
+        torch.nn.utils.clip_grad_norm_([q for q in net.parameters() if q.requires_grad], 5.0)
+        opt.step(); sch.step()
+        with torch.no_grad():
+            iso = (S['nnb'] == 0); u = info['u']
+            dz = (o['z'] - S['z']).abs().median().item() * 1000
+            acc.append([L.item(), ls_.mean().item() / 3, lp.mean().item(), lb.mean().item(),
+                        u[iso].abs().median().item() * 1.4826, u[~iso].abs().median().item() * 1.4826 if (~iso).any() else float('nan'),
+                        (u[iso] ** 2).clamp(max=25).mean().sqrt().item(), (u[~iso] ** 2).clamp(max=25).mean().sqrt().item() if (~iso).any() else float('nan'),
+                        o['cs'][iso].mean().item(), dz, info['var'][iso].sqrt().median(0).values[0].item() * 128])
+        if (it + 1) % a.log_every == 0:
+            m = torch.tensor(acc).nanmean(0).tolist(); acc = []
+            s = (f'it {it + 1} loss {m[0]:.4f} solve {m[1]:.4f} nllp {m[2]:.4f} lbg {m[3]:.3f} | err/sigma robust iso {m[4]:.3f} nb {m[5]:.3f}'
+                 f' rms5 iso {m[6]:.3f} nb {m[7]:.3f} | cs iso {m[8]:.3f} | prior |dz| med {m[9]:.1f} nm, sigma_x iso med {m[10]:.2f} nm'
+                 f' | lr {sch.get_last_lr()[0]:.2e} scenes {ns} t {time.time() - t0:.0f}s')
+            print(s, flush=True); log.write(s + '\n'); log.flush()
+        if (it + 1) % 2500 == 0 or it + 1 == steps:
+            safe_save(dict(state=net.state_dict(), args=vars(a), psf=st, it=it + 1), out)
 
 
 if __name__ == '__main__':

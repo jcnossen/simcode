@@ -1,15 +1,19 @@
-"""Explicit 4Pi-SIMFLUX solve on the K read-outs per (frame, channel) of the 4Pi emitter network (no pixel fit).
+"""Explicit 4Pi solve on the K read-outs per (frame, channel) of the 4Pi emitter network (no pixel fit): 4Pi-SIMFLUX
+(T = 6 frames = 2 angles x 3 steps, the SIM pattern) or plain 4Pi (k = None: no pattern, one angle, delta = (0,), T
+frames, e.g. T = 1).
 
-Data per candidate: Y [n,6,4,K] (frame t, channel c, read-out window k; windows of simcode/emitter/fourpi.py) with a
-K x K Cholesky factor per (t, c) Lb [n,6,4,K,K]; the network prior (dx, dy, z) +- sigma. Known: the SIM pattern per frame
+Data per candidate: Y [n,T,4,K] (frame t, channel c, read-out window k; windows of simcode/emitter/fourpi.py) with a
+K x K Cholesky factor per (t, c) Lb [n,T,4,K,K]; the network prior (dx, dy, z) +- sigma. Known: the SIM pattern per frame
 (k_a, phase psi_t incl. drift and the candidate's absolute position, depth m_t), the 4Pi phase field value Phi0 at the
-candidate (+ per-angle offset delta_a), the channel sub-pixel offsets doff [n,4,2], the 4Pi PSF spline table (LUT).
+candidate (+ per-angle offset delta_a; ang[t] = the angle of frame t), the channel sub-pixel offsets doff [n,4,2], the
+4Pi PSF spline table (LUT).
 Model:
     E[Y_tck] = N_t sum_px w_k(px; theta) g_c(px; (x, y) + doff_c, z, Phi0 + delta_a(t))          (tables over (x, y, z))
 Kinetic models:
-    'on'   : N_t = F (1 + m_t cos(k_a r - psi_t))                                     params x, y, z, F
+    'on'   : N_t = F (1 + m_t cos(k_a r - psi_t))   (no pattern: N_t = F)               params x, y, z, F
     'kin'  : N_t = F q_t (1 + ...), q_t = overlap of frame t with [t_on, t_off]           params x, y, z, F, t_on, t_off
-    'free' : N_t free per frame (z from the channel profile; x, y from the prior)       params x, y, z, N_1..6
+    'free' : N_t free per frame (z from the channel profile; x, y from the prior)       params x, y, z, N_1..T
+  (T = 1: 'on' = 'free'; 'kin' is not defined)
 fit_phi=True appends Phi (the 4Pi phase offset at the candidate) as a free parameter (start Phi0): the phase field is
 measured from the population with z held by the prior. LM on the Gaussian NLL (whitened residuals) + the prior as
 pseudo-observations, z starts around the prior (spacing Lambda / 2), best objective kept.
@@ -19,11 +23,12 @@ Window placement: the network places the windows at its prior p0 = (x, y, z), no
         E[Y] = N [A(theta) + (dA/dtheta - G(theta)) . d],   G = sum_px w(px; theta) dg/dtheta (PSF moves, window fixed);
   * neither: windows co-moving with theta (tables).
 Background nuisance: with o['Wsum'] [n,4,K] (window sums) and o['sb'] [n,4] (prior sd, e/px) a residual background per
-channel b_c, common to the 6 frames, is fitted: E[Y] += b_c Wsum[c, k], prior b_c ~ N(0, sb^2).
+channel b_c, common to the T frames, is fitted: E[Y] += b_c Wsum[c, k], prior b_c ~ N(0, sb^2).
 The pattern is a 1D wave per angle (k along x / y) or, with self.k2 = ((kx, ky), (kx, ky)), the full 2D wave vectors.
 self.coh_scale scales the interference terms of the PSF model (real data: in-situ contrast).
 
-  FourPiSolve(lut, wins, wsd, P, k, delta, dev)   .build_table(), .solve(o, Phi0, doff, m, psi, mode, ...)
+  FourPiSolve(lut, wins, wsd, P, k, delta, dev, ang, zr)   .build_table(), .solve(o, Phi0, doff, m, psi, mode, ...)
+      plain 4Pi: FourPiSolve(lut, wins, k=None, delta=(0.0,), ang=(0,) * T, zr=...); m, psi are then ignored (None)
   psi_from_eps(eps), kin_start / kin_starts (kinetics starts), best_of (lower objective of two solves)
 """
 import math
@@ -40,8 +45,13 @@ def psi_from_eps(eps):
 
 
 class FourPiSolve:
-    def __init__(self, lut, wins=WINDOWS_TC, wsd=1.0, P=15, k=K_PAT, delta=DELTA_A, dev='cuda'):
-        self.lut, self.wsd, self.P, self.dev, self.k, self.delta = lut, wsd, P, dev, tuple(k), tuple(delta)
+    def __init__(self, lut, wins=WINDOWS_TC, wsd=1.0, P=15, k=K_PAT, delta=DELTA_A, dev='cuda', ang=ANG, zr=(-0.6, 0.6)):
+        """k: SIM wave numbers per angle (None: no pattern); delta: 4Pi phase offset per angle; ang: angle of every frame
+        (T = len(ang)); zr: z range of the solve (um)"""
+        self.lut, self.wsd, self.P, self.dev, self.delta = lut, wsd, P, dev, tuple(delta)
+        self.k = tuple(k) if k is not None else None
+        self.ang, self.T, self.zr = tuple(ang), len(ang), tuple(zr)
+        if max(self.ang) >= len(self.delta): raise ValueError('FourPiSolve: an angle index of ang has no delta')
         o = torch.arange(P, device=dev, dtype=torch.float32) - (P - 1) / 2
         self.oy, self.ox = torch.meshgrid(o, o, indexing='ij')
         self.wins = tuple(wins); self.K = len(self.wins)
@@ -73,9 +83,9 @@ class FourPiSolve:
         self.tab = torch.cat([V, dX, dY, dZ, VG[12 * K:]])[None].contiguous(); self.tab_lim = (xr, zr)   # [1, 84 K, z, y, x]
 
     def readout_k(self, x, y, z, Phi, doff):
-        """A [n,2(angle),4,K,5]: value, d/dx, d/dy, d/dz, d/dPhi (window co-moving); G [n,2,4,K,3]: d/d(x, y, z) of the
+        """A [n,A (angle),4,K,5]: value, d/dx, d/dy, d/dz, d/dPhi (window co-moving); G [n,A,4,K,3]: d/d(x, y, z) of the
         PSF under a fixed window"""
-        K = self.K; out = [[], []]; outg = [[], []]
+        K = self.K; nA = len(self.delta); out = [[] for _ in range(nA)]; outg = [[] for _ in range(nA)]
         W = (getattr(self, '_ctx', None) or {}).get('W')
         if W is not None:   # exact: the network's actual windows W [n,4,K,P,P] (fixed), PSF components from the LUT at theta
             for c in range(4):
@@ -86,13 +96,13 @@ class FourPiSolve:
                 kc = getattr(self, 'coh_scale', 1.0)       # interference-contrast scale of the PSF model (real data: in-situ value)
                 if kc != 1.0:
                     Kt = torch.cat([Kt[:, :, :1], Kt[:, :, 1:] * kc], 2)
-                for a in range(2):
+                for a in range(nA):
                     ph = Phi + self.delta[a]
                     cP, sP = torch.cos(ph)[:, None, None], torch.sin(ph)[:, None, None]
                     val = Kt[:, :, 0] + cP * Kt[:, :, 1] - sP * Kt[:, :, 2]
                     dp = -sP * Kt[:, :1, 1] - cP * Kt[:, :1, 2]
                     out[a].append(torch.cat([val, dp], 1).transpose(1, 2))
-            return torch.stack([torch.stack(out[a], 1) for a in range(2)], 1), None
+            return torch.stack([torch.stack(out[a], 1) for a in range(nA)], 1), None
         xr, zr = self.tab_lim
         for c in range(4):
             pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
@@ -100,24 +110,28 @@ class FourPiSolve:
             o = torch.nn.functional.grid_sample(self.tab, g[None, :, None, None, :], mode='bilinear', align_corners=True,
                                                 padding_mode='border')
             Kt = o[0, :, :, 0, 0].T.reshape(-1, 7, 4, 3, K)[:, :, c]                  # [n, (val, dx, dy, dz, gx, gy, gz), comp, K]
-            for a in range(2):
+            for a in range(nA):
                 ph = Phi + self.delta[a]
                 cP, sP = torch.cos(ph)[:, None, None], torch.sin(ph)[:, None, None]
                 val = Kt[:, :, 0] + cP * Kt[:, :, 1] - sP * Kt[:, :, 2]              # [n, 7, K]
                 dp = -sP * Kt[:, :1, 1] - cP * Kt[:, :1, 2]
                 out[a].append(torch.cat([val[:, :4], dp], 1).transpose(1, 2))        # [n, K, 5]
                 outg[a].append(val[:, 4:].transpose(1, 2))                           # [n, K, 3]
-        return (torch.stack([torch.stack(out[a], 1) for a in range(2)], 1),
-                torch.stack([torch.stack(outg[a], 1) for a in range(2)], 1))
+        return (torch.stack([torch.stack(out[a], 1) for a in range(nA)], 1),
+                torch.stack([torch.stack(outg[a], 1) for a in range(nA)], 1))
 
     def pattern(self, x, y, m, psi):
-        """m [n,6] or [n], psi [n,6] -> factor, d/dx, d/dy [n,6]; 1D wave per angle (self.k) or the full 2D wave vectors
-        (self.k2): the estimated pattern is rotated by a few mrad, which the 1D form puts into psi at the candidate pixel only"""
-        m = m if m.dim() == 2 else m[:, None].expand(-1, 6)
+        """m [n,T] or [n], psi [n,T] -> factor, d/dx, d/dy [n,T]; 1D wave per angle (self.k) or the full 2D wave vectors
+        (self.k2): the estimated pattern is rotated by a few mrad, which the 1D form puts into psi at the candidate pixel only.
+        No pattern (self.k None): factor 1, derivatives 0 (m, psi ignored)"""
         k2 = getattr(self, 'k2', None)
+        if self.k is None and k2 is None:
+            one = torch.ones(len(x), self.T, device=x.device, dtype=x.dtype)
+            return one, torch.zeros_like(one), torch.zeros_like(one)
+        m = m if m.dim() == 2 else m[:, None].expand(-1, self.T)
         P = []; dPx = []; dPy = []
-        for t in range(6):
-            a = ANG[t]
+        for t in range(self.T):
+            a = self.ang[t]
             if k2 is None:
                 r = x if a == 0 else y
                 arg = self.k[a] * r - psi[:, t]
@@ -132,25 +146,26 @@ class FourPiSolve:
         return torch.stack(P, 1), torch.stack(dPx, 1), torch.stack(dPy, 1)
 
     def model(self, th, mode, Phi0, doff, m, psi, fit_phi=False):
-        """-> pred [n,6,4,K] and J [n,6,4,K,p]; parameter order: x, y, z, kinetics..., [Phi], [b_0..b_3]"""
+        """-> pred [n,T,4,K] and J [n,T,4,K,p]; parameter order: x, y, z, kinetics..., [Phi], [b_0..b_3]"""
         ctx = getattr(self, '_ctx', None) or {}
         p0, Wsum = ctx.get('p0'), ctx.get('Wsum')
         nb = 4 if Wsum is not None else 0
         x, y, z = th[:, 0], th[:, 1], th[:, 2]
         Phi = th[:, th.shape[1] - 1 - nb] if fit_phi else Phi0
-        ang = torch.tensor(ANG, device=th.device)
+        T = self.T
+        ang = torch.tensor(self.ang, device=th.device)
         A, G = self.readout_k(x, y, z, Phi, doff)
-        A = A[:, ang]                                                               # [n,6,4,K,5]
+        A = A[:, ang]                                                               # [n,T,4,K,5]
         if G is not None and p0 is not None:
-            G = G[:, ang]                                                           # [n,6,4,K,3]   # windows fixed at p0: first order in the displacement; Jacobian = PSF derivative under a fixed window
+            G = G[:, ang]                                                           # [n,T,4,K,3]   # windows fixed at p0: first order in the displacement; Jacobian = PSF derivative under a fixed window
             d = (p0 - th[:, :3])[:, None, None, None, :]
             A0 = A[..., 0] + ((A[..., 1:4] - G) * d).sum(-1)
             A = torch.cat([A0[..., None], G, A[..., 4:5]], -1)
         n, p = th.shape
-        nk = {'on': 1, 'kin': 3, 'free': 6}[mode]
+        nk = {'on': 1, 'kin': 3, 'free': T}[mode]
         if mode == 'kin':
             F, ton, toff = th[:, 3], th[:, 4], th[:, 5]
-            t = torch.arange(6, device=th.device, dtype=th.dtype)[None]
+            t = torch.arange(T, device=th.device, dtype=th.dtype)[None]
             a1 = torch.minimum(t + 1, toff[:, None]); a0 = torch.maximum(t, ton[:, None])
             q_raw = a1 - a0; q = q_raw.clamp(0, 1)
             dq_off = ((toff[:, None] < t + 1) & (toff[:, None] > t) & (q_raw > 0)).float()
@@ -165,11 +180,11 @@ class FourPiSolve:
             Nt = F[:, None] * Pt
             dN = torch.stack([F[:, None] * dPx, F[:, None] * dPy, torch.zeros_like(Pt), Pt], -1)
         else:
-            Nt = th[:, 3:9]
-            dN = torch.cat([torch.zeros(n, 6, 3, device=th.device), torch.eye(6, device=th.device)[None].expand(n, 6, 6)], -1)
+            Nt = th[:, 3:3 + T]
+            dN = torch.cat([torch.zeros(n, T, 3, device=th.device), torch.eye(T, device=th.device)[None].expand(n, T, T)], -1)
         npad = (1 if fit_phi else 0) + nb
         if npad:
-            dN = torch.cat([dN, torch.zeros(n, 6, npad, device=th.device)], -1)
+            dN = torch.cat([dN, torch.zeros(n, T, npad, device=th.device)], -1)
         pred = Nt[:, :, None, None] * A[..., 0]
         geo = [A[..., 1:4], torch.zeros(*A.shape[:-1], nk, device=th.device)]
         if fit_phi:
@@ -186,9 +201,10 @@ class FourPiSolve:
 
     def solve(self, o, Phi0, doff, m, psi, mode='on', iters=20, Lam=0.257, zstarts=(-0.5, 0.0, 0.5), prior_w=1.0,
               fit_phi=False, phistarts=None, crel=0.0, kin0=None):
-        """o: Y [n,6,4,K], Lb [n,6,4,K,K] (Cholesky blocks), dxy, z, ls; optional p0 [n,3], W, Wsum [n,4,K] + sb [n,4],
+        """o: Y [n,T,4,K], Lb [n,T,4,K,K] (Cholesky blocks), dxy, z, ls; optional p0 [n,3], W, Wsum [n,4,K] + sb [n,4],
         z0 / xy0 (start values; the prior stays o['z'] / o['dxy']). Returns dict(th, obj, chi2, sig)"""
-        dev = o['Y'].device; n = o['Y'].shape[0]
+        dev = o['Y'].device; n = o['Y'].shape[0]; T = self.T; z_lo, z_hi = self.zr
+        if mode == 'kin' and T < 2: raise ValueError("FourPiSolve: mode 'kin' needs T >= 2 frames")
         Y = o['Y']; Lb = o['Lb']
         self._ctx = dict(p0=o.get('p0'), Wsum=o.get('Wsum'), W=o.get('W'))
         nb = 4 if o.get('Wsum') is not None else 0
@@ -214,7 +230,7 @@ class FourPiSolve:
         starts = [(js, 0.0) for js in zstarts] if not fit_phi else \
             [(0.0, ph) for ph in (phistarts if phistarts is not None else (0.0, 2.1, 4.2))]
         for js, ph in starts:
-            z0 = (o.get('z0', o['z']) + js * Lam).clamp(-0.58, 0.58)
+            z0 = (o.get('z0', o['z']) + js * Lam).clamp(z_lo + 0.02, z_hi - 0.02)
             if mode == 'kin':
                 th = torch.cat([o.get('xy0', o['dxy']), z0[:, None], kin0], 1)
             elif mode == 'on':
@@ -234,10 +250,10 @@ class FourPiSolve:
                 Hd = H + lam[:, None, None] * (torch.diagonal(H, dim1=1, dim2=2)[:, :, None] * eye + 1e-6 * eye)
                 st = torch.linalg.solve(Hd, g[..., None])[..., 0]
                 tn = th + st
-                tn[:, 2] = tn[:, 2].clamp(-0.6, 0.6); tn[:, :2] = tn[:, :2].clamp(-3, 3)
+                tn[:, 2] = tn[:, 2].clamp(z_lo, z_hi); tn[:, :2] = tn[:, :2].clamp(-3, 3)
                 if mode == 'kin':
-                    tn[:, 3] = tn[:, 3].clamp(min=1.0); tn[:, 4] = tn[:, 4].clamp(-1.0, 5.9)
-                    tn[:, 5] = torch.maximum(tn[:, 5].clamp(0.1, 7.0), tn[:, 4] + 0.1)
+                    tn[:, 3] = tn[:, 3].clamp(min=1.0); tn[:, 4] = tn[:, 4].clamp(-1.0, T - 0.1)
+                    tn[:, 5] = torch.maximum(tn[:, 5].clamp(0.1, T + 1.0), tn[:, 4] + 0.1)
                 rn, Jn, _ = resid(tn); on = (rn ** 2).sum(1)
                 ok = on < obj
                 th = torch.where(ok[:, None], tn, th); r = torch.where(ok[:, None], rn, r)
@@ -258,26 +274,26 @@ class FourPiSolve:
 def kin_start(rf, m, psi, sv):
     """t_on / t_off / F starts from a 'free' solve: per-frame photons divided by the pattern factor at the solved
     position; frames above 40 % of the maximum are 'on'."""
-    th = rf['th']; x, y = th[:, 0], th[:, 1]
+    th = rf['th']; x, y = th[:, 0], th[:, 1]; T = sv.T
     Pt, _, _ = sv.pattern(x, y, m, psi)
-    q = (th[:, 3:9] / Pt.clamp(min=0.05)).clamp(min=0)
+    q = (th[:, 3:3 + T] / Pt.clamp(min=0.05)).clamp(min=0)
     F = q.max(1).values.clamp(min=1.0)
     on = q > 0.4 * F[:, None]
-    t = torch.arange(6, device=th.device, dtype=th.dtype)[None].expand_as(q)
+    t = torch.arange(T, device=th.device, dtype=th.dtype)[None].expand_as(q)
     ton = torch.where(on, t, torch.full_like(t, 9)).min(1).values
     toff = torch.where(on, t + 1, torch.full_like(t, -9)).max(1).values
     ton = torch.where(ton <= 0, torch.full_like(ton, -0.5), ton)
-    toff = torch.where(toff >= 6, torch.full_like(toff, 6.5), toff)
+    toff = torch.where(toff >= T, torch.full_like(toff, T + 0.5), toff)
     Fm = (q * on).sum(1) / on.sum(1).clamp(min=1)
     return torch.stack([Fm.clamp(min=1.0), ton, toff], 1)
 
 
 def kin_starts(rf, m, psi, sv):
     """two kinetics starts: the thresholded one (kin_start) and on-through (t_on -0.5, t_off 6.5)"""
-    k1 = kin_start(rf, m, psi, sv)
-    k2 = k1.clone(); k2[:, 1] = -0.5; k2[:, 2] = 6.5
+    k1 = kin_start(rf, m, psi, sv); T = sv.T
+    k2 = k1.clone(); k2[:, 1] = -0.5; k2[:, 2] = T + 0.5
     Pt, _, _ = sv.pattern(rf['th'][:, 0], rf['th'][:, 1], m, psi)
-    k2[:, 0] = (rf['th'][:, 3:9].sum(1) / Pt.sum(1).clamp(min=0.1)).clamp(min=1.0)
+    k2[:, 0] = (rf['th'][:, 3:3 + T].sum(1) / Pt.sum(1).clamp(min=0.1)).clamp(min=1.0)
     return k1, k2
 
 
