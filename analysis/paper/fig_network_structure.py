@@ -1,8 +1,11 @@
 """
-SI figure of the two network architectures (si_network_structure_v3): (a) the detector (pass 1 and pass 2), (b) the emitter
-network EmitterNet (pass 1 and pass 2). Layer sizes are those of the code (simcode/detector/model.py, simcode/emitter/model.py,
-simcode/layers/blocks.py); the widths and parameter counts are read from the shipped m1809 checkpoints (CPU only) and
-checked against the numbers drawn in the figure.
+SI figure of the two network architectures (si_network_structure_v3): (a) the detection network, (b) the emitter network
+(per detected emitter); pass 1 and pass 2 share each architecture, the pass-2 additions are drawn in orange. Layer sizes
+are those of the code (simcode/detector/model.py, simcode/emitter/model.py, simcode/layers/blocks.py); the widths and
+parameter counts are read from the shipped m1809 checkpoints (CPU only) and checked against the numbers drawn in the
+figure. Colours: grey = input, blue = learned layers, white (outlined) = fixed computation, green = output, orange = pass 2
+only. After drawing, layout_problems() checks every text for font size >= 5.5 pt, text-text overlaps and text crossing a
+box edge (the script fails if it finds one).
 
     python analysis/paper/fig_network_structure.py [--out /home/jc/simcode2/out/paper_figs_v2] [--models /home/jc/simcode2/models]
 
@@ -13,16 +16,20 @@ import numpy as np
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Rectangle
+from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Rectangle, Circle
 
 mpl.rcParams.update({'font.family': 'DejaVu Sans', 'mathtext.fontset': 'dejavusans', 'svg.fonttype': 'none',
-                     'pdf.fonttype': 42, 'ps.fonttype': 42, 'font.size': 6.2})
+                     'pdf.fonttype': 42, 'ps.fonttype': 42, 'font.size': 6.0})
 
-W, H = 180.0, 158.0
+W, H = 180.0, 128.0
 MM = 1 / 25.4
-FS, FT, FL = 6.0, 6.8, 10
-C = dict(inp='#f0f0f0', inpe='#666666', conv='#e6eef9', conve='#2f6db5', res='#c9dbf2', out='#e3f3e9', oute='#2b8a50',
-         p2='#fcefe1', p2e='#d0701a', k='#222222')
+FS, FSS, FT, FL, FM = 6.0, 5.8, 7.0, 9.0, 8.0        # rows, dense rows, panel titles, panel letters, output symbols
+MIN_PT = 5.5
+# colour scheme (stated in the caption): grey = input, one blue = learned layers, white / outlined = fixed computation,
+# green = output, orange = pass 2 only
+C = dict(inp='#eeeeee', inpe='#6b6b6b', net='#d6e4f5', nete='#2f6db5', fix='#ffffff', fixe='#333333', out='#e3f3e9',
+         oute='#2b8a50', p2='#fcefe1', p2e='#d0701a', skip='#777777', k='#222222')
+P2LS = (0, (3, 1.5))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -66,36 +73,55 @@ def check(F):
 
 
 # ------------------------------------------------------------------------------------------------ drawing
+def lh(size):
+    """line spacing (mm) of a text row of the given size (pt)"""
+    return size * 0.3528 * 1.36
+
+
 class Canvas:
     def __init__(self):
         self.fig = plt.figure(figsize=(W * MM, H * MM))
         self.ax = self.fig.add_axes([0, 0, 1, 1])
         self.ax.set_xlim(0, W); self.ax.set_ylim(H, 0); self.ax.axis('off')
+        self.boxes = []                       # (patch, name) of the drawn boxes, for layout_problems()
 
-    def box(self, x, y, w, h, fc='white', ec='k', lw=0.6, r=1.0, ls='-', z=1):
-        self.ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle=f'round,pad=0,rounding_size={r}', fc=fc, ec=ec, lw=lw,
-                                         ls=ls, zorder=z))
+    def box(self, x, y, w, h, fc='white', ec='k', lw=0.6, r=1.0, ls='-', z=1, name=''):
+        p = FancyBboxPatch((x, y), w, h, boxstyle=f'round,pad=0,rounding_size={r}', fc=fc, ec=ec, lw=lw, ls=ls, zorder=z)
+        self.ax.add_patch(p); self.boxes.append((p, name))
 
     def text(self, x, y, s, size=FS, ha='left', va='top', color='k', weight='normal', z=5, **kw):
         return self.ax.text(x, y, s, fontsize=size, ha=ha, va=va, color=color, weight=weight, zorder=z, **kw)
 
     def lines(self, x, y, rows, size=FS, dy=None, **kw):
-        dy = dy or size * 0.3528 * 1.36
+        dy = dy or lh(size)
         for i, s in enumerate(rows):
             self.text(x, y + i * dy, s, size=size, **kw)
         return y + len(rows) * dy
 
-    def layer(self, x, y, w, h, title, rows=(), fc=None, ec=None, size=FS, ls='-', tcol=None):
-        self.box(x, y, w, h, fc=fc or C['conv'], ec=ec or C['conve'], ls=ls)
-        self.text(x + w / 2, y + 1.0, title, size=size + 0.3, ha='center', weight='bold', color=tcol or 'k')
-        self.lines(x + w / 2, y + 1.0 + (size + 0.3) * 0.3528 * 1.45, list(rows), size=size, ha='center')
+    def layer(self, x, y, w, h, title, rows=(), kind='net', size=FSS, ls='-', name=''):
+        """a box with a bold title and centred rows; kind = inp / net / fix / out / p2 (colour scheme)"""
+        self.box(x, y, w, h, fc=C[kind], ec=C[kind + 'e'], ls=ls, name=name or title)
+        self.text(x + w / 2, y + 0.9, title, size=size + 0.3, ha='center', weight='bold')
+        self.lines(x + w / 2, y + 0.9 + lh(size + 0.3) * 1.06, list(rows), size=size, ha='center')
 
-    def arrow(self, x0, y0, x1, y1, color='k', lw=0.8, ls='-', ms=6, cs='arc3'):
+    def arrow(self, x0, y0, x1, y1, color='k', lw=0.7, ls='-', ms=5.5, cs='arc3'):
         self.ax.add_patch(FancyArrowPatch((x0, y0), (x1, y1), arrowstyle='-|>', mutation_scale=ms, color=color, lw=lw,
                                           ls=ls, zorder=4, shrinkA=0, shrinkB=0, connectionstyle=cs))
 
-    def seg(self, xs, ys, color='k', lw=0.8, ls='-'):
+    def seg(self, xs, ys, color='k', lw=0.7, ls='-'):
         self.ax.plot(xs, ys, color=color, lw=lw, ls=ls, zorder=4, solid_capstyle='butt')
+
+    def path(self, pts, color='k', lw=0.7, ls='-'):
+        """polyline through pts with an arrow head on the last segment"""
+        xs, ys = zip(*pts)
+        if len(pts) > 2: self.seg(xs[:-1], ys[:-1], color=color, lw=lw, ls=ls)
+        self.arrow(xs[-2], ys[-2], xs[-1], ys[-1], color=color, lw=lw, ls=ls)
+
+    def plus(self, x, y, r=1.15, ec='k'):
+        """additive node (circle with +), centred at (x, y)"""
+        self.ax.add_patch(Circle((x, y), r, fc='white', ec=ec, lw=0.6, zorder=6))
+        self.ax.plot([x - 0.62 * r, x + 0.62 * r], [y, y], color=ec, lw=0.6, zorder=7, solid_capstyle='butt')
+        self.ax.plot([x, x], [y - 0.62 * r, y + 0.62 * r], color=ec, lw=0.6, zorder=7, solid_capstyle='butt')
 
     def img(self, a, x, y, w, h, cmap='gray', vmin=None, vmax=None, z=3):
         self.ax.imshow(a, extent=(x, x + w, y + h, y), cmap=cmap, vmin=vmin, vmax=vmax, zorder=z, interpolation='nearest',
@@ -109,171 +135,211 @@ def spot(n=11, A=1.0, seed=0):
     return g + 0.05 * np.random.default_rng(seed).standard_normal((n, n))
 
 
-def panel_a(cv, N):
-    y0 = 2.0
-    cv.text(1, y0 - 0.5, 'a', size=FL, weight='bold')
-    cv.text(6, y0, 'Detector (pass 1 and pass 2: one network class)', size=FT + 0.6, weight='bold')
-    # input
+def panel_a(cv):
+    cv.text(1, 4.6, 'a', size=FL, weight='bold', va='baseline')
+    cv.text(6, 4.6, 'Detection network', size=FT, weight='bold', va='baseline')
+    # input window: frame stack, label under it; window mean above the stem
     for t in range(4):
-        cv.img(spot(A=0.6 + 0.4 * np.cos(t), seed=t), 3 + t * 1.6, 11 + t * 1.6, 9, 9, vmin=0, vmax=1.2, z=3 + 0.1 * t)
-    cv.lines(2, 36.6, ['window 6 × H × W (photons),', 'log-scaled'], size=FS - 0.4)
-    # stem + mean
-    cv.layer(20, 9, 25, 17, 'per-frame stem', ['weights shared over', 'the 6 frames:', 'conv3×3 1→16, GELU',
-                                                'conv3×3 16→16, GELU'], size=FS - 0.4)
-    cv.layer(20, 28, 25, 7.5, 'window mean', ['normalised, 1 ch'], fc=C['inp'], ec=C['inpe'])
-    cv.arrow(16.8, 15.5, 20, 15.5); cv.seg([10, 10], [24.8, 31.5]); cv.arrow(10, 31.5, 20, 31.5)
-    # cin
-    cv.layer(48.5, 9, 16, 26.5, 'input conv', ['concat', '6×16 + 1', '= 97 ch', 'conv3×3', '97→48', 'GELU'])
-    cv.arrow(45, 17.5, 48.5, 17.5); cv.arrow(45, 31.5, 48.5, 31.5)
-    # pass-2 additions
-    cv.box(2, 43, 62.5, 13.5, fc=C['p2'], ec=C['p2e'], ls=(0, (3, 1.5)))
-    cv.text(3.2, 43.8, 'pass 2 only (illumination of the estimated pattern)', size=FS, weight='bold', color=C['p2e'])
-    cv.lines(3.2, 46.8, ['maps per frame: cos part (6) + sin part (6) = 12 × H × W',
-                         'stem input (frame, cos, sin): first conv 3→16 instead of 1→16',
-                         '+ conv3×3 12→48 (no bias) added before the input GELU',
-                         'new weights zero-initialised = the pass-1 detector at start'], size=FS - 0.5, dy=2.35)
-    cv.arrow(56.5, 43, 56.5, 35.6, color=C['p2e'], ls='--')
-    # U-Net levels
-    L0, L1, L2, lh = 9.0, 22.5, 36.0, 11.0
-    sz = FS - 0.5
-    cv.layer(67.5, L0, 19.5, lh, 'level 0', ['2 × ResBlock 48', 'H × W'], fc=C['res'], size=sz)
-    cv.layer(89, L1, 19.5, lh, 'level 1', ['2 × ResBlock 96', 'H/2 × W/2'], fc=C['res'], size=sz)
-    cv.layer(110.5, L2, 19.5, lh, 'level 2', ['2 × ResBlock 160', 'dilation 1, 2; H/4'], fc=C['res'], size=sz)
-    cv.layer(132, L1, 19.5, lh, 'up 1', ['1×1 160→96, ×2', '+ skip, ResBlock'], fc=C['res'], size=sz)
-    cv.layer(153, L0, 18, lh, 'up 0', ['1×1 96→48, ×2', '+ skip, ResBlock'], fc=C['res'], size=sz)
-    cv.arrow(64.5, 14.5, 67.5, 14.5)
-    cv.arrow(84, 20, 89, 25); cv.text(79.0, 21.2, 'conv3×3 /2\n48→96', size=FS - 1.0, ha='center', va='top')
-    cv.arrow(105.5, 33.5, 110.5, 38.5); cv.text(100.5, 34.7, 'conv3×3 /2\n96→160', size=FS - 1.0, ha='center', va='top')
-    cv.arrow(130, 38.5, 135, 33.5); cv.arrow(151.5, 25, 156, 20)
-    cv.arrow(87, 11.0, 153, 11.0, color='#777777', ls='--', lw=0.6)
-    cv.text(120, 10.5, 'skip (added)', size=FS - 1.0, ha='center', va='bottom', color='#555555')
-    cv.arrow(108.5, 24.5, 132, 24.5, color='#777777', ls='--', lw=0.6)
-    # head + outputs
-    cv.layer(172.3, L0, 7.5, lh + 13.5, 'head', ['conv', '3×3', '48→48', 'GELU', 'conv', '1×1', '48→4'], fc=C['out'],
-             ec=C['oute'], size=FS - 1.0)
-    cv.arrow(171, 14.5, 172.3, 14.5)
-    cv.box(132.5, 36.5, 47, 19.5, fc=C['out'], ec=C['oute'])
-    cv.text(133.5, 37.4, 'per pixel (native 108 nm grid):', size=FS, weight='bold')
-    cv.lines(133.5, 40.6, [r'detection probability $p$ (sigmoid of a logit);',
-                           'sub-pixel offset (≤ 1.5 px) and its uncertainty',
-                           'candidates: greedy NMS on the sub-pixel points',
-                           '(radius 0.7 px), top-k = 640 per 64 × 64 px,',
-                           r'stored if $p\geq 0.3$ (neighbour splat: $p\geq 0.2$)'], size=FS - 0.6)
-    cv.arrow(176.05, 33.5, 176.05, 36.5, color=C['oute'])
-    # legend + counts
-    cv.lines(68, 50.0, [r'ResBlock(channels, dilation $d$): $h + \mathrm{conv}_{3\times3}(\mathrm{GELU}(\mathrm{GN}_8(\mathrm{conv}_{3\times3,\,d}(\mathrm{GELU}(h)))))$',
-                        f'parameters: pass 1 {N["det"]:,}; pass 2 {N["p2det"]:,} (+{N["p2det"] - N["det"]:,})'],
-             size=FS - 0.3)
+        cv.img(spot(A=0.6 + 0.4 * np.cos(t), seed=t), 3 + t * 1.6, 14 + t * 1.6, 9, 9, vmin=0, vmax=1.2, z=3 + 0.1 * t)
+    cv.lines(1.5, 30.6, ['6-frame window (H × W),', 'photons, log-scaled'], size=FSS)
+    cv.layer(20.5, 7.0, 25.5, 7.6, 'window mean', ['log-scaled, 1 channel'], kind='inp')
+    cv.seg([7.5, 7.5], [14, 10.8]); cv.arrow(7.5, 10.8, 20.5, 10.8)
+    cv.layer(20.5, 17.0, 25.5, 13.0, 'per-frame stem', ['shared over the frames', 'conv3×3 1→16, GELU', 'conv3×3 16→16, GELU'])
+    cv.arrow(16.8, 23.5, 20.5, 23.5)
+    # input conv
+    cv.layer(49, 7.0, 12.5, 23.0, 'input', ['conv3×3', '97→48', 'GELU'])
+    cv.arrow(46, 10.8, 49, 10.8); cv.arrow(46, 23.5, 49, 23.5)
+    # pass-2 additions: to the stem and to the input conv
+    cv.box(2, 38.8, 60, 18.7, fc=C['p2'], ec=C['p2e'], ls=P2LS, name='pass 2 (a)')
+    cv.text(3.2, 39.7, 'pass 2 only', size=FS + 0.2, weight='bold', color=C['p2e'])
+    cv.lines(3.2, 43.0, ['per frame: expected relative illumination − 1',
+                         'and its 90°-shifted part (12 maps of H × W)',
+                         '→ per-frame stem: first conv 3→16 on',
+                         '    (frame, its 2 maps)',
+                         '→ input conv: + conv3×3 12→48'], size=FSS)
+    cv.arrow(33, 38.8, 33, 30.0, color=C['p2e'], ls='--')
+    cv.arrow(55, 38.8, 55, 30.0, color=C['p2e'], ls='--')
+    # U-Net
+    L0, L1, L2, hl, wl = 7.0, 21.0, 35.0, 12.6, 20.0
+    cv.layer(65, L0, wl, hl, 'level 0', ['2 × ResBlock 48', 'H × W'])
+    cv.layer(87, L1, wl, hl, 'level 1', ['2 × ResBlock 96', 'H/2 × W/2'])
+    cv.layer(109, L2, wl, hl, 'level 2', ['2 × ResBlock 160', 'dilation 1, 2', 'H/4 × W/4'])
+    cv.layer(131, L1, wl, hl, 'up 1', ['conv1×1 160→96', 'upsample ×2', 'ResBlock 96'])
+    cv.layer(153.5, L0, 25.5, hl, 'up 0', ['conv1×1 96→48', 'upsample ×2', 'ResBlock 48'])
+    cv.arrow(61.5, 12.0, 65, 12.0)
+    cv.arrow(82.5, L0 + hl, 87, L1 + 4.6)
+    cv.lines(76, L1 + 0.6, ['conv3×3 /2', '48→96'], size=FSS, ha='center')
+    cv.arrow(104.5, L1 + hl, 109, L2 + 4.6)
+    cv.lines(98, L2 + 0.6, ['conv3×3 /2', '96→160'], size=FSS, ha='center')
+    cv.arrow(129, L2 + 3.0, 135, L1 + hl)
+    cv.arrow(149.5, L1, 153.5, L0 + hl - 3.5)
+    # additive skips: dashed into a + node on the edge of the up block
+    for (xa, xb, yy) in ((85, 153.5, L0 + 2.6), (107, 131, L1 + 2.6)):
+        cv.arrow(xa, yy, xb - 1.15, yy, color=C['skip'], ls='--', lw=0.6)
+        cv.plus(xb, yy, ec=C['skip'])
+    # head (learned), per-pixel outputs, candidate selection (fixed computation)
+    cv.layer(153.5, 24.0, 25.5, 10.2, 'head', ['conv3×3 48→48, GELU', 'conv1×1 48→4'])
+    cv.arrow(166.25, L0 + hl, 166.25, 24.0)
+    cv.box(138, 37.4, 41, 12.6, fc=C['out'], ec=C['oute'], name='per-pixel outputs')
+    cv.text(139.2, 38.3, 'per pixel (native grid)', size=FS + 0.2, weight='bold')
+    cv.lines(139.2, 41.6, [r'detection probability $p$', 'sub-pixel offset (≤ 1.5 px)', '± its uncertainty'], size=FS)
+    cv.arrow(166.25, 34.2, 166.25, 37.4, color=C['oute'])
+    cv.layer(138, 52.0, 25.5, 7.4, 'candidate selection', ['NMS, r = 0.7 px'], kind='fix')
+    cv.arrow(150.75, 50.0, 150.75, 52.0)
+    cv.arrow(163.5, 55.7, 170, 55.7)
+    cv.text(171, 55.7, 'to', size=FS, va='center')
+    cv.text(174.2, 55.7, 'b', size=FS + 1.5, va='center', weight='bold')
+    # colour legend (meaning stated in the caption too)
+    items = [('inp', '-', 'input'), ('net', '-', 'learned layers'), ('fix', '-', 'fixed computation'),
+             ('out', '-', 'output'), ('p2', P2LS, 'pass 2 only')]
+    for i, (k, ls, s) in enumerate(items):
+        x, y = (66 if i < 3 else 92), 46.5 + (i % 3) * 3.6
+        cv.ax.add_patch(Rectangle((x, y), 3.4, 2.3, fc=C[k], ec=C[k + 'e'], lw=0.6, ls=ls, zorder=3))
+        cv.text(x + 4.4, y + 1.15, s, size=FSS, va='center')
 
 
-def panel_b(cv, N):
-    y0 = 62.0
-    cv.seg([1, W - 1], [y0 - 2.5, y0 - 2.5], color='#bbbbbb', lw=0.5)
-    cv.text(1, y0 - 0.5, 'b', size=FL, weight='bold')
-    cv.text(6, y0, 'EmitterNet (pass 1 and pass 2: one network class), per candidate', size=FT + 0.6, weight='bold')
-    # inputs
-    yi = y0 + 7
-    cv.box(2, yi, 44, 41, fc=C['inp'], ec=C['inpe'])
-    cv.text(3.2, yi + 1.0, 'input: 21 × 21 patch per candidate', size=FS, weight='bold')
-    rows = [('6', 'frames, log-scaled photons'),
-            ('1', 'window mean, same normalisation'),
-            ('6', 'frames, linear (photons − border bg)'),
+def panel_b(cv):
+    b0 = 61.0
+    cv.seg([1, W - 1], [b0 - 1.2, b0 - 1.2], color='#bbbbbb', lw=0.5)
+    cv.text(1, b0 + 4.2, 'b', size=FL, weight='bold', va='baseline')
+    cv.text(6, b0 + 4.2, 'Emitter network (per detected emitter)', size=FT, weight='bold', va='baseline')
+    # input patch (from a)
+    yi = b0 + 6.5
+    cv.box(2, yi, 36, 38.0, fc=C['inp'], ec=C['inpe'], name='input patch')
+    cv.text(3.2, yi + 0.9, 'from a: 21 × 21 patch', size=FS + 0.2, weight='bold')
+    rows = [('6', 'frames, log-scaled'),
+            ('1', 'window mean, log-scaled'),
+            ('6', 'frames, linear (minus the'),
+            ('', 'window background level)'),
             ('1', 'window mean, linear'),
-            ('2', 'coordinate maps (x, y relative to the'),
-            ('', 'detector point, / 10 px)'),
-            ('1', 'neighbour splat: other candidates'),
-            ('', r'($p\geq0.2$), Gaussian stamps of'),
-            ('', 'height $p$, own stamp removed'),
-            ('1', 'detector-probability map'),
+            ('2', 'coordinate maps (relative to'),
+            ('', 'the sub-pixel position)'),
+            ('1', 'neighbour splat (the other'),
+            ('', 'detected emitters)'),
+            ('1', 'detection-probability map'),
             ('18', 'channels')]
     for i, (n, s) in enumerate(rows):
-        yy = yi + 4.6 + i * 3.1
-        cv.text(6.0, yy, n, size=FS - 0.3, ha='right', weight='bold' if n == '18' else 'normal')
-        cv.text(7.2, yy, s, size=FS - 0.3, weight='bold' if n == '18' else 'normal')
-    # pass-2 inputs
-    cv.box(2, yi + 43.5, 44, 12, fc=C['p2'], ec=C['p2e'], ls=(0, (3, 1.5)))
-    cv.text(3.2, yi + 44.4, 'pass 2 only', size=FS, weight='bold', color=C['p2e'])
-    cv.lines(3.2, yi + 47.5, ['+ 12 illumination patches (cos, sin)',
-                              '→ conv3×3 12→96 (no bias), added to the',
-                              'input conv; zero-init. (= pass 1 at start)'], size=FS - 0.5)
-    # trunk
-    cv.layer(49, yi, 12, 41, 'input', ['conv3×3', '18→96', 'GELU'])
-    cv.arrow(46, yi + 20, 49, yi + 20)
-    cv.seg([46, 55], [yi + 49.5, yi + 49.5], color=C['p2e'], ls='--')
-    cv.arrow(55, yi + 49.5, 55, yi + 41.2, color=C['p2e'], ls='--')
-    cv.layer(64, yi, 19, 41, 'trunk', ['4 × ResBlock', '96 channels', 'dilation', '1, 2, 1, 2', 'on 21 × 21', '', 'bf16'],
-             fc=C['res'])
-    cv.arrow(61, yi + 20, 64, yi + 20)
-    # branches
-    bx, bw = 87, 36
-    cv.layer(bx, yi, bw, 11, 'weight modulation', ['conv3×3 96→32, GELU', '1×1 32→1'])
-    cv.layer(bx, yi + 12.5, bw, 11, 'per-frame weight changes', ['conv3×3 96→32, GELU', '1×1 32→6'])
-    cv.layer(bx, yi + 25, bw, 16, 'global', ['conv3×3 /2 96→96, GELU', 'conv3×3 /2 96→96, GELU', 'avg-pool 4 × 4 → 1536'])
-    for yy in (yi + 5.5, yi + 18, yi + 33):
-        cv.arrow(83, yy, bx, yy)
-    # scalars
-    cv.box(bx, yi + 43.5, bw, 12, fc=C['inp'], ec=C['inpe'])
-    cv.lines(bx + 1.2, yi + 44.4, ['14 scalars: border-median back-', 'ground per frame (6), detector', 'offset (2), zeros (6)'],
-             size=FS - 0.4)
-    # MLP + out
-    mx = 127
-    cv.layer(mx, yi + 25, 22, 30.5, 'MLP', ['concat 1550', 'linear 1550→256', 'GELU', 'linear 256→256', 'GELU',
-                                            'linear 256→41', '(fp32)'], fc=C['res'])
-    cv.arrow(bx + bw, yi + 33, mx, yi + 33)
-    cv.arrow(bx + bw, yi + 49.5, mx, yi + 49.5)
-    # read-out
-    rx = 127
-    cv.box(rx, yi, 52, 22.5, fc=C['out'], ec=C['oute'])
-    cv.text(rx + 1.2, yi + 0.9, 'linear read-out (fp32)', size=FS + 0.3, weight='bold')
-    cv.lines(rx + 1.2, yi + 4.2, [
-        'weights: PSF template at the detector offset',
-        '(in-situ PSF) × weight modulation, scaled to',
-        'unit response to the template; + per-frame',
-        'changes (no response to the template).',
-        'Linear intensity per frame = weighted sum of',
-        'the patch pixels (photons − background)'], size=FS - 0.3)
-    cv.arrow(bx + bw, yi + 5.5, rx, yi + 5.5); cv.arrow(bx + bw, yi + 18, rx, yi + 18)
-    # out split bar
-    ox, oy, ow = 152, yi + 25, 27
-    segs = [('intensity corrections', 6, '#4c78a8'), ('intensity uncertainties', 6, '#72a0cf'),
-            ('intensity correlations', 15, '#a9c6e8'), (r'$x, y$ offset', 2, '#e45756'),
-            (r'$\sigma_x, \sigma_y$', 2, '#f19e9c'), ('backgrounds', 6, '#59a14f'), (r'$z$, $\sigma_z$, $z$ slopes', 4, '#b07aa1')]
-    cv.text(ox, oy, '41 outputs', size=FS, weight='bold')
-    x = ox; u = ow / 41
-    for i, (nm, n, col) in enumerate(segs):
-        cv.ax.add_patch(Rectangle((x, oy + 3.4), n * u, 2.6, fc=col, ec='white', lw=0.3, zorder=3))
-        cv.ax.add_patch(Rectangle((ox, oy + 7.6 + i * 3.0), 2.0, 2.0, fc=col, ec='none', zorder=3))
-        cv.text(ox + 2.8, oy + 7.4 + i * 3.0, f'{n}  {nm}', size=FS - 0.6)
-        x += n * u
-    cv.arrow(mx + 22, yi + 46, ox - 0.2, yi + 46)
-    # outputs
-    yo = yi + 59
-    cv.box(2, yo, 177, 27.5, fc='white', ec=C['oute'], lw=0.8)
-    cv.text(3.2, yo + 0.9, 'outputs (the fit uses the intensities, their uncertainties and the position; z of pass-2 rows comes from pass 1)',
-            size=FS + 0.3, weight='bold')
-    cv.lines(3.2, yo + 6.4, [
-        r'backgrounds $\hat{\mu}_{b_{i,j}}$: border median per frame + learned correction',
-        r'intensities $\hat{\mu}_{N_{i,j}}$: linear read-out + learned correction',
-        r'uncertainties $\hat{\sigma}_{N_{i,j}}$ (with their correlations, as a Cholesky',
-        'factor; scaled with the signal and background)'], size=FS - 0.2, dy=3.6, va='baseline')
-    cv.lines(98, yo + 6.4, [
-        r'position $\hat{\theta}_{dl}$: $x, y$ = detector point + ≤ 0.5 px,',
-        r'uncertainties $\sigma_x, \sigma_y$ (uncorrelated);',
-        r'$z$ (relative to the PSF focal plane) with its',
-        r'uncertainty $\sigma_z$ and its slopes in $x$ and $y$ (used',
-        r'to correct $z$ for the solved $x, y$)'], size=FS - 0.2, dy=3.2, va='baseline')
-    cv.text(3.2, yo + 22.6, f'parameters: pass 1 {N["hd"]:,}; pass 2 {N["p2hd"]:,} (+{N["p2hd"] - N["hd"]:,}).  '
-                             'bf16 autocast for the CNN trunk, branches and MLP; fp32 for the output layers, read-out and Cholesky.',
-            size=FS - 0.4)
-    cv.arrow(164.5, yi + 55.5, 164.5, yo, color=C['oute'])
-    cv.arrow(152.5, yi + 22.5, 152.5, yi + 25, color=C['oute'])
+        yy = yi + 4.4 + i * 3.0
+        cv.text(6.4, yy, n, size=FSS, ha='right', weight='bold' if n == '18' else 'normal')
+        cv.text(7.4, yy, s, size=FSS, weight='bold' if n == '18' else 'normal')
+    # pass-2 input
+    yp = yi + 40.4
+    cv.box(2, yp, 36, 18.8, fc=C['p2'], ec=C['p2e'], ls=P2LS, name='pass 2 (b)')
+    cv.text(3.2, yp + 0.9, 'pass 2 only', size=FS + 0.2, weight='bold', color=C['p2e'])
+    cv.lines(3.2, yp + 4.2, ['12 illumination patches: per', 'frame, expected relative',
+                             'illumination − 1 and its', '90°-shifted part', '→ input conv: + conv3×3 12→96'], size=FSS)
+    # input conv, trunk
+    yc = yi + 19.0                                  # centre line of the input box
+    cv.layer(40.5, yc - 6.5, 10.5, 13.0, 'input', ['conv3×3', '18→96', 'GELU'])
+    cv.arrow(38, yc, 40.5, yc)
+    cv.path([(38, yp + 9.4), (45.75, yp + 9.4), (45.75, yc + 6.5)], color=C['p2e'], ls='--')
+    cv.layer(53.5, yc - 8.0, 14.0, 16.0, 'trunk', ['ResBlock 96', '× 4', 'dilation', '1, 2, 1, 2'])
+    cv.arrow(51, yc, 53.5, yc)
+    # branches (fan out from the trunk)
+    bx, bw = 70.5, 28.5
+    yw, yf, yg, ys = yi, yi + 12.0, yi + 24.0, yi + 40.0
+    cv.layer(bx, yw, bw, 10.0, 'weight modulation', ['conv3×3 96→32, GELU', 'conv1×1 32→1'])
+    cv.layer(bx, yf, bw, 10.0, 'per-frame changes', ['conv3×3 96→32, GELU', 'conv1×1 32→6'])
+    cv.layer(bx, yg, bw, 13.0, 'global', ['conv3×3 /2 96→96, GELU', 'conv3×3 /2 96→96, GELU', 'avg-pool 4 × 4'])
+    cv.seg([67.5, 68.25], [yc, yc]); cv.seg([68.25, 68.25], [yw + 5, yg + 6.5])
+    for yy in (yw + 5, yf + 5, yg + 6.5):
+        cv.arrow(68.25, yy, bx, yy)
+    cv.layer(bx, ys, bw, 9.6, '8 scalars', ['border-median background', 'per frame, sub-pixel offset'], kind='inp')
+    # inputs of the read-out: patch photons and the PSF (grey), read-out (fixed computation)
+    rx, rw, ry = 101.5, 56, yi + 4.5
+    cv.layer(rx, b0 + 0.6, 18.8, 7.4, 'patch photons', ['6 frames'], kind='inp')
+    cv.layer(rx + 20, b0 + 0.6, rw - 20, 7.4, 'in-situ PSF', ['at the detected sub-pixel position'], kind='inp')
+    cv.arrow(rx + 9.4, b0 + 8.0, rx + 9.4, ry); cv.arrow(rx + 20 + (rw - 20) / 2, b0 + 8.0, rx + 20 + (rw - 20) / 2, ry)
+    cv.layer(rx, ry, rw, 10.0, 'linear read-out', ['weights: PSF × modulation + per-frame changes',
+                                                   'per frame: Σ weights × (photons − background)'], kind='fix')
+    cv.arrow(bx + bw, yw + 7.0, rx, yw + 7.0); cv.arrow(bx + bw, yf + 2.5, rx, yf + 2.5)
+    # MLP and its 41 outputs
+    mw = 20
+    cv.layer(rx, yg, mw, 13.0, 'MLP', ['1550→256, GELU', '256→256, GELU', '256→41'])
+    cv.arrow(bx + bw, yg + 6.5, rx, yg + 6.5)
+    cv.path([(bx + bw, ys + 4.8), (rx + 10, ys + 4.8), (rx + 10, yg + 13.0)])
+    lx, ly = rx + mw + 3.5, yg - 3.4
+    cv.arrow(rx + mw, yg + 6.5, lx - 0.6, yg + 6.5)
+    cv.text(lx, ly, '41 outputs', size=FS + 0.2, weight='bold')
+    # (count, lines, gap before the row in mm): the gaps keep the output tags apart
+    out = [('6', ['intensity corrections'], 0), ('6 + 15', ['Cholesky factor', '(diagonal, off-diagonal)'], 0.35),
+           ('2', ['position offset'], 2.2), ('2', ['position uncertainties'], 0.35),
+           ('4', [r'$z$ and its uncertainty', r'given $x, y$; 2 $z$ slopes'], 0.35), ('6', ['background corrections'], 4.0)]
+    yy, ymid = ly + 3.3, []
+    for n, ss, gap in out:
+        yy += gap
+        cv.text(lx + 6.2, yy, n, size=FSS, ha='right')
+        cv.lines(lx + 7.0, yy, ss, size=FSS)
+        ymid.append((yy, yy + len(ss) * lh(FSS)))
+        yy += len(ss) * lh(FSS)
+    # combination nodes and output tags at the right edge
+    xe, xn, tx, tw, th = lx + 33.0, 161.4, 164.4, 14.6, 9.6
+    def tag(yc_, sym, word):
+        cv.box(tx, yc_ - th / 2, tw, th, fc=C['out'], ec=C['oute'], name='tag ' + word)
+        cv.text(tx + tw / 2, yc_ - 0.7, sym, size=FM, ha='center', va='baseline')
+        cv.text(tx + tw / 2, yc_ + 1.1, word, size=FSS, ha='center', va='top')
+    mid = [(a + b) / 2 - 0.35 for a, b in ymid]
+    # intensities = read-out + correction
+    yI = ry + 5.0
+    cv.plus(xn, yI); cv.arrow(rx + rw, yI, xn - 1.15, yI)
+    cv.seg([xe, xn], [mid[0], mid[0]]); cv.arrow(xn, mid[0], xn, yI + 1.15)
+    cv.arrow(xn + 1.15, yI, tx, yI); tag(yI, r'$\hat{\mu}_{N_{i,j}}$', 'intensities')
+    # uncertainties of the intensities
+    cv.arrow(xe, mid[1], tx, mid[1]); tag(mid[1], r'$\hat{\sigma}_{N_{i,j}}$', 'uncertainties')
+    # position: offset, uncertainties, z (bracket)
+    y2, y3 = ymid[2][0] + 0.2, ymid[4][1] - 0.6
+    cv.seg([xe - 1.0, xe, xe, xe - 1.0], [y2, y2, y3, y3])
+    yP = (y2 + y3) / 2
+    cv.arrow(xe, yP, tx, yP); tag(yP, r'$\hat{\theta}_{dl}\pm\sigma_{dl}$', 'position')
+    # backgrounds = border median + correction
+    yB = mid[5]
+    cv.plus(xn, yB); cv.arrow(xe, yB, xn - 1.15, yB)
+    yl = yB + th / 2 + 2.2
+    cv.seg([bx + bw / 2, bx + bw / 2, xn], [ys + 9.6, yl, yl]); cv.arrow(xn, yl, xn, yB + 1.15)
+    cv.text(rx + 10, yl - 0.4, 'border-median background', size=FSS, ha='center', va='bottom')
+    cv.arrow(xn + 1.15, yB, tx, yB); tag(yB, r'$\hat{\mu}_{b_{i,j}}$', 'backgrounds')
+    return max(yl, yp + 18.8)
 
 
-def build(out, models):
+def layout_problems(cv, tol_mm=0.45):
+    """font sizes < MIN_PT, overlapping texts, texts that cross a box edge (not fully inside or outside of it)"""
+    r = cv.fig.canvas.get_renderer()
+    px = cv.fig.dpi * MM
+    T = [(t, t.get_window_extent(r)) for t in cv.ax.texts if t.get_text().strip()]
+    B = [(n, p.get_window_extent(r)) for p, n in cv.boxes]
+    out = []
+    for t, _ in T:
+        if t.get_fontsize() < MIN_PT - 1e-6: out.append(f'font {t.get_fontsize()} pt: {t.get_text()!r}')
+    for i in range(len(T)):
+        for j in range(i + 1, len(T)):
+            a, b = T[i][1], T[j][1]
+            ox = min(a.x1, b.x1) - max(a.x0, b.x0); oy = min(a.y1, b.y1) - max(a.y0, b.y0)
+            if ox > 0.3 * px and oy > 0.3 * px:
+                out.append(f'texts overlap: {T[i][0].get_text()!r} / {T[j][0].get_text()!r}')
+    m = tol_mm * px
+    for t, a in T:
+        for n, b in B:
+            ox = min(a.x1, b.x1) - max(a.x0, b.x0); oy = min(a.y1, b.y1) - max(a.y0, b.y0)
+            if ox <= 0 or oy <= 0: continue
+            inside = a.x0 >= b.x0 + m and a.x1 <= b.x1 - m and a.y0 >= b.y0 + m and a.y1 <= b.y1 - m
+            if not inside: out.append(f'text crosses box {n!r}: {t.get_text()!r}')
+    for t, a in T:
+        if a.x0 < 0 or a.x1 > cv.fig.bbox.x1 or a.y0 < 0 or a.y1 > cv.fig.bbox.y1:
+            out.append(f'text outside the figure: {t.get_text()!r}')
+    return out
+
+
+def build(out, models, draft=False):
     F = checkpoint_facts(models)
     N = check(F)
     cv = Canvas()
-    panel_a(cv, N); panel_b(cv, N)
+    panel_a(cv); yb = panel_b(cv)
+    print(f'panel b bottom at {yb:.1f} mm (figure height {H} mm)')
+    probs = layout_problems(cv)
+    if probs:
+        msg = 'layout problems:\n  ' + '\n  '.join(probs)
+        if not draft: raise SystemExit(msg)
+        print(msg)
     os.makedirs(out, exist_ok=True)
     base = f'{out}/si_network_structure_v3'
     for ext in ('pdf', 'svg'):
@@ -289,35 +355,68 @@ def build(out, models):
 CAPTION = r"""si_network_structure_v3: caption material (generated by analysis/paper/fig_network_structure.py)
 
 DRAFT CAPTION (symbols as in the preprint / main-text Methods; see out/paper_figs_v2/NOTATION.md)
-Figure S?. Network architectures. Pass 1 and pass 2 use the same two network classes. The pass-2 networks add input
-channels for the illumination maps of the estimated pattern (orange). These new weights are zero-initialised, so training
-starts exactly from the pass-1 network. (a) Detector: a fully convolutional U-Net with 3 levels (48, 96, 160 channels),
-residual blocks with GroupNorm, and bilinear upsampling with additive skips. It runs on a 6-frame window. A per-frame
-stem with weights shared over the frames is followed by an input convolution on the 6x16 stem channels and the window
-mean. Per pixel of the native grid it outputs the detection probability p, a sub-pixel offset and the offset's
-uncertainty. Candidates are selected by greedy non-maximum suppression on the sub-pixel points (radius 0.7 px) followed by
-top-k. The detector has {det:,} parameters in pass 1 and {p2det:,} in pass 2. (b) EmitterNet runs per candidate on a 21x21
-patch with 18 input channels: log-scaled and linear frames, their window means, coordinate maps, and two neighbour
-channels (a splat of the other detected candidates and the detector-probability map). A trunk of 4 residual blocks (96
-channels) feeds three branches: a modulation of the read-out weights, 6 per-frame weight changes, and a pooled global
-feature that goes through an MLP to 41 scalar outputs. The intensity of each frame is a learned linear read-out: a weighted
-sum of the background-subtracted patch pixels, with weights built around the PSF template at the detector offset (unit
-response to the template), plus a learned correction. The network outputs, per candidate, the 6 intensities
-mu_N_ij (angle i, phase step j) with their uncertainties sigma_N_ij, the 6 backgrounds mu_b_ij, and the position
-theta_dl = (x, y, z) with uncertainties sigma_x, sigma_y, sigma_z. The uncertainties of the intensities are predicted
-together with their correlations (as a Cholesky factor); z is predicted with its dependence on x and y. EmitterNet has
-{hd:,} parameters in pass 1 and {p2hd:,} in pass 2.
+Figure S?. Network architectures. Colours: grey, inputs; blue, learned layers; white, fixed computations; green, outputs;
+orange, pass 2 only. Pass 1 and pass 2 use the same two architectures. The pass-2 networks add input channels for the
+illumination of the pattern estimated after pass 1 (orange); these new weights are initialized at zero, so that training
+starts exactly from the pass-1 network. ResBlock(c, d): h + conv3x3(GELU(GN(conv3x3,d(GELU(h))))), with c channels,
+dilation d of the first convolution and group normalization GN with 8 groups. GELU activations are used for all
+non-output activations.
+(a) Detection network: a fully convolutional U-Net with 3 levels (48, 96 and 160 channels). Downsampling is by 3x3
+convolutions with stride 2, upsampling by a 1x1 convolution and bilinear interpolation, and the skip connections are added
+(+). The input is a moving window of 6 frames in photons, log-scaled (sign(y) log(1 + |y| / 30)). Each frame passes
+through a stem whose weights are shared over the frames; the input convolution combines the 6 x 16 stem channels and the
+window mean (97 channels). For each pixel of the native camera grid the network outputs a detection logit (p = its
+sigmoid), a sub-pixel offset (at most 1.5 px) and the logarithm of the offset's uncertainty. Candidates are selected by
+greedy non-maximum suppression (NMS) on the detected sub-pixel positions (radius 0.7 px, up to 4 iterations), followed by
+a top-k (at most 640 candidates per 64 x 64 px); candidates with p >= 0.2 enter the neighbour channel of (b), and those with
+p >= 0.3 are kept. Pass 2: per frame, the expected relative illumination minus 1 and its 90-degree-shifted part (12 maps);
+the stem's first convolution takes each frame with its 2 maps (3 -> 16 channels instead of 1 -> 16), and a 3x3
+convolution of the 12 maps (12 -> 48, no bias) is added to the input convolution before its GELU. The detection network
+has {det:,} parameters ({p2det:,} in pass 2).
+(b) Emitter network, run on a 21 x 21 px patch around each detected emitter. Inputs: the frames and their window mean,
+log-scaled as in (a) and linear (photons minus the window background level, the mean over the frames of the border-median
+background); coordinate maps (x and y relative to the detected sub-pixel position, divided by 10 px); and two neighbour
+channels: Gaussian stamps (sigma 0.5 px, height p) at the other detected emitters (own stamp removed) and the
+detection-probability map. A trunk of 4 residual blocks (96 channels, dilations 1, 2, 1, 2, full 21 x 21 resolution)
+feeds three branches: a weight modulation, per-frame weight changes and a pooled global feature (96 x 4 x 4 = 1536). The
+MLP takes the global feature and 8 scalars, the border-median background of each frame and the sub-pixel offset (plus 6
+constant zero inputs; 1550 inputs in total), and gives 41 outputs. The intensity of each frame is a linear read-out: a
+weighted sum of the patch photons minus the background mu_b_ij, with weights given by the in-situ PSF at the detected
+sub-pixel position (the calibrated PSF evaluated at z = 50 nm) times the weight modulation, scaled to unit response to the
+PSF, plus the per-frame changes (which have zero response to the PSF). The network outputs, per detected emitter: the 6
+intensities mu_N_ij (angle i, phase step j) = read-out + learned correction (+), with their uncertainties sigma_N_ij
+(the network also predicts their correlations, as a Cholesky factor, which the fit uses); the 6 backgrounds mu_b_ij =
+border median + learned correction (+); and the position theta_dl = (x, y, z) +- sigma_dl, with x, y the detected
+sub-pixel position plus an offset of at most 0.5 px, and sigma_dl the position uncertainties of x and y and the
+uncertainty of z given x and y (z depends on x and y through the two z slopes). The intensity corrections and
+uncertainties are scaled with the signal and background of the emitter. The fit uses the intensities, their
+uncertainties and the position; the z of the final localizations is that of pass 1. The CNN and the MLP run in bfloat16,
+the output layers, the read-out and the Cholesky factor in 32-bit floating point. The emitter network has {hd:,}
+parameters ({p2hd:,} in pass 2; the 12 illumination patches enter through a 3x3 convolution, 12 -> 96 channels, no bias,
+added to the input convolution).
 
 SYMBOLS (paper symbol <- code name; NOTATION.md): mu_N_ij <- I_t = I_lin,t + c dI_t (t = 3 (i - 1) + (j - 1)); sigma_N_ij <-
 sqrt(diag(L L^T)), L = the 6x6 Cholesky factor (diag 1.5 c exp(q), off-diagonal c q; c = max(3, sqrt(<I_lin>_+ +
-9 <bg>_+)), the 'signal and background' scale of the panel); mu_b_ij <- bg_t = b0_t + q_bg,t sqrt(|b0_t| + 1); theta_dl,
-sigma_x, sigma_y, sigma_z <- the prior x, y, sigma_x, sigma_y, s_z|xy; 'z slopes' <- b = (dz/dx, dz/dy). The read-out
-weights: g = PSF template, w0 = g / (g.g), w = w0 exp(m) / (w.g) (m = the weight modulation), w_t = w + D_t (D_t = the
-per-frame weight changes minus their g-component), I_lin,t = sum_q w_tq (n_tq - bg_t) with n = the patch photons. The
-correlations (off-diagonal of L) are used by the fit; the covariance ablation (out/ablation_cov/REPORT.md) found no
-measurable effect of them in pass 2.
+9 <bg>_+)), the 'signal and background' scale of the caption); mu_b_ij <- bg_t = b0_t + q_bg,t sqrt(|b0_t| + 1);
+theta_dl, sigma_dl <- the prior x, y, z and sigma_x, sigma_y, s_z|xy ('position uncertainties', 'z uncertainty given x, y');
+'z slopes' <- b = (dz/dx, dz/dy). The read-out weights: g = PSF template, w0 = g / (g.g), w = w0 exp(m) / (w.g) (m = the
+weight modulation), w_t = w + D_t (D_t = the per-frame weight changes minus their g-component), I_lin,t = sum_q w_tq (n_tq
+- bg_t) with n = the patch photons (the read-out uses the corrected backgrounds bg_t). The correlations (off-diagonal of
+L) are used by the fit; the covariance ablation (out/ablation_cov/REPORT.md) found no measurable effect of them in pass 2
+(NOTATION.md section 6.1: describe the output as intensities with uncertainties, at most one sentence on correlations).
 
-FACTS (code = /home/jc/simcode2-paperfigs2, branch paperfigs2; checkpoints /home/jc/simcode2/models/<set>/, read on CPU)
+FOR THE SI TEXT (paper session; staged SI_after_1st_review.tex, caption of fig:network_structure, lines 181-182)
+   - 'the 2D position (x, y)': the emitter network also gives z (theta_dl = (x, y, z) +- sigma_dl, NOTATION.md 6.5).
+   - 'a background fluorescence at the emitter position (bg)': it is 6 backgrounds mu_b_ij, one per frame (border median
+     + learned correction), and 'bg' is not a preprint symbol.
+   - 'mean and uncertainty values (mu, sigma) ... 6 intensities (N_i,j) with their full 6 x 6 covariance matrix': write
+     intensities mu_N_ij with uncertainties sigma_N_ij (NOTATION.md 6.1); at most one sentence on the correlations.
+   - 'weights normalized to the PSF of the emitter': unit response to the in-situ PSF at the detected sub-pixel position.
+   - 'modified version of the DECODE architecture': the current networks (separate detection U-Net, per-emitter network
+     with a linear read-out) differ from DECODE more than the earlier network did; consider 'inspired by'.
+   - the staged figure (stage/figures/si_network_structure_v3.pdf) is an older render: copy the current PDF.
+
+FACTS (code = /home/jc/simcode2, branch main; checkpoints /home/jc/simcode2/models/<set>/, read on CPU)
 
 Parameter counts (simcode.detector.model.n_params on the network built from each checkpoint and loaded with its state
 dict; the script asserts that m25 and g13 have the same counts as m1809):
@@ -331,6 +430,7 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
    - norm_photons: sign(y) log1p(|y| / 30) on the photons; the window mean uses the same scale.
    - stem: Conv2d(1, 16, 3) GELU Conv2d(16, 16, 3) GELU per frame (shared weights); pass 2: Conv2d(3, 16, 3) on
      (frame_t, cos_t, sin_t) (the pass-1 weights go into channel 0, the rest zero: Detector.load_pass1).
+   - illumination maps (pattern/illumination.illum_maps): cos part rel (1 + m cos) - 1, sin part rel m sin, per frame.
    - cin: Conv2d(6*16 + 1 = 97, 48, 3); pass 2 + cin_il: Conv2d(12, 48, 3, bias=False), zero-init, added before the GELU.
    - e0: 2 ResBlock(48); d1: Conv2d(48, 96, 3, stride 2); e1: 2 ResBlock(96); d2: Conv2d(96, 160, 3, stride 2);
      e2: ResBlock(160, dil 1), ResBlock(160, dil 2); u1: Conv2d(160, 96, 1) -> bilinear x2 + s1 -> r1 ResBlock(96);
@@ -338,9 +438,10 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
      (logit bias init -4). Input padded (replicate) to a multiple of 4.
    - ResBlock(c, d): x + c2(GELU(GroupNorm(8, c)(c1(GELU(x))))), c1 = 3x3 dilation d, c2 = 3x3.
    - outputs: logit; dxy = 1.5 tanh (px relative to the pixel centre); log_sig = -5 + 6 sigmoid.
-   - selection: select_subpixel (greedy NMS on the points pixel + offset, radius 0.7 px, 7x7 neighbourhood, iterated to the
-     fixed point; top-k per image); front_fast: k = 640 S^2 / 64^2, detect p_min 0.2 (THR0 / NBR_PMIN, the neighbour
-     splat), stored candidates p >= CAND_PMIN = 0.3 (processing/common.py). Detector inference under bf16 autocast.
+   - selection: select_subpixel (greedy NMS on the points pixel + offset, radius 0.7 px, 7x7 neighbourhood, iters = 4:
+     up to 4 suppression rounds, stopping early at the fixed point; top-k per image); front_fast: k = 640 S^2 / 64^2,
+     detect p_min 0.2 (THR0 / NBR_PMIN, the neighbour splat), stored candidates p >= CAND_PMIN = 0.3
+     (processing/common.py). Detector inference under bf16 autocast.
 
 (b) EmitterNet (simcode/emitter/model.py: EmitterNet, nbr_map, nbr_patches, PSFCol, apply_to_candidates)
    - args: ch = 96, bf16 = 1, arch 'emitter_net'; patch PP = 21; T = 6.
@@ -358,7 +459,8 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
    - down: Conv2d(96, 96, 3, s2) GELU Conv2d(96, 96, 3, s2) GELU AdaptiveAvgPool2d(4) -> 96 x 16 = 1536.
    - scalars: norm_photons(b0) [6], detector offset off [2], zeros [6] (nsc = 2T + 2 = 14; the zero slots are a fixed
      placeholder). MLP: Linear(1550, 256) GELU Linear(256, 256) GELU; out: Linear(256, 41) (zero-init).
-   - out layout q = [dI 6 | log diag L 6 | off-diag L 15 | dx, dy 2 | log sx, sy 2 | bg 6 | z, lsz, b_x, b_y 4] = 41.
+   - out layout q = [dI 6 | log diag L 6 | off-diag L 15 | dx, dy 2 | log sx, sy 2 | bg 6 | z, lsz, b_x, b_y 4] = 41
+     (the figure's list puts the 6 background corrections last, next to their output).
    - read-out: w = w0 exp(clamp(m, -5, 5)), w / (w.g); w_t = w + D_t; I_lin,t = sum_q w_tq (y_tq - bg_t) (y = photons);
      bg_t = b0_t + q_bg,t sqrt(|b0_t| + 1); c = clamp(sqrt(sum(I_lin+)/6 + 9 mean(bg+)), min 3); I_t = I_lin,t + c dI_t;
      L diag = 1.5 c exp(clamp(ld, -4, 4)), L off-diag = c od.
@@ -386,5 +488,6 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', default='/home/jc/simcode2/out/paper_figs_v2')
     ap.add_argument('--models', default='/home/jc/simcode2/models')
+    ap.add_argument('--draft', action='store_true', help='save even if layout_problems() finds problems (printed)')
     a = ap.parse_args()
-    print(build(a.out, a.models))
+    print(build(a.out, a.models, a.draft))
