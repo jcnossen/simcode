@@ -77,16 +77,22 @@ def jsonable(o):
 
 
 def panel_text(info, cond):
-    """small print of the PSF panel: aberration, the conditions (data units), SMLM / SIMFLUX CRLBs"""
-    c = info['crlb']; p = cond['pattern']; q = cond['z_quantiles_um']
-    L = [f"In-situ vectorial PSF v2, rms aberration (Noll ≥ 5) {info['rms_mwaves']:.0f} mλ",
-         f"Emitter height (SIMCODE v2): median {cond['z_median_um'] * 1e3:.0f} nm (q25-q75 {q['q25'] * 1e3:.0f}-{q['q75'] * 1e3:.0f})",
-         f"CRLB at the data's median {cond['photons_median']:.0f} ph / 6-frame window (PSF-model",
-         f"intensity; {info['detected_photons']:.0f} detected), bg {cond['bg_px_frame']:.2f} ph/px/frame, read noise {cond['rn2_e']:.2f} e²:"]
-    for k, lab in (('smlm', 'SMLM'), ('sf', 'SIMFLUX')):
-        r = c[k]
-        L.append(f"  {lab}: x/y/z {r['x']:.1f}/{r['y']:.1f}/{r['z']:.0f} nm (x/y with z known {r['xy_zfixed'][0]:.1f}/{r['xy_zfixed'][1]:.1f})")
-    L.append(f"(pattern {p['pitch_nm']:.0f} nm, depth {p['depth']:.2f}, 2 x 3 steps; gain {cond['gain_e_per_adu']} e/ADU)")
+    """the PSF panel's own label (short; everything else goes into the caption: caption_text)"""
+    return f"In-situ vectorial PSF fit\nrms aberration {info['rms_mwaves']:.0f} mλ"
+
+
+def caption_text(info, cond, foot):
+    """caption material for the PSF panel and the processing protocol (written next to the figure as <out>_caption.txt)"""
+    c = info['crlb']; p = cond['pattern']
+    rn_sd = cond['rn2_e'] ** 0.5
+    L = [f"PSF panel: in-situ vectorial PSF fit (Zernike Noll 5-21), xy section at the emitters' median height "
+         f"({cond['z_median_um'] * 1e3:.0f} nm) and xz section, log scale; rms aberration over Noll >= 5 {info['rms_mwaves']:.0f} mλ.",
+         f"Cramér-Rao lower bounds for a single isolated emitter at the data's median signal ({info['detected_photons']:.0f} detected photons "
+         f"per 6-frame window), background {cond['bg_px_frame']:.2f} photons/px/frame and camera read noise {rn_sd:.1f} e- rms: "
+         f"SMLM x/y/z {c['smlm']['x']:.1f}/{c['smlm']['y']:.1f}/{c['smlm']['z']:.0f} nm, "
+         f"SIMFLUX (pattern pitch {p['pitch_nm']:.0f} nm, depth {p['depth']:.2f}, 2 x 3 phase steps) "
+         f"x/y/z {c['sf']['x']:.1f}/{c['sf']['y']:.1f}/{c['sf']['z']:.0f} nm.",
+         foot]
     return '\n'.join(L)
 
 
@@ -202,10 +208,13 @@ def main():
         axz.set_aspect('equal')
         letter(axy, dx=-0.12, dy=1.12)
         axt.axis('off')
-        axt.text(-0.05, 0.98, panel_text(psf_info, psf_cond), transform=axt.transAxes, fontsize=8, va='top', ha='left', linespacing=1.15)
+        axt.text(-0.05, 0.98, panel_text(psf_info, psf_cond), transform=axt.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
-    fig.text(0.5, 0.0, foot, ha='center', va='top', fontsize=11)
+    if psf_info is not None:
+        open(f'{out}_caption.txt', 'w').write(caption_text(psf_info, psf_cond, foot) + '\n')
+    else:
+        open(f'{out}_caption.txt', 'w').write(foot + '\n')
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', bbox_inches='tight', pad_inches=0.15, **kw)
     plt.close('all')
