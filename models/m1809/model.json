@@ -19,7 +19,7 @@
   },
   "pass2_trainer_chain": "/home/jc/simcode2/out/z3d/runs/chain.sh m1809g (logs out/z3d/runs/m1809g/; pass-2 detector = out/p2generic g1809 + dg2s: analysis/p2generic/chain_gen.sh g1809, cont_det.sh dg2s)",
   "evaluation": "/home/jc/simcode2/out/z3d/runs/eval.sh m1809g (vs the dedicated pass 2: /home/jc/simcode2/out/z3d/eval/m1809g/accept_p2_ded.txt)",
-  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (simulate/acquisition.AcquisitionSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)"
+  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (hd/realsim.RealSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)"
  },
  "_files": {
   "psf": {
@@ -28,7 +28,7 @@
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "a8d8f832575bf5e6e50f47491b2efa84d8444ce8816e7668e64ee1e1a71c4b2a",
    "params": {
-    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif: fit_psf_tracks on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_1809_2.json",
+    "source": "in-situ 3D PSF (psf3d, 2026-11-11) of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif: fit_insitu2 on its own isolated tracks (frames < 30000), Zernike 5-21 + focus + line blur, then frozen + photoselection per pattern angle (gamma, zeta; photosel 3); camera / pattern blocks copied from calib_1809_2.json",
     "pixelsize_um": 0.10833,
     "wavelength_um": 0.7,
     "NA": 1.4900000095367432,

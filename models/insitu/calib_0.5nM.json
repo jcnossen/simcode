@@ -1,5 +1,5 @@
 {
- "source": "0.5nM DNA-PAINT, in-situ fit (calibration/fit_psf_tracks.py + fit_pattern.py), 2026-11-07",
+ "source": "0.5nM DNA-PAINT, in-situ fit (insitu/fit_insitu2.py + fit_pattern.py), 2026-11-07",
  "pixelsize_um": 0.10833,
  "wavelength_um": 0.7,
  "NA": 1.4900000095367432,
