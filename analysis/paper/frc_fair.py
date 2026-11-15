@@ -41,7 +41,8 @@ def load(kind, path, v2_sigma_max=None):
     if kind in ('smlm', 'sf'):
         L = Dataset.load(path, window=GRID)
     elif kind == 'decode':
-        L = Dataset.from_decode(path, window=GRID)
+        from simcode.dataset import decode_table      # <dir>/locs_fixed.npz: the frame-label fix of a pre-2026-11-15 table
+        L = Dataset.from_decode(decode_table(path), window=GRID)
     elif kind == 'v2':
         L = Dataset.load(path)
         L = L.select(v2_sigma_max) if v2_sigma_max is not None else L[L.sel]

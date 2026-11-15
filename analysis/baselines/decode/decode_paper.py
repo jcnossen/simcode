@@ -126,7 +126,7 @@ def infer(a):
                 buf.append(img.astype(np.float32))
                 if len(buf) == 6:
                     yield np.sum(buf, 0); buf = []
-        em, shp = inst.process_iterable(gen(), gain=gain, offset=off * 6, sumframes=1, batch_size=64, infer_batch_size=16)
+        em, shp = D.process_padded(inst, gen(), gain=gain, offset=off * 6, sumframes=1, batch_size=64, infer_batch_size=16)
         em = em[em.frame_ix < nsum] if len(em) else em
         parts.append(dict(frame=(s + 6 * em.frame_ix.numpy()).astype(np.int64), x=em.xyz[:, 0].numpy(), y=em.xyz[:, 1].numpy(),
                           z=em.xyz[:, 2].numpy(), sx=em.xyz_sig[:, 0].numpy(), sy=em.xyz_sig[:, 1].numpy(), phot=em.phot.numpy(),
@@ -134,7 +134,7 @@ def infer(a):
                           bg=em.bg.numpy() if em.bg is not None else np.zeros(len(em)), prob=em.prob.numpy()))
     torch.cuda.synchronize()
     R = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
-    T = dict(infer_s=time.time() - t0, model=a.name, psf=pj['desc'], dataset=a.dataset, nframes=nf, starts=a.starts, gain=gain,
+    T = dict(frame_label=D.FRAME_LABEL, infer_s=time.time() - t0, model=a.name, psf=pj['desc'], dataset=a.dataset, nframes=nf, starts=a.starts, gain=gain,
              offset='camera map ' + camf)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     np.savez_compressed(a.out, **R, info=json.dumps(T))

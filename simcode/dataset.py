@@ -57,6 +57,29 @@ def _read_json(path):
         return None
 
 
+DECODE_FRAME_LABEL = 'window start (pad same, 2026-11-15 fix)'      # = analysis/baselines/decode/dec_common.FRAME_LABEL
+
+
+def _decode_fixed(z):
+    if 'info' not in z.files or z['info'].ndim != 0: return False
+    try: return json.loads(str(z['info'])).get('frame_label') == DECODE_FRAME_LABEL
+    except ValueError: return False
+
+
+def decode_table(path):
+    """The DECODE table to read for a DECODE output path (<dir>/locs.npz). DECODE tables written before 2026-11-15 label each
+    row one 6-frame window early (the decode fork's InferenceDataset has pad=None: output i is the centre sum i + 1; fixed in
+    analysis/baselines/decode/dec_common.process_padded). Their corrected copy (frames + 6, the original unchanged) is
+    <dir>/locs_fixed.npz (analysis/baselines/decode/fix_frames.py): returned when path has the old labels and the copy exists,
+    else path (a table of the fixed inference has info['frame_label'])."""
+    fx = os.path.join(os.path.dirname(path), 'locs_fixed.npz')
+    if os.path.abspath(path) == os.path.abspath(fx) or not os.path.exists(fx): return path
+    if os.path.exists(path) and os.path.getmtime(path) > os.path.getmtime(fx):
+        with np.load(path, allow_pickle=False) as z:
+            if _decode_fixed(z): return path              # rerun with the fixed inference after the copy was made
+    return fx
+
+
 class Dataset(_TorchPSFDataset):
     """torch_psf.Dataset with SIMCODE's loaders and select() (module docstring)."""
 
@@ -160,8 +183,13 @@ class Dataset(_TorchPSFDataset):
     @classmethod
     def from_decode(cls, path, window=6):
         """A DECODE table as written for the paper (npz with frame, x, y, z, sx, sy, phot, sphot, bg, prob, info): phot ->
-        photons, sphot -> crlb_photons, prob -> score; z (nm) and the other columns keep their names."""
+        photons, sphot -> crlb_photons, prob -> score; z (nm) and the other columns keep their names. A table without
+        info['frame_label'] (written before 2026-11-15) labels its rows one window early (decode_table) -> a warning."""
         z = np.load(path, allow_pickle=False); n = len(z['x'])
+        if not _decode_fixed(z):
+            import warnings
+            warnings.warn(f'{path}: DECODE table with the pre-2026-11-15 frame labels (one window early); read '
+                          f'decode_table(path) = the locs_fixed.npz next to it (analysis/baselines/decode/fix_frames.py)')
         ren = dict(phot='photons', sphot='crlb_photons', prob='score')
         C = {ren.get(k, k): z[k] for k in z.files if z[k].ndim and len(z[k]) == n}
         meta = dict(source=os.path.abspath(path), format='decode npz')

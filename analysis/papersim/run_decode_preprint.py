@@ -52,7 +52,7 @@ def main():
             for img in DP.frames(tif, s, nsum * 6):
                 buf.append(img.astype(np.float32))
                 if len(buf) == 6: yield np.sum(buf, 0); buf = []
-        em, _ = inst.process_iterable(gen(), gain=gain, offset=off * 6, sumframes=1, batch_size=64, infer_batch_size=16)
+        em, _ = DP.D.process_padded(inst, gen(), gain=gain, offset=off * 6, sumframes=1, batch_size=64, infer_batch_size=16)
         em = em[em.frame_ix < nsum] if len(em) else em
         parts.append(dict(frame=(s + 6 * em.frame_ix.numpy()).astype(np.int64), x=em.xyz[:, 0].numpy(), y=em.xyz[:, 1].numpy(),
                           z=em.xyz[:, 2].numpy(), sx=em.xyz_sig[:, 0].numpy(), sy=em.xyz_sig[:, 1].numpy(), phot=em.phot.numpy(),
@@ -62,7 +62,7 @@ def main():
     n0 = len(R['x'])
     if a.crlb:
         k = np.maximum(R['sx'], R['sy']) < a.crlb; R = {kk: v[k] for kk, v in R.items()}
-    T = dict(infer_s=time.time() - t0, model=f'{MDIR}/decode-3f-g1.3/model_2.pt', movie=md, nframes=nf, starts=a.starts, crlb_filter=a.crlb,
+    T = dict(frame_label=DP.D.FRAME_LABEL, infer_s=time.time() - t0, model=f'{MDIR}/decode-3f-g1.3/model_2.pt', movie=md, nframes=nf, starts=a.starts, crlb_filter=a.crlb,
              n_before_crlb=int(n0), n=int(len(R['x'])))
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     np.savez_compressed(out, **R, info=json.dumps(T)); print(json.dumps(T), flush=True)

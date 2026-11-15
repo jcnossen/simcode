@@ -3,7 +3,8 @@
 Rows per method ('full' = what each method outputs, as the preprint scored it):
   smlm    <run>/base/smlm/smlm.npy (chi^2-filtered, a window at every frame)
   sf      <run>/base/sf/sf.hdf5 (pattern estimated from SMLM)      sf_gtp  <run>/base/sf_gtp/sf.hdf5 (ground-truth pattern)
-  decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6)
+  decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6; its locs_fixed.npz when it exists: the
+          frame-label fix of the tables written before 2026-11-15, simcode.dataset.decode_table)
   v2sig   <run>/v2_<model>/locs_p2.hdf5, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
           p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.table.SIGMA_MAX_NM
           (simcode.table.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
@@ -117,6 +118,8 @@ def method_paths(run, model='m1809'):
     P['decode_pre'] = f'{run}/decode_pre/locs.npz'      # the preprint's own DECODE model (decode-3f-g1.3), Gaussian-PSF reproduction      # DECODE retrained for the simulation ranges (dec_sim1809)
     P['v1gt'] = f'{run}/v1gt/locs.npz'           # diagnostic: preprint SIMCODE given the GT pattern
     P['v2siggt'] = f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
+    from simcode.dataset import decode_table      # DECODE: locs_fixed.npz (frame-label fix, 2026-11-15) when it exists
+    for k in ('decode', 'decode_sim', 'decode_pre'): P[k] = decode_table(P[k])
     return {k: v for k, v in P.items() if os.path.exists(v)}
 
 

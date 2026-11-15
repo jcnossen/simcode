@@ -10,7 +10,7 @@ on the union of the 4 methods' sets (the same boxes for every method; written to
 
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM_2|20nM_2> [--nframes N] [--tag t]
           [--smlm p] [--sf p] [--decode p] [--v2 <run dir or table>] [--v2_sigma_max nm] [--aoi auto]
-  defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz, v2 (run directory: locs_p2)}; v2 rows: sel, or with
+  defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz (locs_fixed.npz when it exists), v2 (run directory: locs_p2)}; v2 rows: sel, or with
   --v2_sigma_max the paper's selection at that threshold (Dataset.select); output out/paper2/fig/<ds>[_<tag>].*
   (2026-11-15) --outdir d: output directory instead of out/paper2/fig; --reuse_drift <prefix>: the methods other than v2 take
   their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
@@ -116,6 +116,8 @@ def main():
     dflt = dict(smlm=f'{P2}/{a.dataset}/smlm/smlm.npy', sf=f'{P2}/{a.dataset}/sf/sf.hdf5',
                 decode=f'{P2}/{a.dataset}/decode/locs.npz', v2=f'{P2}/{a.dataset}/v2')
     paths = {k: getattr(a, k) or dflt[k] for k in KINDS}       # the 4 reprocessed methods
+    from simcode.dataset import decode_table
+    paths['decode'] = decode_table(paths['decode'])      # locs_fixed.npz: the DECODE frame-label fix (2026-11-15)
     name = a.dataset + (f'_{a.tag}' if a.tag else '')
     od = a.outdir or f'{P2}/fig'
     out = f'{od}/{name}'; os.makedirs(od, exist_ok=True)

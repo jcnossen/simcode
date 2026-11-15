@@ -264,6 +264,30 @@ def load_paper(model_name, model_file='model_2.pt', device='cuda:0'):
 
 
 # ------------------------------------------------------------------------------------------------- movie inference
+FRAME_LABEL = 'window start (pad same, 2026-11-15 fix)'      # info['frame_label'] of every table with the correct frames
+FRAME_FIX_FILE = 'locs_fixed.npz'      # tables written before the fix: frames + one window (fix_frames.py), next to locs.npz
+
+
+def process_padded(inst, frames, **kw):
+    """inst.process_iterable on a sequence of (summed) frames with one output per input frame: output frame_ix i = input i.
+    The fork's InferenceDataset (~/decode2 decode/neuralfitter/dataset.py) has pad=None hard-coded and no pad argument: sample
+    i is the inputs [i, i + 1, i + 2] (channels_in 3) and its output is labelled i, but it belongs to the CENTRE input i + 1, so
+    the first and last inputs are never localized (our tables before 2026-11-15: frame = true window start - one window).
+    Here the first and last channels_in // 2 inputs are repeated, which is DECODE's pad='same' (it clamps the context index at
+    the edges), so every input is localized and labelled with its own index. kw: process_iterable's (gain, offset, ...)."""
+    hw = int(inst.param.HyperParameter.channels_in) // 2
+
+    def padded():
+        last = None
+        for i, img in enumerate(frames):
+            if i == 0:
+                for _ in range(hw): yield img
+            yield img; last = img
+        if last is not None:
+            for _ in range(hw): yield last
+    return inst.process_iterable(padded(), **kw)
+
+
 def infer_movie(inst, tif, sumframes=1, start=0, maxframes=None, batch_size=64):
     """DECODE on the movie (photons = (ADU - offset map) * gain, clamped at 0, as decode_localize.py). sumframes > 1:
     non-overlapping sums of frames start + sumframes * k ... ; output frame = start + sumframes * k (= window start).
@@ -280,7 +304,7 @@ def infer_movie(inst, tif, sumframes=1, start=0, maxframes=None, batch_size=64):
                 fr = [t.pages[start + k * sumframes + i].asarray() for i in range(sumframes)]
                 yield np.sum(fr, 0) if sumframes > 1 else fr[0]
         # sums of ADU: subtract sumframes x offset
-        em, shp = inst.process_iterable(gen(), gain=gain, offset=off * sumframes, sumframes=1, batch_size=batch_size, infer_batch_size=16)
+        em, shp = process_padded(inst, gen(), gain=gain, offset=off * sumframes, sumframes=1, batch_size=batch_size, infer_batch_size=16)
     em = em[em.frame_ix < nsum] if len(em) else em
     D = dict(frame=(start + sumframes * em.frame_ix.numpy()).astype(np.int64), x=em.xyz[:, 0].numpy(), y=em.xyz[:, 1].numpy(),
              sx=em.xyz_sig[:, 0].numpy(), sy=em.xyz_sig[:, 1].numpy(), phot=em.phot.numpy(),
