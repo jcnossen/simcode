@@ -39,6 +39,8 @@ def movie_sums(md, nframes):
 def infer(inst, S):
     sums, gain, off = S
     em, _ = D.process_padded(inst, iter(list(sums)), gain=gain, offset=off, sumframes=1, batch_size=64, infer_batch_size=16)
+    if len(em) < 50:      # (an early snapshot that finds nothing: one dummy row far outside, so every metric is defined / nan)
+        return dict(f=np.zeros(1, np.int64), x=np.full(1, -100.0), y=np.full(1, -100.0), photons=np.ones(1))
     em = em[em.frame_ix < len(sums)]
     return dict(f=6 * em.frame_ix.numpy().astype(np.int64), x=em.xyz[:, 0].numpy().astype(float), y=em.xyz[:, 1].numpy().astype(float),
                 photons=em.phot.numpy().astype(float))
@@ -78,9 +80,11 @@ def eval_iso(T, gt, crlb, nf):
             if crlb is not None: c = np.r_[crlb[k, 0], crlb[k, 1]]; r[f'iso_rmsc_{L}'] = r[f'iso_rms_{L}'] / float(np.sqrt(np.mean(c ** 2)))
     r['iso_recall'] = float(ok.mean())
     e = np.r_[ex[ok], ey[ok]]
-    r['iso_rmsc'] = float(np.sqrt(np.mean(e ** 2)) / np.sqrt(np.mean(np.r_[crlb[ok, 0], crlb[ok, 1]] ** 2))) if crlb is not None else np.nan
-    r['iso_mean_x_nm'] = float(np.mean(ex[ok])); r['iso_mean_y_nm'] = float(np.mean(ey[ok]))
-    bx, by, g, _, _ = bias(T, gt, nf)
+    if not ok.any(): ok = ok.copy()
+    r['iso_rmsc'] = np.nan if not ok.any() else float(np.sqrt(np.mean(e ** 2)) / np.sqrt(np.mean(np.r_[crlb[ok, 0], crlb[ok, 1]] ** 2))) if crlb is not None else np.nan
+    r['iso_mean_x_nm'] = float(np.mean(ex[ok])) if ok.any() else np.nan; r['iso_mean_y_nm'] = float(np.mean(ey[ok])) if ok.any() else np.nan
+    try: bx, by, g, _, _ = bias(T, gt, nf)
+    except Exception: bx = by = None
     r['iso_Abias_x_nm'] = bx['A_nm'] if bx else np.nan; r['iso_Abias_y_nm'] = by['A_nm'] if by else np.nan
     r['iso_Abias_x_se'] = bx['A_se_nm'] if bx else np.nan
     return r
@@ -91,8 +95,9 @@ def eval_dens(T, gt, nf, W=40):
     T = {k: v[m] for k, v in T.items()}
     r = dict(dens_n=int(len(T['x'])))
     ux, uy = B.ustats(B.sub(T['x'])), B.ustats(B.sub(T['y']))
-    r['dens_c1_x'] = ux['c1_abs']; r['dens_c1_y'] = uy['c1_abs']; r['dens_c1_floor'] = ux['noise']
-    bx, by, g, tx, ty = bias(T, gt, nf)
+    r['dens_c1_x'] = ux.get('c1_abs', np.nan); r['dens_c1_y'] = uy.get('c1_abs', np.nan); r['dens_c1_floor'] = ux.get('noise', np.nan)
+    try: bx, by, g, tx, ty = bias(T, gt, nf)
+    except Exception: bx = by = None; g = np.zeros(len(T['x']), bool); tx = ty = np.full(len(T['x']), np.nan)
     r['dens_Abias_x_nm'] = bx['A_nm'] if bx else np.nan; r['dens_Abias_y_nm'] = by['A_nm'] if by else np.nan
     r['dens_Abias_x_se'] = bx['A_se_nm'] if bx else np.nan
     r['dens_rms_iso_nm'] = float(np.sqrt(np.mean(np.r_[T['x'][g] - tx[g], T['y'][g] - ty[g]] ** 2)) * B.PX) if g.sum() else np.nan
@@ -133,9 +138,10 @@ def eval_real(T, crop, tag):
     m = (T['x'] >= x0 + 0.5) & (T['x'] < x0 + sz - 0.5) & (T['y'] >= y0 + 0.5) & (T['y'] < y0 + sz - 0.5)
     x, y, ph = T['x'][m], T['y'][m], T['photons'][m]
     r = {f'{tag}_n': int(m.sum())}
-    r[f'{tag}_c1_x'] = B.ustats(B.sub(x))['c1_abs']; r[f'{tag}_c1_y'] = B.ustats(B.sub(y))['c1_abs']
+    r[f'{tag}_c1_x'] = B.ustats(B.sub(x)).get('c1_abs', np.nan); r[f'{tag}_c1_y'] = B.ustats(B.sub(y)).get('c1_abs', np.nan)
+    if len(x) < 30: return {**r, f'{tag}_c1_x_low': np.nan, f'{tag}_c1_y_low': np.nan, f'{tag}_c1_floor': np.nan}
     lo = ph < np.quantile(ph, 1 / 3)
-    r[f'{tag}_c1_x_low'] = B.ustats(B.sub(x[lo]))['c1_abs']; r[f'{tag}_c1_y_low'] = B.ustats(B.sub(y[lo]))['c1_abs']
+    r[f'{tag}_c1_x_low'] = B.ustats(B.sub(x[lo])).get('c1_abs', np.nan); r[f'{tag}_c1_y_low'] = B.ustats(B.sub(y[lo])).get('c1_abs', np.nan)
     r[f'{tag}_c1_floor'] = 1 / np.sqrt(max(m.sum(), 1))
     return r
 
