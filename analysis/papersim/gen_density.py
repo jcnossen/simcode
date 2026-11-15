@@ -11,6 +11,8 @@ v2-PSF set (2026-11-15, --psf v2; common.py "v2-PSF movie sets"): the same GT po
 numbers, rendered with the in-situ PSF v2 of 1809/2 at one height per GT point (v2 calibration rule, 0-0.40 um) and the v2 camera
 (gain 0.4256, offset map, read noise); out/papersim/D<d>_v2psf. The 500 photons / 2.5 bg are kept as the nominal (preprint)
 condition in photons (see STATUS.md 2026-11-15 v2 PSF).
+--gt wsm:<seed>:<dx>:<dy> (2026-11-15, the *_wsm sets): the webSMLM microtubule field of wsm_gt.py instead of the preprint tubules
+(gen.json 'zoom_crop' = the figures' zoom box); --device cpu renders on the CPU.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/gen_density.py --density 1 [--nframes 60000] [--out out/papersim/D1] [--psf v2]
 outputs (<out>): movie.tif (uint16 ADU), gt.npz (pts = GT point set [N,3] px, knots, events: id / x / y / t0 / t1 frames,
 pattern), calib_sim.json + camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
@@ -32,6 +34,8 @@ def main():
     ap.add_argument('--block', type=int, default=600)
     ap.add_argument('--psf', default='vectorial', help="'vectorial' (default) or e.g. 'gauss1.3' (control: the preprint's PSF; calib_sim.json still names the vectorial PSF) "
                     "or 'v2' (in-situ PSF v2 + v2 camera + heights from the v2 calibration)")
+    ap.add_argument('--gt', default='preprint', help="'preprint' (default) or 'wsm:<seed>:<dx>:<dy>' = the webSMLM microtubule field of wsm_gt.py")
+    ap.add_argument('--device', default='cuda', help='render device (cuda / cpu)')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-gen')
     import torch
@@ -39,7 +43,12 @@ def main():
     os.makedirs(d, exist_ok=True)
     t0 = time.time()
     W = 40
-    pts, knots = C.preprint_tubules()
+    wsm = None
+    if a.gt.startswith('wsm'):
+        import wsm_gt
+        wsm = wsm_gt.load(a.gt.split(':', 1)[1]); pts = wsm['pts']; knots = np.zeros((0, 2))
+    else:
+        pts, knots = C.preprint_tubules()
     area = (W * C.PX_NM / 1000) ** 2
     on_fraction = a.density * area / len(pts)
     rng = np.random.default_rng([a.seed, int(round(a.density * 1000))])
@@ -60,12 +69,12 @@ def main():
     if v2:
         zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev]]
-        R = C.RendererV2(W, W); R.z = float(np.median(zpt))
+        R = C.RendererV2(W, W, dev=a.device); R.z = float(np.median(zpt))
         cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
         ph = ph / cpt[ids[ev]]
     else:
-        R = C.Renderer(W, W, psf=a.psf)
-    gen = torch.Generator(device='cuda'); gen.manual_seed(a.seed * 7919 + int(round(a.density * 1000)))
+        R = C.Renderer(W, W, dev=a.device, psf=a.psf)
+    gen = torch.Generator(device=a.device); gen.manual_seed(a.seed * 7919 + int(round(a.density * 1000)))
     bounds = np.searchsorted(fr, np.arange(0, a.nframes + a.block, a.block))
 
     def blocks():
@@ -76,7 +85,7 @@ def main():
     C.write_movie(os.path.join(d, 'movie.tif'), blocks())
     np.savez_compressed(os.path.join(d, 'gt.npz'), pts=pts, knots=knots, ev_id=ids, ev_x=pts[ids, 0], ev_y=pts[ids, 1], ev_t0=t0e, ev_t1=t1e,
                         k=P['k'], phi=P['phi'], m=P['m'], rel=P['rel'], z_um=R.z, nframes=a.nframes, W=W,
-                        **(dict(pts_z_um=zpt, pts_collected=cpt) if v2 else {}))
+                        **(dict(pts_z_um=zpt, pts_collected=cpt) if v2 else {}), **(dict(wsm_z_nm=wsm['wsm_z_nm'], mt=wsm['mt']) if wsm is not None else {}))
     calib = C.write_sim_calib(d, W, W, P, psf=a.psf)
     C.save_pattern_files(P, a.nframes, d)
     info = dict(kind='density', density=a.density, nframes=a.nframes, W=W, px_nm=C.PX_NM, bg=a.bg, intensity_per_6frames=a.intensity,
@@ -92,7 +101,10 @@ def main():
                         z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
                         photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected)',
                         collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if v2 else {}),
-                gt_source=f'smlmtorch {C.GT_COMMIT} scripts/generate_tubules.py + fig_densities2.py (seed 1)', s=round(time.time() - t0, 1))
+                gt=a.gt, device=a.device,
+                **(dict(gt_source='webSMLM microtubules (cells) = inSiliScope CellField (analysis/fourpi_sim/mt_cells.py), wsm_gt.py',
+                        wsm=wsm['stats'], zoom_crop=wsm['zoom_crop'][0]) if wsm is not None else
+                   dict(gt_source=f'smlmtorch {C.GT_COMMIT} scripts/generate_tubules.py + fig_densities2.py (seed 1)')), s=round(time.time() - t0, 1))
     json.dump(info, open(os.path.join(d, 'gen.json'), 'w'), indent=1)
     print(json.dumps(info), flush=True)
 

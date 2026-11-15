@@ -24,6 +24,21 @@ COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange',
 CROP = ((9, 10), 16)
 
 
+def crop_of(md):
+    """zoom box ((x0, y0), w) px of a movie set: its gen.json 'zoom_crop' [x0, y0, w] (the webSMLM-GT *_wsm sets: picked at a
+    filament crossing by wsm_gt.py) or the preprint's CROP"""
+    z = json.load(open(os.path.join(md, 'gen.json'))).get('zoom_crop')
+    return ((int(z[0]), int(z[1])), int(z[2])) if z else CROP
+
+
+def gt_desc(md):
+    """caption text of a movie set's ground truth"""
+    s = json.load(open(os.path.join(md, 'gen.json'))).get('wsm')
+    if not s: return "randomly generated microtubules (the preprint's ground truth)"
+    return (f"microtubules of webSMLM's cell model (the inSiliScope CellField world model; seed {s['seed']}, {s['n_labels']} labelling sites at "
+            f"{s['labels_per_nm']:.2f} per nm of filament (the preprint ground truth's line density), {s['mt_length_um']:.0f} µm of microtubule in the field)")
+
+
 def render(x, y, corner, w, zoom=20):
     from scipy.ndimage import gaussian_filter
     n = w * zoom
@@ -42,7 +57,7 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     ks = [k for k in FIG_ORDER if k in R['methods']]
     fig = plt.figure(figsize=(2.3 * (len(ks) + 1), 7.5))
     gs = fig.add_gridspec(2, len(ks) + 1, height_ratios=[1, 0.9])
-    (cx, cy), w = CROP
+    (cx, cy), w = crop_of(md)
     ax = fig.add_subplot(gs[0, 0]); ax.imshow(render(gt['pts'][:, 0], gt['pts'][:, 1], (cx, cy), w), cmap='inferno'); ax.set_title('ground truth', fontsize=8); ax.axis('off')
     ax.plot([5, 5 + 200 / (C.PX_NM / 20)], [w * 20 - 8] * 2, 'w-', lw=3); ax.text(5, w * 20 - 14, '200 nm', color='w', fontsize=7)
     for i, k in enumerate(ks):
@@ -61,8 +76,8 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
     a3.bar(range(len(ks)), [R['methods'][k]['jaccard_end'] for k in ks], color=[COL[k] for k in ks]); a3.set_title(f'Jaccard 10 nm ({R["nframes"] // 1000}k frames)', fontsize=8); a3.set_ylim(0, 1)
     for a in (a2, a3): a.set_xticks(range(len(ks))); a.set_xticklabels([LAB[k].split(' (')[0].replace('SIMCODE ', 'SC ') + (' GTp' if k == 'sf_gtp' else '') for k in ks], rotation=60, fontsize=6)
     a4.set_ylim(0, 1); a4.set_xlabel('frames (x1000)'); a4.set_title('Jaccard vs frames (10 nm, 120 bins)', fontsize=8)
-    psfn = 'in-situ PSF v2 of 1809/2 (heights 0-0.40 um), v2 camera' if suffix == '_v2psf' else ('Gaussian 1.3 px PSF' if suffix == '_gauss' else 'averaged 1809/2 PSF')
-    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, {psfn}; v2 net set {model}; crop corner {CROP[0]} px, {w} px', fontsize=9)
+    psfn = 'in-situ PSF v2 of 1809/2 (heights 0-0.40 um), v2 camera' if suffix.startswith('_v2psf') else ('Gaussian 1.3 px PSF' if suffix == '_gauss' else 'averaged 1809/2 PSF')
+    fig.suptitle(f'density {d:g} emitters / um^2 / frame, {R["nframes"]} frames, {psfn}; v2 net set {model}; crop corner {(cx, cy)} px, {w} px', fontsize=9)
     plt.tight_layout(); fn = os.path.join(C.OUT, f'fig_density_{prefix}{d:g}{suffix}_{model}' + ('' if sub == 'full' else f'_{sub}') + '.png'); plt.savefig(fn, dpi=110); plt.close(fig)
     return R
 
@@ -70,7 +85,7 @@ def fig(d, model, sub='full', prefix='D', suffix=''):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--model', default='m1809'); ap.add_argument('--densities', default='0.5,1,2,4'); ap.add_argument('--sub', default='full'); ap.add_argument('--suffix', default=''); ap.add_argument('--prefix', default='D', help="'D' (preprint 500 ph / bg 2.5) or 'Dexp' (1809/2 photons / bg, on-time 20)")
     a = ap.parse_args()
-    if a.suffix == '_v2psf':      # v2-PSF sets (2026-11-15): 'decode' = the DECODE retrained for the v2 PSF and these conditions
+    if a.suffix.startswith('_v2psf'):      # v2-PSF sets (2026-11-15): 'decode' = the DECODE retrained for the v2 PSF and these conditions
         LAB['decode'] = 'DECODE (retrained dec_sim1809v2)'
     rows = []; md_lines = [f'# Density sweep {a.prefix}{a.suffix}, v2 net set {a.model} (60 000 frames; FRC fair protocol; Jaccard 10 nm at 60k frames; GT RMS = FRC set vs its ON emitter)', '',
                            '| density | method | n_all | n_frc | FRC nm | FRC ideal: same rows at robust σ / shuffled own errors (nm) | robust σ nm | err > 30 nm | Jaccard | GT RMS x,y nm | recall (>=150 ph) | med sigma nm | GT-FRC nm | frames to 40 / 30 / 20 nm GT-FRC | σ-Jaccard | false-pos. frac | coverage CV excess |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|']

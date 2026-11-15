@@ -14,7 +14,7 @@ import os, sys, json, csv, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C, metrics as M
-from fig_density import render, CROP, COL
+from fig_density import render, crop_of, gt_desc, COL
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
@@ -34,7 +34,7 @@ def main():
     runs = [os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}') for d in DENS]
     R = [json.load(open(os.path.join(r, 'full', f'metrics_{a.model}.json'))) for r in runs]
     G = [json.load(open(os.path.join(r, 'full', f'gtfrc_{a.model}.json')))['methods'] for r in runs]
-    (cx, cy), w = CROP
+    (cx, cy), w = crop_of(runs[0])
     nc = len(METH) + 1; tw = 2.3
     fig = plt.figure(figsize=(nc * tw + 5.6, len(DENS) * tw + 1.0))
     outer = GridSpec(1, 2, figure=fig, width_ratios=[nc * tw, 4.3], wspace=0.13, left=0.03, right=0.985, top=0.95, bottom=0.07)
@@ -117,7 +117,7 @@ def main():
     zd = g0.get('z_dist_um')
     psfs = (f"the in-situ PSF of 1809/2 and the sCMOS camera maps of that movie (gain, offset, per-pixel read noise), emitter heights 0-400 nm "
             f"(median {zd['p50'] * 1e3:.0f} nm)" if zd else 'a Gaussian PSF')
-    cap = [f"Simulated microtubules, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
+    cap = [f"Simulated {gt_desc(runs[0])}, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
            f"(A) Renders of the same {w * C.PX_NM / 1000:.2f} µm crop for every method and emitter density (emitters/µm²/frame), same rendering in every "
            "tile; each tile gives the GT-FRC (FRC between the rendered reconstruction and the rendered ground truth of all labelling sites; 5 nm pixels, 1/7) "
            "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px). SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, "

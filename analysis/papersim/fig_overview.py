@@ -11,14 +11,14 @@ import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C, metrics as M
-from fig_density import render, CROP
+from fig_density import render, crop_of, gt_desc
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--model', default='m1809')
 ap.add_argument('--suffix', default='', help="movie dir suffix, e.g. '_gauss' (D<d>_gauss: the preprint's Gaussian 1.3 px PSF reproduction)")
 a = ap.parse_args()
 DENS = [0.5, 1, 2, 4]
 COLS = [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), ('v2sig', 'SIMCODE v2\n(σ ≤ 12 nm)')]
-(cx, cy), w = CROP
+(cx, cy), w = crop_of(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}'))
 fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1) + 3.0, 2.95 * len(DENS)), squeeze=False)
 notes = set()
 for i, d in enumerate(DENS):
@@ -33,7 +33,7 @@ for i, d in enumerate(DENS):
         if k == 'decode*':
             k = 'decode_pre' if 'decode_pre' in R['methods'] else ('decode_sim' if 'decode_sim' in R['methods'] else 'decode')
             if k == 'decode_pre': notes.add('the preprint\'s own DECODE model (decode-3f-g1.3, Gaussian PSF), 6-frame sums from frame 0, crlb 0.2 px'); tag = ''
-            if k != 'decode_pre' and a.suffix == '_v2psf':
+            if k != 'decode_pre' and a.suffix.startswith('_v2psf'):
                 tag = ' †'; notes.add('† DECODE retrained for the v2 PSF, heights 0-0.40 um and these photon / background / density ranges (dec_sim1809v2)')
             elif k != 'decode_pre': tag = ' †' if k == 'decode' else ' ‡'; notes.add(('† DECODE model trained for the real 1809/2 movie: photons and background are in its range here, the emitter density of rows 2 and 4 is above it' if a.prefix == 'Dexp' else '† DECODE model trained for the real 1809/2 movie (photons, background, on-time and density out of its range here)') if k == 'decode' else '‡ DECODE retrained for the simulation conditions (training plateaued; weak)')
         if k == 'v1*':
@@ -51,7 +51,7 @@ for i, d in enumerate(DENS):
     for A in ax[i]: A.set_xticks([]); A.set_yticks([])
 cond = 'experimental photons and background of 1809/2 (median 817 photons per window, 5.1 photons/px/frame)' if a.prefix == 'Dexp' else "preprint condition (500 photons per window, background 2.5 photons/px/frame)"
 psfname = 'Gaussian 1.3 px PSF (the preprint simulation)' if a.suffix == '_gauss' else 'measured 1809/2 PSF'
-if a.suffix == '_v2psf':        # v2-PSF sets (2026-11-15): conditions from the movies' gen.json, in v2 camera photon units
+if a.suffix.startswith('_v2psf'):        # v2-PSF sets (2026-11-15): conditions from the movies' gen.json, in v2 camera photon units
     g0 = json.load(open(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}', 'gen.json')))
     cond = (f"experimental photons and background of 1809/2 in v2 camera units (median {g0['brightness_fit']['fit_median']:.0f} photons per window, "
             f"{g0['bg_per_frame']['mean']:.2f} photons/px/frame)" if a.prefix == 'Dexp' else
@@ -59,7 +59,7 @@ if a.suffix == '_v2psf':        # v2-PSF sets (2026-11-15): conditions from the 
     zd = g0['z_dist_um']
     psfname = f"in-situ PSF v2 of 1809/2 + v2 camera, emitter heights 0-400 nm (median {zd['p50'] * 1e3:.0f} nm)"
 
-title = (f'Simulated microtubules, 60 000 frames, {psfname}; {cond}. Density in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) '
+title = (f'Simulated {gt_desc(os.path.join(C.OUT, f"{a.prefix}{DENS[0]:g}{a.suffix}"))}, 60 000 frames, {psfname}; {cond}. Density in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) '
          'and rendering in every panel; SIMCODE v2 with the PSF-matched networks.')
 if any(os.path.exists(os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}', 'full', f'gtfrc_{a.model}.json')) for d in DENS):
     notes.add('GT-FRC = FRC between the rendered reconstruction and the rendered ground truth (all labelling sites; 5 nm pixels, 1/7); FRC = the fair half-split FRC')
@@ -76,5 +76,5 @@ fig.text(x0 / fw, y0 - 0.025, psfpanel.panel_label(info), fontsize=10, va='top',
 fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}')
 open(fn + '_caption.txt', 'w').write('\n'.join([title, psfpanel.caption_text(info)] + sorted(notes)) + '\n')
 plt.savefig(fn + '.png', dpi=130); print(fn + '.png')
-if a.suffix == '_v2psf':
+if a.suffix.startswith('_v2psf'):
     for ext in ('pdf', 'svg'): plt.savefig(f'{fn}.{ext}', dpi=300); print(f'{fn}.{ext}')
