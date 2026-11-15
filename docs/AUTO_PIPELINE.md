@@ -174,6 +174,17 @@ code with `__file__` set (it is not imported as a module). Examples in `simcode/
 config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py`, `nr80.py` = the two yaml files in this style
 (`tests/test_cfgdict.py` checks that they resolve to the same config).
 
+### 1.2 Set-ups and channels (2026-11-15)
+
+`setup: widefield` (default) is the DMD-SIMFLUX pipeline of this document. `setup: fourpi` (`simcode/setups/fourpi.py`,
+acquisitions in `simcode/pipeline/configs/fourpi.py`) runs the stages registration, process, report on a multi-file dcimg
+movie (`movie` = a glob), with its own section `fourpi` (networks, PSF, delta, processing settings, files). Both use the
+common keys `channels` (null = one channel; else the list of channel crops on the camera, mirror, interleaved page,
+per-channel PSF, weight: `simcode/channels/layout.py`) and `registration` (mode insitu = a map per file from the movie
+itself, no beads; file = one map json for every file; the settings of the in-situ chain, `simcode/channels/registration.py`).
+A widefield config with several channels (two-colour) runs order, camera, registration (its processing is not in the
+pipeline yet).
+
 ## 2. Stages
 
 Run order (letters = the request's stage list): `order`, `camera` (a1), `spots` (c1), `cammaps` (a2), `tracks` (c2),

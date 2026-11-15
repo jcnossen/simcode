@@ -130,6 +130,8 @@ class FourPiSetup(Setup):
         from simcode.channels import registration as REG
         d = pipe.dir('registration'); per = {}
         dev = pipe.torch_dev(6)
+        import torch
+        if not torch.cuda.is_available(): dev = 'cpu'           # CUDA_VISIBLE_DEVICES='' : the registration runs on the CPU
         for fi in files:
             fn = self.regmap_file(c, fi)
             if os.path.exists(fn):
