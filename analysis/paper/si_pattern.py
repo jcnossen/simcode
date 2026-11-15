@@ -515,7 +515,7 @@ def simflux_pattern_rows(base, ep=0, me_thr=0.1, chunk=500000):
     e = (ep - fr) % npat
     y = I[np.arange(len(fr)), e] / I.sum(1)
     m = mp.mod[ep]
-    return dict(x=x, y=y, inc=me < me_thr, isum=I.sum(1), iso=nn >= NN_MIN,
+    return dict(x=x, y=y, inc=me < me_thr, isum=I.sum(1), iso=nn >= NN_MIN, nn_own=nn, px=pos[:, 0], py=pos[:, 1], fr=fr,
                 iso_rule=f'no other SMLM fit (smlm.npy) of the same 6-frame window (same window start) within {NN_MIN} px', curve=lambda t: m['relint'] * (1 + m['depth'] * np.sin(t)), sin_conv=True,
                 relint=float(m['relint']), depth=float(m['depth']), pitch_nm=float(2 * np.pi / np.hypot(*k[ep]) * 108.33),
                 n=int(len(fr)), n_inc=int((me < me_thr).sum()), rule=f'modulation error < {me_thr} (own pattern, SMLM per-frame intensities at the SMLM position; the SIMFLUX input filter)',
@@ -577,6 +577,7 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
     iso = cnt <= 1
     r0 = rn[ep]
     return dict(x=x, x_solved=xs, y=y, inc=inc, gamma=gam, isum=isum, iso=iso, iso_count=cnt,
+                px=F['x_prior'][gi].astype(np.float64), py=F['y_prior'][gi].astype(np.float64), fr=F['frame'][gi].astype(np.int64),
                 iso_rule=f'no other stored pass-1 candidate (p >= 0.3) of the same window within {NN_MIN} px', paper_sel=sel[gi], curve=lambda tt: r0 * (1 + m[a] * np.cos(tt)),
                 sin_conv=False, relint=float(r0), depth=float(m[a]), pitch_nm=float(2 * np.pi / np.hypot(*K[a]) * 108.33), n=int(n),
                 n_inc=int(inc.sum()), rule=f'modulation error < {me_thr} (own pattern, pass-1 intensities at the pass-1 head position)',
@@ -592,7 +593,7 @@ def cached_rows(meth, ds, ep, outdir):
     cd = os.path.join(outdir, 'cache_si_pattern'); os.makedirs(cd, exist_ok=True)
     import hashlib
     src = cfg['base'] if meth == 'SIMFLUX' else cfg['run']
-    ver = '_gamma3'                                                               # the common modulation-error rule (2026-11-15)
+    ver = '_gamma4'                                                               # the common modulation-error rule (2026-11-15)
     cf = os.path.join(cd, f'{ds}_{meth}_p{ep}_{hashlib.md5(src.encode()).hexdigest()[:8]}{ver}.npz')     # keyed on the source path too
     if os.path.exists(cf):
         z = np.load(cf, allow_pickle=False); M = json.loads(str(z['meta']))
@@ -606,6 +607,47 @@ def cached_rows(meth, ds, ep, outdir):
     sca = {k: v for k, v in R.items() if not isinstance(v, np.ndarray) and not callable(v)}
     np.savez(cf, meta=json.dumps(dict(mtimes={f: os.path.getmtime(f) for f in R['files'] if os.path.exists(f)}, scalars=sca)), **arr)
     return R
+
+
+def union_isolation(ds, RF, RC, outdir, link_r=1.0):
+    """detector-independent isolation (2026-11-15): one neighbour list per window = the union of both methods' detections
+    (all stored SMLM fits of the 6-frame sum starting at frame f + all stored SIMCODE pass-1 candidates p >= 0.3 of the window
+    starting at f; SMLM windows at starts off SIMCODE's 3-frame grid use the SIMCODE window with the nearest start). A row is
+    isolated if no OTHER detection of either method lies within NN_MIN px in its window: its own method's other detections
+    (nearest other / count incl. itself) and the other method's detections, of which the row's own counterpart (the other
+    method's detection of the same emitter: the nearest one within link_r px, if any) is not counted. Spatial hash, exact
+    distances. Returns (iso_simflux, iso_simcode) over the rows of RF / RC; cached in cache_si_pattern."""
+    import hashlib
+    from simcode.util import spatial_hash as SH
+    from simcode.processing.common import load_pass1_rows
+    cfg = DS[ds]
+    cf = os.path.join(outdir, 'cache_si_pattern', f'{ds}_iso_union_{hashlib.md5((cfg["base"] + cfg["run"]).encode()).hexdigest()[:8]}.npz')
+    if os.path.exists(cf):
+        z = np.load(cf)
+        if len(z['iso_f']) == len(RF['px']) and len(z['iso_c']) == len(RC['px']): return z['iso_f'], z['iso_c']
+    from simcode.dataset import Dataset
+    S = Dataset.load(f'{cfg["base"]}/smlm/smlm.npy', window=6).numpy()
+    sx, sy, sf = S['pos'][:, 0].astype(np.float64), S['pos'][:, 1].astype(np.float64), S['frame'].astype(np.int64); del S
+    run = cfg['run']; rc = json.load(open(f'{run}/run_config.json'))
+    chunks = sorted(int(f[6:-4]) for f in os.listdir(run) if f.startswith('pass1_') and f.endswith('.npz'))
+    po = None
+    try: po = json.load(open(rc['settings']['cal'])).get('prior_off')
+    except Exception: pass
+    P = load_pass1_rows(run, chunks, None, po, cols=('wstart', 'x', 'y'))
+    cx, cy, cw = P['x'].astype(np.float64), P['y'].astype(np.float64), P['wstart'].astype(np.int64); del P
+    kw = dict(device='cpu')
+    def other(qx, qy, qk, ox, oy, ok_):
+        """number of the other method's detections within NN_MIN px in the query's window, minus the counterpart"""
+        c = SH.count(ox, oy, ok_, qx, qy, qk, NN_MIN, **kw)
+        d, _ = SH.nearest(ox, oy, ok_, qx, qy, qk, link_r, **kw)
+        return c - np.isfinite(d).astype(np.int64)
+    # SIMFLUX rows: own = RF['nn_own'] (nearest other SMLM fit, same start); other = SIMCODE candidates of the nearest 3-grid start
+    wk = (np.round(RF['fr'] / 3.0) * 3).astype(np.int64)
+    iso_f = (RF['nn_own'] >= NN_MIN) & (other(RF['px'], RF['py'], wk, cx, cy, cw) <= 0)
+    # SIMCODE rows: own = count of candidates incl. itself (iso_count <= 1); other = SMLM fits of the same start frame
+    iso_c = (RC['iso_count'] <= 1) & (other(RC['px'], RC['py'], RC['fr'], sx, sy, sf) <= 0)
+    np.savez(cf, iso_f=iso_f, iso_c=iso_c)
+    return iso_f, iso_c
 
 
 def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_pattern_plots', min_phot=300.0):
@@ -622,9 +664,13 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
         cfg = DS[ds]
         for ci, meth in enumerate(('SIMFLUX', 'SIMCODE')):
             R = cached_rows(meth, ds, ep, outdir); ax = axs[ri, ci]
+            if ci == 0:
+                iso_u = union_isolation(ds, R, cached_rows('SIMCODE', ds, ep, outdir), outdir)
+            R = dict(R); R['iso_own_method'] = R['iso']; R['iso'] = iso_u[ci]
             # the pattern estimation's photon cut (min_phot, detected photons, on the 6-frame sum of the method's own per-frame
             # intensities; pattern_estimation.select), applied to both bases
             n_before = int(R['n']); keep_ph = R['isum'] >= min_phot; keep = keep_ph & R['iso']
+            n_iso_own = int((keep_ph & R['iso_own_method']).sum())
             R = {k_: (v[keep] if isinstance(v, np.ndarray) and v.shape[:1] == keep.shape else v) for k_, v in R.items()}
             R['n'] = int(keep.sum()); R['n_inc'] = int(R['inc'].sum())
             if not R['sin_conv']:
@@ -635,7 +681,8 @@ def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_patt
                     if k_ in R: R[k_] = (R[k_] + np.pi / 2) % (2 * np.pi)
                 R['curve'] = lambda t, r0_=r0_, dep_=dep_: r0_ * (1 + dep_ * np.sin(t)); R['sin_conv'] = True
             P = dict(files=R['files'], rule=R['rule'], base=R.get('base'), n_before_photon_cut=n_before, min_phot=min_phot,
-                     n_after_photon_cut=int(keep_ph.sum()), isolation=R.get('iso_rule'), n=R['n'], n_included=R['n_inc'],
+                     n_after_photon_cut=int(keep_ph.sum()), isolation=f'no other detection of either method within {NN_MIN} px ({NN_MIN * 108.33:.0f} nm) in the same window (union list; own counterpart within 1 px of the other method not counted)',
+                     n_after_photon_cut_and_own_method_isolation=n_iso_own, n=R['n'], n_included=R['n_inc'],
                      frac_included=R['n_inc'] / R['n'], depth=R['depth'], relint=R['relint'], pitch_nm=R['pitch_nm'])
             if 'paper_sel' in R:
                 ps = R['paper_sel'].astype(bool)
@@ -695,10 +742,12 @@ def caption_pattern_preprint(V):
          'position (before the pattern is used); population = the detections with score p >= 0.63 (no precision cut). Both inside '
          f'the field of view x, y in [5, 115) px, and both with at least {V["min_phot"]:.0f} detected photons summed over the 6 frames of '
          'the method\'s own per-frame intensities (the photon threshold of the pattern estimation; both in photo-electrons with '
-         'the same v2 camera gain and offset map), and isolated as in the pattern estimation: no other detection of the same window '
-         f'within {NN_MIN:.0f} px ({NN_MIN * 108.33:.0f} nm), each method with its own detections as neighbours (SIMFLUX: all stored SMLM fits '
-         'of the same 6-frame window, i.e. the same window start, SMLM fitting a 6-frame sum at every frame; SIMCODE: all stored '
-         'pass-1 candidates p >= 0.3 of the same window). '
+         f'the same v2 camera gain and offset map), and isolated: no other detection of either method within {NN_MIN * 108.33:.0f} nm '
+         f'({NN_MIN:.0f} px) in the same window. The neighbour list of a window is the union of both methods\' detections: the stored SMLM '
+         'fits of the 6-frame sum starting at that frame and the stored SIMCODE pass-1 candidates (score p >= 0.3) of the window '
+         'starting at the same frame (SMLM windows starting off SIMCODE\'s 3-frame grid: the SIMCODE window with the nearest start); '
+         'the localization itself and its counterpart in the other method (the nearest detection of the other method within 1 px, '
+         'the same emitter) are not counted. '
          f'{V["n_show_per_panel"]} random localizations per panel, in their true proportions (red drawn first, blue on top); the '
          'panel text gives the fraction within 0.1 of the whole population. Black: the estimated illumination pattern of each method (SIMFLUX: depth fixed to '
          '0.9, as in the SIMFLUX pipeline; SIMCODE: the estimated depth), r_ij (1 + m_i sin(phase)).',
@@ -719,15 +768,15 @@ def caption_pattern_preprint(V):
           'nor the plotted phase uses a pattern-solved position, but the included points lie near the curve by construction for '
           'both methods (they are selected on their distance to it); the fraction within 0.1 and m_eff of the excluded rows are '
           'the informative numbers.',
-          'Filters of the pattern estimation applied to both bases (decision 2026-11-15): >= 300 detected photons and isolation '
-          '(nn >= 3 px in the same window, spatial hash, each method\'s own detections); not applied: its on-through-window link '
-          '(w - 6 / w + 6) and positive per-frame intensities. Counting rule for SIMCODE: hash count of candidates within 3 px '
-          '(d <= 3 px) of the row position incl. the row itself, isolated if <= 1; SIMFLUX: nearest other fit, isolated if >= 3 px. '
-          'NB the SMLM spot detector (8 px ROI, local-maximum detection on the 6-frame sum) almost never returns two fits within 3 px of '
-          'each other in one window (1809_2: 0.0003 % of the fits; 1 % within 5 px; median nn 7.8 px), so for SIMFLUX the isolation '
-          'cut removes almost nothing: close emitters are merged into one ROI fit (and then mostly fail gamma < 0.1) instead of being '
-          'flagged as crowded; the SIMCODE pass-1 candidates (p >= 0.3) do resolve them, and the cut removes 58 % / 87 % of the SIMCODE '
-          'base (1809_2 / 2.5 nM).',
+          'Filters of the pattern estimation applied to both bases (decisions 2026-11-15): >= 300 detected photons and isolation '
+          '(no other detection within 3 px in the same window); not applied: its on-through-window link (w - 6 / w + 6) and positive '
+          'per-frame intensities. The isolation uses ONE neighbour list for both methods (the union of SMLM fits and SIMCODE pass-1 '
+          'candidates p >= 0.3 of the window), so it does not depend on either detector: with each method\'s own detections only, it '
+          'removed ~0 SMLM fits (the SMLM spot detector, 8 px ROI on the 6-frame sum, practically never returns two fits within 3 px; '
+          'close emitters are merged into one fit) but most SIMCODE rows. Counting: own method = nearest other detection (SMLM) / '
+          'hash count incl. the row (SIMCODE, <= 1); other method = hash count within 3 px minus the counterpart (nearest within '
+          '1 px). Base sizes before / after isolation: ' + '; '.join(f'{k} {p["n_after_photon_cut"]} / {p["n"]} (own-method '
+          f'isolation only: {p["n_after_photon_cut_and_own_method_isolation"]})' for k, p in P.items()) + '.',
           'Conventions: both panels in the preprint\'s sin convention, model r_ij (1 + m_i sin(phase)): SIMFLUX (smlmtorch) relint '
           '(1 + depth sin phase) as is; SIMCODE\'s code model rel_s (1 + m_a cos(k_a.r - psi_s - eps_a(t))) is plotted with phase + '
           'pi/2 (phi_ij = psi_s - pi/2).',
