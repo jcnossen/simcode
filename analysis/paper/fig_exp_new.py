@@ -18,8 +18,8 @@ usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM
   their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
   the same DME v2 drift); --psf <calib json>: PSF panel (psfpanel.py: xy at the plotted v2 set's median height + xz, rms
   aberration, SMLM / SIMFLUX CRLB at that set's median photons, the run's pass-1 background and the camera read noise;
-  psfdata.py), the v2 argument must then be a run directory; --aoi <values.json>: the zoom boxes of an earlier figure. PSF panel layout (psf_axes): xy and xz images of the same height,
-  xz at equal nm scale in x and z, tops on the J / K / L axes tops, letter on their baseline; <out>_psf_table.{md,csv} = the SI
+  psfdata.py), the v2 argument must then be a run directory; --aoi <values.json>: the zoom boxes of an earlier figure. PSF panel layout (psf_axes): a narrow column, xy image on top
+  (top on the J / K / L axes tops), xz section below it at the same width (equal nm scale in x and z), label below, letter on the J / K / L baseline; <out>_psf_table.{md,csv} = the SI
   table of the panel's conditions and CRLBs (psf_table)"""
 import os, sys, json, argparse
 import numpy as np
@@ -80,21 +80,61 @@ def jsonable(o):
     return o
 
 
-def psf_axes(fig, cell, axJ, info, gap_in=0.3, right_in=0.5, max_h_frac=0.62):
-    """(2026-11-15) axes of the PSF panel inside the gridspec cell: xy and xz images with the SAME HEIGHT, tops on the top of the
-    FRC axes (the J / K / L axes tops); xy square, xz at equal nm scale in x and z (width = height x the x / z extent ratio of the
-    xz section); gap_in inches between them; right_in inches right of the xz image for its z ticks / label (drawn on the right)."""
+def psf_axes(fig, cell, axJ, info, xz_title_in=0.3, label_in=0.5, right_in=0.45):
+    """(2026-11-15) axes of the PSF panel inside the (narrow) gridspec cell: one column, xy image on top (square, top on the top
+    of the FRC axes = the J / K / L axes tops), xz section directly below it at the same width and equal nm scale in x and z
+    (height = width x the z / x extent ratio: wide and short); xz_title_in inches between them for the xz title, label_in inches
+    below the xz image for the panel label; right_in inches right of the images for the xz z ticks / label (drawn on the right).
+    The width is the largest that fits both the cell width and the height from the J top to the cell bottom."""
     fw, fh = fig.get_size_inches()
     cb = cell.get_position(fig); top = axJ.get_position().y1
     x_ext = info['roi_px'] * info['pixel_nm']
     z_ext = (info['z_grid_um'][-1] - info['z_grid_um'][0]) * 1e3
-    r = x_ext / z_ext
+    q = z_ext / x_ext
     W, Hc = cb.width * fw, (top - cb.y0) * fh
-    h = min((W - gap_in - right_in) / (1 + r), max_h_frac * Hc)
-    x0 = cb.x0 + max(0.0, (W - gap_in - right_in - (1 + r) * h) / 2) / fw
-    axy = fig.add_axes([x0, top - h / fh, h / fw, h / fh])
-    axz = fig.add_axes([x0 + (h + gap_in) / fw, top - h / fh, r * h / fw, h / fh])
+    w = min(W - right_in, (Hc - xz_title_in - label_in) / (1 + q))
+    x0 = cb.x0 + max(0.0, (W - right_in - w) / 2) / fw
+    axy = fig.add_axes([x0, top - w / fh, w / fw, w / fh])
+    axz = fig.add_axes([x0, top - (w + xz_title_in + q * w) / fh, w / fw, q * w / fh])
     return axy, axz
+
+
+def raw_grid_count(kind, path, F, smlm_path=None, cache=None):
+    """(2026-11-15) a method's localizations BEFORE its own selection, counted like the FRC rows (fair protocol steps 2 and 4:
+    window starts f % 6 == 0, the evalproto crop, window end within the F frames; finite x, y) -> int, or None (unknown).
+    SMLM / SIMFLUX: every detected ROI with an SMLM fit (the localizer's summed-fit cache next to the smlm table, before the
+    chi^2 filter; the same detections feed SIMFLUX); DECODE: every row of its table (the network's own detection output);
+    SIMCODE: every row of the run's table (before the p / sigma selection). cache: json file of earlier counts."""
+    import glob, pickle
+    from simcode.dataset import Dataset
+    src = os.path.abspath(smlm_path if kind in ('smlm', 'sf') else path)
+    key = f'{kind}|{src}|{F}'
+    C = json.load(open(cache)) if cache and os.path.exists(cache) else {}
+    if key in C: return C[key]
+    if kind in ('smlm', 'sf'):
+        fs = sorted(glob.glob(os.path.join(os.path.dirname(os.path.dirname(src)), 'work', '*', 'cache', '*', 'summed_fits')))
+        if len(fs) != 1: return None
+        L = Dataset.from_smlmtorch(pickle.load(open(fs[0], 'rb'))[0], window=6).numpy()
+    elif kind == 'decode':
+        from simcode.dataset import decode_table
+        L = Dataset.from_decode(decode_table(src), window=6).numpy()
+    elif kind == 'v2':
+        L = Dataset.load(src).numpy()
+    else:
+        return None
+    x, y, f = L['pos'][:, 0].astype(np.float64), L['pos'][:, 1].astype(np.float64), np.asarray(L['frame']).astype(np.int64)
+    n = int((np.isfinite(x) & np.isfinite(y) & (f % FF.GRID == 0) & (f + 6 <= F) & FF.in_crop(x, y)).sum())
+    if cache:
+        C = json.load(open(cache)) if os.path.exists(cache) else {}
+        C[key] = n; json.dump(C, open(cache, 'w'), indent=1)
+    return n
+
+
+REMOVED = dict(smlm='SMLM: chi^2 > 4 x ROI^2 or max(sigma_x, sigma_y) >= 0.15 px',
+               sf='SIMFLUX: the SMLM chi^2 filter, modulation error >= 0.1, SIMFLUX fit at a parameter limit or > 0.5 px from its '
+                  'SMLM fit, or max(sigma_x, sigma_y) >= 0.15 px',
+               decode='DECODE: its predicted max(sigma_x, sigma_y) >= 0.15 px',
+               v2='SIMCODE: detection probability p < 0.63 or calibrated max(sigma_x, sigma_y) > 12 nm')
 
 
 def paper_text(s):
@@ -211,6 +251,7 @@ def main():
             R['frc_nm'], R['freq'], R['curve'] = FF.frc_halves(R['x_dc'][m], R['y_dc'][m], T['f'][m])
             R['n_frc'] = int(m.sum()); R['mask'] = m
             assert SEL[k].get('n') is None or R['n_frc'] == SEL[k]['n'] and abs(R['frc_nm'] - SEL[k]['frc_nm']) < 1e-6, (k, R['n_frc'], R['frc_nm'], SEL[k])
+        R['n_raw'] = raw_grid_count(k, paths[k], F, smlm_path=paths['smlm'], cache=f'{od}/raw_grid_counts.json')
         m = R['mask']
         dsets.append(to_dataset(R['x_dc'][m], R['y_dc'][m], T['f'][m], T['sx'][m], T['sy'][m], T['photons'][m]))
         res.append(R)
@@ -248,7 +289,7 @@ def main():
     if psf_info is None:
         bot = root[2].subgridspec(1, 3, wspace=0.42, width_ratios=[1, 0.42, 0.42])
     else:
-        bot = root[2].subgridspec(1, 4, wspace=0.42, width_ratios=[1, 0.42, 0.42, 1.7])
+        bot = root[2].subgridspec(1, 4, wspace=0.42, width_ratios=[1.6, 0.52, 0.52, 0.8])
     styles = ['-', '--', '-.']
     ax = fig.add_subplot(top[:2, :2])
     dsets[-1].renderFigure(axes=ax, title='Overview' + (' (SIMCODE v2)' if a.v1 else ''), **full)
@@ -277,18 +318,35 @@ def main():
     ax.legend(fontsize=11, loc='upper right', title='FRC resolution', title_fontsize=11, framealpha=0.9)
     ax.set_xlabel('Spatial freq. [nm$^{-1}$]'); ax.set_title('FRC'); ax.get_yaxis().set_visible(False); letter(ax)
     ax = fig.add_subplot(bot[1])
+    # K: per method one stacked bar = accepted (solid: the rows of the FRC / renders) + removed by the method's selection (light,
+    # hatched; down to its raw localizations on the same windows / region, raw_grid_count); --select: the rows removed by the
+    # FRC-optimal cut (light, no hatch) between them; % accepted of the raw count above each bar
     cnt = np.array([R['n_frc'] for R in res]) * 1e-6
-    ax.bar(range(NM), cnt, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
-    if SEL:     # rows removed by the FRC-optimal cut (light) on top of the kept ones; the current selection's count marked
-        c0 = np.array([R.get('n_frc_unfiltered', R['n_frc']) for R in res]) * 1e-6
-        ax.bar(range(NM), np.maximum(c0 - cnt, 0), bottom=cnt, color=COLORS, alpha=0.3)
-        for i in range(NM):
-            ax.text(i, max(c0[i], cnt[i]) + 0.02 * max(c0.max(), cnt.max()), f'{100 * cnt[i] / c0[i]:.0f}%', ha='center', va='bottom', fontsize=8)
-        ax.set_ylim(0, 1.15 * max(c0.max(), cnt.max()))
+    c0 = np.array([R.get('n_frc_unfiltered', R['n_frc']) for R in res]) * 1e-6 if SEL else cnt
+    raw = np.array([np.nan if R.get('n_raw') is None else R['n_raw'] for R in res], float) * 1e-6
+    tot = np.where(np.isfinite(raw), np.maximum(raw, c0), c0)
+    ax.bar(range(NM), cnt, color=COLORS, label='accepted')
+    if SEL:
+        ax.bar(range(NM), np.maximum(c0 - cnt, 0), bottom=cnt, color=COLORS, alpha=0.3, label='removed by FRC-optimal cut')
+    ax.bar(range(NM), tot - c0, bottom=c0, color=COLORS, alpha=0.25, hatch='///', edgecolor='0.4', lw=0, label='removed by selection')
+    for i in range(NM):
+        if np.isfinite(raw[i]):
+            ax.text(i, tot[i] + 0.015 * tot.max(), f'{100 * cnt[i] / raw[i]:.0f}%', ha='center', va='bottom', fontsize=8)
+    ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
+    ax.set_ylim(0, 1.12 * tot.max())
+    from matplotlib.patches import Patch
+    hl = [Patch(facecolor='0.35', label='accepted')] + ([Patch(facecolor='0.35', alpha=0.3, label='removed by FRC-optimal cut')] if SEL else []) \
+        + [Patch(facecolor='0.35', alpha=0.25, hatch='///', edgecolor='0.4', lw=0, label='removed by selection')]
+    axK = ax       # legend below the K / L tick labels
     ax.set_title('Localizations\n($10^6$)', fontsize=13); letter(ax, dx=-0.3)
     ax = fig.add_subplot(bot[2])
     ax.bar(range(NM), pc, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
     ax.set_title('RSP', fontsize=13); letter(ax, dx=-0.3)
+    fig.canvas.draw()
+    yb = min(t.get_window_extent().y0 for t in axK.get_xticklabels() + ax.get_xticklabels())
+    yb = fig.transFigure.inverted().transform((0, yb))[1]
+    fig.legend(handles=hl, fontsize=10, loc='upper left', bbox_to_anchor=(axK.get_position().x0 - 0.01, yb - 0.004), frameon=False,
+               handlelength=1.4, labelspacing=0.3, borderaxespad=0)
     if psf_info is not None:
         import psfpanel
         from matplotlib.transforms import blended_transform_factory
@@ -299,11 +357,18 @@ def main():
         # letter M on the baseline of J, K, L (y from the J axes, x left of the xy image)
         axy.text(-0.25, 1.03, next(letters), transform=blended_transform_factory(axy.transAxes, axJ.transAxes), fontsize=20,
                  fontweight='bold', ha='right', va='bottom')
-        axy.text(0.0, -0.12, panel_text(psf_info, psf_cond), transform=axy.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
+        axz.annotate(panel_text(psf_info, psf_cond), (0.0, 0.0), xycoords='axes fraction', xytext=(0, -5), textcoords='offset points',
+                     fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
             + (' Precision cut: each method additionally cut at its own max(sigma_x, sigma_y) <= '
                + ', '.join(f"{LABELS[KINDS.index(k)]} " + ('no cut' if SEL[k]['sigma_max_px'] >= FF.SIGMA_MAX else f"{SEL[k]['sigma_max_px'] * FF.PX:.1f} nm") for k in KINDS if k in SEL)
-               + f' ({SEL_RULE}; drift of the uncut sets); K: kept (solid) and removed by that cut (light).' if SEL else '')
+               + f' ({SEL_RULE}; drift of the uncut sets).' if SEL else '')
+            + ' K: per method accepted localizations (solid, the rows of the FRC and the renders; % of the method\'s raw localizations above '
+               'the bar) and those removed by its selection (light, hatched), both counted on the disjoint 6-frame windows and the common '
+               'region of the FRC (window starts f % 6 == 0; no window subsampling counted as removed). Raw: SMLM / SIMFLUX every detected ROI with an '
+               'SMLM fit (the same detections), DECODE every row of its output, SIMCODE every detection of the network (its detection threshold p >= 0.3). Removed: '
+               + '; '.join(REMOVED[k] for k in KINDS if k in REMOVED) + '.'
+            + (' K, light without hatching (between the two): rows removed by the precision cut.' if SEL else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     txt = (lambda t: t) if a.v1 else paper_text     # paper version (no --v1): no version labels in the caption / table text
     if psf_info is not None:
@@ -315,7 +380,7 @@ def main():
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', bbox_inches='tight', pad_inches=0.15, **kw)
     plt.close('all')
-    vals = dict(dataset=a.dataset, nframes=F, labels=LABELS, paths=paths, frc_nm=[R['frc_nm'] for R in res],
+    vals = dict(dataset=a.dataset, nframes=F, labels=LABELS, paths=paths, frc_nm=[R['frc_nm'] for R in res], n_raw=[R.get('n_raw') for R in res],
                 n_frc=[R['n_frc'] for R in res], n_disjoint=[R['n_disjoint'] for R in res], n_all=[R['n_all'] for R in res],
                 frc_nm_nofilter=[R['frc_nm_nofilter'] for R in res], frc_nm_30frame_halves=[R['frc_nm_30frame_halves'] for R in res],
                 pearson=np.asarray(pc).tolist(), rmsd=np.asarray(rmsd).tolist(), drift_ptp_nm=[R['drift_ptp_nm'] for R in res],
