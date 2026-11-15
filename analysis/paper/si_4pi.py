@@ -7,7 +7,7 @@
                crossing zoom, y-z section through overlapping tubes, FRC resolution vs frames (f), tube cross-section (14 isolated
                segments) + profiles. The FRC values (titles) and FRC-vs-frames panels of both figures are read from
                cache_si_4pi/frc_vs_frames.json: run si_4pi_frc.py compute first (the one FRC estimator of the 4Pi figures,
-               also behind si_4pi_frc_vs_frames).
+               also behind the supplementary analysis si_4pi_frc_vs_frames, which is not in the paper).
   si_4pi_sim   simulated 4Pi-SIMFLUX microtubule cell field (webSMLM / inSiliScope structure), density sweep 0.11-1.64 ON
                emitters / um^2 / frame: renders per density (network, one sigma selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
@@ -58,7 +58,7 @@ def lg(s): print(f'[{time.time() - t0:6.0f}s] {s}', flush=True)
 
 
 # ======================================================================================== FRC resolution vs frames (NPC g, MT f)
-FRC_YMAX = 300.0
+FRC_YMAX = 50.0                                          # linear FRC axis 0-50 nm; values above leave the top of the plot
 
 
 def frc_timeline(T, box, n_frames, name):
@@ -102,14 +102,13 @@ def timeline_summary(F, targets=(25, 20, 15)):
 
 def frc_timeline_panel(ax, F, keys, xmax):
     for k in keys:
-        r = np.array(F['frc'][k], float); r[r > FRC_YMAX] = np.nan
+        r = np.array(F['frc'][k], float)
         ax.plot(F['N'], r, marker='o', ms=1.4, lw=0.9 if k == 'net' else 1.0, ls='--' if k == 'net' else '-', color=COL[k], label=LAB[k])
     for t in (25, 20, 15): ax.axhline(t, color='0.6', lw=0.4, ls=':', zorder=0)
     u, ticks, lab, f = (1e6, [0, 0.5e6, 1.0e6, 1.5e6], 'frames (10$^6$)', '{:.1f}') if xmax > 1e6 else (1e3, [0, 2e5, 4e5, 6e5], 'frames (10$^3$)', '{:.0f}')
-    ax.set_yscale('log'); ax.set_xlim(0, xmax * 1.03); ax.set_ylim(8, FRC_YMAX)
+    ax.set_xlim(0, xmax * 1.03); ax.set_ylim(0, FRC_YMAX)
     ax.set_xticks(ticks); ax.set_xticklabels([f.format(t / u) if t else '0' for t in ticks])
-    ax.set_yticks([10, 15, 20, 25, 50, 100, 200]); ax.set_yticklabels(['10', '15', '20', '25', '50', '100', '200'])
-    ax.yaxis.set_minor_formatter(plt.NullFormatter()); ax.tick_params(length=2, pad=1)
+    ax.set_yticks([0, 10, 20, 30, 40, 50]); ax.tick_params(length=2, pad=1)
     ax.set_xlabel(lab, labelpad=1); ax.set_ylabel('FRC resolution (nm)', labelpad=1); ax.grid(alpha=0.25, lw=0.4, which='major')
 
 
@@ -120,14 +119,14 @@ def timeline_caption(S, region, total):
             "min(500, N / 12) six-frame windows, i.e. the two halves of the N frames below 6000 frames and the titles' 500-window blocks from "
             f"6000 frames on; otherwise the FRC of the titles, so the last point (all {total:,} frames) is the titles' value; the sustained crossing "
             "rule keeps the timeline from jumping at the dips of the structure's own spectrum (ring / tube size); dots = the computed N, 1000 x 2^(k/4) "
-            "and every 1/20 of the series, linear frames axis; one estimator with si_4pi_frc_vs_frames). Values above 300 nm not drawn; "
+            "and every 1/20 of the series; linear axes, FRC 0-50 nm: earlier values above 50 nm run off the top of the plot). "
             "dotted: 25 / 20 / 15 nm. "
             "Frames until the FRC stays at or below 25 / 20 / 15 nm: "
             + '; '.join(f"{LAB[k]} {s(k, 25)} / {s(k, 20)} / {s(k, 15)} (within 10 % of its all-frames value from {w10(k)} frames)" for k in K3)
             + ". What the timeline measures: the half-split FRC is the agreement of two independent halves of the data. On DNA-PAINT data it is set by "
             "how densely the localizations sample the labelled structure (docking sites revisited in both halves) and by the localization precision; "
             "the halves are kept apart in blocks of up to 500 windows because short blocks put the repeated detections of one binding event into both "
-            "halves, and the FRC then measures precision (si_4pi_frc_vs_frames). It is not a ground-truth resolution: it does not see structure that "
+            "halves, and the FRC then measures precision (on MT 12 nm after only 1000 frames). It is not a ground-truth resolution: it does not see structure that "
             "is missing or misplaced in both halves alike. A curve that still falls at the end of the series means that the later frames still added "
             "sampling.")
 
