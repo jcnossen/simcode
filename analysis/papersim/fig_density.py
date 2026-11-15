@@ -40,12 +40,14 @@ def gt_desc(md, paper=False):
             + f", {s['mt_length_um']:.0f} µm of microtubule in the field)")
 
 
-def render(x, y, corner, w, zoom=20):
+def render(x, y, corner, w, zoom=20, clip_pct=99.5):
+    """histogram render of the w x w px box at corner, zoom x finer pixels, 1-pixel Gaussian blur, saturated at the clip_pct
+    percentile of the image's pixels (the paper figures pass figstyle.CLIP_PCT)"""
     from scipy.ndimage import gaussian_filter
     n = w * zoom
     img = np.histogram2d(y, x, bins=n, range=[[corner[1], corner[1] + w], [corner[0], corner[0] + w]])[0]
     img = gaussian_filter(img, 1.0)
-    return np.clip(img / (np.percentile(img, 99.5) + 1e-9), 0, 1)
+    return np.clip(img / (np.percentile(img, clip_pct) + 1e-9), 0, 1)
 
 
 def fig(d, model, sub='full', prefix='D', suffix=''):
