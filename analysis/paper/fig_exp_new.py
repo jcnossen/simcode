@@ -196,16 +196,15 @@ def main():
     ax = fig.add_subplot(bot[1])
     cnt = np.array([R['n_frc'] for R in res]) * 1e-6
     ax.bar(range(NM), cnt, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
-    ax.set_title('Localizations ($10^6$)', fontsize=15); letter(ax, dx=-0.12)
+    ax.set_title('Localizations\n($10^6$)', fontsize=13); letter(ax, dx=-0.3)
     ax = fig.add_subplot(bot[2])
     ax.bar(range(NM), pc, color=COLORS); ax.set_xticks(range(NM)); ax.set_xticklabels(short, rotation=90, fontsize=10, linespacing=0.85)
-    ax.set_title('Pearson corr.', fontsize=15); letter(ax, dx=-0.12)
+    ax.set_title('RSP', fontsize=13); letter(ax, dx=-0.3)
     if psf_info is not None:
         import psfpanel
-        g = bot[3].subgridspec(2, 2, height_ratios=[1.25, 0.75], hspace=0.12, wspace=0.3)
+        g = bot[3].subgridspec(2, 2, height_ratios=[1.0, 0.3], hspace=0.15, wspace=0.55)  # xy | xz, same size; label below
         axy, axz, axt = fig.add_subplot(g[0, 0]), fig.add_subplot(g[0, 1]), fig.add_subplot(g[1, :])
         psfpanel.draw(axy, axz, psf_info, fontsize=8)
-        axz.set_aspect('equal')
         letter(axy, dx=-0.12, dy=1.12)
         axt.axis('off')
         axt.text(-0.05, 0.98, panel_text(psf_info, psf_cond), transform=axt.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)

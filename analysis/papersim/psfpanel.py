@@ -132,10 +132,15 @@ def draw(ax_xy, ax_xz, info, cmap='inferno', decades=3, fontsize=6):
         if ax is None: continue
         m = img.max()
         ax.imshow(np.clip(img, m * 10 ** -decades, None), cmap=cmap, norm=LogNorm(m * 10 ** -decades, m), extent=ext, origin='lower',
-                  aspect='equal' if ax is ax_xy else 'auto', interpolation='nearest')
+                  aspect='equal' if ax is ax_xy else 'auto', interpolation='bilinear')
         ax.set_xticks([]); ax.set_yticks([]); ax.set_title(ttl, fontsize=fontsize + 1, pad=2)
-        x0 = -0.85 * h; y0 = ext[2] + 0.1 * (ext[3] - ext[2])
-        ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=2); ax.text(x0, y0 + 0.04 * (ext[3] - ext[2]), '500 nm', color='w', fontsize=fontsize, va='bottom')
+        x0 = -0.85 * h
+        if ax is ax_xy:        # scale bar bottom-left; in the xz section at the top (clear of the height / focus lines)
+            y0 = ext[2] + 0.1 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=2)
+            ax.text(x0, y0 + 0.04 * (ext[3] - ext[2]), '500 nm', color='w', fontsize=fontsize, va='bottom')
+        else:
+            y0 = ext[2] + 0.9 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=2)
+            ax.text(x0, y0 - 0.04 * (ext[3] - ext[2]), '500 nm', color='w', fontsize=fontsize, va='top')
     if ax_xz is not None:
         ax_xz.axhline(info['z_um'] * 1e3, color='c', lw=0.6, ls=':')
         if info.get('focus_um') is not None: ax_xz.axhline(info['focus_um'] * 1e3, color='w', lw=0.6, ls='--')
