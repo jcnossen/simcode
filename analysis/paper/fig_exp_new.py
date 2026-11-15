@@ -44,7 +44,10 @@ SETS = {
                    imager='0.5 nM', density='low', name='1809/cover1/2'),
     '2.5nM_2': dict(**ZOOMS['2.5nM_2'], nframes=180000,
                     tif=f'{P2}/2.5nM_2/movie/cover1_600mW_5.5ms_cf660.tif', title='Medium density (2.5 nM/2)',
-                    imager='2.5 nM', density='medium', name='2.5nM/2'),
+                    imager='2.5 nM', density='medium', name='2.5nM/2',
+                    fit_note='SMLM and SIMFLUX: 2D fits at the fit plane that gave each baseline its best FRC (0.318 um for SMLM, '
+                             '0.086 um for SIMFLUX; tested the median network height 0.086 um and the in-situ calibration\'s '
+                             'spot-fit median 0.318 um).'),
     '20nM_2': dict(renders=None, render_args={'clip_percentile': 98}, nframes=120000,
                    tif=f'{P2}/20nM_2/movie/cover1_500mW_5.5ms_cf660.tif', title='High density (20 nM/2)',
                    imager='20 nM', density='high', name='20nM/2'),
@@ -117,7 +120,9 @@ def raw_grid_count(kind, path, F, smlm_path=None, cache=None):
     cache: json file of earlier counts."""
     import glob, pickle
     from simcode.dataset import Dataset
-    src = os.path.abspath(smlm_path if kind in ('smlm', 'sf') else path)
+    # (2026-11-15 late) SMLM: its own table's run (realpath: baselines_psfv2/smlm may link to another fit-plane run); SIMFLUX:
+    # the run of its own table (its SMLM detections), which can differ from the SMLM table's run (2.5 nM: 0.318 vs 0.086 um plane)
+    src = os.path.realpath(smlm_path if kind == 'smlm' else path)
     key = f'{kind}|{src}|{F}' + ('|p>=0.63' if kind == 'v2' else '')
     C = json.load(open(cache)) if cache and os.path.exists(cache) else {}
     if key in C: return C[key]
@@ -261,7 +266,7 @@ def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, S
          "of the field). Localizations shown and counted per method: precision < 0.15 px (CRLB for SMLM / SIMFLUX, network "
          "uncertainty for DECODE), calibrated uncertainty <= 12 nm for SIMCODE (in both cases the larger of the x and y values; "
          "SIMCODE also keeps only detections with a detection probability of at least 0.63). Each method's sample drift is "
-         "estimated from its own localizations (DME v2) and removed."]
+         "estimated from its own localizations (DME v2) and removed." + (' ' + S['fit_note'].replace(' um', ' µm') if S.get('fit_note') else '')]
     if SEL:
         cut = [f"{lab[q]} " + ('none' if SEL[q]['sigma_max_px'] >= FF.SIGMA_MAX else f"{SEL[q]['sigma_max_px'] * FF.PX:.1f} nm")
                for q in kinds if q in SEL]
@@ -283,7 +288,9 @@ def exp_caption(ds, S, F, labels, kinds, res, renders, pc, psf_info, psf_cond, S
     t.append(f"({k}) Localizations per method: accepted (solid; the localizations of the renders and the FRC) and removed by the "
              "method's quality filters (light, hatched)" + (', with those removed by the precision cut in between (light)' if SEL else '')
              + ", counted on the same windows and region; the percentage above each bar is accepted / all localizations the method "
-             "reported (SMLM and SIMFLUX: every detected spot with an SMLM fit, the same detections for both; DECODE: every "
+             "reported (" + ("SMLM and SIMFLUX: every detected spot with an SMLM fit at the method's own fit plane, so the two counts "
+                            "differ; " if S.get('fit_note') else "SMLM and SIMFLUX: every detected spot with an SMLM fit, the same "
+                            "detections for both; ") + "DECODE: every "
              "localization it reported; SIMCODE: every detection with a detection probability of at least 0.63). Accepted: "
              + acc + '. Quality filters: ' + '; '.join(REMOVED_WORDS[q] for q in kinds) + '.')
     t.append(f"({l}) Resolution-scaled Pearson correlation (RSP) of each method's render with the widefield image (the mean of all "
@@ -399,6 +406,7 @@ def main():
             + ' K: accepted / removed counted on the windows with start f % 6 == 0 and the FRC crop. Raw: SMLM / SIMFLUX every detected '
               'ROI with an SMLM fit (summed-fit cache, before the chi^2 filter), DECODE every row, SIMCODE every row with p >= 0.63. Removed: '
             + '; '.join(REMOVED[k] for k in KINDS if k in REMOVED) + '.'
+            + (f" {S['fit_note']} SMLM raw = its own run's detected ROIs, SIMFLUX raw = those of the SIMFLUX table's run." if S.get('fit_note') else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
     txt = (lambda t: t) if a.v1 else paper_text     # paper version (no --v1): no version labels in the caption / table text
     fig_no = a.fig_no or {'1809_2': '3', '2.5nM_2': '4'}.get(a.dataset, 'S?')
