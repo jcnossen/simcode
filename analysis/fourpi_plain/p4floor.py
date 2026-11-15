@@ -26,5 +26,5 @@ sim = torch.round(sim / g) * g
 D2 = dict(D, d=sim)
 th2, _ = localize(S, D2, th, iters=25)
 r_sim = summarize(evaluate(S, D2, th2), D['N'], np.arange(len(th)))
-print('real :', json.dumps({k: r_real[k] for k in ('ctr_median', 'ctr_bins', 'all_median')}))
-print('sim  :', json.dumps({k: r_sim[k] for k in ('ctr_median', 'ctr_bins', 'all_median')}))
+print('real :', json.dumps({k: r_real[k] for k in ('ctr_median', 'ctr_bins', 'all_median', 'outer_median', 'outer_bins')}))
+print('sim  :', json.dumps({k: r_sim[k] for k in ('ctr_median', 'ctr_bins', 'all_median', 'outer_median', 'outer_bins')}))

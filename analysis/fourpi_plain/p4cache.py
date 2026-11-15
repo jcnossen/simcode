@@ -21,10 +21,12 @@ def cache_path(fi, cell='Cell11'):
     return os.path.join(CACHE, f'{cell}_{fi:03d}_crops.npy')
 
 
-def acq():
+def acq(cfg=CFG):
+    """(resolved config, setup) of the Cell11 acquisition of a config file (default fourpi_plain.py)"""
     from simcode.pipeline import acquisition_config as AC
     from simcode.setups import get
-    c = [u for u in AC.load_all(CFG) if u['name'] == 'fourpi_plain_Cell11'][0]
+    L = AC.load_all(cfg)
+    c = [u for u in L if u['name'].endswith('Cell11')][0]
     return c, get(c['setup'])
 
 

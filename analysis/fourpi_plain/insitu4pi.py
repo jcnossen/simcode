@@ -321,8 +321,10 @@ def evaluate(model_or_spline, D, th, idx=None, central=4):
             out.append(deviance(mu, D['d'][j], D['var']))
         dv = torch.cat(out)                    # [n, C, P, P]
         P = dv.shape[-1]; h = P // 2; c0, c1 = h - central, h + central + 1
+        yy, xx = torch.meshgrid(torch.arange(P, device=dv.device) - h, torch.arange(P, device=dv.device) - h, indexing='ij')
+        ring = (yy ** 2 + xx ** 2) > 36                       # > 6 px from the centre: background-dominated pixels
         return dict(all=dv.mean((1, 2, 3)), ctr=dv[:, :, c0:c1, c0:c1].mean((1, 2, 3)),
-                    ch=dv[:, :, c0:c1, c0:c1].mean((2, 3)))
+                    ch=dv[:, :, c0:c1, c0:c1].mean((2, 3)), outer=dv[:, :, ring].mean((1, 2)))
 
 
 def baked_spline(model, P=17, z_range=ZR, oversample=2, dz_um=0.02, zpad=3, xy_limit=2.5, chunk=128):

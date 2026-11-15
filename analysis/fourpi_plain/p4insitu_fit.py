@@ -33,7 +33,7 @@ def split(D, tile=16):
 
 def summarize(ev, N, idx):
     o = {}
-    for k in ('all', 'ctr'):
+    for k in ('all', 'ctr', 'outer'):
         v = ev[k].cpu().numpy()
         o[k + '_median'] = float(np.median(v)); o[k + '_mean'] = float(np.mean(v))
         o[k + '_bins'] = [float(np.median(v[(N[idx] >= a) & (N[idx] < b)])) for a, b in zip(PH_BINS[:-1], PH_BINS[1:])]

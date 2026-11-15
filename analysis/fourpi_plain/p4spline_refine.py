@@ -79,7 +79,7 @@ def main():
     p.add_argument('--lam_r', type=float, default=0.3)
     p.add_argument('--lam_g', type=float, default=1.0)
     p.add_argument('--outer', type=int, default=6)
-    p.add_argument('--inner', type=int, default=15)
+    p.add_argument('--inner', type=int, default=40)
     p.add_argument('--ntrain', type=int, default=20000)
     p.add_argument('--neval', type=int, default=8000)
     p.add_argument('--batch', type=int, default=4000)
@@ -117,9 +117,11 @@ def main():
     log(f'reduced table vs fine table: relative L2 {float((g1 - g2).norm() / g1.norm()):.2e}')
     sc = float(K0.abs().max()) ** 2
     nz = K0.shape[2]
-    dK = torch.zeros(*K0.shape[:2], (nz + 1) // 2, *K0.shape[3:], device=dev, requires_grad=True)
-    log(f'correction knots {tuple(dK.shape)} ({dK.numel() / 1e6:.2f} M)')
-    full = lambda: K0 + upsample_z(dK, nz)
+    ks = float(K0.abs().max())          # the optimizer works on u = dK / ks (L-BFGS stops on absolute step sizes ~1e-9)
+    u = torch.zeros(*K0.shape[:2], (nz + 1) // 2, *K0.shape[3:], device=dev, requires_grad=True)
+    dKc = lambda: u * ks
+    log(f'correction knots {tuple(u.shape)} ({u.numel() / 1e6:.2f} M)')
+    full = lambda: K0 + upsample_z(dKc(), nz)
     rec = dict(args=vars(a), iters=[])
     t0 = time.time()
 
@@ -140,7 +142,8 @@ def main():
     save_refined(f'{od}/knots_it0.pt', spl, K0, vstate)
     best = (rec['iters'][0]['test']['ctr_median'], 0)
     for it in range(1, a.outer + 1):
-        opt = torch.optim.LBFGS([dK], max_iter=a.inner, history_size=10, line_search_fn='strong_wolfe')
+        if it == 1:            # one L-BFGS (its history) over all outer iterations; a fresh one stalls on the tiny first step
+            opt = torch.optim.LBFGS([u], max_iter=a.inner, history_size=20, line_search_fn='strong_wolfe')
         ntr = len(tr_t)
 
         def closure():
@@ -155,6 +158,7 @@ def main():
                 l = nll(mu, D['d'][j], D['var']).sum() / ntr
                 l.backward(retain_graph=True)
                 tot += float(l.detach())
+            dK = dKc()
             reg_t = (a.lam_s * smooth_terms(dK) + a.lam_r * (dK ** 2).sum() + a.lam_g * (gauge_terms(dK, spl) ** 2).sum()) / sc
             reg_t.backward()
             return torch.tensor(tot + float(reg_t.detach()), device=dev)
