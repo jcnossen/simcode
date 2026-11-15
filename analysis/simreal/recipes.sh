@@ -1,5 +1,5 @@
 #!/bin/bash
-# Benchmark movies of the SIMCODE v2 evaluation (analysis/simreal/sim_movie_r.py, realistic RealSim knobs via env;
+# Benchmark movies of the SIMCODE v2 evaluation (analysis/simreal/sim_movie_r.py, realistic AcquisitionSim knobs via env;
 # m*qh: sim_movie.py / sim_movie20.py).
 # 120 x 120 px uint16 TIFF + sim_gt.npz + gt_pattern.pt.
 #   m05r / m25rc   realistic 0.5 / 2.5 nM-like (4800 frames; c-matched, the headline sims of "sim realism + p2L")

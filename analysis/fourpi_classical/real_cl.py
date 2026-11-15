@@ -19,8 +19,8 @@ for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__fi
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.fourpi.setup import P4, DELTA, GAIN, P, LAYOUT, movie_file, movie_files, file_index
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fileio.movie import DcimgMovie
-from simcode.fileio.work import Units, atomic_savez, atomic_json
+from simcode.io.movie import DcimgMovie
+from simcode.io.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 

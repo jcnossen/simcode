@@ -8,12 +8,12 @@ px (pixel centres at integers, x = column; z in px of the lateral pixel size), `
 `n_frames`, ...; `ds.save('x.hdf5')` / `Dataset.load('x.hdf5')`.
 
 `simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories, the v2 table `.npz` of `simcode.run` /
-`simcode.strict`, the earlier SIMCODE npz save, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
+`simcode.table`, the earlier SIMCODE npz save, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
 selection `select()` (docs/USAGE.md). A selection is not stored: it is computed when needed.
 
 ## SIMCODE's fields and metadata
 
-A v2 table (SIMCODE v2, `simcode/strict.py`) in this layout:
+A v2 table (SIMCODE v2, `simcode/table.py`) in this layout:
 
 | field | dtype | shape | meaning |
 |---|---|---|---|

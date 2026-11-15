@@ -1,6 +1,6 @@
 """In-situ PSF fit of the automatic pipeline (stage d; docs/AUTO_PIPELINE.md sections 2 and 4).
 
-fit(tracks, out, ...) = simcode/insitu/fit_insitu2.py as a function (same algorithm, defaults, random draws), but with the
+fit(tracks, out, ...) = simcode/calibration/fit_insitu2.py as a function (same algorithm, defaults, random draws), but with the
 optics and the camera constants as arguments (fit_insitu2 hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
 read noise 1.9 e). The fit itself is torch_psf.insitu.fit_tracks (variable projection: per-frame I and per-(sample, pattern
 angle) bg solved in closed form, per-sample x, y, z and the PSF parameters by Adam); here: the sample selection, the camera

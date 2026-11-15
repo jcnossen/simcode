@@ -83,7 +83,7 @@ def main():
                 for lo, hi in NB if ((d['ph'] >= 200) & (d['nn'] >= lo) & (d['nn'] < hi)).sum() >= 30))
     open(os.path.join(DEST or D7, 'icrlb_report.txt'), 'w').write('\n'.join(L) + '\n')
     # ---------------- combined figure
-    from simcode.hd import gate_report as GR
+    from simcode.benchmark import gate_report as GR
     from plot_crlb_sc3 import curves
     import plot_crlb_sc3 as P3
     P3.BINS = PBINS

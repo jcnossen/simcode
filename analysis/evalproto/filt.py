@@ -9,13 +9,13 @@ row-weighted mean event length in windows: sim = GT on-time / 6, real = linked l
 truth (lib.truth: rms, dyn, event, site) on the GT-matched rows.  same algorithm. Data = a datasets.py json spec: sim mode uses
 "gt" and the sets "ours p1" / "ours p2L" (kind ours, dir + tag) and the reference (kind simcode, npz, NDI rows) with this
 script's own loader (as dev); real mode reads the stored ours rows with p >= 0.5 (all window starts, for the phase-calibrated
-selection) and the reference set through datasets.py. phase_thr = simcode.strict.phase_thr (= dev p2prior/lib.phase_thr).
+selection) and the reference set through datasets.py. phase_thr = simcode.table.phase_thr (= dev p2prior/lib.phase_thr).
 usage: python analysis/evalproto/filt.py <dataset.json> [out_dir]  -> filt_<dataset>.txt / .json"""
 import os, sys, json, glob, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode.evalproto import lib as E
-from simcode.strict import phase_thr
+from simcode.evaluation import metrics as E
+from simcode.table import phase_thr
 spec = sys.argv[1]; SPEC = json.load(open(spec))
 mode, tag = SPEC.get('mode', 'real'), SPEC.get('name', '')
 REF = SPEC.get('reference', 'SIMCODE (b)')

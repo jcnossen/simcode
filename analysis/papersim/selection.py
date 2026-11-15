@@ -16,8 +16,8 @@ with >= 30 window photons ('ON'):
     false      no ON emitter within 150 nm
     gross      single emitter, 50 <= |e| < 150 nm
     imprecise  single emitter, 30 <= |e| < 50 nm
-Base set = the rows with p >= 0.63 inside the field (simcode.strict.select(T, max_precision_nm=None), the field = the run's
-crop); the selection used for SIMCODE v2 is max(sx, sy) <= 12 nm on them (simcode.strict.select; operating point 'sig12').
+Base set = the rows with p >= 0.63 inside the field (simcode.table.select(T, max_precision_nm=None), the field = the run's
+crop); the selection used for SIMCODE v2 is max(sx, sy) <= 12 nm on them (simcode.table.select; operating point 'sig12').
 Scores ('better' first): u_all (the per-10-px-tile quantile of the mean calibrated sigma among the base rows; metrics.u_all),
 sigma (mean of sx, sy), p (detector probability, high first), q_dof (low first), photons (high first).
 (Removed 2026-11-14: the strict_u score, the u <= 0.45 and strict-product operating points.)
@@ -93,7 +93,7 @@ def classify(T, G):
 
 
 def evaluate(ds):
-    from simcode import strict as SP
+    from simcode import table as SP
     import metrics as M
     z = np.load(ds['locs'])
     crop = M.v2_crop(ds['locs']) if ds['kind'] == 'papersim' else SP.run_crop(os.path.dirname(ds['locs']))

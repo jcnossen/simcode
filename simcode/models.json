@@ -5,7 +5,7 @@
   "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> (= --movie, --calib, --model of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sig_u rescale, the subset files of the selections, sigma_max 12 nm). Movies are relative to the data root.",
   "cal_kind": "real",
   "selection": "sig12",
-  "_selection_doc": "main selection (user decision 2026-11-13): rows with a per-tile rank (p >= 0.63, inside the crop) and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.strict.select(table), SIGMA_MAX_NM; subset file locs_p2_sig12.npz). Until 2026-11-13 it was the per-tile rule u <= 0.45 ('u045', rule 'u', still written as locs_p2_u045.npz). Study: analysis/selection_global, out/selection_global.",
+  "_selection_doc": "main selection (user decision 2026-11-13): rows with a per-tile rank (p >= 0.63, inside the crop) and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select(table), SIGMA_MAX_NM; subset file locs_p2_sig12.npz). Until 2026-11-13 it was the per-tile rule u <= 0.45 ('u045', rule 'u', still written as locs_p2_u045.npz). Study: analysis/selection_global, out/selection_global.",
   "datasets": {
    "1809_2": {
     "movie": "1809/cover1/2/simflux_5.5ms_500mW.tif",

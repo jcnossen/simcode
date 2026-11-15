@@ -5,7 +5,7 @@ Fronts pf / det / hd (the development-era hybrid front-ends; gate npz with pf_* 
 import argparse, os
 from simcode import config
 ap = argparse.ArgumentParser(description=__doc__)
-ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode.hd.gate)')
+ap.add_argument('--gate_dir', default=os.path.join(config.root('out'), 'gate'), help='gate npz directory (simcode.benchmark.gate)')
 ap.add_argument('--out', default='', help='png (default <out>/plots/crlb_gate.png)')
 A_ = ap.parse_args()
 OUTPNG = A_.out or os.path.join(config.out_dir('plots'), 'crlb_gate.png')

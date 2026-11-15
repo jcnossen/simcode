@@ -1,4 +1,4 @@
-"""Experiment-matched full-scene 4Pi-SIMFLUX simulator for network training (analogue of simcode/hd/realsim.py).
+"""Experiment-matched full-scene 4Pi-SIMFLUX simulator for network training (analogue of simcode/simulate/acquisition.py).
 
 A batch = B scenes of H x W px (ch0 grid), 6 frames (2 angles x 3 steps), 4 interference channels. Each channel is
 rendered in its OWN crop coordinates through the real in-situ registration (out/4pi/smlm/reg/reg_insitu_<cell>.json),
@@ -66,7 +66,7 @@ def perturbed_states(st, n, rng):
     return out
 
 
-class RealSim4Pi:
+class AcquisitionSim4Pi:
     def __init__(self, psf_state, H=64, W=64, cells=('MT', 'NPC'), n_psf=6, P=17, dev='cuda', seed=0, wsd=1.0, sub=2):
         self.H, self.W, self.dev, self.P, self.wsd = H, W, dev, P, wsd
         self.g = torch.Generator(device=dev).manual_seed(seed)

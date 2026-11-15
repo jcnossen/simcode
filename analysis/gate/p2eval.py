@@ -4,7 +4,7 @@ the benchmark runner / calibration fit of that file are not needed by these scri
                     'p2L' = calib/calib_p2L.json (pass-2 gate calibration), + any development calibrations
                     <out>/p2/calib_<d2c|p2s|p2a|p2b|ctl>.json that exist (used by merged_d1.py for the p2s columns)
   miss_anatomy(R)   per target: matched / merged / undetected on the detector point, and the nearest visible GT neighbour
-The dumps are read by analysis/calib/plib.py (<out>/p2/fe, simcode/p2/dump.py)."""
+The dumps are read by analysis/calib/plib.py (<out>/p2/fe, simcode/processing/gate_dump.py)."""
 import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'calib'))

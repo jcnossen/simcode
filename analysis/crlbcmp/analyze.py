@@ -148,7 +148,7 @@ CALF = {1: 'calib/calib_sc_hd_m1809.json', 2: 'calib/calib_p2L_m1809.json'}
 
 
 def solve_weights(D, j, Ig, pt, cal, cm, ca):
-    """[n,8,8] covariance the explicit solve assumes (sc.sc_solve: kap_bins prior / intensity scales; msolve: + diag (cm mu)^2
+    """[n,8,8] covariance the explicit solve assumes (solve.solve_emitters: kap_bins prior / intensity scales; solve.solve: + diag (cm mu)^2
     + ca^2 mu mu^T within each pattern angle, at the true mean mu = gt_I)"""
     ph = D['c_I'][j].sum(1)
     bv = lambda key: np.interp(np.log(np.maximum(ph, 1)), np.log(cal['kap_bins']['ph']), cal['kap_bins'][key])

@@ -1,16 +1,17 @@
 """Dump the sc head outputs (I_t, full Cholesky L, prior, detector point, score) + per-FOV patterns (estimate / true) + GT
-on the gate scenes (simcode/hd/gate.gen, identical seeds / iteration loop as gate.main, no CRLB), so pattern-solve
+on the gate scenes (simcode/benchmark/gate.gen, identical seeds / iteration loop as gate.main, no CRLB), so pattern-solve
 variants (Sigma models, per-bin calibration, prior offset) can be re-run offline. The CRLB (gt_sf_m) is copied from the
 existing gate npz of the same scene / seed after checking that the GT is identical.
 usage: CUDA_VISIBLE_DEVICES=1 python dump_fe.py --scen iso,rs05q,rs05qm --seeds 301,302,303 [--ref_tag _hd_sc5nbb15pm]"""
 import argparse, os, sys, time
 from simcode import config as _cfg
 import numpy as np, torch
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GA
-from simcode.hd import sc as SCM
-from simcode.det.model import select_subpixel
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GA
+from simcode.emitter import model as SCM
+from simcode.detector import model as DM
+from simcode.detector.select import select_subpixel
 
 OUT = os.path.join(_cfg.root('out'), 'bright', 'fe')
 
@@ -24,11 +25,11 @@ def head_out(det, head, col, o):
     keep = torch.isfinite(c['logit'])
     b, iy, ix, x, y, lg = (c[k][keep] for k in ('b', 'iy', 'ix', 'x', 'y', 'logit'))
     if len(b) == 0: return None
-    nbr = SCM.nbr_for(head, dd['logit'], b, iy, ix, x, y, lg)
+    nbr = SCM.nbr_map(dd['logit'].float(), b, iy, ix, x, y, lg)
     outs = []
     for c0 in range(0, len(b), 4096):
         sl = slice(c0, c0 + 4096)
-        oh = SCM.apply_head(head, col, fr, None, b[sl], iy[sl], ix[sl], x[sl], y[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
+        oh = SCM.apply_to_candidates(head, col, fr, None, b[sl], iy[sl], ix[sl], x[sl], y[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
         outs.append({k: oh[k].float() for k in ('I', 'L', 'x', 'y', 'lsxy', 'bg')})
     out = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
     out.update(b=b, x_det=x, y_det=y, score=torch.sigmoid(lg))
@@ -47,7 +48,7 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     CD.a.calib = GA.gate_calib()
     sim, _, _ = CD.models(6)
-    det, _ = SCM.load_det_front(_cfg.model(_cfg.DET)); det.eval()   # as the gate runs (SC_DET) and the pipeline
+    det, _ = DM.load(_cfg.model(_cfg.DET)); det.eval()   # as the gate runs (SC_DET) and the pipeline
     head = SCM.load(a.head); col = SCM.PSFCol(sim)
     for sc in a.scen.split(','):
         for seed in [int(s) for s in a.seeds.split(',')]:

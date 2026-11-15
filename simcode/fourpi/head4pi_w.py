@@ -17,7 +17,7 @@ The prior (x, y, z, sigma) comes from a frozen Head4Pi (v3L) inside this module.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from simcode.nn.blocks import ResBlock
+from simcode.layers.blocks import ResBlock
 from simcode.fourpi.head4pi import Head4Pi, norm_photons
 from simcode.fourpi.windows4pi import window, WINS_K
 

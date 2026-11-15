@@ -28,7 +28,8 @@ VS = ['A', 'F', 'H', 'C', 'D', 'Aauto']
 
 def solve_full(R, oi, cal, v):
     import torch
-    from simcode.hd import sc as SCM
+    from simcode.emitter import model as SCM
+    from simcode.solve import solve as SV
     dev = 'cuda'; tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     P_ = tt(R['patt_est']); out = {k: [] for k in ('x', 'y', 's', 's_cal', 'q')}
     with torch.no_grad():
@@ -36,7 +37,7 @@ def solve_full(R, oi, cal, v):
             j = oi[c0:c0 + 8192]
             o = dict(I=tt(R['sc_I'][j]), L=tt(V.L_variant(R['sc_L'][j], v['L'])), x=tt(R['sc_x'][j]), y=tt(R['sc_y'][j]), lsxy=tt(R['sc_lsxy'][j]),
                      x_det=tt(R['sc_x_det'][j]), y_det=tt(R['sc_y_det'][j]))
-            s = SCM.sc_solve(o, P_, torch.tensor(R['sc_b'][j], device=dev).long(), cal)
+            s = SV.solve_emitters(o, P_, torch.tensor(R['sc_b'][j], device=dev).long(), cal)
             out['x'].append(s['r'][:, 0]); out['y'].append(s['r'][:, 1]); out['s'].append(s['s']); out['s_cal'].append(s['s_cal']); out['q'].append(s['q'])
     return {k: torch.cat(w).cpu().numpy() for k, w in out.items()}
 

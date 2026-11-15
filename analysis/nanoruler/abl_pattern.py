@@ -8,7 +8,7 @@ re-solved with different pattern descriptions:
   shd    the in-situ SHARED fit (pattern_perstep.pt['shared_reference'], 1500-frame knots) with the depth / relative intensities of 'est'
          (control: in-situ fit versus pipeline estimate without the per-step freedom)
   d<NN>  'est' with the modulation depth multiplied by 0.NN (python abl_pattern.py depth <set>)
-  k<N>   the pipeline's own estimator (simcode.pipeline.pattern_est.estimate_pattern, same rows and selection as the run) with drift
+  k<N>   the pipeline's own estimator (simcode.processing.pattern_estimation.estimate_pattern, same rows and selection as the run) with drift
          blocks of N frames instead of 150 (k150 = reproduction check of 'est'; the measured fast common fluctuation has a correlation
          time of ~5 cycles = 30 frames)
 Before use, every pattern is compared with 'est' frame by frame at the field centre (phase difference per step: mean, sd; depth).
@@ -24,7 +24,7 @@ PST = os.path.join(A.NR, 'perstep', 'pattern_perstep.pt'); PD = os.path.join(A.O
 
 
 def compare(P, Q, shape=(400, 400), nfr=30000):
-    from simcode.pipeline.common import pattern_frames
+    from simcode.processing.common import pattern_frames
     f = np.arange(0, nfr - 6, 7); xc, yc = shape[1] / 2, shape[0] / 2; rad2nm = lambda a: 2 * np.pi / np.hypot(*a[0, :2]) * A.PX / (2 * np.pi)
     a0 = pattern_frames(P, f, 0, 0, 'cpu').numpy(); a1 = pattern_frames(Q, f, 0, 0, 'cpu').numpy()
     d = np.angle(np.exp(1j * ((a1[:, 0] * xc + a1[:, 1] * yc - a1[:, 2]) - (a0[:, 0] * xc + a0[:, 1] * yc - a0[:, 2]))))
@@ -38,7 +38,7 @@ def compare(P, Q, shape=(400, 400), nfr=30000):
 
 def reestimate(run, kf, crop, shape, cal):
     """the run's pattern stage (run_uncalibrated.py) with another drift block length; pitch search range of this setup as ev_run.py"""
-    from simcode.pipeline import pattern_est as PE
+    from simcode.processing import pattern_estimation as PE
     d = list(PE.estimate_k.__defaults__)
     if d[0] == (1.6, 2.8): d[0] = (2.9, 3.9); PE.estimate_k.__defaults__ = tuple(d)
     fs = sorted(glob.glob(f'{run}/pass1_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4])); Ls = [np.load(f) for f in fs]

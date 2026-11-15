@@ -56,7 +56,8 @@ def main():
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')
     det = None
     if a.det:
-        from simcode.det.up2 import load as dload, select as dselect
+        from simcode.detector.model import load as dload
+        from simcode.detector.select import select_points as dselect
         det, _ = dload(a.det)
     dev = 'cuda'
     from simcode.fourpi.loadhead import load_head     # all head architectures (v2..v8)
@@ -85,7 +86,7 @@ def main():
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     dout = det(Rf)
                 dout = {k: v.float() for k, v in dout.items()}
-                cc = dselect(dout, 1, k=2048, p_min=a.p_min)
+                cc = dselect(dout, k=2048, p_min=a.p_min)
                 okc = torch.isfinite(cc['logit']) & (cc['ix'] >= h + 1) & (cc['ix'] < W - h - 1) & (cc['iy'] >= h + 1) & (cc['iy'] < H - h - 1)
                 w, cy, cx, dog = cc['b'][okc], cc['iy'][okc], cc['ix'][okc], torch.sigmoid(cc['logit'][okc])
             if len(w) == 0: continue

@@ -12,7 +12,7 @@ Returns the estimate and the inverse Fisher at the estimate (I-block -> covarian
 """
 import torch
 from simcode.psf import spline                 # = the development hd/solve.make_lut
-from simcode.hd.sc import patches
+from simcode.layers.blocks import extract_patches
 
 
 class LMRef:
@@ -58,8 +58,8 @@ class LMRef:
         if self.bgm == 'angle':
             self.bmap = torch.stack([(ang == 0).float(), (ang == 1).float()], 1)          # [n,2,T]
         NP = k + T + (2 if self.bgm == 'angle' else T)
-        y = patches(frames, b, cy, cx, P)                                     # [n,T,P,P]
-        rn2 = patches(rn ** 2, b, cy, cx, P)                                  # [n,1,P,P]
+        y = extract_patches(frames, b, cy, cx, P)                                     # [n,T,P,P]
+        rn2 = extract_patches(rn ** 2, b, cy, cx, P)                                  # [n,1,P,P]
         rn2 = rn2.expand(n, T, P, P).reshape(n, -1)
         yv = (y.reshape(n, -1) + rn2).clamp(min=0)
         border = torch.cat([y[:, :, 0], y[:, :, -1], y[:, :, 1:-1, 0], y[:, :, 1:-1, -1]], -1)
@@ -115,7 +115,7 @@ class LMRef:
 
 
 def solve_input(r, x_det, y_det):
-    """LM output -> the dict sc.sc_solve expects (I, Cholesky of the I-block covariance, pattern-free position prior)"""
+    """LM output -> the dict solve.solve_emitters expects (I, Cholesky of the I-block covariance, pattern-free position prior)"""
     T = r['I'].shape[1]; k = r['k']
     CI = r['cov'][:, k:k + T, k:k + T]
     CI = 0.5 * (CI + CI.transpose(1, 2)) + 1e-3 * torch.eye(T, device=CI.device)
@@ -139,7 +139,7 @@ LM_CAL = dict(kap_bins=_ONE, sig_ph=_ONE, prior_off=[0.0, 0.0], cmult=0.0, cmult
 #     mu_t(px) = B * a_t * il_t(X, Y) * psf(px; x, y, z) + bg_t
 #   il_t(X, Y) = rel_t (1 + m_t cos(kx_t X + ky_t Y - phi_t)) at the absolute FOV position (X, Y) = (cx + x, cy + y)
 #   a_t = 1 (kin=False: always on, the iso model) or the on-fraction of frame t for an on-interval [t0, t1]
-#         (kin=True: the CRLB_SF kinetics nuisance, simcode.sim.crlb onfrac)
+#         (kin=True: the CRLB_SF kinetics nuisance, simcode.simulate.crlb onfrac)
 #   bg: 'frame' (6 bg_t), 'angle' (one per pattern angle, = the CRLB_SF model) or 'one'
 # theta = (x, y, [z,] B, [t0, t1,] bg...). Same ROI / candidates / sCMOS-Poisson likelihood / Fisher-scoring LM as LMRef.
 # Start: the pattern-free LMRef fit (z free) from the detector point; then the SIMFLUX LM from the 9 fringe-shifted starts
@@ -242,8 +242,8 @@ class SFRef:
         if n == 0: return None
         r0 = self.lm.fit(frames, rn, b, cx, cy, x0, y0, iters=iters0, xy_box=xy_box)
         k, kk, nbg = self._layout(T)
-        y = patches(frames, b, cy, cx, P)
-        rn2 = patches(rn ** 2, b, cy, cx, P).expand(n, T, P, P).reshape(n, -1)
+        y = extract_patches(frames, b, cy, cx, P)
+        rn2 = extract_patches(rn ** 2, b, cy, cx, P).expand(n, T, P, P).reshape(n, -1)
         yv = (y.reshape(n, -1) + rn2).clamp(min=0)
         pt = patt[b].float()
         ang = (pt[..., 0].abs() < pt[..., 1].abs()).long()

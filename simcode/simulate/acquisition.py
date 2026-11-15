@@ -1,5 +1,5 @@
 """
-Experiment-matched simulator (hd step 0). Wraps simcode/sim/simulator.py (PSF LUT rendering, calibration) without
+Experiment-matched simulator (hd step 0). Wraps simcode/simulate/simulator.py (PSF LUT rendering, calibration) without
 editing it. Everything is taken from existing calibration / summary files only (no movie is read):
   PSF       calibrated vectorial PSF (analysis/calib_0.5nM.json); per-emitter PSF jitter = one of NPSF perturbed LUTs
             (width x U(0.97, 1.03), Zernike jitter 0.008 waves, focus +-15 nm; psfcheck: 2-3 % coherent residual)
@@ -7,7 +7,7 @@ editing it. Everything is taken from existing calibration / summary files only (
             randomized: rotation +-0.05 deg, pitch +-0.1 %; step spacing 2.09-2.11 rad (measured, not exactly 2 pi / 3);
             depth per preset; step relint and angle ratio per preset; within-window phase drift eps(t) random walk
             0.25 nm / frame (measured eps rms 4.5-7 nm over 10^5 frames, smooth); random global phases.
-            Pass-2 training (p2/data.Gen2, RealSim.p_std): the generic draw RealSim._generic (any pitch / orientation / phases /
+            Pass-2 training (simulate/batches.TrainingBatches, AcquisitionSim.p_std): the generic draw AcquisitionSim._generic (any pitch / orientation / phases /
             frame order / depth / power) in a share 1 - p_std of the FOVs, the SIMCODE pattern above in the others
   estimate  the pattern the localizer gets (patt_est): per-angle common phase error sd 0.06 rad (~2.1 nm), per-step
             0.01 rad, linear phase-field ramp across the FOV up to +-0.08 rad (pattern_compare k_field 1.4-3.8 nm rms),
@@ -33,17 +33,17 @@ tuning check is not reproducible here. Snapshots of its statistics and of the fi
 analysis/results/realism/ (realstats.json, validate_{0.5,2.5}nM_final.txt). The realism check against the simcode front-end
 itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is analysis/figures/scorecard.py
 (-> realism_scorecard.png).
-API: RealSim(preset, H, W, T).scene(nb, em=None, **overrides) -> dict as crlb_dense.make_scene (+ patt_est,
+API: AcquisitionSim(preset, H, W, T).scene(nb, em=None, **overrides) -> dict as crlb_dense.make_scene (+ patt_est,
 illum_est, shift_est, bg_static); .emitters(nb, **kw) -> em dict.
 (2026-11-10/11 critic 37 #2, opt-in; absent keys = unchanged, no extra random draws) smooth illumination envelope across the
 FOV, measured on the real movies (<out>/evalproto/envmap.py): keys env_x0 / env_y0 (centre px), env_s1 / env_s2
-(Gaussian sd px along the principal axes), env_th (angle rad of axis 1) -> RealSim.envelope(x, y) = exp(-0.5 q) normalized to
+(Gaussian sd px along the principal axes), env_th (angle rad of axis 1) -> AcquisitionSim.envelope(x, y) = exp(-0.5 q) normalized to
 geometric mean 1 over the 5-115 px crop (multiply emitter brightness by it); env_bg = fraction of the static bg that follows
 the envelope (background(): st x (1 - env_bg + env_bg En), En = envelope normalized to mean 1 over the crop; FOV-mean bg kept).
 """
 import json, math
 import numpy as np, torch
-from simcode.sim.simulator import Simulator
+from simcode.simulate.simulator import Simulator
 from simcode import config as _cfg
 
 dev = 'cuda'
@@ -61,7 +61,7 @@ PRESETS = {
                   z_med=0.055, z_sd=0.40, struct_frac=0.85, ang_sd=0.2, step_sd=0.07, frame_sd=0.10, halo=0.05),
 }
 PX_NM = 108.33
-# Generic illumination-pattern draw of the pass-2 training (p2/data.Gen2; RealSim._generic, RealSim.p_std): ranges of pitch (px),
+# Generic illumination-pattern draw of the pass-2 training (simulate/batches.TrainingBatches; AcquisitionSim._generic, AcquisitionSim.p_std): ranges of pitch (px),
 # orientations (deg from +x), angle separation (deg), frame -> slot order probabilities (cycle, perm, inter), per-angle depth,
 # per-slot / per-angle power factors (2026-11-13 out/p2generic, pgen_v1; the only pass-2 training draw since 2026-11-14)
 GENERIC = dict(pitch=(1.8, 4.0), pitch_ang=0.03, ang0=(-40.0, 40.0), ang1=(50.0, 130.0), sep=(60.0, 120.0),
@@ -88,7 +88,7 @@ def psf_div_luts(rs, dv, seed=0):
     Zernike jitter (sd zsd waves on the Noll indices `noll`) + base_dz {noll: waves} + focus shift base_df + U(+-fr/2) um, width x
     1 + wr (U - 0.5), then an anisotropic Gaussian image blur sx = max(0, base_blur[0] + blur_r (2U - 1)), sy likewise.
     keep_old: prepend the existing (calib + weak jitter) LUTs, unblurred.  Own generator (seed 4321 + seed): no global draws."""
-    from simcode.det.psfpert import build_lut
+    from simcode.simulate.psf_perturbation import build_lut
     g = torch.Generator().manual_seed(4321 + seed)
     zl = rs.sim.c['zernike_noll']; nz = len(zl)
     out = list(rs.luts) if dv.get('keep_old', True) else []
@@ -124,7 +124,7 @@ def add_halo2(psf, x, y, frac, sig, R=None):
 
 def filament_static_map(pts, H, W, sig=1.5, up=8):
     """(2026-11-09, critic 32 #3) unit map of filament-correlated dim static light (unresolved / out-of-focus binding along the
-    microtubules): the realsim filament curves (emitters(...)['fil_pts'][fov] = [nfil, ns, 2] px) rasterized as lines
+    microtubules): the the acquisition simulator filament curves (emitters(...)['fil_pts'][fov] = [nfil, ns, 2] px) rasterized as lines
     (points densified x`up`, bilinear splat, equal weight per unit length), blurred with a Gaussian of `sig` px, normalized
     to mean 1 over the H x W FOV (all-zero map if there are no filaments). Static light = A * D added to the bg; the flat
     bg is lowered by A so the FOV-mean bg is unchanged. Deterministic (no random draws)."""
@@ -155,16 +155,16 @@ def smooth_field(n, H, W, sig):
     return (x - x.mean((1, 2), keepdim=True)) / x.std((1, 2), keepdim=True).clamp(min=1e-6)
 
 
-class RealSim:
+class AcquisitionSim:
     def __init__(self, preset='0.5nM', H=64, W=64, T=6, npsf=4, psf_jitter=True, seed=0, psf_roi=41, zmax=0.2, **over):
         self.p = dict(PRESETS[preset], **over); self.preset = preset
         # PSF rendered on a 41 x 41 ROI (critic review 26 #3: 19 % of the real PSF energy lies outside 11 x 11, 8 % beyond 21 x 21)
-        # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (hd/data.Gen) uses Z_RANGE_UM
+        # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (simulate/batches.TrainingBatches) uses Z_RANGE_UM
         self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax,
                              psf_lut_z=int(round(zmax / 0.01)) + 1)
         self.H, self.W, self.T = H, W, T
         # pattern draw: None = the SIMCODE (DMD) pattern of the preset (pass-1 training, gate scenes, sim movies); a number in
-        # [0, 1) = the generic pass-2 training draw with this share of FOVs keeping the SIMCODE pattern (set by p2/data.Gen2)
+        # [0, 1) = the generic pass-2 training draw with this share of FOVs keeping the SIMCODE pattern (set by simulate/batches.TrainingBatches)
         self.p_std = None
         self.zmax = self.sim.zmax; self.focus = self.sim.focus
         self.rn_map = torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float()
@@ -173,7 +173,7 @@ class RealSim:
         ang = self.sim.lut_angle is not None
         if ang: self.luts = [tuple(self.sim.lut_angle)]
         if psf_jitter and npsf > 1:
-            from simcode.det.psfpert import build_lut
+            from simcode.simulate.psf_perturbation import build_lut
             g = torch.Generator().manual_seed(1234 + seed)
             nz = len(self.sim.c['zernike_waves'])
             for i in range(npsf - 1):
@@ -276,7 +276,7 @@ class RealSim:
 
     def draw_z(self, n):
         """emitter heights (um) [n]: lognormal (median z_med, log-sd z_sd) clipped to [0, zmax]; with the key z_unif (the 3D
-        training generator hd/data.Gen) that fraction of the emitters is uniform over [0, zmax] instead, so the z output of
+        training generator simulate/batches.TrainingBatches) that fraction of the emitters is uniform over [0, zmax] instead, so the z output of
         the head is trained over the whole height range of the TIRF data. The brightness follows from z (TIRF factor)."""
         p = self.p
         z = (p['z_med'] * torch.exp(p['z_sd'] * torch.randn(n, device=dev))).clamp(0.0, self.zmax)
@@ -349,7 +349,7 @@ class RealSim:
           pitch    common pitch log-uniform pitch (px) x per-angle factor U(1 +- pitch_ang)
           angles   orientation of angle 0 U(ang0) deg, of angle 1 U(ang1) deg with the separation in sep (rejection, 16 tries,
                    fallback ang0 + 90); the sectors keep angle 0 within 45 deg of x and angle 1 within 45 deg of y, as
-                   core.angle_index / illum.angle_of (|kx| > |ky|) and the solver require
+                   solve/pattern.angle_index / illumination.angle_of (|kx| > |ky|) and the solver require
           k sign   random sign per angle of k (the phase is negated with it: same illumination, other quadrature convention)
           phase    every slot's phase U(0, 2 pi) (no step structure: any step size / direction / irregular steps)
           order    frame -> slot assignment, probabilities (cycle, perm, inter): cycle = the SIMCODE order rolled by U{0..5};

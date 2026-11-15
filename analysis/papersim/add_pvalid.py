@@ -1,5 +1,5 @@
 """Opt-in step: add the column p_valid (pvalid.py model) to a SIMCODE v2 localization table -> a NEW file <table>_pvalid.npz
-(the input table and simcode/strict.py are not changed). Hook for later: strict.build_table could call pvalid.features + the
+(the input table and simcode/table.py are not changed). Hook for later: table.build_table could call pvalid.features + the
 model when a --pvalid <model.joblib> option is given and write the column into locs_p2.npz.
 Also the GT-free sanity check used for real data: revisit consistency. For every disjoint-window row, the nearest row of the
 window 6 frames later within 1 px is taken as the same emitter (DNA-PAINT events last several windows); per p_valid bin the

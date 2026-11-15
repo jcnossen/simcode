@@ -1,50 +1,52 @@
 """
-Pipeline pass 2 with the pattern-aware networks (run_uncalibrated --frontend sc2p). Pass 1 (det_n1 + sc5nb, pattern-free)
-and the pattern estimation are the 'sc' front-end unchanged (simcode/pipeline/sc_front.py, pattern_est.py on the network
+Pipeline pass 2 with the pattern-aware networks (run_uncalibrated --frontend sc2p). Pass 1 (pattern-free detector + emitter
+network) and the pattern estimation are unchanged (simcode/processing/front.py, pattern_estimation.py on the network
 intensities). Then per 6-frame window (stride 3, the pass-1 grid):
-  illumination maps of the ESTIMATED pattern (pattern_est.pt -> pipeline.common.pattern_frames, loaded-region coordinates)
-  -> pass-2 detector DetP2 (frames + illumination) -> sub-pixel NMS, p >= 0.2 neighbour map, p >= 0.5 candidates
-  -> pass-2 head SCHeadP2 (patch + neighbour + illumination channels): I_t, full covariance, bg_t, prior (pattern-informed)
-  -> explicit intensity-domain pattern solve (hd/sc.sc_solve: fringe-start posterior, cmult, box 1.5, calibrated sigma)
+  illumination maps of the ESTIMATED pattern (pattern_est.pt -> processing.common.pattern_frames, loaded-region coordinates)
+  -> pass-2 Detector (frames + illumination) -> sub-pixel NMS, p >= 0.2 neighbour map, p >= 0.3 (CAND_PMIN) candidates
+  -> pass-2 EmitterNet (patch + neighbour + illumination channels): I_t, full covariance, bg_t, prior (pattern-informed)
+  -> explicit intensity-domain pattern solve (solve/solve.solve_emitters: fringe-start posterior, cmult, box 1.5, calibrated sigma)
      with the pass-2 head prior.
   Output rows: windows' central detections (time centroid in the central half, inside the crop, own frames) as pass 1,
   pass-2 format columns (x_hy0, y_hy0, sx_cal, sy_cal, sig_hy0, q_dof, phot, x_prior, y_prior, kin_hy, p, wstart, frame,
   I_net) + x_dir / y_dir / sx_dir / sy_dir (variant b: the pass-2 head prior itself with its sigma).
   z (z_hy0, sz_cal, cov_xz, cov_yz, z_prior) from PASS 1 (2026-11-14; the pass-2 head's z is not used): each row is linked
-  to a pass-1 candidate of the same window (sc.link_pass1: detector points, one-to-one, 1 px; p1_row = its index in
+  to a pass-1 candidate of the same window (solve/z_conditioning.link_pass1: detector points, one-to-one, 1 px; p1_row = its index in
   pass1_<f0>.npz, -1 = none -> z NaN) and that candidate's 3D prior is conditioned on the pass-2 solved x, y
-  (sc.pass1_z_columns).
-Reference implementation (test oracle of simcode/pipeline/sc_front_fast.Pass2P2Fast, which the pipeline uses).
+  (z_conditioning.pass1_z_columns).
+Reference implementation (test oracle of simcode/processing/front_fast.Pass2FrontFast, which the pipeline uses).
 """
 import json, time
 import numpy as np, torch
 from simcode.psf import TiffMovie
-from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
+from simcode.processing.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
-DET_P2 = _cfg.model(_cfg.P2_DET)
-HEAD_P2 = _cfg.model(_cfg.P2_HEAD)
+P2_DET = _cfg.model(_cfg.P2_DET)
+P2_HEAD = _cfg.model(_cfg.P2_HEAD)
 
 
 
-class Pass2P2:
-    def __init__(self, calib_path, head=HEAD_P2, det=DET_P2, dev='cuda'):
-        from simcode.hd import sc as SCM
-        from simcode.p2 import head2 as H2
-        from simcode.sim.simulator import Simulator
-        self.SCM, self.H2 = SCM, H2
-        self.det, self.needs_il = H2.load_det(det)
-        self.head = H2.load(head) if ('p2_head' in head or H2.is_p2_head(head)) else SCM.load(head)     # detector-only pass 2: a pattern-free head
-        self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
+class Pass2Front:
+    def __init__(self, calib_path, head=P2_HEAD, det=P2_DET, dev='cuda'):
+        from simcode.emitter import model as EM
+        from simcode.detector import model as DM
+        from simcode.simulate.simulator import Simulator
+        self.det, _ = DM.load(det)
+        self.head = EM.load(head)      # a pattern-free (pass-1) network also works (detector-only pass 2)
+        self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
 
     @torch.no_grad()
     def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
         """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: the z columns come
-        from pass 1 (sc.pass1_z_columns: the linked pass-1 candidate's z prior conditioned on the pass-2 solved x, y)"""
-        from simcode.p2 import illum as IL
-        dev = self.dev; SCM, H2 = self.SCM, self.H2
+        from pass 1 (z_conditioning.pass1_z_columns: the linked pass-1 candidate's z prior conditioned on the pass-2 solved x, y)"""
+        from simcode.pattern import illumination as IL
+        from simcode.emitter import model as EM
+        from simcode.solve import solve as SV
+        from simcode.solve import z_conditioning as ZC
+        dev = self.dev
         timing = timing if timing is not None else {}
         sync = lambda: torch.cuda.synchronize()
         scal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
@@ -68,7 +70,7 @@ class Pass2P2:
             x = torch.stack([frames[s0:s0 + T] for s0 in st])
             PW = torch.stack([PF[s0:s0 + T] for s0 in st])
             il = IL.illum_maps(PW, S, S)
-            c, nbr, lgm = H2.candidates(self.det, self.needs_il, x, il, k=k_cand)
+            c, nbr, lgm = EM.detect_candidates(self.det, x, il, k=k_cand)
             sync(); timing['detector'] = timing.get('detector', 0) + time.time() - t_
             if len(c['b']) == 0: continue
             t_ = time.time()
@@ -80,7 +82,7 @@ class Pass2P2:
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
-                oh = H2.head_apply(self.head, self.col, *args)
+                oh = EM.apply_to_candidates(self.head, self.col, *args)
                 r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
@@ -101,7 +103,7 @@ class Pass2P2:
             k_ = torch.nonzero(keep)[:, 0]
             o = {kk: v[k_] for kk, v in oh.items()}
             bw = b[k_]
-            so = SCM.sc_solve(o, PW, bw, scal)
+            so = SV.solve_emitters(o, PW, bw, scal)
             sync(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
             sp = oh['lsxy'][k_].exp()
             ph = I[k_].sum(1)
@@ -114,7 +116,7 @@ class Pass2P2:
         R = {kk: np.concatenate([r_[kk] for r_ in rows]) for kk in rows[0]}
         R['wstart'] = R['wstart'].astype(np.int64)
         tt = lambda v: torch.as_tensor(v, device=dev)
-        Z = SCM.pass1_z_columns(p1, p1_cal, R['wstart'], R['x_det'], R['y_det'], torch.stack([tt(R['x_hy0']), tt(R['y_hy0'])], 1),
+        Z = ZC.pass1_z_columns(p1, p1_cal, R['wstart'], R['x_det'], R['y_det'], torch.stack([tt(R['x_hy0']), tt(R['y_hy0'])], 1),
                                 torch.stack([tt(R['sx_cal']), tt(R['sy_cal'])], 1))
         R.update({k: v.cpu().numpy() for k, v in Z.items()})
         return R

@@ -13,8 +13,8 @@ The small calibration json files are in git.
 |---|---|
 | `calib/calib_sc_hd_<set>.json`, `calib_sc_hd_<set>_real.json` | pass-1 solve calibration of a model: sigma table from the gate scenes (`_real`: with the real-data mismatch multiplier) |
 | `calib/calib_p2L_<set>.json`, `calib_p2L_<set>_real.json` | the same for pass 2 |
-| `calib/sigu/sigu_p1_<set>.json`, `sigu_p2_<set>.json` | selection-aware sigma rescale per pass (`simcode.strict --sig_u`; fitted by `analysis/psf3d_nets/sigcal.py`) |
-| `calib/calib_sc_hd_sc5nbb15_pm*.json`, `calib_p2L.json`, `calib_p2L_b10_real.json`, `calib_p2L_movie_b10.json`, `calib_autoc_r*.json`, `sigu/sigu_p*_cur.json` | calibrations of the earlier default head (hd_sc5nb / p2_head_long). Still used: as the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`), and as the sigma table of the automatic-c estimator `simcode/autoc.py` (analysis only) |
+| `calib/sigu/sigu_p1_<set>.json`, `sigu_p2_<set>.json` | selection-aware sigma rescale per pass (`simcode.table --sig_u`; fitted by `analysis/psf3d_nets/sigcal.py`) |
+| `calib/calib_sc_hd_sc5nbb15_pm*.json`, `calib_p2L.json`, `calib_p2L_b10_real.json`, `calib_p2L_movie_b10.json`, `calib_autoc_r*.json`, `sigu/sigu_p*_cur.json` | calibrations of the earlier default head (hd_sc5nb / p2_head_long). Still used: as the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`), and as the sigma table of the automatic-c estimator `simcode/solve/autoc.py` (analysis only) |
 | `insitu/calib_<movie>*.json` | in-situ PSF + camera calibration per movie (`_psf3d`: per-axis PSF; `_psf3d_avg`: averaged over the two pattern axes = the PSF a model is trained on; `calib_gauss1.3.json`: Gaussian sigma 1.3 px, the preprint's simulation PSF) |
 | `insitu/camera_maps_<movie>.npz` | per-pixel offset and read-noise maps of the four movies (85-130 kB each). Binary, kept in git for now because every calibration json refers to one; **to be decided** whether they move out with the weights |
 | `insitu/beads/psf_fit_*.json` | bead z-stack PSF fit (Zernike start of the in-situ fit) |
@@ -23,7 +23,7 @@ The small calibration json files are in git.
 ## Models (weights, not in git)
 
 The shipped models are defined in `simcode/models.json` (`config.model_set(name)`, `python -m simcode.run --model <name>`);
-any other model is a folder with a `model.json` (`--model <folder>`, e.g. one written by `simcode.auto.train.export_model`).
+any other model is a folder with a `model.json` (`--model <folder>`, e.g. one written by `simcode.pipeline.training.export_model`).
 One model = four networks, trained on one averaged in-situ PSF, and their calibrations:
 
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
@@ -56,38 +56,42 @@ anything in the tree): the mixture set `psf3dmix` and its close-pair variant, th
 
 ```bash
 C=models/insitu/calib_1809_2_psf3d_avg.json      # the averaged PSF of the model
-python -m simcode.det.up2 train --out runs/S/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 \
+python -m simcode.detector.train --out runs/S/det --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 \
     --seed 0 --calib $C
-python -m simcode.hd.sc4 train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det runs/S/det/final.pt \
+python -m simcode.emitter.train --out runs/S/hd --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --det runs/S/det/final.pt \
     --tau 15,80 --hold <out>/sc4/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init hd_sc5nb.pt --pct 0.1 --ckpt_every 6000 --calib $C
 # pass 2 (generic pattern draw, share --p_std of the SIMCODE pattern): detector, then its continuation
-python -m simcode.p2.det2 train --out runs/S/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
-    --eval_every 2500 --ckpt_every 5000 --init_n1 runs/S/det/final.pt --calib $C --p_std 0.25
-python -m simcode.p2.det2 train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 \
-    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --init_n1 runs/S/det/final.pt --calib $C --p_std 0.5
-# pass-2 head: three stages (candidates from the first pass-2 detector runs/S/p2det)
-python -m simcode.p2.head2 train --out runs/S/p2head --det runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
+python -m simcode.detector.train --out runs/S/p2det --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
+    --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C --p_std 0.25
+python -m simcode.detector.train --out runs/S/p2det_c --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/p2det/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
+# pass-2 emitter network: three stages (candidates from the first pass-2 detector runs/S/p2det; a pass-2 --det makes it a pass-2
+# network, zero-initialised from the pass-1 network runs/S/hd)
+python -m simcode.emitter.train --out runs/S/p2head --det runs/S/p2det/ckpt_25000.pt --init runs/S/hd/final.pt --steps 24000 \
     --batch 16 --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --eval_every 4000 --ckpt_every 8000 --no_illum 0 \
     --pert_model v1 --calib $C --p_std 0.25
-python -m simcode.p2.head2 train --out runs/S/p2headL --det runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
+python -m simcode.emitter.train --out runs/S/p2headL --det runs/S/p2det/final.pt --init runs/S/p2head/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 31 --eval_every 2000 --ckpt_every 10000 --no_illum 0 \
     --hold_v1 15 --calib $C --p_std 0.25
-python -m simcode.p2.head2 train --out runs/S/p2headL2 --det runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
+python -m simcode.emitter.train --out runs/S/p2headL2 --det runs/S/p2det/final.pt --init runs/S/p2headL/final.pt --steps 50000 \
     --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 41 --eval_every 5000 --ckpt_every 10000 --no_illum 0 \
     --hold_v1 0 --calib $C --p_std 0.5
 # -> det_S.pt, hd_S.pt = runs/S/det, hd; p2det_S.pt = runs/S/p2det_c; p2headL_S.pt = runs/S/p2headL2 (final.pt)
 ```
-Pass 2 is trained on generic illumination patterns (since 2026-11-14 the only pass-2 training draw; `hd/realsim.RealSim._generic`,
+Pass 2 is trained on generic illumination patterns (since 2026-11-14 the only pass-2 training draw; `simulate/acquisition.AcquisitionSim._generic`,
 out/p2generic): per FOV, with probability 1 - `--p_std`, pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg
 (separation 60-120 deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, per-angle
 depth 0.5-1.0 and per-slot / per-angle power 0.8-1.25; the other FOVs keep the SIMCODE (DMD) pattern. So a model's pass 2
 accepts any measured two-orientation pattern (nanoruler, 4-step, random phases), at 0-2 % cost on SIMCODE patterns vs the
 earlier pass 2 trained on the SIMCODE pattern only (out/p2generic/STATUS.md, out/z3d/STATUS.md).
-Since 2026-11-14 the trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,2500`, `--arch sc4n`,
-`--paper 1`, `--bright_tail 0.1,2000,20000`, `--pert_model real`); the old command lines still run (the removed flags are
-accepted with exactly these values). `--calib` is required.
+One trainer per network, for both passes (`simcode.detector.train`, `simcode.emitter.train`; until 2026-11-15
+`simcode.det.up2` / `simcode.p2.det2` and `simcode.hd.sc4` / `simcode.p2.head2`, docs/CLEANUP_LOG.md): the pass follows from the
+checkpoints (detector: `--illum 1`, or a pass-2 `--init`; emitter network: a pass-2 `--det`, or a pass-2 `--init`), and the
+flags whose defaults differ between the passes (lr, seed, steps, ...) take the default of that pass. Since 2026-11-14 the
+trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,2500`, `--arch sc4n`, `--paper 1`,
+`--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.
 Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
-Calibrations: `python -m simcode.p2.dump` of the new networks on the gate scenes rendered with the model's PSF
+Calibrations: `python -m simcode.processing.gate_dump` of the new networks on the gate scenes rendered with the model's PSF
 (`SIMCODE_GATE_CALIB=$C`), then `analysis/psfmatch/fit_cal_set.py` (templates: the hd_sc5nb calibrations above), then the
 sigma rescale `analysis/psf3d_nets/sigcal.py fit` on a simulated movie with ground truth.

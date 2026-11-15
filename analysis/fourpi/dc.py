@@ -1,4 +1,4 @@
-"""4Pi-SIMFLUX raw data I/O for the analysis scripts: the dcimg reader (simcode/fileio/movie.DcimgMovie), the channel
+"""4Pi-SIMFLUX raw data I/O for the analysis scripts: the dcimg reader (simcode/io/movie.DcimgMovie), the channel
 crops of the data set and its file lists (simcode/fourpi/setup.py, simcode/fourpi/datasets.json).
 
 Channels: 4 crop windows of 360 x 200 px at x0 = 217, 652, 1420, 1855 (the stored crop windows of the data set);
@@ -9,7 +9,7 @@ import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 import numpy as np
-from simcode.fileio.movie import DcimgMovie as Dcimg, crops as _crops
+from simcode.io.movie import DcimgMovie as Dcimg, crops as _crops
 from simcode.fourpi.setup import DATA4 as ROOT, LAYOUT, FRAME_DT_S, movie_files, file_index, zstack_files, bead_align_file  # noqa
 
 X0 = LAYOUT['x0']

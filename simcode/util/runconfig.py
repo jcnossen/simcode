@@ -8,7 +8,7 @@ directory were calculated. Written by simcode.run at the start (status 'running'
                 selection thresholds, sigma rescale, table formats); file arguments as absolute paths
   fixed         what is not an option: pass 2, window 6 / step 3, stored-candidate cut, p_good, fixed c, code path, compile
                 mode, batch sizes, margin, pattern search range, strict crop / density anchors
-  overrides     the in-memory overrides of simcode.auto.runwrap (AUTO_WRAP), if any
+  overrides     the in-memory overrides of simcode.pipeline.run_with_overrides (AUTO_WRAP), if any
   model         name, its definition (models.json entry), and per file: absolute path, size, sha256, modification time; for
                 network checkpoints the trainer arguments and step stored in the file; for calibrations the scalar parameters
   calib         in-situ PSF / camera calibration: path, sha256, camera-map file + sha256, the key PSF and camera parameters
@@ -21,7 +21,7 @@ directory were calculated. Written by simcode.run at the start (status 'running'
   counts, timing
   outputs       table and subset files: size, arrays_sha256 (hash of the array contents: an .npz holds zip time stamps, so
                 the file hash differs between identical runs), written_by ('run' or 'steps[i]')
-  steps         later work on the directory, appended by its tool (simcode.strict: table / selection rebuild with its settings)
+  steps         later work on the directory, appended by its tool (simcode.table: table / selection rebuild with its settings)
 
 Re-run with exactly the settings of a record: python -m simcode.run --config <run_config.json> --out <new dir>
 (rerun_argv; verify() warns when a file hash, the git commit or a fixed value differs from the record).
@@ -224,7 +224,7 @@ def calib_record(path):
     if r.get('missing'): return r
     try:
         c = json.load(open(p))
-        from simcode.pipeline.common import camera_maps_path
+        from simcode.processing.common import camera_maps_path
         r['camera_maps'] = file_record(camera_maps_path(p, c))
         z = np.asarray(c.get('zernike_waves', []), float)
         r['psf'] = dict(model='vectorial (torch_psf.VectorialPSF, 11 px, oversample 3; LUT z range +-0.2 um)',
@@ -246,7 +246,7 @@ def calib_record(path):
 def movie_record(path, nframes=0, chunk=6000, chunk_list=''):
     p = config.resolve(path, 'data')
     try:
-        from simcode.fileio.movie import open_movie
+        from simcode.io.movie import open_movie
         m = open_movie(p); nf = min(m.n, nframes) if nframes else m.n
         chunks = [int(v) for v in chunk_list.split(',')] if chunk_list else list(range(0, nf, chunk))
         return dict(path=p, parts=[file_record(q) for q in m.parts], n_frames=int(m.n), frame_shape=[int(v) for v in m.shape[-2:]],
@@ -341,7 +341,7 @@ def _yaml_text(R):
 
 
 def write(out, R):
-    from simcode.fileio.work import atomic_json, atomic_text
+    from simcode.io.work import atomic_json, atomic_text
     atomic_json(os.path.join(out, NAME), R, indent=1, default=str)
     y = _yaml_text(R)
     if y: atomic_text(os.path.join(out, 'run_config.yaml'), y)
@@ -492,7 +492,7 @@ def _parse_commands(path):
 def _old_run_args(argv):
     """a simcode.run command line of a run made before 2026-11-14 (single network / calibration files, --netset, the options that
     were removed since) -> (args, model dict, pass-1 calibration) as simcode.run.resolve, for the reconstruction of its record"""
-    from simcode import run as RUN, strict as SP
+    from simcode import run as RUN, table as SP
     ap = RUN.build_parser()
     for k in ('--det', '--head', '--cal', '--p2_det', '--p2_head', '--p2_cal', '--netset', '--autoc', '--autoc_fast', '--cand_pmin', '--fast',
               '--compile', '--compile_head', '--strict_q', '--u_max'):
@@ -515,7 +515,7 @@ def _old_run_args(argv):
 def backfill(out, write_file=True):
     """reconstruct run_config.json of a run made before 2026-11-14 from command.txt, summary.json, runtime.json, the info files
     and the present input files (nothing is recomputed). status 'reconstructed'; 'not_recovered' lists what is unknown."""
-    from simcode import run as RUN, strict as SP
+    from simcode import run as RUN, table as SP
     out_abs = os.path.abspath(out); real = os.path.realpath(out)
     cmds = _parse_commands(os.path.join(out, 'command.txt'))
     runs = [c for c in cmds if c[2].split('.')[-1] == 'run']; stricts = [c for c in cmds if c[2].split('.')[-1] == 'strict']
@@ -544,7 +544,7 @@ def backfill(out, write_file=True):
                               settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, format=sa.format, crop=sa.crop),
                               files=dict(sig_u=file_record(su)) if su else {}))
             files['sig_u_p1' if sa.tag == 'est' else 'sig_u_p2'] = su
-        # the tables were built by the logged simcode.strict commands with these rescales; simcode.run now does the same in its
+        # the tables were built by the logged simcode.table commands with these rescales; simcode.run now does the same in its
         # table stage, so the pair goes into the settings (a re-run from this record then builds the same kind of tables)
         S['sig_u'] = ','.join(files.get(k, '') for k in ('sig_u_p1', 'sig_u_p2')) if any(files.get(k) for k in ('sig_u_p1', 'sig_u_p2')) else ''
         iso = lambda t: time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(t))
@@ -577,7 +577,7 @@ def backfill(out, write_file=True):
                          'the settings stored in the info files as they are now',
                          'settings that were not on the command line are the defaults of the present code (crop 5,5,110, chunk 6000, margin 5, nn_min 3, '
                          'min_phot 300; they agree with the chunk files: crop entry of the pass-1 files, chunk starts). settings.sigma_max / u_max / subset '
-                         'did not exist at run time (present defaults); settings.sig_u = the rescales of the logged simcode.strict commands, which '
+                         'did not exist at run time (present defaults); settings.sig_u = the rescales of the logged simcode.table commands, which '
                          'simcode.run now applies itself',
                          'the run time of invocations other than the last one (summary.json holds the timing of the last invocation only)'],
                      inputs_modified_after_run_start=late, files_without_logged_command=unlogged),

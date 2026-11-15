@@ -4,7 +4,7 @@ usage: python lm_robust.py [txt] -> <out>/sc7/lm_robust.txt (or txt)"""
 import os, sys
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()
 import numpy as np
-from simcode.hd import gate_report as GR
+from simcode.benchmark import gate_report as GR
 from simcode import config
 OUTR = config.root('out')
 PX = 108.33

@@ -8,7 +8,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode import config as _config; OUTR = _config.root('out')
 import json, os, math
 import numpy as np, torch
-from simcode.insitu.psf_compare import summarize
+from simcode.calibration.psf_compare import summarize
 
 O = f'{OUTR}/psf3d'
 MOV = [('r05', '0.5 nM cover1/1 (ref)', 'bl'), ('m1809', '1809/2 (low)', 'bli'), ('m25', '2.5 nM/2 600 mW (medium)', 'bli'), ('m20', '20 nM/2 (high)', 'bli')]

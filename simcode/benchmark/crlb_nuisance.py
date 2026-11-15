@@ -1,30 +1,30 @@
 """Marginal (nuisance) multi-emitter CRLB for the gate scenes (task 4, 2026-11-09, sim realism worker).
-Model = CRLB_SF_multi of simcode/sim/crlb.crlb_all ('sf': per emitter x, y, z, B, t_on, t_off with the true
+Model = CRLB_SF_multi of simcode/simulate/crlb.crlb_all ('sf': per emitter x, y, z, B, t_on, t_off with the true
 pattern; all active emitters within 9 px in the parameter set; one bg per angle; exact vectorial PSF; Poisson + read
 noise; the same expected image), extended per emitter k with multiplicative intensity nuisances
     I_kt = B_k a_kt il_kt (1 + eps_kt) (1 + eta_k,a(t))
-  eps_kt  per-frame factor, eps ~ N(0, c^2) independent per frame (covers realsim frame_sd and the per-event step
+  eps_kt  per-frame factor, eps ~ N(0, c^2) independent per frame (covers the acquisition simulator frame_sd and the per-event step
           factors es, which are independent across the 6 steps of one window); c = --c (default sqrt(0.10^2+0.07^2))
-  eta_ka  per-angle factor, prior sd --ca (default 0.14 = realsim ang_sd). Our solve has NO free per-angle intensity
-          (simcode/hd/sc.py:216 solve_select_cov(mode='shared'); the PM path simcode/hd/msolve.py:52
+  eta_ka  per-angle factor, prior sd --ca (default 0.14 = the acquisition simulator ang_sd). Our solve has NO free per-angle intensity
+          (simcode/emitter/model.py:216 solve_select_cov(mode='shared'); the PM path simcode/solve/solve.py:52
           free = [x, y, B, 0 (B_1 tied to B_0), t_on, t_off]) -> the per-angle factor is a nuisance with a prior, not a
-          free parameter. (B free absorbs the common mode, so eta_0 - eta_1 has prior sd 0.14 sqrt 2 = realsim's
+          free parameter. (B free absorbs the common mode, so eta_0 - eta_1 has prior sd 0.14 sqrt 2 = the acquisition simulator's
           normalized ea = exp(0.14 g) / mean.)
   Fisher: J_eps_kt = B a il psf_k (frame t only), J_eta_ka = B a il psf_k (frames of angle a); prior information
   1 / c^2, 1 / ca^2 on their diagonal; inverse restricted to the target x, y = Schur complement over every nuisance
   (marginal bound). Evaluated at eps = eta = 0 (same expected image as CRLB_SF_multi). c = ca = 0 -> columns dropped
   (= CRLB_SF_multi exactly).
-Recomputed on the deterministic gate scenes (hd/gate.gen) for the targets of an existing gate npz (--ref tag; gt_x
+Recomputed on the deterministic gate scenes (benchmark/gate.gen) for the targets of an existing gate npz (--ref tag; gt_x
 checked equal); output <out>/gate/nuis/<scene>__s<seed>_c<c>_ca<ca>.npz: gt_x, gt_y, gt_phot, gt_target,
 sf_m (recomputed, check), nu_m (nuisance bound) [n,2] px, NaN for non-targets.
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.eff.crlb_nuis --scen rs05qm --c 0.122 --ca 0.14
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.benchmark.crlb_nuisance --scen rs05qm --c 0.122 --ca 0.14
 """
 import argparse, os, time
 import numpy as np, torch
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, dev, S
-from simcode.nn.blocks import extract_patches
-from simcode.hd import gate as GT
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.layers.blocks import extract_patches
+from simcode.benchmark import gate as GT
 from simcode import config
 
 R, HR, BOXP, BOXM = CD.R, CD.HR, CD.BOXP, CD.BOXM

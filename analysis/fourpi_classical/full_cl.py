@@ -26,8 +26,8 @@ for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__fi
 from simcode.fourpi.setup import P4, GAIN, XLIM, P, LAYOUT, movie_file, movie_files, file_index
 from simcode.fourpi.front import Front
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fileio.movie import DcimgMovie, Prefetch
-from simcode.fileio.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
+from simcode.io.movie import DcimgMovie, Prefetch
+from simcode.io.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 import real_cl as RC

@@ -15,7 +15,7 @@ Sim mode adds the GT match (lib.match_fast on the prior / detection position, 1 
 400-2000 ph), e [n, 2] nm, ev (GT event), site, P (GT window photons)."""
 import glob, json, os
 import numpy as np
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 
 PMIN = 0.63
 

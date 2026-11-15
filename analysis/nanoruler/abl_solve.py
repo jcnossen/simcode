@@ -1,9 +1,9 @@
 """Nanoruler ablation, part B2: the solve variants on a whole pipeline run (= analysis/ablation_cov/movie_abl.py 'solve' + table for this setup).
 
 Same network outputs for every variant (pass 1: the run's pass1_<f0>.npz, which store I, L and the prior; pass 2: the captured head
-outputs of abl_capture.py); per variant the pipeline's solve (msolve_fast.sc_solve_fast, batches of 16384) with the variant's covariance
+outputs of abl_capture.py); per variant the pipeline's solve (solve_fast.solve_emitters_fast, batches of 16384) with the variant's covariance
 and ITS OWN calibration (abl_gate.py; no '_real' multiplier of the other setup) -> <out>/pass2_<tag>_<f0>.npz in the pipeline format,
-then simcode.strict.build_table (strict crop = the run's crop) -> locs.npz with the extra sigma columns
+then simcode.table.build_table (strict crop = the run's crop) -> locs.npz with the extra sigma columns
     sx, sy          calibrated sigma (the solve's s_cal with the variant's per-photon-bin factor)
     sx_nb, sy_nb    the same without the per-photon-bin sigma factor f (still: kap_I2 / kap_p bins, chi2 inflation sig_a, sig_g, spread)
     sx_raw, sy_raw  UNCALIBRATED model sigma: a second solve with kap_I2 = kap_p = 1, sig_a = 1, sig_g = 0, no sigma factor
@@ -36,7 +36,7 @@ def raw_cal(cal, name):
 
 def chunks_p1(S, Pt):
     """pass-1 rows as run_chunk_pattern_solve_fast builds them"""
-    from simcode.pipeline.common import pattern_frames
+    from simcode.processing.common import pattern_frames
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
     for f in sorted(glob.glob(f'{S["run"]}/pass1_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4])):
         R = np.load(f); X0, Y0 = int(R['X0']), int(R['Y0']); k = np.nonzero(R['out'].astype(bool))[0]
@@ -50,7 +50,7 @@ def chunks_p1(S, Pt):
 def chunks_p2(S, Pt):
     """captured pass-2 head outputs (abl_capture.py); the pattern per window is rebuilt from Pt (so --pattern works for pass 2 too;
     note the pass-2 networks were FED the run's own pattern)"""
-    from simcode.pipeline.common import pattern_frames
+    from simcode.processing.common import pattern_frames
     for f in sorted(glob.glob(f'{S["head"]}/head_*.npz'), key=lambda f: int(f.rsplit('_', 1)[1][:-4])):
         H = np.load(f); X0, Y0 = int(H['X0']), int(H['Y0']); ws = H['wstart'].astype(np.int64); uw, inv = np.unique(ws, return_inverse=True)
         PW = pattern_frames(Pt, (uw[:, None] + np.arange(T6)[None]).reshape(-1), X0, Y0, 'cuda').reshape(len(uw), T6, 5)
@@ -61,7 +61,9 @@ def chunks_p2(S, Pt):
 
 @torch.no_grad()
 def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
-    from simcode.hd import msolve_fast as MF, sc as SCM
+    from simcode.solve import solve_fast as MF
+    from simcode.emitter import model as SCM
+    from simcode.solve import solve as SV
     S = A.SETS[setn]; d = f'{A.OUT}/runs/{setn}{"_" + ptag if ptag else ""}/{name}'; os.makedirs(d, exist_ok=True)
     Pt = torch.load(pattern or f'{S["run"]}/pattern_est.pt', weights_only=False)
     if 'pipeline' in Pt: Pt = Pt['pipeline']
@@ -74,11 +76,11 @@ def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
         acc = {k: [] for k in ('r', 's_cal', 'q', 'kin', 's', 'dnll', 'r_raw', 's_raw', 'f')}
         for c0 in range(0, len(bw), 16384):
             sl = slice(c0, c0 + 16384); ob = {kk: vv[sl] for kk, vv in og.items()}
-            so = MF.sc_solve_fast(ob, PW, bw[sl], cal, compile='auto')
+            so = MF.solve_emitters_fast(ob, PW, bw[sl], cal, compile='auto')
             for k in ('r', 's_cal', 'q', 'kin', 's'): acc[k].append(so[k].float().cpu().numpy())
             acc['dnll'].append(so['dnll'].float().cpu().numpy() if 'dnll' in so else np.full(len(so['q']), np.nan, np.float32))
-            acc['f'].append(SCM._binval(cal['sig_ph'], 'f', ob['I'].sum(1)).float().cpu().numpy())
-            sr = MF.sc_solve_fast(ob, PW, bw[sl], calr, compile='auto')
+            acc['f'].append(SV._binval(cal['sig_ph'], 'f', ob['I'].sum(1)).float().cpu().numpy())
+            sr = MF.solve_emitters_fast(ob, PW, bw[sl], calr, compile='auto')
             acc['r_raw'].append(sr['r'].float().cpu().numpy()); acc['s_raw'].append(sr['s_cal'].float().cpu().numpy())
         so = {k: np.concatenate(a) for k, a in acc.items()}
         R = dict(meta); f = so['f'][:, None]
@@ -91,14 +93,14 @@ def solve(setn, name, v, cal, pattern=None, ptag='', log=print):
 
 
 def table(setn, d, crop):
-    import simcode.strict as SP
+    import simcode.table as SP
     S = A.SETS[setn]; crop = tuple(float(c) for c in crop)
     SP.CROP = crop; SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]; SP.tile_rank.__defaults__ = SP.tile_rank.__defaults__[:-1] + (crop,)
     T, info = SP.build_table(d, S['tag'], A.PX)
     R = SP.load_rows(d, S['tag'])
     for k in ('sx_nb', 'sy_nb', 'sx_f', 'sy_f', 'sx_raw', 'sy_raw', 'x_raw', 'y_raw'): T[k] = R[k].astype(np.float32 if k[0] == 's' else np.float64)
     # sx_u, sy_u: calibrated sigma x g(u), the chain's selection-aware rescale of this pass (out/nanoruler/models/calib/sigu_p<pass>_nr80.json,
-    # fitted on nr_a with the PRODUCTION calibration = variant A; u = each variant's own per-tile sigma rank, as simcode.strict.build_table)
+    # fitted on nr_a with the PRODUCTION calibration = variant A; u = each variant's own per-tile sigma rank, as simcode.table.build_table)
     su = os.path.join(A.NR, 'models', 'calib', f'sigu_p{2 if S["tag"] == "est2" else 1}_nr80.json')
     if os.path.exists(su):
         Tu, _ = SP.build_table(d, S['tag'], A.PX, sig_u=su); T['sx_u'] = Tu['sx']; T['sy_u'] = Tu['sy']

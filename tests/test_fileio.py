@@ -1,5 +1,5 @@
 """
-CPU tests of the shared file handling (simcode/fileio) and of the configuration names. Run: python tests/test_fileio.py
+CPU tests of the shared file handling (simcode/io) and of the configuration names. Run: python tests/test_fileio.py
 (or pytest tests). No GPU, no models, no raw data: every input is written into a temporary directory.
   movie readers : multi-part TIFF frame index across the part boundary and crops; dcimg header, channel crops with
                   mirroring, footer; array / .npy reader; Prefetch hits, misses and identical data
@@ -13,7 +13,7 @@ import glob, json, multiprocessing as mp, os, signal, subprocess, sys, tempfile,
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from simcode.fileio import movie as MV, work as WK
+from simcode.io import movie as MV, work as WK
 from simcode.psf import ArrayMovie
 
 
@@ -159,7 +159,7 @@ def test_stale_claim_and_barrier():
 
 def test_killed_writer_leaves_no_output():
     with tempfile.TemporaryDirectory() as d:
-        code = ("import sys, numpy as np; sys.path.insert(0, %r)\nfrom simcode.fileio.work import atomic_savez\n"
+        code = ("import sys, numpy as np; sys.path.insert(0, %r)\nfrom simcode.io.work import atomic_savez\n"
                 "a = np.random.default_rng(0).random((60, 1000, 1000))\nprint('go', flush=True)\n"
                 "atomic_savez(%r, a=a, b=a, c=a, d=a)\n" % (os.path.dirname(os.path.dirname(os.path.abspath(__file__))), f'{d}/big.npz'))
         p = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE)

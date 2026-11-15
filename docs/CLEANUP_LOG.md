@@ -672,3 +672,23 @@ models are generic."
 Check: Gen2 batches (frames, patterns, estimates, steps, illumination maps; both p_std values, 'paper' / 'det' mixes, v1 / real
 error models) bit-identical to the former `--pgen pgen_v1` / `pgen_v1s50` with the same seeds; RealSim.scene without
 p_std bit-identical to before (out/z3d/checks/gen_bitid.py).
+
+## 2026-11-15: package reorganisation (user approved)
+
+Descriptive package layout, one network class per network for both passes, no aliases or old-name re-exports; the tree
+and the full old -> new table are in `docs/LAYOUT.md` (section "Renamed"). In short: `auto/` -> `pipeline/`, the former
+`pipeline/` -> `processing/`; `det/` + `p2/det2.py` -> `detector/` (one class `Detector`, one trainer); `hd/sc4.py` +
+`p2/head2.py` + the network part of `hd/sc.py` -> `emitter/` (one class `EmitterNet`, one trainer, `heldout.py`); `core.py`,
+`hd/msolve*.py`, `autoc.py`, the solve and z parts of `hd/sc.py` -> `solve/`; `p2/illum.py` -> `pattern/illumination.py`;
+`hd/realsim.py` (RealSim) -> `simulate/acquisition.py` (AcquisitionSim), `hd/data.py` + `p2/data.py` + `det/up2.batch` ->
+`simulate/batches.py` (TrainingBatches), `sim/` -> `simulate/`; `hd/gate*.py`, `eff/` -> `benchmark/`; `insitu/` ->
+`calibration/`, `evalproto/` -> `evaluation/`, `nn/` -> `layers/`, `fileio/` -> `io/`, `fastutil.py` -> `util/compile.py`,
+`strict.py` -> `table.py`; `p2/` removed. Trainer command lines: `python -m simcode.detector.train` (pass 2: `--illum 1
+--init <pass-1 detector>`, `--init_n1` -> `--pass1_ref`), `python -m simcode.emitter.train` (pass 2 when `--det` / `--init` is
+a pass-2 checkpoint), `python -m simcode.emitter.heldout` (was `simcode.hd.sc4 prep` / `prep5`).
+Checks (GPU 0): every checkpoint under models/ (33 detectors, 34 emitter networks: models.json models, model folders,
+archive_2d, archive_p2dedicated, the other weights) and the 4Pi detector / heads v10, v3L give bit-identical outputs on a
+fixed batch before / after (973 tensors, `tests/check_model_outputs.py`); `simcode.run --dataset 1809_2 --nframes 2000`
+bit-identical to the z3d code (every chunk file and table); the merged trainers run (6 smoke trainings of the recipe
+stages + the zero-init checks), with the same batches, targets and step-0 losses as the former trainers up to the GPU's
+run-to-run noise; pytest, `tests/test_fast_paths.py`, `tests/check_imports.py`.

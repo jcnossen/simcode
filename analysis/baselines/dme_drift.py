@@ -3,7 +3,7 @@ simcode/util/drift.py; not part of this repository). Rows: good (p >= 0.63) and 
 window start + 3, crlb = the calibrated sigma (px), rows with sigma >= 1 px dropped (as the evaluated runs). A SIMCODE npz
 (run_simcode_real.py ndi output: frame, x, y, sx, sy) is also accepted: all its rows, time = frame + 3, crlb = its sigma.
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/dme_drift.py <locs_p1.npz | sc_b.npz> <drift.npy> [n_frames]
--> drift [F, 2] px (subtract at frame + 3; simcode.run --drift / simcode.strict --drift take it)"""
+-> drift [F, 2] px (subtract at frame + 3; simcode.run --drift / simcode.table --drift take it)"""
 import os, sys, time
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

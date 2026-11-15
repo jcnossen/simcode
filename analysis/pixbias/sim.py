@@ -9,7 +9,7 @@ import os, sys, json
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pblib as B
-from simcode import strict as SP
+from simcode import table as SP
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 
 PS = os.path.join(B.REPO, 'out', 'papersim')

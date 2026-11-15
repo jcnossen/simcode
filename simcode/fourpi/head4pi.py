@@ -16,7 +16,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from simcode.nn.blocks import ResBlock
+from simcode.layers.blocks import ResBlock
 
 
 def norm_photons(x, scale=30.0):

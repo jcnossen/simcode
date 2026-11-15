@@ -1,11 +1,11 @@
-"""Run a simcode module (gate, dump, trainer, ...) with the RealSim presets patched in memory from a json (no package file is
-edited by this wrapper): env P2G_PRESET = {"common": {...}, "0.5nM": {...}, "2.5nM": {...}} (keys as realsim.PRESETS, incl. the
+"""Run a simcode module (gate, dump, trainer, ...) with the AcquisitionSim presets patched in memory from a json (no package file is
+edited by this wrapper): env P2G_PRESET = {"common": {...}, "0.5nM": {...}, "2.5nM": {...}} (keys as acquisition.PRESETS, incl. the
 opt-in keys of 2026-11-13 generic p2). Process title env P2G_TITLE (default 'p2gen').
-    python analysis/p2generic/pwrap.py simcode.hd.gate --scen iso ... (the module's own arguments)
+    python analysis/p2generic/pwrap.py simcode.benchmark.gate --scen iso ... (the module's own arguments)
 Without P2G_PRESET the module runs unchanged."""
 import json, math, os, runpy, sys
 sys.path.insert(0, '/home/jc/simcode2')
-import simcode.hd.realsim as RS
+import simcode.simulate.acquisition as RS
 from simcode.util.proctitle import set_title
 f = os.environ.get('P2G_PRESET', '')
 if f:
@@ -14,7 +14,7 @@ if f:
         p.update({k: (tuple(v) if isinstance(v, list) and k not in ('k', 'step_offs') else v)
                   for k, v in {**NR.get('common', {}), **NR.get(name, {})}.items()})
 import torch
-_pattern0 = RS.RealSim.pattern
+_pattern0 = RS.AcquisitionSim.pattern
 
 
 def _pattern(self, nb, exact_est=False):
@@ -42,8 +42,8 @@ def _spec(sp, P):
     (U{0..L-1}); per FOV and orientation a random global phase U(0, 2 pi) + the slot's offset (random_phase: every frame U(0, 2 pi)).
     No within-window drift. The estimate keeps the original draw's estimate errors (patt_est - patt added; zero for exact scenes);
     shift_est recomputed for the new k (p2.dump.gauge_shift). steps = angle * 3 + slot % 3 (angle by |kx| > |ky|), so every
-    steps // 3 user in realsim / CRLB sees the right orientation."""
-    from simcode.p2.dump import gauge_shift
+    steps // 3 user in the acquisition simulator / CRLB sees the right orientation."""
+    from simcode.processing.gate_dump import gauge_shift
     pt = P['patt']; dv = pt.device; nb, T, _ = pt.shape
     Sl = torch.tensor(sp['slots'], device=dv, dtype=pt.dtype); L = len(Sl)
     slot = (torch.randint(0, L, (nb, 1), device=dv) + torch.arange(T, device=dv)[None]) % L
@@ -58,7 +58,7 @@ def _spec(sp, P):
     return P
 
 
-RS.RealSim.pattern = _pattern
+RS.AcquisitionSim.pattern = _pattern
 _title = os.environ.get('P2G_TITLE', 'p2gen'); set_title(_title)
 import simcode.util.proctitle as _PT
 _PT.auto = lambda name: set_title(_title)      # keep the p2gen title when the module sets its own (trainers call auto())

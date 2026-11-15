@@ -1,0 +1,1 @@
+"""The explicit intensity-domain pattern solve on the emitter-network outputs (solve.py, solve_fast.py), its pattern geometry (pattern.py), z after the solve (z_conditioning.py), the automatic noise-scale estimator (autoc.py)."""

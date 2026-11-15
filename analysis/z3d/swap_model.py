@@ -11,11 +11,11 @@ usage: python analysis/z3d/swap_model.py <name> <eval dir> [--generic] [--dry]""
 import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from simcode import config
-from simcode.auto.train import export_model as _export
+from simcode.pipeline.training import export_model as _export
 
 
 def export_model(src, dest):
-    """auto.train.export_model + the sig_u files (a comma pair, which export_model leaves as absolute paths) copied to
+    """pipeline.training.export_model + the sig_u files (a comma pair, which export_model leaves as absolute paths) copied to
     dest/calib/ with relative names in dest/model.json"""
     import shutil
     f = _export(src, dest); D = json.load(open(f)); (nm, M), = [(k, v) for k, v in D.items() if not k.startswith('_')]
@@ -96,7 +96,7 @@ def generic(name, E, dry):
     rec = dict(pass1=json.load(open(os.path.join(cur, 'model.json')))['_recipe'], pass2_trainer_chain=chain,
                evaluation=f'/home/jc/simcode2/out/z3d/runs/eval.sh {name}g (vs the dedicated pass 2: {E}/accept_p2_ded.txt)',
                note='pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic '
-                    'illumination-pattern draw (hd/realsim.RealSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads '
+                    'illumination-pattern draw (simulate/acquisition.AcquisitionSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads '
                     'p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)')
     if dry:
         print(json.dumps(dict(archive=arc, new=n), indent=1)); return

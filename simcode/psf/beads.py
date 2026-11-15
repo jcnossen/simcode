@@ -7,7 +7,7 @@ refitted), for the setup's optics and camera.
 
 Writes <prefix>_sign<sign><tag>.json (zernike {noll: waves}, NA, n_med, dz_nm (fitted z step), ze (fitted bead height, um),
 nll_per_px, heldout_nll_per_px, n_beads, ...) and <prefix>_sign<sign><tag>.pt (zcoef, NA, n_med): the bead stage of the
-automatic pipeline (simcode/auto/pipeline.py) and the Zernike start of the in-situ fit. Stacks are numbered 2, 3, ... in the
+automatic pipeline (simcode/pipeline/localization_pipeline.py) and the Zernike start of the in-situ fit. Stacks are numbered 2, 3, ... in the
 order given (--holdout 7 = the 6th stack; 0 = none). --bead_diameter: finite bead volume (um; default a point emitter);
 --fit_dz_scale 0 / --fit_height 0 / --intensity free switch the fitted z step / bead height / per-plane factors off.
 The shipped models/insitu/beads/psf_fit_sign-1_na149_ball_drift.* was made by the earlier SIMCODE bead fit (the same terms,

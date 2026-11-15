@@ -1,5 +1,5 @@
 """
-3D position prior of the head (SCHead4 / SCHeadP2, 2026-11-14): layout, 2D checkpoints, the 3D NLL and the z conditioning
+3D position prior of the emitter network (EmitterNet, pass 1 and pass 2, 2026-11-14): layout, 2D checkpoints, the 3D NLL and the z conditioning
 of the solve. CPU / GPU, no model files needed except where marked. Run: python tests/test_z3d.py (or pytest tests)
   - a 2D state dict loads with zero z rows (pad_out) and the 2D outputs do not depend on the z rows
   - nll_p (x, y) + nll_z (z | x, y) = the full 3D Gaussian NLL of prior_cov (up to the constant 1.5 log 2 pi)
@@ -18,10 +18,9 @@ DEV = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def _head(p2=False):
-    from simcode.hd.sc4 import SCHead4
-    from simcode.p2.head2 import SCHeadP2
+    from simcode.emitter.model import EmitterNet
     torch.manual_seed(0)
-    h = (SCHeadP2 if p2 else SCHead4)(6, 32, P=21, bf16=False).to(DEV)
+    h = EmitterNet(6, 32, P=21, bf16=False, illum=p2).to(DEV)
     for prm in h.parameters():      # non-trivial weights everywhere (the zero-initialised layers included)
         prm.data.normal_(0, 0.05)
     return h.eval()
@@ -37,12 +36,12 @@ def _inputs(n=7, p2=False):
 
 
 def test_pad_out_and_layout():
-    from simcode.hd.sc4 import pad_out, is_3d, SCHead4
+    from simcode.emitter.model import pad_out, is_3d, EmitterNet
     for p2 in (False, True):
         h = _head(p2); pt, off, nb, il = _inputs(p2=p2)
         sd = h.state_dict()
         assert is_3d(sd)
-        sd2 = dict(sd); sd2['out.weight'] = sd['out.weight'][:-SCHead4.NZ]; sd2['out.bias'] = sd['out.bias'][:-SCHead4.NZ]
+        sd2 = dict(sd); sd2['out.weight'] = sd['out.weight'][:-EmitterNet.NZ]; sd2['out.bias'] = sd['out.bias'][:-EmitterNet.NZ]
         assert not is_3d(sd2)
         with torch.no_grad():
             a = h(pt, None, off, None, nb, il)
@@ -55,7 +54,7 @@ def test_pad_out_and_layout():
 
 
 def test_nll_3d():
-    from simcode.hd.sc4 import nll_z, prior_cov
+    from simcode.emitter.model import nll_z, prior_cov
     g = torch.Generator().manual_seed(2); n = 50
     out = dict(x=torch.randn(n, generator=g), y=torch.randn(n, generator=g), z=torch.randn(n, generator=g),
                lsxy=0.3 * torch.randn(n, 2, generator=g) - 1, lsz=0.3 * torch.randn(n, generator=g) - 0.5, bz=torch.randn(n, 2, generator=g))
@@ -70,8 +69,8 @@ def test_nll_3d():
 
 
 def test_z_given_xy():
-    from simcode.hd.sc4 import prior_cov
-    from simcode.hd.sc import z_given_xy
+    from simcode.emitter.model import prior_cov
+    from simcode.solve.z_conditioning import z_given_xy
     g = torch.Generator().manual_seed(3); n = 40
     o = dict(x=torch.randn(n, generator=g), y=torch.randn(n, generator=g), z=torch.randn(n, generator=g),
              lsxy=0.3 * torch.randn(n, 2, generator=g) - 1, lsz=0.3 * torch.randn(n, generator=g) - 0.5, bz=torch.randn(n, 2, generator=g))
@@ -94,14 +93,14 @@ def test_z_given_xy():
 
 
 def test_z_target():
-    from simcode.hd.data import z_target_px
+    from simcode.simulate.batches import z_target_px
     class S: focus = 0.15; c = {'pixelsize_um': 0.1}
     assert abs(float(z_target_px(torch.tensor(0.05), S)) + 1.0) < 1e-6
 
 
 def test_link_pass1():
     import numpy as np
-    from simcode.hd.sc import link_pass1
+    from simcode.solve.z_conditioning import link_pass1
     rng = np.random.default_rng(5); n = 500
     k1 = rng.integers(0, 20, n) * 3; x1 = rng.uniform(0, 100, n); y1 = rng.uniform(0, 100, n)
     take = rng.permutation(n)[:400]                                     # pass 2 = 400 of them, jittered, shuffled + 30 extra
@@ -122,7 +121,7 @@ def test_link_pass1():
 
 def test_pass1_z_columns():
     import numpy as np
-    from simcode.hd.sc import pass1_z_columns, z_given_xy
+    from simcode.solve.z_conditioning import pass1_z_columns, z_given_xy
     rng = np.random.default_rng(2); n1 = 50
     P1 = dict(wstart=np.repeat(np.arange(5) * 3, 10).astype(np.int64), x_det=rng.uniform(10, 60, n1), y_det=rng.uniform(10, 60, n1))
     P1.update(x=P1['x_det'] + rng.normal(0, 0.1, n1), y=P1['y_det'] + rng.normal(0, 0.1, n1), z=rng.normal(-0.5, 0.3, n1),
@@ -164,7 +163,7 @@ def test_table_pass2_z(tmp_path=None):
     """build_table (est2): the pass-1 z columns, NaN rows without a partner -> Dataset pos [n, 3] (NaN z), selection and render
     fine; pass-2 files of an earlier run (no p1_row: the pass-2 head z) -> no z columns"""
     import tempfile, numpy as np
-    from simcode import strict as SP
+    from simcode import table as SP
     from simcode.dataset import Dataset
     rng = np.random.default_rng(4); n = 300
     d = str(tmp_path or tempfile.mkdtemp())

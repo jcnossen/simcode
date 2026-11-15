@@ -1,5 +1,5 @@
-"""SIMCODE (paper model + eq.-2 pattern fit + MVU merge) as a front-end on the gate scenes (simcode/hd/gate.py), written in
-the gate npz format (front 'sc' keys) so simcode/hd/gate_report_xdet.py reports it like our sc front-ends.
+"""SIMCODE (paper model + eq.-2 pattern fit + MVU merge) as a front-end on the gate scenes (simcode/benchmark/gate.py), written in
+the gate npz format (front 'sc' keys) so simcode/benchmark/gate_report_xdet.py reports it like our sc front-ends.
   network   ~/smlmtorch/scripts/models/sf_conv_g1.3_tio2_L48/checkpoint_3.pt (the paper's model, see
             <out>/simcode_base/run_simcode.py), on the gate frames (photons, clamped >= 0 as MovieProcessor);
             LocalizationDetector prob_threshold 0.7, use_prob_weights False -> x, y, sigma_xy, N0..N5, sigma_N0..5
@@ -15,7 +15,7 @@ x_prior = network position, s = merged sigma (SIMCODE's reported precision), I_n
 A global coordinate offset (SIMCODE vs gate frame convention) is measured on the fly (median net - GT on matched iso targets,
 printed) -- not removed in the npz (gate_report has no offset fit); fit_offset() below gives the global offset of ANY front
 (SIMCODE or ours) for the paired comparison (<out>/simcode_base/gate_paired.py --offset, critic 32 #2).
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.eff.simcode_gate --scen iso,pair2,rs05p,rs25p,rs05pm,rs25pm
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.benchmark.preprint_gate --scen iso,pair2,rs05p,rs25p,rs05pm,rs25pm
 """
 import argparse, json, math, os, time
 os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
@@ -26,9 +26,9 @@ from smlmtorch import config_dict
 from smlmtorch.nn.sf_model import SFLocalizationModel
 from smlmtorch.nn.localization_detector import LocalizationDetector
 from smlmtorch.simflux.ndi_fit_torch import ndi_fit
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GT
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GT
 from simcode import config as _cfg
 
 # SIMCODE paper networks (smlmtorch repository, read only): directory from env SMLMTORCH_MODELS or config key 'smlmtorch_models'

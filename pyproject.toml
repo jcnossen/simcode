@@ -21,7 +21,7 @@ dependencies = [
 
 [project.scripts]
 simcode-run = "simcode.run:main"
-simcode-strict = "simcode.strict:main"
+simcode-table = "simcode.table:main"
 
 [tool.setuptools.packages.find]
 include = ["simcode*"]

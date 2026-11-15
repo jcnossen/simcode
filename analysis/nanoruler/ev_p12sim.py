@@ -1,7 +1,7 @@
 """Pass 2 versus pass 1 on IDENTICAL ground-truth windows of one pipeline run on a simulated movie (locs_p1.npz, locs_p2.npz
 of the same run + sim_gt.npz). Matching as ev_sigcal.py / analysis/psf3d_nets/sigcal.py (rows one-to-one within 1 px to GT event
 windows, evalproto.lib.match_fast; the median error of the matched set removed per pass). Row sets on the GT windows matched by
-BOTH passes: 'all' (any stored row), 'good' (p >= 0.63 in both), 'm12' (the paper's selection, simcode.strict.select, in both), 'good, fully on' (on in all 6 frames).
+BOTH passes: 'all' (any stored row), 'good' (p >= 0.63 in both), 'm12' (the paper's selection, simcode.table.select, in both), 'good, fully on' (on in all 6 frames).
 Per set: RMS per axis (nm, errors > 50 nm are gross and excluded from both), pass 2 - pass 1 with a 95 % CI (bootstrap over GT
 events), ratio, the pattern-free prior RMS of both passes, robust zcal. Also recall of the GT target windows by good rows.
   nanoruler setup:  python ev_p12sim.py <run> <sim> nr      (65 nm px, cycle-aligned windows only, exact GT windows, drift added)
@@ -9,7 +9,7 @@ events), ratio, the pattern-free prior RMS of both passes, robust zcal. Also rec
 import os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 run, sim, mode = sys.argv[1:4]
 PX = 65.0 if mode == 'nr' else 108.33
 G = dict(np.load(f'{sim}/sim_gt.npz', allow_pickle=True)); G['nf'] = int(G['nf'])
@@ -29,7 +29,7 @@ D = {}
 print(f'# {run} on {sim} ({mode}, px {PX} nm): GT windows {len(GW)}, targets {int(tg.sum())}')
 for p in (1, 2):
     import abl_lib as A
-    from simcode import strict as SP
+    from simcode import table as SP
     T = A.load_table(f'{run}/locs_p{p}.npz'); T['m12'] = SP.select(T, 12.0, px_nm=PX)
     k = np.ones(len(T['frame']), bool) if mode != 'nr' else (T['frame'] % 6 == 0)
     T = {c: v[k] for c, v in T.items() if np.ndim(v) and len(v) == len(k)}

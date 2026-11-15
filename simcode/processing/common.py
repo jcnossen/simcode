@@ -1,6 +1,6 @@
 """
-Shared pieces of the per-window pipeline (simcode/pipeline): the read plan of the chunks, the rows of the pass-1 chunk
-files, camera conversion and the PSF model. Movie reading: torch_psf.movie (TIFF) and simcode/fileio/movie.py (dcimg,
+Shared pieces of the per-window pipeline (simcode/processing): the read plan of the chunks, the rows of the pass-1 chunk
+files, camera conversion and the PSF model. Movie reading: torch_psf.movie (TIFF) and simcode/io/movie.py (dcimg,
 Prefetch). Only the camera and PSF entries of the calibration json are read here; its 'pattern' entry is
 never used.
 """
@@ -14,7 +14,7 @@ CAND_PMIN = 0.3
 
 
 def chunk_read_plan(movie, chunks, chunk, nf, crop, margin, pad=12):
-    """the movie.read() calls of Pass1SCFast / Pass2P2Fast.run_chunk for these chunk starts (same l0 / l1 rule)"""
+    """the movie.read() calls of Pass1FrontFast / Pass2FrontFast.run_chunk for these chunk starts (same l0 / l1 rule)"""
     X0, Y0, S = region(movie, crop, margin)
     plan = []
     for f0 in chunks:

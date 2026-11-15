@@ -119,7 +119,7 @@ def load(kind, path, NF):
 
 
 def frc_res(x, y, half, pix_nm=5.0):
-    from simcode.evalproto.frc import frc_fov
+    from simcode.evaluation.frc import frc_fov
     return frc_fov(x, y, half, X0, X1, PX, pix_nm)
 
 

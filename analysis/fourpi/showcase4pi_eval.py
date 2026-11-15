@@ -77,7 +77,7 @@ def astig_fit(F, lut, dev, chunk=20000):
     return R
 
 
-from simcode.evalproto.frc import frc_hann as frc  # noqa: FRC of a rectangular field with a Hann window -> (freq 1/nm, frc, resolution nm)
+from simcode.evaluation.frc import frc_hann as frc  # noqa: FRC of a rectangular field with a Hann window -> (freq 1/nm, frc, resolution nm)
 
 
 def main():

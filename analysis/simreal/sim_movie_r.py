@@ -1,23 +1,23 @@
 """[2026-11-10 simreal2] copy of field/sim_field_movie.py (= sc6/sim_movie.py + SIM_PFIELD pattern phase / depth field) + realism knobs:
-  SIMP_<key>=<value>  RealSim preset override (float; 'true'/'false' for bools), e.g. SIMP_dens, SIMP_tau, SIMP_bg, SIMP_bg_sd,
+  SIMP_<key>=<value>  AcquisitionSim preset override (float; 'true'/'false' for bools), e.g. SIMP_dens, SIMP_tau, SIMP_bg, SIMP_bg_sd,
                       SIMP_fluct, SIMP_fil_density, SIMP_fil_on, SIMP_fil_w, SIMP_fil_resample, SIMP_psf_wr / psf_fr / psf_zs, SIMP_z_sd
   SIM_DIM_DENS        ON density (per px per frame) of a second, dim emitter population on the SAME filaments (dim binders /
                       local fluctuating light); SIM_DIM_MED / SIM_DIM_SD window-photon median (label units) / log-sd; SIM_DIM_TAU
                       on-time (frames). GT rows of this population carry dim = 1.
   SIM_CALIB=<json>    (2026-11-11, opt-in) PSF from this calibration json instead of the preset's calib_0.5nM.json
   SIM_PSF_BLUR=sx,sy  (2026-11-11, opt-in) anisotropic Gaussian blur (px) of every rendered PSF (after the halo)
-  SIM_PSFDIV=<json>   (2026-11-11, opt-in) PSF-diversity LUT bank replacing rs.luts (realsim.psf_div_luts); with SIM_SITE_PSF=0 one LUT per event
+  SIM_PSFDIV=<json>   (2026-11-11, opt-in) PSF-diversity LUT bank replacing rs.luts (acquisition.psf_div_luts); with SIM_SITE_PSF=0 one LUT per event
   SIM_EV_SHIFT=<nm>   (2026-11-11, opt-in) per-event emission offset sd per axis (PSF rendered at r + d; GT / illumination at r; stored in shift_dx / dy)
-  (2026-11-11) a SIM_CALIB with a per-pattern-angle PSF (psf_dipole_M_angle / psf_blur_angle_px2; RealSim LUT tuples) renders
+  (2026-11-11) a SIM_CALIB with a per-pattern-angle PSF (psf_dipole_M_angle / psf_blur_angle_px2; AcquisitionSim LUT tuples) renders
                       each frame with its angle's PSF (frame % 6 // 3); not combined with SIM_LAZY / SIM_PSF_DYN / SIM_HALO2 / SIM_PSF_BLUR
   SIM_PSF_DYN=1       per-frame PSF shape fluctuation (random jittered LUT per emitter per frame), SIMP_npsf-free: uses rs.luts
-[2026-11-10 field copy of sc6/sim_movie.py] + SIM_PFIELD=<field .pt> (simcode/pipeline/pattern_field.py format): a static
+[2026-11-10 field copy of sc6/sim_movie.py] + SIM_PFIELD=<field .pt> (simcode/processing/pattern_field.py format): a static
 per-position pattern phase field phi_a(r) and depth factor f_a(r) are injected into the illumination
 (il = rel (1 + m f_a(r) cos(k.r - phase - phi_a(r)))); no extra random draws (same seed = same events / noise as the
 field-free movie). The true field is saved as <out>/true_field.pt.
 
 Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --frontend sc).
-rs05pm-like: RealSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
+rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
 jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,
 angle = step // 3, eps(t) random walk). 120 x 120 px (the real sensor crop; camera maps of the 0.5 nM calibration),
@@ -25,27 +25,27 @@ uint16 ADU multi-page TIFF. Rendering in 60-frame blocks.
 Outputs: <out>/sim_movie.tif, <out>/sim_gt.npz (events, pattern per frame), <out>/gt_pattern.pt (common pattern format,
 for --ref_pattern).
 usage: CUDA_VISIBLE_DEVICES=1 python sim_movie.py <out_dir> [n_frames] [seed]
-Optional env overrides (2026-11-09, SIMCODE-baseline worker; defaults unchanged): SIM_PRESET ('0.5nM' | '2.5nM', RealSim
+Optional env overrides (2026-11-09, SIMCODE-baseline worker; defaults unchanged): SIM_PRESET ('0.5nM' | '2.5nM', AcquisitionSim
 preset + paper_bright preset), SIM_MED / SIM_SD (paper_bright med0 / log-sd, e.g. label-unit brightness 1280 / 0.45).
 (2026-11-09, sim-realism worker): SIM_FRAME_SD / SIM_STEP_SD / SIM_ANG_SD (emitter-variation factors), SIM_HALO2 / SIM_HALO2_SIG
-(broad PSF halo, realsim.add_halo2: a fraction HALO2 of every emitter's light in a broad exponential-disc component of scale
-HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static light, realsim.filament_static_map: FILSTAT ph/px/frame x the
+(broad PSF halo, acquisition.add_halo2: a fraction HALO2 of every emitter's light in a broad exponential-disc component of scale
+HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static light, acquisition.filament_static_map: FILSTAT ph/px/frame x the
 unit-mean filament line map blurred SIG px; FOV-mean bg unchanged), SIM_STRUCT (struct_frac override: 1 = filament geometry).
 (2026-11-10/11, evaluation protocol; all opt-in, absent = unchanged):
-  SIMP_site_ev / site_wsd / site_L / site_jit   discrete docking sites with repeated binding (realsim.RealSim._sites); z per site
+  SIMP_site_ev / site_wsd / site_L / site_jit   discrete docking sites with repeated binding (acquisition.AcquisitionSim._sites); z per site
   SIM_SITE_PSF=1      (default 1 when sites are on) PSF-jitter LUT group per SITE instead of per event (static per-site PSF term)
   SIM_DIM_SITES=1     dim binders also bound to (their own) sites (default: free events as before)
   SIM_SHIFT_LIN / SIM_SHIFT_RMS / SIM_SHIFT_SIG   imaging shift field (static, all methods see it): the PSF is rendered at
                       r + d(r), d = LIN nm per 100 px x (r - centre) (scale-like) + smooth random field (rms RMS nm, sigma SIG px);
                       the illumination and the GT stay at r. GT: shift_dx / shift_dy (px) per event.
-  SIMP_env_x0 / env_y0 / env_s1 / env_s2 / env_th / env_bg   (critic 37 #2) illumination envelope (realsim.RealSim.envelope)
+  SIMP_env_x0 / env_y0 / env_s1 / env_s2 / env_th / env_bg   (critic 37 #2) illumination envelope (acquisition.AcquisitionSim.envelope)
   SIM_LAZY=1          per-60-frame-block PSF rendering (memory ~ active events) and sparse GT window photons
                       (ph6_ev / ph6_blk / ph6_val, with frame_sd + pattern field included) instead of the dense ph6 [N, NF/6]."""
 import json, math, os, sys
 from simcode import config as _cfg
 import numpy as np, torch, tifffile
-from simcode.hd.realsim import RealSim
-from simcode.hd.data import paper_bright
+from simcode.simulate.acquisition import AcquisitionSim
+from simcode.simulate.batches import paper_bright
 
 dev = 'cuda'
 
@@ -75,9 +75,9 @@ def main():
             over[k_[5:]] = (v_.lower() == 'true') if v_.lower() in ('true', 'false') else float(v_)
     if os.environ.get('SIM_CALIB'):   # (2026-11-11 PSF-shape mismatch, opt-in) render with this calib json's PSF (zernike_waves / focus_um);
         over['calib'] = os.environ['SIM_CALIB']   # the jittered LUTs are centred on it; camera maps / pattern presets unchanged
-    rs = RealSim(PRE, H, W, NF, seed=seed, **over)
-    if os.environ.get('SIM_PSFDIV'):   # (2026-11-11, opt-in) PSF-diversity LUT bank (realsim.psf_div_luts, json); own generator, no global draws
-        from simcode.hd.realsim import psf_div_luts
+    rs = AcquisitionSim(PRE, H, W, NF, seed=seed, **over)
+    if os.environ.get('SIM_PSFDIV'):   # (2026-11-11, opt-in) PSF-diversity LUT bank (acquisition.psf_div_luts, json); own generator, no global draws
+        from simcode.simulate.acquisition import psf_div_luts
         rs.luts = psf_div_luts(rs, json.loads(os.environ['SIM_PSFDIV']), seed); print(f'PSF bank: {len(rs.luts)} LUTs', flush=True)
     print('preset overrides', over, flush=True)
     p = rs.p
@@ -136,7 +136,7 @@ def main():
     xr_, yr_ = x, y
     SDX = SDY = None
     if os.environ.get('SIM_SHIFT_LIN') or os.environ.get('SIM_SHIFT_RMS'):
-        from simcode.hd.realsim import smooth_field, PX_NM
+        from simcode.simulate.acquisition import smooth_field, PX_NM
         lin = float(os.environ.get('SIM_SHIFT_LIN', 0) or 0) / PX_NM / 100.0
         rms = float(os.environ.get('SIM_SHIFT_RMS', 0) or 0) / PX_NM
         sg = float(os.environ.get('SIM_SHIFT_SIG', '20'))
@@ -195,23 +195,23 @@ def main():
             sim.lut = lut; PSFD[gi] = sim.render_psf(x, y, z)
         sim.lut = base
         PSFD = (1 - hh)[None] * PSFD + hh[None] * gb[None]
-    if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (realsim.add_halo2); no extra random draws
+    if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (acquisition.add_halo2); no extra random draws
         assert not LAZY
-        from simcode.hd.realsim import add_halo2
+        from simcode.simulate.acquisition import add_halo2
         psf = add_halo2(psf, x, y, float(os.environ['SIM_HALO2']), float(os.environ.get('SIM_HALO2_SIG', '4.0')))
     # background over the whole movie (fluct mode), steps = frame % 6
     steps = (torch.arange(NF, device=dev) % 6)[None]
     bgt, _ = rs.background(1, steps, mode='fluct')
     bgt = bgt[0]
     FILSTAT = float(os.environ.get('SIM_FILSTAT', 0) or 0)
-    if FILSTAT > 0:   # filament-correlated dim static light (realsim.filament_static_map), FOV-mean bg unchanged
-        from simcode.hd.realsim import filament_static_map
+    if FILSTAT > 0:   # filament-correlated dim static light (acquisition.filament_static_map), FOV-mean bg unchanged
+        from simcode.simulate.acquisition import filament_static_map
         fp = em['fil_pts'][0] if em['fil_pts'] is not None and bool(em['fil_struct'][0]) else None
         Dm = filament_static_map(fp, H, W, float(os.environ.get('SIM_FILSTAT_SIG', '1.5'))).to(dev)
         bgt = (bgt + FILSTAT * (Dm[None] - 1)).clamp(min=0.3) if float(Dm.mean()) > 0 else bgt
         np.save(f'{out}/filstat_map.npy', Dm.cpu().numpy())
     cam = np.load(p['cam'])
-    from simcode.pipeline.common import load_calib  # noqa (format reference)
+    from simcode.processing.common import load_calib  # noqa (format reference)
     off_map = torch.tensor(np.load(_cfg.model('insitu/camera_maps_0.5nM.npz'))['offset_adu'], device=dev).float()
     rn = rs.rn_map[:H, :W]
     gain_true = sim.gain * (1 + 0.01 * torch.randn(1, device=dev).item())
@@ -225,7 +225,7 @@ def main():
     BL = 60
     FPH = FDF = None
     if os.environ.get('SIM_PFIELD'):
-        from simcode.pipeline.pattern_field import field_at
+        from simcode.processing.pattern_field import field_at
         Fi = torch.load(os.environ['SIM_PFIELD'], weights_only=False)
         dp_, df_ = field_at(Fi, x.cpu().numpy().astype(np.float64), y.cpu().numpy().astype(np.float64))
         FPH = torch.tensor(dp_, device=dev, dtype=torch.float32); FDF = torch.tensor(df_, device=dev, dtype=torch.float32)

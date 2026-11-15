@@ -53,7 +53,7 @@ def compile_available(verbose=True):
         why = f'{type(e).__name__}: {str(e).splitlines()[0][:120] if str(e) else ""}'
     _STATE['ok'] = ok
     if verbose:
-        print(f'[fastutil] torch.compile {"available" if ok else "unavailable -> eager (" + why + ")"}', file=sys.stderr, flush=True)
+        print(f'[simcode.util.compile] torch.compile {"available" if ok else "unavailable -> eager (" + why + ")"}', file=sys.stderr, flush=True)
     return ok
 
 
@@ -89,7 +89,7 @@ def maybe_compile(fn, mode='auto', **kw):
             except Exception as e:
                 if strict: raise
                 state['ok'] = False
-                print(f'[fastutil] torch.compile failed at run time -> eager ({type(e).__name__})', file=sys.stderr, flush=True)
+                print(f'[simcode.util.compile] torch.compile failed at run time -> eager ({type(e).__name__})', file=sys.stderr, flush=True)
         return fn(*a, **k)
     call.__wrapped__ = fn
     return call

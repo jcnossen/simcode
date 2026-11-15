@@ -1,4 +1,4 @@
-"""Shared network building blocks (residual conv block, patch extraction)."""
+"""Shared network building blocks: residual conv block, photon normalisation of the network inputs, patch extraction."""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -15,8 +15,14 @@ class ResBlock(nn.Module):
         return x + self.c2(F.gelu(self.n(self.c1(F.gelu(x)))))
 
 
-def extract_patches(x, b, iy, ix, P):
-    """x [B,C,H,W] -> patches [N,C,P,P] centred on (iy,ix), zero padded."""
+def norm_photons(x, scale=30.0):
+    """input normalisation of the detector and the emitter network: sign(x) log1p(|x| / scale) on photons"""
+    return torch.sign(x) * torch.log1p(x.abs() / scale)
+
+
+def extract_patches(x, b, iy, ix, P=21):
+    """x [B,C,H,W] -> patches [N,C,P,P] centred on (iy, ix), zero padded. P default 21 = the emitter network's patch
+    (simcode.emitter.model.PP)."""
     h = P // 2
     xp = F.pad(x, (h, h, h, h))
     o = torch.arange(P, device=x.device)

@@ -11,9 +11,9 @@ Per file (process_file):
      residual background per channel: on-through vs kinetics (kept if chi2 drops by > 9.21; no free fallback)
 Network intensities -> explicit solve; no pixel fit.
 
-Files are the units of the shared work driver (simcode/fileio/work.py): finished files are skipped, outputs are written
+Files are the units of the shared work driver (simcode/io/work.py): finished files are skipped, outputs are written
 atomically, the disk is checked before a file starts, and with --claim 1 several copies of the command (one per GPU:
-python -m simcode.fileio.launch --gpus 1,2 -- python -m simcode.fourpi.run --cell MT --all --claim 1 ...) share the files.
+python -m simcode.io.launch --gpus 1,2 -- python -m simcode.fourpi.run --cell MT --all --claim 1 ...) share the files.
 
 Output: <4Pi work dir>/net/locs_<cell>_<file>_<head><tag>.npz, a record locs_<cell>_<file>_<head><tag>.json per file and
 the merged locs_<cell>_<head><tag>_summary.json.
@@ -27,8 +27,8 @@ from simcode.fourpi import insitu as IS
 from simcode.fourpi.solve4pi import kin_starts, best_of
 from simcode.fourpi.solvek4pi import SolveK
 from simcode.fourpi.loadhead import load_head
-from simcode.fileio.movie import DcimgMovie, Prefetch
-from simcode.fileio.work import Units, atomic_json
+from simcode.io.movie import DcimgMovie, Prefetch
+from simcode.io.work import Units, atomic_json
 
 dev = 'cuda'
 
@@ -58,7 +58,8 @@ def args(argv=None):
 def setup(a):
     """networks, front end and solver of a cell (the same for every file)"""
     net, ck = load_head(a.head)
-    from simcode.det.up2 import load as dload, select as dselect
+    from simcode.detector.model import load as dload
+    from simcode.detector.select import select_points as dselect
     det, _ = dload(a.det)
     fr = Front(a.cell)
     pat0 = json.load(open(f'{P4}/smlm/diag/pattern_{a.cell}.json'))
@@ -86,7 +87,7 @@ def process_file(rd, ctx, a, fi, nfr):
             for b0 in range(0, nW, 20):                      # detector in batches of 20 windows (memory)
                 with torch.autocast('cuda', dtype=torch.bfloat16):
                     dout = det(Rf[b0:b0 + 20])
-                c1 = dselect({k: v.float() for k, v in dout.items()}, 1, k=2048, p_min=a.p_min)
+                c1 = dselect({k: v.float() for k, v in dout.items()}, k=2048, p_min=a.p_min)
                 c1['b'] = c1['b'] + b0; ccs.append(c1)
             cc = {k: torch.cat([c1[k] for c1 in ccs]) for k in ('b', 'iy', 'ix', 'logit')}
             okc = torch.isfinite(cc['logit']) & (cc['ix'] >= XLIM[0]) & (cc['ix'] < XLIM[1]) & (cc['iy'] >= h + 1) & (cc['iy'] < 200 - h - 1)

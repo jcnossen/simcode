@@ -2,7 +2,7 @@
 Ours pass 1 rows (p >= 0.63, starts % 3 == 0 (0.5 / 2.5) or % 6 == 0 (20 nM)), RAW sensor coordinates (the envelope is
 fixed on the sensor), 5-115 crop. Per 10-px tile: median and p75 network window photons, rows; raw-movie background
 (temporal median of 600 frames, offset-subtracted, x gain -> photons / px / frame), 10-px tile medians.
-Fit: log(median photons per tile) = elliptical Gaussian log-quadratic (6 params, rows-weighted) -> envelope keys for realsim
+Fit: log(median photons per tile) = elliptical Gaussian log-quadratic (6 params, rows-weighted) -> envelope keys for the acquisition simulator
 (env_x0 / env_y0 centre px, env_wx / env_wy 1/e^2... no: Gaussian sd px along the principal axes, env_th angle rad).
 The bg map is fitted the same way (reported; applied only if it follows the photon envelope).  same algorithm. Input = a datasets.py json spec (its
 set "ours p1" (kind ours) and grid; drift not needed) plus
@@ -56,7 +56,7 @@ def fit_gauss(M, W):
 
 
 def env_eval(P, x, y):
-    """realsim envelope (unnormalized): Gaussian with principal sd s1 (axis th) and s2"""
+    """the acquisition simulator envelope (unnormalized): Gaussian with principal sd s1 (axis th) and s2"""
     dx, dy = x - P['x0'], y - P['y0']
     c, s = np.cos(P['th']), np.sin(P['th'])
     u = c * dx + s * dy; v = -s * dx + c * dy

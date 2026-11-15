@@ -18,7 +18,7 @@ resolve(p, kind) turns a user path into an absolute one: absolute paths and path
 are kept; otherwise the path is looked up under the given root (models: also under models/calib and models/insitu).
 model_set(name) returns one model: a name of simcode/models.json (the definition of the shipped models), or the path of a
 model folder (model.json + the network and calibration files, as written by the automatic pipeline's training stage /
-simcode.auto.train.export_model), or of such a model.json.
+simcode.pipeline.training.export_model), or of such a model.json.
 """
 import json, os
 from pathlib import Path
@@ -154,7 +154,7 @@ def production():
 # files of the default model (models directory, relative names)
 _S = model_set()
 DET = _S['det']                                                # pass-1 detector
-HEAD = _S['head']                                              # pass-1 head (SCHead4, neighbour-aware)
+HEAD = _S['head']                                              # pass-1 head (EmitterNet, neighbour-aware)
 P2_DET = _S['p2_det']                                          # pass-2 (pattern-aware) detector
 P2_HEAD = _S['p2_head']                                        # pass-2 head (p2L)
 CAL_P1_REAL = _S['cal_real']                                   # pass-1 solve calibration, real-data sigma (fixed c)

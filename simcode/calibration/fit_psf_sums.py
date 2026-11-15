@@ -11,7 +11,7 @@ from simcode.util.neighbours import nn_overlap
 from scipy.spatial import cKDTree
 from simcode.psf import VectorialPSF
 from simcode import config
-from simcode.insitu import MOVIE_05, data, out, cam_maps
+from simcode.calibration import MOVIE_05, data, out, cam_maps
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--locs', default=out('legacy', 'real_v6_p4_f0.npz'),

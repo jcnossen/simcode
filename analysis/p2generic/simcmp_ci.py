@@ -5,7 +5,7 @@ windows by good rows (A - B with CI); also the 'fully on' windows (all 6 frames 
 usage: python simcmp_ci.py <sim_dir> <est|est2> <run A> <run B> [px_nm=108.33]"""
 import sys
 import numpy as np
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 from simcode.util.proctitle import set_title
 set_title('p2gen-simcmp')
 sim, tag, A, B = sys.argv[1:5]; PX = float(sys.argv[5]) if len(sys.argv) > 5 else 108.33

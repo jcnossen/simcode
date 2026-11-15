@@ -7,7 +7,7 @@ Run: python tests/test_runconfig.py            CPU tests (no GPU, no models, no 
                                                bit-identical chunk files, pattern and tables
   settings   the settings of a run turned into arguments (rerun_argv) resolve to the same settings again
   hashes     arrays_sha256 is equal for two .npz files with the same arrays (their file hashes differ: zip time stamps)
-  steps      simcode.strict appends its settings to run_config.json 'steps', replaces the outputs / selection entries of the
+  steps      simcode.table appends its settings to run_config.json 'steps', replaces the outputs / selection entries of the
              files it wrote, and logs a plain line in command.txt
   start      a second invocation with the same settings is added to 'invocations'; changed settings are kept under
              'earlier_settings'
@@ -16,7 +16,7 @@ import json, os, subprocess, sys, tempfile, time
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from simcode import run as RUN, strict as SP
+from simcode import run as RUN, table as SP
 from simcode.util import runconfig as RC
 from test_tables import _run_dir
 
@@ -75,7 +75,7 @@ def test_steps_and_start():
         assert R['outputs']['locs_p2.npz']['written_by'] == 'steps[0]' and 'locs_p2_sig14.npz' in R['outputs'] and 'locs_p2_sig12.npz' in R['outputs']
         assert R['selection']['locs_p2']['main']['sigma_max_nm'] == 14 and R['selection']['locs_p2']['main']['n'] == st['result']['n_main']
         assert R['outputs']['locs_p2.npz']['arrays_sha256'] == RC.arrays_sha256(f'{d}/locs_p2.npz')
-        assert 'simcode.strict' in open(f'{d}/command.txt').read()
+        assert 'simcode.table' in open(f'{d}/command.txt').read()
         R = RC.finish(d, error='X: test'); assert R['status'] == 'failed'
         if os.path.exists(f'{d}/run_config.yaml'):
             import yaml

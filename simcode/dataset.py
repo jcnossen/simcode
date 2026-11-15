@@ -7,14 +7,14 @@ filter_photons, filter_crlb, filter_frames; in-place variants with a trailing _)
 drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), render, frc, info, and the files: save / load
 (.hdf5 = the torch-psf format, .csv = ThunderSTORM), save_picasso / load_picasso. This module adds:
 
-  loaders   Dataset.load(path)  a run directory (from_run), .npz (load_npz: a v2 table of simcode.run / simcode.strict, a
+  loaders   Dataset.load(path)  a run directory (from_run), .npz (load_npz: a v2 table of simcode.run / simcode.table, a
                                 subset file, a file of the earlier SIMCODE Dataset.save_npz, or the paper's DECODE table:
                                 from_decode), .npy (load_npy: the preprint code's Dataset / SFDataset file), else
                                 torch_psf's load (.hdf5: this format or Picasso, e.g. the paper's sf.hdf5; .csv: ThunderSTORM)
             from_run(run_dir, pass_=2), load_npz, from_decode, from_smlmtorch(ds), load_npy
             window=<frames>: frames per localization (the n_frames field) for files that do not record it (the paper's
             SMLM / SIMFLUX tables of summed 6-frame windows: window=6)
-  select    select(max_precision_nm=12, min_score=0.63, in_region=True) = simcode.strict.select on this table: the paper's
+  select    select(max_precision_nm=12, min_score=0.63, in_region=True) = simcode.table.select on this table: the paper's
             selection (calibrated precision max(crlb_x, crlb_y) * pixel_nm <= 12 nm, score >= 0.63, inside the run's crop
             meta['crop']; the drift-corrected x_dc, y_dc when the table has them); None switches a condition off.
             mask(...) is the boolean row mask.
@@ -27,7 +27,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
     img = sel.render(pixel_nm=10); res = sel.frc()
     sel.save('run1_sel.hdf5')                         # torch-psf format; sel.save_picasso(...), sel.save('x.csv')
 
-Fields of a v2 table (simcode/strict.py) in this layout (docs/DATASET_FORMAT.md of SIMCODE lists them):
+Fields of a v2 table (simcode/table.py) in this layout (docs/DATASET_FORMAT.md of SIMCODE lists them):
   pos [n, 2] = (x, y) px, crlb [n, 2] = (sx, sy) px (calibrated sigma); tables of 3D heads (columns z, sz, cov_xz, cov_yz):
   pos [n, 3] = (x, y, z) with z in px of the lateral pixel relative to the PSF calibration's focal plane, crlb [n, 3], cov
   [n, 3] = (xy, xz, yz) px^2; frame = window start, n_frames = 6 (window length), photons, score = p (detector probability), intensities [n, 6] = I (network per-frame intensities), and the other
@@ -41,7 +41,7 @@ column becomes the field z, crlb_z: its own unit, not part of pos).
 import json, os
 import numpy as np
 import torch
-from simcode import strict as SP
+from simcode import table as SP
 from simcode.psf import Dataset as _TorchPSFDataset
 
 META_KEY, DRIFT_KEY, APPLIED_KEY = 'locs_meta', 'locs_drift', 'locs_drift_applied'   # keys of the earlier SIMCODE npz save
@@ -196,7 +196,7 @@ class Dataset(_TorchPSFDataset):
 
     # ------------------------------------------------------------------ the paper's selection
     def _table(self):
-        """this dataset as the v2 table dict simcode.strict.select reads"""
+        """this dataset as the v2 table dict simcode.table.select reads"""
         F = self.numpy(); p, c = F['pos'], F['crlb']
         T = dict(x=p[:, 0], y=p[:, 1], sx=c[:, 0], sy=c[:, 1], px_nm=self.pixel_nm)
         if 'score' in F: T['p'] = F['score']
@@ -206,9 +206,9 @@ class Dataset(_TorchPSFDataset):
         return T
 
     def mask(self, max_precision_nm=SP.SIGMA_MAX_NM, min_score=SP.P_GOOD, in_region=True):
-        """Row mask (bool tensor) of the paper's selection = simcode.strict.select on this table: max(crlb_x, crlb_y) *
+        """Row mask (bool tensor) of the paper's selection = simcode.table.select on this table: max(crlb_x, crlb_y) *
         pixel_nm <= max_precision_nm (nm), score >= min_score, inside the run's crop (meta['crop'], else
-        simcode.strict.CROP; x_dc, y_dc when the table has them); None switches a condition off."""
+        simcode.table.CROP; x_dc, y_dc when the table has them); None switches a condition off."""
         return torch.from_numpy(SP.select(self._table(), max_precision_nm, min_score, in_region))
 
     def select(self, max_precision_nm=SP.SIGMA_MAX_NM, min_score=SP.P_GOOD, in_region=True):

@@ -3,7 +3,7 @@
 This is the protocol behind every cross-method statement in `RESULTS.md`. It was built and validated against ground truth
 on punctate repeated-site sims.
 
-- Code: `simcode/evalproto/lib.py` (library), `analysis/evalproto/{nnlag,blockphase,covpool}.py` (scripts), and
+- Code: `simcode/evaluation/metrics.py` (library), `analysis/evalproto/{nnlag,blockphase,covpool}.py` (scripts), and
   `analysis/evalproto/datasets.py` (dataset spec).
 - Every script takes a dataset json that names, per set, a simcode output dir or a SIMCODE npz plus its drift; see the
   `datasets.py` docstring.
@@ -49,7 +49,7 @@ on punctate repeated-site sims.
    - Never compare them with gap FRC or the revisit proxy across pools.
    - Report N, coverage (events / sites / occupied bins), median photons and the spatial drivers next to every pool.
 3. **Coverage matching for filtered products.** A σ-filtered product is compared at SIMCODE's coverage. For SIMCODE's
-   spatial weighting use tilecov; for a neutral product use the per-tile quantile (tileq = `simcode/strict.py`). The
+   spatial weighting use tilecov; for a neutral product use the per-tile quantile (tileq = `simcode/table.py`). The
    global σ ≤ 6 nm / top-N_SC product is retired: it had half the coverage and 2× the centre bias.
 4. **Unknown, not "tie".** Per-site static error, absolute accuracy and the linear / field terms are not GT-free
    measurable. They are stated as unknown for both methods. Measuring them needs a calibration sample.

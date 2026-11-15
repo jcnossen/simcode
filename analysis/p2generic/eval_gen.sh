@@ -19,7 +19,7 @@ for part in $PARTS; do
 case $part in
 a)  FE=$P/fe_m1809a_gen; [ $G = g1809 ] || FE=$P/fe_m1809a_$G; mkdir -p $FE
     for f in out/psfmatch/fe_m1809a/*__s*_s[12].npz; do ln -sfn $PWD/$f $FE/$(basename $f); done
-    SIMCODE_GATE_DIR=out/psfmatch/gate_m1809a P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.p2.dump --scen iso,pair1,pair2,rs05qm,rs05pm \
+    SIMCODE_GATE_DIR=out/psfmatch/gate_m1809a P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.processing.gate_dump --scen iso,pair1,pair2,rs05qm,rs05pm \
       --seeds 202,301,302,303 --fronts $GN=p2det_$G.pt:p2headL_$G.pt --out $FE || { say FAILED dump a; exit 1; }
     [ -f models/calib/calib_p2L_$G.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fitcal_wrap.py $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/calib_p2L.json \
       models/calib/calib_p2L_$G.json models/calib/calib_p2L_${G}_real.json calib/calib_p2L_b10_real.json || { say FAILED cal; exit 1; }
@@ -29,9 +29,9 @@ b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs
       GD=$P/gate_$pr; FE=$P/fe_$pr; mkdir -p $GD $FE; g=$(gpu)
       export P2G_PRESET=$P/presets/$pr.json
       last=${SCN##*,}
-      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.hd.gate --scen $SCN --fronts sc --sc hd_sc5nb.pt \
+      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate --scen $SCN --fronts sc --sc hd_sc5nb.pt \
         --sccal calib/calib_sc_hd_sc5nbb15_pm_bright.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
-      SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.p2.dump --scen $SCN --seeds 301,302,303 --fronts $F3 --out $FE || { say FAILED dump $pr; exit 1; }
+      SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.processing.gate_dump --scen $SCN --seeds 301,302,303 --fronts $F3 --out $FE || { say FAILED dump $pr; exit 1; }
       unset P2G_PRESET
       CUDA_VISIBLE_DEVICES=$g python $A/eval_cmp.py $FE $SCN $CMP $CALS $P/eval_$pr$SX.json > $P/eval_$pr$SX.txt && say "$part $pr done"
     done ;;

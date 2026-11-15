@@ -11,7 +11,7 @@ import os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ev_sigcal as SG
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 PX = 65.0; PMIN = float(os.environ.get('EV_PMIN', 300))
 rng = np.random.default_rng(0)
 rms = lambda e: float(np.sqrt(np.mean(e ** 2)) * PX) if len(e) else float('nan')

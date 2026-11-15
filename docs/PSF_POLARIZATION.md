@@ -223,7 +223,7 @@ The worst case is the 8×8 ROI at 300 ph.
 - At the model level, the per-axis PSF reaches the intensities as a common per-angle scale of ±0.2–0.6 %, which the per-step
   relint of the pattern estimate absorbs.
 - What remains varies with position and z: 0.02–0.18 %, i.e. ≤ 0.02 nm of phase-equivalent position and ≤ 0.0014 in depth.
-  That is two orders of magnitude below the per-emitter angle brightness factor in the data and in the training sims (RealSim
+  That is two orders of magnitude below the per-emitter angle brightness factor in the data and in the training sims (AcquisitionSim
   ang_sd 0.14; measured per-event ln(A1/A0) correlation, section 3).
 - So per-axis training cannot change precision or bias through the intensity channel, as far as an MLE-like read-out is
   concerned. If it matters, it is through how the networks generalise to the real PSF shape. That has to be measured on the

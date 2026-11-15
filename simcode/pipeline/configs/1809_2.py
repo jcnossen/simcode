@@ -2,7 +2,7 @@
 DMD-SIMFLUX TIRF-SIM (NA 1.49 oil, Zyla 4.2 sCMOS, 642 nm, 108.33 nm px); the paper's low-density movie 1809/cover1/2.
 Reference calibration: models/insitu/calib_1809_2_psf3d.json (+ _avg), camera_maps_1809_2.npz.
 
-  python -m simcode.auto simcode/auto/configs/1809_2.py
+  python -m simcode.pipeline simcode/pipeline/configs/1809_2.py
 """
 from simcode.util.cfgdict import ConfigDict
 

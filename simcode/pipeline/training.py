@@ -1,13 +1,13 @@
 """Stage e (train): PSF-matched model of the dataset, the recipe of runs/psfmatch/chain2.sh + eval.sh
-(docs/AUTO_PIPELINE.md section 6), as a wrapper around the existing trainers (unchanged entry points, through
-simcode/auto/runwrap.py for the in-memory preset overrides of a non-DMD setup).
+(docs/AUTO_PIPELINE.md section 6), as a wrapper around the trainers simcode.detector.train and simcode.emitter.train (through
+simcode/pipeline/run_with_overrides.py for the in-memory preset overrides of a non-DMD setup).
 
 Steps (resumable: a trainer whose <dir>/final.pt exists is skipped; quick mode = train.quick_steps per trainer, in its own
 directory 'quick/'):
-  det -> hd (init hd_sc5nb) and p2det (init_n1 det) -> p2det_c (init p2det); p2head (det = p2det at 25k steps, init hd) ->
-  p2headL -> p2headL2 (det = p2det); the pass-2 trainers draw generic illumination patterns (hd/realsim.RealSim._generic) with a
+  det -> hd (init hd_sc5nb) and p2det (zero-initialised from det) -> p2det_c (init p2det); p2head (det = p2det at 25k steps, init hd) ->
+  p2headL -> p2headL2 (det = p2det); the pass-2 trainers draw generic illumination patterns (simulate/acquisition.AcquisitionSim._generic) with a
   share --p_std of the dataset's own pattern: 0.25 in p2det / p2head / p2headL, 0.5 in p2det_c / p2headL2 (models/README.md)
-  gate scenes (simcode.hd.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (det + hd) and pass 2 (p2det + p2headL)
+  gate scenes (simcode.benchmark.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (det + hd) and pass 2 (p2det + p2headL)
   -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
   -> <dir>/model.json (format of simcode/models.json, absolute paths)
@@ -16,20 +16,20 @@ analysis/psf3d_nets/sigcal.py) and the sim-movie GT sanity gate of runs/psfmatch
 import json, os, shutil
 import numpy as np
 
-T_BASE = dict(det=['-m', 'simcode.det.up2', 'train', '--batch', '16', '--size', '64', '--lr', '1e-3', '--w_off', '1.0', '--nnw', '1',
+T_BASE = dict(det=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '1e-3', '--w_off', '1.0', '--nnw', '1',
                    '--seed', '0'],
-              hd=['-m', 'simcode.hd.sc4', 'train', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--tau', '15,80',
+              hd=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--tau', '15,80',
                   '--pair_frac', '0.25', '--dens', '0.0005,0.04', '--med', '40,2500', '--nnw', '1', '--seed', '1', '--w_mr', '2.0', '--w_slope', '50.0',
                   '--bf16', '1', '--pct', '0.1'],
-              p2det=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11',
+              p2det=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11',
                      '--p_std', '0.25'],
-              p2det_c=['-m', 'simcode.p2.det2', 'train', '--batch', '16', '--size', '64', '--lr', '1e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '51',
+              p2det_c=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '1e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '51',
                        '--p_std', '0.5'],
-              p2head=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1.5e-4', '--pct', '0.1', '--w_mr', '2.0', '--w_slope', '50.0',
+              p2head=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1.5e-4', '--pct', '0.1', '--w_mr', '2.0', '--w_slope', '50.0',
                       '--seed', '21', '--no_illum', '0', '--pert_model', 'v1', '--p_std', '0.25'],
-              p2headL=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
+              p2headL=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
                        '--seed', '31', '--no_illum', '0', '--hold_v1', '15', '--p_std', '0.25'],
-              p2headL2=['-m', 'simcode.p2.head2', 'train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
+              p2headL2=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
                         '--seed', '41', '--no_illum', '0', '--hold_v1', '0', '--p_std', '0.5'])
 EVERY = dict(det=None, hd=('2000', '6000'), p2det=('2500', '5000'), p2det_c=('5000', '10000'), p2head=('4000', '8000'), p2headL=('2000', '10000'),
              p2headL2=('5000', '10000'))
@@ -38,9 +38,9 @@ SCEN_FIT = 'rs05qm'
 
 
 def presets(ds):
-    """in-memory realsim.PRESETS overrides for a non-DMD setup (pattern k and pitch, camera maps, pixel size); none for the
-    DMD-SIMFLUX defaults (the presets ARE that setup). NOTE the step direction: realsim draws phi_s = phi0 + s * spacing with
-    spacing > 0; a setup that steps the other way needs the measured (signed) spacing in the convention of realsim.pattern
+    """in-memory acquisition.PRESETS overrides for a non-DMD setup (pattern k and pitch, camera maps, pixel size); none for the
+    DMD-SIMFLUX defaults (the presets ARE that setup). NOTE the step direction: the acquisition simulator draws phi_s = phi0 + s * spacing with
+    spacing > 0; a setup that steps the other way needs the measured (signed) spacing in the convention of acquisition.pattern
     (the nanoruler preset error, out/nanoruler/STATUS.md), which is not derived automatically here."""
     c = ds.c; P = ds.summary('psf'); pat = P['pattern']
     pitch0 = 2.07
@@ -76,7 +76,7 @@ def run(ds):
             a += ['--eval_every', str(max(int(ev[0]), steps[name] + 1) if quick else ev[0]), '--ckpt_every', str(max(int(ev[1]), steps[name] + 1) if quick else ev[1])]
         xt = Tc['extra']['det' if name == 'det' else 'hd' if name == 'hd' else 'p2']
         if xt: a += xt.split()
-        a = ['-m', 'simcode.auto.runwrap'] + a[1:] if a[0] == '-m' else a
+        a = ['-m', 'simcode.pipeline.run_with_overrides'] + a[1:] if a[0] == '-m' else a
         if os.path.exists(os.path.join(d, 'final.pt')):
             # the arguments the trainer actually ran with are stored in its checkpoint (model.json '_files' -> checkpoint.args)
             cmds.append(dict(step=name, command='python -u ' + ' '.join(str(v) for v in a), skipped='final.pt existed (trained by an earlier invocation)'))
@@ -88,8 +88,8 @@ def run(ds):
     det_init = Tc['init']['det'] or (SC.resolve(SC.model_set(Tc['real_mult_from'])['det']) if quick else None)   # quick: a few steps on top of the template detector
     det = stage('det', ['--init', det_init] if det_init else [])
     hd = stage('hd', ['--det', det, '--init', Tc['init']['hd']] + (['--hold', hold] if os.path.exists(hold) else []))
-    p2det = stage('p2det', ['--init_n1', det])
-    p2det_c = stage('p2det_c', ['--init', p2det, '--init_n1', det])
+    p2det = stage('p2det', ['--illum', '1', '--init', det])
+    p2det_c = stage('p2det_c', ['--init', p2det, '--pass1_ref', det])
     p25 = os.path.join(D, 'p2det', 'ckpt_25000.pt')
     p2head = stage('p2head', ['--det', p25 if os.path.exists(p25) else p2det, '--init', hd])
     p2headL = stage('p2headL', ['--det', p2det, '--init', p2head])
@@ -107,12 +107,12 @@ def run(ds):
     nt = '400' if quick else '3500'
     env = dict(SIMCODE_GATE_CALIB=cal, SIMCODE_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
-        sh('gate', ['-m', 'simcode.auto.runwrap', 'simcode.hd.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
+        sh('gate', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.benchmark.gate', '--scen', scen, '--fronts', 'sc', '--sc', 'hd_sc5nb.pt', '--sccal',
                'calib/calib_sc_hd_sc5nbb15_pm_bright.json', '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
               os.path.join(D, 'gate.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(G, 'done'), 'w').close()
     if not os.path.exists(os.path.join(FE, 'done')):
-        sh('dump', ['-m', 'simcode.auto.runwrap', 'simcode.p2.dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
+        sh('dump', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.processing.gate_dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
                f's1={files["det"]}:{files["head"]},s2={files["p2_det"]}:{files["p2_head"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(FE, 'done'), 'w').close()
     C = os.path.join(M, 'calib'); os.makedirs(C, exist_ok=True)
@@ -124,7 +124,7 @@ def run(ds):
     tmpl = SC.model_set(rm)
     fallback = []
     for fr, base, ks, ksr in (('s1', 'calib/calib_sc_hd_sc5nbb15_pm_bright.json', 'cal_sim', 'cal_real'), ('s2', 'calib/calib_p2L.json', 'p2_cal_sim', 'p2_cal_real')):
-        sh('fitcal_' + fr, ['-m', 'simcode.auto.runwrap', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
+        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
               os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
         if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
             # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template set's calibrations
@@ -132,7 +132,7 @@ def run(ds):
             ds.log(f'train (quick): calibration fit of {fr} failed (no matched targets), copied the {rm} calibrations')
     # ---- acceptance (held-out seed 301)
     acc_js = os.path.join(D, 'accept.json')
-    sh('accept', ['-m', 'simcode.auto.runwrap', os.path.join(REPO, 'simcode', 'auto', 'accept.py'), FE, cals['cal_sim'], cals['p2_cal_sim'],
+    sh('accept', ['-m', 'simcode.pipeline.run_with_overrides', os.path.join(REPO, 'simcode', 'pipeline', 'acceptance.py'), FE, cals['cal_sim'], cals['p2_cal_sim'],
            scen, acc_js], os.path.join(D, 'accept.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
     if not os.path.exists(acc_js):
         json.dump(dict(zcal={}, rms={}, n={}, p2_over_p1=None, note='acceptance failed (quick plumbing: no matched targets)'), open(acc_js, 'w'))
@@ -146,7 +146,7 @@ def run(ds):
     if A.get('p2_over_p1') is not None:
         chk.append(dict(name=f'pass-2 / pass-1 RMS/CRLB on {SCEN_FIT} (200-2000 ph) <= 1', value=A['p2_over_p1'], ok=A['p2_over_p1'] <= 1.0, warn_only=quick))
     gates = 'NOT EVALUATED' if not chk else 'PASS' if all(k['ok'] for k in chk) else 'FAIL'
-    S = {name: dict(_doc=f'simcode.auto model of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
+    S = {name: dict(_doc=f'simcode.pipeline model of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
                          f'PSF {cal}; sig_u not fitted', _gates=gates, psf=cal, **files, **cals, sig_u='')}
     # ---- how the model was made: the recipe (config, commands, steps, code) and the hash of every file; the trainer arguments
     # stored in each checkpoint are part of the file records
@@ -154,7 +154,7 @@ def run(ds):
     recs = {k: RC.model_file(v) for k, v in {**files, **cals}.items()}
     trained = {k: RC.file_record(f) for k, f in (('det', det), ('hd', hd), ('p2det', p2det), ('p2det_c', p2det_c), ('p2head', p2head),
                                                  ('p2headL', p2headL), ('p2headL2', p2headL2))}
-    recipe = dict(what='PSF-matched recipe of simcode.auto stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
+    recipe = dict(what='PSF-matched recipe of simcode.pipeline stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
                   written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,
                   code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),
                   steps=steps, trainer_base_args=T_BASE, eval_ckpt_every=EVERY, init=dict(Tc['init'], det_used=det_init), extra_args=Tc['extra'],

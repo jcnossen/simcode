@@ -1,4 +1,4 @@
-"""Compare an automatic-pipeline in-situ calibration (simcode.auto stage d) with a reference calibration json of the same movie:
+"""Compare an automatic-pipeline in-situ calibration (simcode.pipeline stage d) with a reference calibration json of the same movie:
 Zernikes, focus, blur, photoselection tensor, PSF images per pattern angle (rms difference relative to the peak, z 0-0.15 um),
 camera maps (correlation and rms of the offset deviation and read-noise maps), and the CRLB of x / y (single frame, 1000
 photons, bg 6 ph/px, z = 0.05 um; per angle and averaged).
@@ -7,7 +7,7 @@ import json, os, sys
 import numpy as np, torch
 from simcode import config
 from simcode import psf as spsf
-from simcode.insitu import cam_maps
+from simcode.calibration import cam_maps
 
 
 def model(path, angle, R=15, dev='cuda'):

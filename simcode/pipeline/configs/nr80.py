@@ -4,7 +4,7 @@ Original SIMFLUX setup (Pockels-cell orientation switch, mechanical phase steps,
 nanoruler movie sim4_1 (80 nm), Hamamatsu ORCA-Flash4.0 V2, 65 nm px. Reference: out/nanoruler (calib_nr80.json,
 camera_maps_nr80.npz, tracks_nr80.npz; model nr80 out/nanoruler/models/netset_nr80.json).
 
-  python -m simcode.auto simcode/auto/configs/nr80.py
+  python -m simcode.pipeline simcode/pipeline/configs/nr80.py
 """
 from simcode.util.cfgdict import ConfigDict
 

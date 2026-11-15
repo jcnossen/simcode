@@ -1,6 +1,6 @@
 """Stage a1 (camera): gain, read noise and offset from the movie (docs/AUTO_PIPELINE.md section 2).
 
-Same estimator as simcode/insitu/camera_gain.py (robust variance-vs-level fit of same-step frame differences, frames 6
+Same estimator as simcode/calibration/camera_gain.py (robust variance-vs-level fit of same-step frame differences, frames 6
 apart, 5 %-each-side trimmed variance corrected to a normal sigma^2), generalised: the level bins span the movie's own
 range (camera_gain.py: fixed 101-139 ADU), EMCCD gets the excess-noise factor 2, dark frames (optional) give offset and
 read noise directly. Config values take precedence; the measured values are reported next to them."""
@@ -10,7 +10,7 @@ TRIM_CORR = 1 - 2 * 1.6449 * 0.10314 / 0.9    # variance of a 5 %-each-side trim
 
 
 def read_frames(movie, n, max_values=2.5e8):
-    from simcode.fileio.movie import open_movie
+    from simcode.io.movie import open_movie
     M = open_movie(movie)
     H, W = M.shape[-2:]
     n = int(min(n, M.n, max(60, max_values // (H * W))))

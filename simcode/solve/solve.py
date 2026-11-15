@@ -3,12 +3,13 @@ Multi-start intensity-domain pattern solve (critic review 28 #6; no training).
 pattern_solve_all = hybrid_q.pattern_solve_cov with explicit start offsets dr [n,H,2] (relative to the prior centre r0)
 that returns the per-start results (best kinetic start per start), so the same set of starts can be selected by the
 posterior NLL. fringe_posterior = kinetic model selection + the posterior over the starts (the solve of the pipeline,
-reference implementation; simcode/hd/msolve_fast.py is the fast version).
+reference implementation; simcode/solve/solve_fast.py is the fast version). solve_emitters = the solve of the emitter-network
+outputs (intensities with their full covariance, prior position, calibration) that the pipeline runs.
 Start sets: base points (r_net = the prior centre, x_det = the detector point, ...) each with the (2 nf + 1)^2 fringe
 shifts; box = per-start position box half-width (px).
 """
 import torch
-from simcode import core as C
+from simcode.solve import pattern as C
 
 T = 6
 
@@ -162,3 +163,49 @@ def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=3
         out['q_nll'] = q
         out['q'] = torch.where(use[:, None], o1['chi2'], o0['chi2'])[ar, bm]
     return out
+
+
+# ------------------------------------------------------------------------------------------------ solve of the emitter-network outputs
+@torch.no_grad()
+def solve_emitters(o, pt_win, b, cal, nf=1, thr=9.21):
+    """explicit pattern solve on the emitter network's intensities with their full covariance (simcode/solve/solve.py): fringe-start
+    posterior (posterior-mean position with the mixture sigma), kinetic model selection, nuisance covariance Sigma(mu).
+    Returns r [n,2], s [n,2] (Fisher), s_cal (chi2-aware, calibrated), q / dof, p. Reference implementation (test oracle of
+    simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
+    Calibration keys (all required): kap_bins {'ph', 'kap_p', 'kap_I2'} (per-photon-bin prior / intensity covariance scales,
+    log-photon interpolation, constant outside), prior_off (constant prior-position bias, px, removed), cmult / cmult_ang
+    (nuisance covariance c, c_a), box (start box half-width, px), mix_T (posterior temperature), sig_a / sig_g (chi2-aware
+    sigma), sig_ph {'ph', 'f'} (per-photon-bin sigma factor)."""
+    I, Sig, r0, sp, ph = solve_inputs(o, cal)
+    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
+                            cmult=float(cal['cmult']), cang=float(cal['cmult_ang']))
+    qd = s['q'] / s['dof'].clamp(min=1)
+    f = (cal['sig_a'] * qd.clamp(min=1.0) ** cal['sig_g'])[:, None]
+    s_cal = (f * s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt() * _binval(cal['sig_ph'], 'f', ph)[:, None]
+    return dict(r=s['r_pm'], s=s['s'], s_cal=s_cal, q=qd, p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'],
+                s_map_cal=s['s'] * f.sqrt(), dnll=s['dnll'], r_prior=r0, s_prior=sp,
+                mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
+
+
+def solve_inputs(o, cal, mm=torch.matmul):
+    """head outputs + calibration -> (I [n,T], Sig [n,T,T] = L L^T kap_I2 + 1e-3, prior position r0 [n,2] (prior_off removed),
+    prior sigma sp [n,2] = exp(lsxy) kap_p, window photons ph [n]); shared by solve_emitters and solve_fast.solve_emitters_fast"""
+    I = o['I'].float(); L = o['L'].float()
+    ph = I.sum(1)
+    kI2 = _binval(cal['kap_bins'], 'kap_I2', ph)[:, None, None]
+    kp = _binval(cal['kap_bins'], 'kap_p', ph)[:, None]
+    Sig = mm(L, L.transpose(1, 2)) * kI2 + 1e-3 * torch.eye(I.shape[1], device=I.device)
+    r0 = torch.stack([o['x'], o['y']], 1).float() - torch.tensor(cal['prior_off'], device=I.device, dtype=torch.float32)[None]
+    sp = o['lsxy'].float().exp() * kp
+    return I, Sig, r0, sp, ph
+
+
+def _binval(tab, key, ph):
+    """per-photon-bin calibration value: tab['ph'] bin centres (network window photons), tab[key] values; piecewise
+    linear in log photons, constant beyond the end bins -> tensor [n]"""
+    xp = torch.log(torch.tensor(tab['ph'], device=ph.device, dtype=torch.float32))
+    fp = torch.tensor(tab[key], device=ph.device, dtype=torch.float32)
+    x = torch.log(ph.float().clamp(min=1.0)).clamp(xp[0], xp[-1])
+    i = torch.searchsorted(xp, x).clamp(1, len(xp) - 1)
+    w = (x - xp[i - 1]) / (xp[i] - xp[i - 1]).clamp(min=1e-9)
+    return fp[i - 1] + w * (fp[i] - fp[i - 1])

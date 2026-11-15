@@ -1,8 +1,8 @@
 """
 Fast version of the explicit intensity-domain pattern solve (2026-11-10, throughput; the pipeline's solve; the reference
-simcode/hd/msolve.py and simcode/hd/sc.sc_solve are its test oracle).
+simcode/solve/solve.py and simcode/solve/solve.solve_emitters are its test oracle).
 
-pattern_solve_all_fast = msolve.pattern_solve_all (same model, same LM schedule, same clamps / box / kinetic starts,
+pattern_solve_all_fast = solve.pattern_solve_all (same model, same LM schedule, same clamps / box / kinetic starts,
 same cmult / cang nuisance covariance and log det, same outputs), restructured for speed:
   * no batched cuBLAS bmm on 6 x 6 matrices (66 % of the original solve time): the small products are broadcast sums
   * the fixed parameters (B1 always; t_on / t_off without kinetics) are removed from the normal equations: a 3 x 3 /
@@ -14,12 +14,12 @@ same cmult / cang nuisance covariance and log det, same outputs), restructured f
 kin_gate (exact): the kinetic model is only selected if q0 - q1 > thr; q1 >= 0 (chi^2 >= 0 and log det Sigma(p) -
   log det Sigma >= 0 since Sigma(p) >= Sigma), so rows with min_h q0 <= thr - 1e-3 can never select it -> the kinetic fits
   are run only for the other rows.
-compile: 'auto' | 'on' | 'off' (simcode/fastutil.py; the compiled LM step is the same code).
+compile: 'auto' | 'on' | 'off' (simcode/util/compile.py; the compiled LM step is the same code).
 (2026-11-14) The approximate options (per-row early stop tol, covariance freezing freeze_cov, start pruning prune / prune_k,
 cov_mode) were removed: no production or paper run used them.
 """
 import torch
-from simcode import core as C
+from simcode.solve import pattern as C
 
 T = 6
 _CACHE = {}
@@ -55,7 +55,7 @@ def _model(p, ptr, oh, kin, Tn):
 
 
 def _eval(p, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn):
-    """residual / Jacobian / cost at p (as msolve.pattern_solve_all.rj): returns rI [M,T], JI [M,T,K], rp [M,2], cost [M]"""
+    """residual / Jacobian / cost at p (as solve.pattern_solve_all.rj): returns rI [M,T], JI [M,T,K], rp [M,2], cost [M]"""
     mu, Jm = _model(p, ptr, oh, kin, Tn)
     rhs = torch.cat([(Ir - mu)[..., None], Jm], -1)                          # [M,T,1+K]
     ldx = 0.0
@@ -94,7 +94,7 @@ def _clamp(p, lo_xy, hi_xy, Tn):
 
 def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy,
              cmult: float, cang: float, kin: bool, Tn: int):
-    """one LM iteration of msolve.pattern_solve_all (accept if the cost decreases; lam / 3 or x 4)"""
+    """one LM iteration of solve.pattern_solve_all (accept if the cost decreases; lam / 3 or x 4)"""
     Hm, gr = _normal(JI, rI, rp, spr)
     Hd = Hm + torch.diag_embed(lam[:, None] * Hm.diagonal(dim1=1, dim2=2) + 1e-9)
     dpf = -torch.nan_to_num(torch.linalg.solve_ex(Hd, gr[..., None])[0][..., 0])
@@ -111,17 +111,17 @@ def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A
 
 
 def _get_step(compile_mode):
-    from simcode import fastutil
-    key = ('step', fastutil.resolve(compile_mode))
+    from simcode.util import compile as torch_compile
+    key = ('step', torch_compile.resolve(compile_mode))
     if key not in _CACHE:
-        _CACHE[key] = fastutil.maybe_compile(_lm_step, compile_mode, dynamic=True) if key[1] else _lm_step
+        _CACHE[key] = torch_compile.maybe_compile(_lm_step, compile_mode, dynamic=True) if key[1] else _lm_step
     return _CACHE[key]
 
 
 # ------------------------------------------------------------------------------------------------ solve
 def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
                            kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, compile='off'):
-    """as msolve.pattern_solve_all (nu = None)"""
+    """as solve.pattern_solve_all (nu = None)"""
     n, Tn = I.shape; dev = I.device
     _, ang = C.angle_k(pt)
     H = dr.shape[1]
@@ -214,8 +214,8 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=
 @torch.no_grad()
 def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0,
                           cang=0.0, compile='off'):
-    """as msolve.fringe_posterior (same outputs); options see the module doc"""
-    from simcode.hd.msolve import start_offsets
+    """as solve.fringe_posterior (same outputs); options see the module doc"""
+    from simcode.solve.solve import start_offsets
     dr = start_offsets(pt, r0, bases, nf)
     n, H = dr.shape[:2]; dev = I.device
     kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, compile=compile)
@@ -261,15 +261,15 @@ def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, it
 
 
 @torch.no_grad()
-def sc_solve_fast(o, pt_win, b, cal, nf=1, thr=9.21, **opts):
-    """simcode.hd.sc.sc_solve (same calibration keys, same outputs) with the fast fringe posterior"""
-    from simcode.hd import sc as SCM
-    I, Sig, r0, sp, ph = SCM.solve_inputs(o, cal, mm=_mm)
+def solve_emitters_fast(o, pt_win, b, cal, nf=1, thr=9.21, **opts):
+    """simcode.solve.solve.solve_emitters (same calibration keys, same outputs) with the fast fringe posterior"""
+    from simcode.solve import solve as SV
+    I, Sig, r0, sp, ph = SV.solve_inputs(o, cal, mm=_mm)
     s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
                               cmult=float(cal['cmult']), cang=float(cal['cmult_ang']), **opts)
     qd = s['q'] / s['dof'].clamp(min=1)
     f = (cal['sig_a'] * qd.clamp(min=1.0) ** cal['sig_g'])[:, None]
-    s_cal = (f * s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt() * SCM._binval(cal['sig_ph'], 'f', ph)[:, None]
+    s_cal = (f * s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt() * SV._binval(cal['sig_ph'], 'f', ph)[:, None]
     return dict(R_starts=s['R'], w_starts=s['w'], r=s['r_pm'], s=s['s'], s_cal=s_cal, q=qd, p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'],
                 s_map_cal=s['s'] * f.sqrt(), dnll=s['dnll'], r_prior=r0, s_prior=sp,
                 mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])

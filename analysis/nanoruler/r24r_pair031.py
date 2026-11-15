@@ -1,5 +1,5 @@
 """R24 reuse check, part C (density question, nr20): what do the nr80 detector / head / solve return for two emitters 0.31 px (20 nm)
-apart?  Scene 'pair0.31' of simcode.hd.gate (gate.py takes the separation from the scene name: pair<sep px>; 9 pairs per FOV on
+apart?  Scene 'pair0.31' of simcode.benchmark.gate (gate.py takes the separation from the scene name: pair<sep px>; 9 pairs per FOV on
 an 18 px grid, random orientation, both emitters 300-5000 photons per fully-on window (1:1 brightness), EACH emitter on for >= 3 of
 the 6 frames (on-time 50 frames) so that about a quarter of the pairs have one emitter switching inside the window), rendered
 with the movie's calib by r24r_gates.sh (seed 301), front dump of the nr80 nets, solved here with the nr80 calibration.
@@ -7,14 +7,15 @@ Per pair: the stored candidates (score >= 0.2) within 2 px of the pair centre; t
 photon-weighted mean position of the two emitters (weights = GT window photons), along and across the pair axis.
 Controls from the same movie's scenes: iso (single emitters; sigma and q/dof versus network photons) and the 'good' rows
 (score >= 0.63) of rs05qm (reference population for a sigma rank: u = fraction of the reference rows with a smaller sigma;
-the table build's sigma rescale uses the same rank inside a 10 px tile of the movie, simcode.strict.tile_rank).
+the table build's sigma rescale uses the same rank inside a 10 px tile of the movie, simcode.table.tile_rank).
 usage: [R24R_DEV=cpu] python analysis/nanoruler/r24r_pair031.py <nr40|nr20> [scene, default pair0.31]  -> out/nanoruler/<name>/reuse/pair031_<name>.txt / .json"""
 import json, os, sys
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, '/home/jc/simcode2'); sys.path.insert(0, os.path.join(HERE, '..', 'calib'))
 import plib as P
-from simcode.hd import sc as SCM
+from simcode.emitter import model as SCM
+from simcode.solve import solve as SV
 from simcode.util.proctitle import set_title
 set_title('nr-r24r')
 PX = 65.0; P.PX = PX
@@ -32,7 +33,7 @@ def solve(R, oi):
     for c0 in range(0, len(oi), 8192):
         j = oi[c0:c0 + 8192]
         o = dict(I=tt(R['sc_I'][j]), L=tt(R['sc_L'][j]), x=tt(R['sc_x'][j]), y=tt(R['sc_y'][j]), lsxy=tt(R['sc_lsxy'][j]), x_det=tt(R['sc_x_det'][j]), y_det=tt(R['sc_y_det'][j]))
-        s = SCM.sc_solve(o, Pt, torch.tensor(R['sc_b'][j], device=dev).long(), CAL)
+        s = SV.solve_emitters(o, Pt, torch.tensor(R['sc_b'][j], device=dev).long(), CAL)
         res['x'].append(s['r'][:, 0]); res['y'].append(s['r'][:, 1]); res['sx'].append(s['s_cal'][:, 0]); res['sy'].append(s['s_cal'][:, 1]); res['q'].append(s['q'])
         res['kin'].append(s['kin'].float()); res['dnll'].append(s['dnll'].float() if 'dnll' in s else torch.full_like(s['q'], float('nan')))
         res['xp'].append(s['r_prior'][:, 0]); res['yp'].append(s['r_prior'][:, 1])

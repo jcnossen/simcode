@@ -1,14 +1,14 @@
 """Example of acquisitions defined in Python: one base config for the DMD-SIMFLUX setup and three movies derived from it.
 
-  python -m simcode.auto simcode/auto/configs/example_setup.py --show            print the resolved configs, run nothing
-  python -m simcode.auto simcode/auto/configs/example_setup.py                   run the three acquisitions, one after the other
-  python -m simcode.auto simcode/auto/configs/example_setup.py --only 2.5nM_2    one of them
+  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --show            print the resolved configs, run nothing
+  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py                   run the three acquisitions, one after the other
+  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --only 2.5nM_2    one of them
 
-  from simcode.auto import LocalizationPipeline
-  pipes = LocalizationPipeline.from_file('simcode/auto/configs/example_setup.py')       # [LocalizationPipeline, ...]
+  from simcode.pipeline import LocalizationPipeline
+  pipes = LocalizationPipeline.from_file('simcode/pipeline/configs/example_setup.py')       # [LocalizationPipeline, ...]
 
 The file is ordinary Python; the pipeline reads `configs` (a list) or `config` (one). Every config is checked against the
-schema of simcode/auto/config.py (unknown keys are errors, defaults are filled in), exactly as a yaml file is.
+schema of simcode/pipeline/acquisition_config.py (unknown keys are errors, defaults are filled in), exactly as a yaml file is.
 """
 import os
 from simcode.util.cfgdict import ConfigDict

@@ -21,7 +21,7 @@ absorbed into phi (and then into the final positions). Validate by time-split CV
 """
 import math
 import numpy as np
-from simcode.pipeline.pattern_est import select, angle_Z, _interp_eps, T
+from simcode.processing.pattern_estimation import select, angle_Z, _interp_eps, T
 
 
 def leg2(u, v):
@@ -54,7 +54,7 @@ def row_phasors(D, idx, P):
 def depth_pairs(D, idx, P):
     """cross-cycle pairs (w, w+6) of the same clean emitter: per pair and angle cross = Re(Z1 Z2*), aa = A1 A2; index of pair."""
     K, psi, rel, m, eps, kf = _pattern_np(P)
-    from simcode.pipeline.pattern_est import depth_pair_query
+    from simcode.processing.pattern_estimation import depth_pair_query
     dd, jj = depth_pair_query(D, idx)          # (speed branch) same query as pattern_est.fit_depth (spatial hash by default)
     ok = np.isfinite(dd); i1, i2 = idx[ok], idx[jj[ok]]
     CR = np.zeros((len(i1), 2)); AA = np.zeros((len(i1), 2))

@@ -89,7 +89,7 @@ pm = lambda t: f' ± {t.std(ddof=1):.3f}' if t.std() > 0 else ''
 
 def autoc():
     R = json.load(open(f'{OUT}/autoc_est.json'))
-    print('\n**Automatic estimate theta = (s, c, c_a), simcode/autoc.py.** Real and pipeline-sim rows: mean ± sd over 3 repeats on disjoint chunk subsets; gate rows: all rows, ± sd over 3 FOV groups where computed (control, per-frame 0.10, model-error-only).\n')
+    print('\n**Automatic estimate theta = (s, c, c_a), simcode/solve/autoc.py.** Real and pipeline-sim rows: mean ± sd over 3 repeats on disjoint chunk subsets; gate rows: all rows, ± sd over 3 FOV groups where computed (control, per-frame 0.10, model-error-only).\n')
     print('| data | put in (c, c_a) | s | c | c_a | isolated non-kinetic rows | best single scale with c = 0 |'); print('|---|---|---|---|---|---|---|')
     for k, r in R.items():
         if k.startswith('gate:'):

@@ -1,7 +1,7 @@
 """
-CPU tests of ConfigDict (simcode/util/cfgdict.py) and of the config forms of the automatic pipeline (simcode/auto/config.py):
+CPU tests of ConfigDict (simcode/util/cfgdict.py) and of the config forms of the automatic pipeline (simcode/pipeline/acquisition_config.py):
 access, missing keys, merge / updated, freeze, to_dict conversions, yaml / json round trip, the Python-file loader, schema
-validation of derived configs, the example configs in simcode/auto/configs. No GPU, no data files.
+validation of derived configs, the example configs in simcode/pipeline/configs. No GPU, no data files.
 Run: python tests/test_cfgdict.py (or pytest tests/test_cfgdict.py).
 """
 import copy, json, os, pickle, sys, tempfile
@@ -10,9 +10,9 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from simcode.util.cfgdict import ConfigDict, load_python
-from simcode.auto import config as AC
+from simcode.pipeline import acquisition_config as AC
 
-CFG = os.path.join(ROOT, 'simcode', 'auto', 'configs')
+CFG = os.path.join(ROOT, 'simcode', 'pipeline', 'configs')
 
 
 def raises(exc, fn, *a, **k):
@@ -175,8 +175,8 @@ def test_example_configs():
 
 
 def test_pipeline_class():
-    import simcode.auto as A
-    from simcode.auto import pipeline as P
+    import simcode.pipeline as A
+    from simcode.pipeline import localization_pipeline as P
     assert A.LocalizationPipeline is P.LocalizationPipeline and not hasattr(P, 'Acquisition') and not hasattr(P, 'Dataset')
     assert list(P.METHODS) == P.STAGES and all(callable(getattr(P.LocalizationPipeline, m)) and hasattr(P.LocalizationPipeline, '_st_' + s)
                                                for s, m in P.METHODS.items())

@@ -23,7 +23,7 @@ g)  for v in fwd rev; do
       else GD=$EV/gate_nr80rev; SRC=$EV/fe_nr80rev; PRE=$PWD/$EV/nr80_preset_rev.json; SEEDS=301,302,303; SCN=iso,rs05qm; fi
       FE=$P/fe_nr80_$v; mkdir -p $FE
       for f in $SRC/*__s*_s[12].npz; do ln -sfn $PWD/$f $FE/$(basename $f); done
-      NR_PRESET=$PRE SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.p2.dump --scen $SCN --seeds $SEEDS \
+      NR_PRESET=$PRE SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.processing.gate_dump --scen $SCN --seeds $SEEDS \
         --fronts g2=$GM/p2det/final.pt:$GM/p2headL/final.pt --out $FE || { say FAILED dump $v; exit 1; }
       if [ $v = fwd ] && [ ! -f $MY/calib/calib_p2L_$G.json ]; then
         CUDA_VISIBLE_DEVICES=$(gpu) python analysis/p2generic/fitcal_wrap.py analysis/nanoruler/ev_fitcal.py g2 $FE rs05qm calib/calib_p2L.json $MY/calib/calib_p2L_$G.json \

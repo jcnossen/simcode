@@ -22,7 +22,7 @@ More in the docs:
 - `docs/RESULTS.md`: results of the development phase (earlier default networks) and the limitations
 - `docs/EVALUATION.md`: evaluation protocol
 - `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset` = `torch_psf.Dataset` + SIMCODE's loaders and selection: load, select, drift, render, FRC, hdf5 / Picasso / ThunderSTORM files); `docs/DATASET_FORMAT.md`: the field layout
-- `simcode/FILE_DESCRIPTION.md`: what each file does
+- `docs/LAYOUT.md`: the package tree with one line per directory and file (and what was renamed on 2026-11-15)
 - `docs/CLEANUP_LOG.md`: the 2026-11 cleanup (what was removed, renamed, and how results were checked)
 
 The repository holds two comparisons and what they need: the SIMCODE preprint against SIMCODE v2 (this pipeline, the
@@ -71,17 +71,17 @@ What every run does (= the paper's settings; the options that switched these wer
 
 - the model (`--model`, required unless `--dataset` / `--config` gives it): a name of `simcode/models.json` (`m1809`,
   `m25`, `g13`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
-  stage / `simcode.auto.train.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
+  stage / `simcode.pipeline.training.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
   calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
 - pass 1, pattern estimation, the pattern solve, and pass 2
 - the fixed-c real-data solve calibrations of the model (`--cal_kind sim` for simulated movies)
-- stored-candidate cut p ≥ 0.3 (`simcode/pipeline/common.CAND_PMIN`)
+- stored-candidate cut p ≥ 0.3 (`simcode/processing/common.CAND_PMIN`)
 - the fast code path, with a compiled solve step when available
 - the model's selection-aware sigma rescale (`--sig_u set`) and the subset file `locs_p2_sig12.npz` (`--subset 12`; a list
   of thresholds in nm, e.g. `--subset 12,14`)
 - the paper's selection (since 2026-11-13): a global threshold on the calibrated precision, max(σx, σy) ≤ σ_max on the rows
   with score p ≥ 0.63 inside the crop, σ_max = 12 nm (`--sigma_max`, stored in the table; no column of its own;
-  `simcode.strict.select(table, max_precision_nm=12, min_score=0.63, in_region=True)` = `Dataset.select()`); the column
+  `simcode.table.select(table, max_precision_nm=12, min_score=0.63, in_region=True)` = `Dataset.select()`); the column
   `sel` (phase-calibrated detection selection) is the recommended full output for renders and drift. (The per-tile rule
   "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
 
@@ -92,7 +92,7 @@ The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
 ```bash
-python -m simcode.fileio.launch --gpus 1,2 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --out out_1809_2 --claim 1
+python -m simcode.io.launch --gpus 1,2 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --out out_1809_2 --claim 1
 ```
 
 A run can be killed at any time: chunk files are written atomically, a restart continues with the missing chunks, and a
@@ -131,13 +131,13 @@ Table columns:
   `u_max`; nothing uses them now (they go in the dataset-format pass)
 
 The table can be rebuilt at any time with
-`python -m simcode.strict <out> [--tag est2] [--drift drift.npy] [--sigma_max 12] [--subset 12,14] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
+`python -m simcode.table <out> [--tag est2] [--drift drift.npy] [--sigma_max 12] [--subset 12,14] [--sig_u calib/sigu/sigu_p2_m1809.json]`.
 The crop of the selection and of the sigma-rescale tiles is the output region of the run (`--crop` of the run; read from its chunk files).
 
 Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
 
-The stage-level entry point is `python -m simcode.pipeline.run_uncalibrated` (`--frontend sc|sc2p`, `--stages`,
+The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--frontend sc|sc2p`, `--stages`,
 `--ref_pattern` for a comparison solve with a given pattern, batch sizes).
 
 Speed: on an RTX 3090, a 6000-frame 0.5 nM chunk takes about 35 s for pass 1 + pattern and 11 s for the solve. Pass 2
@@ -160,7 +160,7 @@ for reading. It holds (`simcode/util/runconfig.py`):
 | `invocations` | one entry per process: command line, GPU, start / end, timing (a resumed run or one copy per GPU with `--claim 1` adds entries) |
 | `pattern`, `selection`, `counts`, `timing` | the pattern estimate (pitch, angle, depth, phases, drift range), the counts per selection rule and table, detections, per-stage time |
 | `outputs` | every table / subset file with its size and `arrays_sha256` (hash of the array contents; the file hash of an `.npz` changes with its zip time stamps) |
-| `steps` | later work on the directory: `python -m simcode.strict` appends its settings, input hashes, counts and outputs here and marks the files it replaced (`written_by: steps[i]`) |
+| `steps` | later work on the directory: `python -m simcode.table` appends its settings, input hashes, counts and outputs here and marks the files it replaced (`written_by: steps[i]`) |
 
 Re-run with exactly the settings of a record (the model of the record is registered from its definition; a record made
 with single network files re-runs with them as model `<name>@record`; arguments after `--config` override single settings):
@@ -181,7 +181,7 @@ python -m simcode.util.runconfig verify <dir>     # recorded file hashes / commi
 python -m simcode.util.runconfig backfill <dir>   # reconstruct the record of a run made before 2026-11-14 (nothing is recomputed)
 ```
 
-`command.txt` stays a plain log (one line per `simcode.run` / `simcode.strict` command); `summary.json`, `runtime.json` and
+`command.txt` stays a plain log (one line per `simcode.run` / `simcode.table` command); `summary.json`, `runtime.json` and
 `locs_p*_info.json` are unchanged. The three production runs of the paper (`out/paper2/1809_2/v2_matched`,
 `2.5nM_2/v2_matched`, `20nM_2/v2_m25`) predate the record: theirs has status `reconstructed` and lists under
 `reconstructed.not_recovered` what could not be recovered (git commit and environment at run time, hashes at run time,
@@ -218,18 +218,21 @@ GPUS=1,2 bash analysis/fourpi/run_full_w4pi.sh MT v10 1.56                      
 python analysis/fourpi_classical/full_cl.py --stage read --cells NPC                    # classical 4Pi-SIMFLUX: reader ...
 python analysis/fourpi_classical/full_cl.py --stage fit --cells NPC                     # ... and fitter(s)
 ```
-Both read the dcimg files through `simcode/fileio/movie.py` and run their files through `simcode/fileio/work.py`
+Both read the dcimg files through `simcode/io/movie.py` and run their files through `simcode/io/work.py`
 (skip finished files, atomic outputs, claims). Paths and the constants of the data set: `simcode/fourpi/setup.py`.
 Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.py`, `showcase_real_mt.py`,
 `select_curve_{mt,npc}.py`; `analysis/fourpi_classical/post_cl.py`, `fig_cl.py`.
 
 ## Repository layout
 
-`simcode/FILE_DESCRIPTION.md` has one line per file. In short: `simcode/` the package (`run.py`, `strict.py`, `models.json`,
-`config.py`; `fileio/` readers and work driver; `pipeline/`, `det/`, `hd/`, `p2/` the 2D pipeline and its trainers; `sim/`,
-`psf/`, `insitu/` simulator, PSF and calibration; `fourpi/` the 4Pi pipeline), `analysis/` scripts that use it (baselines,
-paper figures and simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks), `models/` calibrations,
-`tests/`, `docs/`.
+`docs/LAYOUT.md` has the tree with one line per directory and file. In short, `simcode/` the package: `run.py`, `table.py`,
+`models.json`, `config.py`, `dataset.py`; `detector/` and `emitter/` the two networks (one class each for pass 1 and pass 2)
+and their trainers; `solve/` the explicit pattern solve and z after it; `pattern/` the illumination inputs; `processing/` the
+per-chunk fronts and the pattern estimation; `simulate/` the acquisition simulator and the training batches; `benchmark/`
+the gate suite; `calibration/` the in-situ calibration; `pipeline/` the automatic per-acquisition pipeline; `io/` readers and
+work driver; `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi pipeline. Besides it: `analysis/` scripts that use
+it (baselines, paper figures and simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks), `models/`
+calibrations and model folders, `tests/`, `docs/`.
 
 Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=1 python
 tests/test_fast_paths.py` (GPU, ~1 min, needs the m1809 weights), or `pytest tests`.

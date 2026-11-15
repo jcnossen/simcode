@@ -1,6 +1,6 @@
 """Covariance ablation (2026-11-12): pass-2 head outputs of a finished pipeline run, WITH the Cholesky factor of the intensity
 covariance (the pipeline's pass2_est2_<f0>.npz files do not store it), so the explicit solve can be re-run offline per variant.
-= the pass-2 stage of simcode.run (pipeline.sc_front_fast.Pass2P2Fast.run_chunk, return_head=True; same networks, pattern_est.pt,
+= the pass-2 stage of simcode.run (processing.front_fast.Pass2FrontFast.run_chunk, return_head=True; same networks, pattern_est.pt,
 candidate cut, crop, batches), no package code changed. Per chunk: <out>/head_<f0>.npz with the solve inputs (I, L, x, y, lsxy,
 x_det, y_det; region coordinates), bw (window index into PW), PW [nW,6,5] (pattern per window), and the production output rows
 (wstart, frame, p, phot, X0, Y0, and the production solve x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy as the reference for variant A).
@@ -25,17 +25,17 @@ def main():
     a = ap.parse_args()
     proctitle.set_title('covabl')
     N = config.model_set(a.model)
-    from simcode.pipeline import sc_front as _scf, sc_front_fast as _scff
-    from simcode.p2 import front as _p2f
+    from simcode.processing import front as _scf, front_fast as _scff
+    from simcode.processing import pass2_front as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = a.cand_pmin
     from simcode.psf import TiffMovie
-    from simcode.pipeline.common import load_calib
+    from simcode.processing.common import load_calib
     os.makedirs(a.out, exist_ok=True)
     calib = config.resolve(a.calib); movie = TiffMovie(config.resolve(a.movie, 'data')); cal = load_calib(calib)
     crop = tuple(int(v) for v in a.crop.split(','))
     nf = movie.n
     chunks = [int(v) for v in a.chunks.split(',')] if a.chunks else list(range(0, nf, a.chunk))
-    p2 = _scff.Pass2P2Fast(calib, head=config.resolve(N['p2_head']), det=config.resolve(N['p2_det']), compile='auto')
+    p2 = _scff.Pass2FrontFast(calib, head=config.resolve(N['p2_head']), det=config.resolve(N['p2_det']), compile='auto')
     Pt = torch.load(a.pattern or f'{a.run}/pattern_est.pt')
     scal = config.resolve(a.p2_cal)
     for f0 in chunks:

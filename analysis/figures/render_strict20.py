@@ -1,5 +1,5 @@
 """20 nM render with the strict output filter (sigma_cal <= 6 nm per axis), ours vs SIMCODE; dense + crossing zooms.
-(development scratch/hdzoom/strict.py; zooms: <out>/real20/zooms_dense.json from hdzoom.py, <out>/real20/zooms.json = the crossing zooms of the
+(development scratch/hdzoom/table.py; zooms: <out>/real20/zooms_dense.json from hdzoom.py, <out>/real20/zooms.json = the crossing zooms of the
 development real20/analyze20.py render stage.)  -> <out>/plots/recon_full_20nM_strict.png (or argv[1])"""
 import os, sys, json, numpy as np
 if any(a in ('-h', '--help') for a in sys.argv[1:]): print(__doc__); sys.exit()

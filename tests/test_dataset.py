@@ -3,14 +3,14 @@ CPU tests of simcode.dataset.Dataset, SIMCODE's layer on torch_psf.Dataset (the 
 render, FRC, files, is tested in torch-psf). No models, no raw data; the tests on files of the paper runs and the DME test are
 skipped when the files / the dme package / a GPU are not available.
 Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
-  v2 table   built from a fake run directory with simcode.strict: field layout (pos, crlb, frame, n_frames = 6, score,
+  v2 table   built from a fake run directory with simcode.table: field layout (pos, crlb, frame, n_frames = 6, score,
              intensities, the other columns), metadata, from_run(pass_), columns=, subset files; select / mask equal
-             strict.select; the subclass survives indexing and the filters
+             table.select; the subclass survives indexing and the filters
   hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata; select after the round trip
   old files  the earlier SIMCODE npz save (metadata, drift, applied flag), the preprint code's .npy, the paper's DECODE npz,
              Picasso (the paper's sf.hdf5)
   drift      apply at the window centre (frame + 3); estimate (DME v2) close to simcode.util.drift.drift_of_table
-  frc        Dataset.frc = simcode.evalproto.frc.frc_halves
+  frc        Dataset.frc = simcode.evaluation.frc.frc_halves
   real       out/paper2/1809_2/v2_matched/locs_p2.npz: counts of the info json; FRC of a subset = analysis/paper/frc_fair.py
 """
 import json, os, sys, tempfile
@@ -19,7 +19,7 @@ import torch
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
-from simcode import strict as SP
+from simcode import table as SP
 from simcode.dataset import Dataset
 from simcode.psf import Dataset as TorchPSFDataset
 from tests.test_tables import _run_dir
@@ -190,8 +190,8 @@ def test_drift_estimate():
 
 
 def test_frc_equals_reference():
-    """Dataset.frc (torch_psf) = simcode.evalproto.frc.frc_halves (the paper's estimator) on synthetic rows"""
-    from simcode.evalproto.frc import frc_halves
+    """Dataset.frc (torch_psf) = simcode.evaluation.frc.frc_halves (the paper's estimator) on synthetic rows"""
+    from simcode.evaluation.frc import frc_halves
     r = np.random.default_rng(7); n = 60000
     site = r.uniform(10, 40, (4000, 2)); k = r.integers(0, 4000, n); f = r.integers(0, 2000, n) * 3
     x, y = site[k, 0] + r.normal(0, 0.08, n), site[k, 1] + r.normal(0, 0.08, n)

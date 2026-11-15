@@ -1,5 +1,6 @@
 """
-Training data for the pattern-free detector: crlb_dense.make_scene (calibrated model: vectorial PSF LUT, SIMFLUX
+Emitter lists with DNA-PAINT kinetics on the calibrated scene model (simulate/crlb.make_scene; the first detector training data,
+now superseded by the acquisition simulator simulate/acquisition.py): crlb.make_scene (calibrated model: vectorial PSF LUT, SIMFLUX
 pattern randomised per FOV, smooth structured background x per-angle factor, sCMOS read-noise map, ADU rounding) with
 an explicit emitter list:
   - DNA-PAINT kinetics: Poisson binding events, exponential on-times, mean on-time log-uniform 2-60 frames
@@ -9,14 +10,11 @@ an explicit emitter list:
   - per-frame photons (mean illumination) log-uniform 40-6000: half of the FOVs per emitter over the full range,
     half with a per-FOV median (log-uniform) x lognormal(0.5) per emitter
   - bg log-uniform 1-30 ph/px/frame per FOV, modulation depth U(0.5, 1)
-Targets (assign): GT emitters with >= 1 on-frame (sum of on-fractions) and >= min_phot window photons take their
-nearest pixel; when two fall in the same pixel the brighter keeps it and the other takes the free 8-neighbour pixel
-nearest to it (offset target up to ~1.2 px), so close pairs get two positives; still-colliding ones are ignored.
-Emitters with 0 < on-frames < 1 or fewer photons are 'don't care' (their pixel is excluded from the negatives).
+Detector targets of such scenes: simulate/targets.assign.
 """
 import math
 import torch
-import simcode.sim.crlb as CD
+import simcode.simulate.crlb as CD
 
 dev = 'cuda'
 
@@ -90,45 +88,3 @@ def sample(sim, nb, **kw):
     if 'carpet' in em: o['carpet'] = em['carpet']
     return o
 
-
-def assign(gt, B, H, W, min_on=1.0, min_phot=60.0, dontcare=None):
-    """-> label [B,H,W] (1 pos, 0 neg), ignore [B,H,W] bool, tidx [B,H,W] (GT index, -1), off [B,2,H,W] targets."""
-    tot = gt['phot'].sum(1); on = gt['onf'].sum(1)
-    px, py = torch.round(gt['x']).long(), torch.round(gt['y']).long()
-    inside = (px >= 0) & (px < W) & (py >= 0) & (py < H)
-    pos = inside & (on >= min_on) & (tot >= min_phot)
-    if dontcare is not None:     # e.g. the dim carpet: never a positive, its pixel is excluded from the negatives
-        pos = pos & ~dontcare
-    dc = inside & (on > 0) & ~pos
-    HW = H * W
-    ign = torch.zeros(B * HW, dtype=torch.bool, device=dev)
-    ign[(gt['fov'] * HW + py * W + px)[dc]] = True
-    tid = torch.full((B * HW,), -1, dtype=torch.long, device=dev)
-    idx = torch.nonzero(pos)[:, 0]
-    key = tot[idx] + 1e-6 * torch.arange(len(idx), device=dev)          # unique keys: deterministic winner
-    lin = gt['fov'][idx] * HW + py[idx] * W + px[idx]
-    best = torch.full((B * HW,), -1.0, device=dev).scatter_reduce(0, lin, key, 'amax')
-    win = key == best[lin]
-    tid[lin[win]] = idx[win]
-    lose = idx[~win]
-    if len(lose):
-        o = torch.tensor([(dy, dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy, dx) != (0, 0)], device=dev)
-        cy = py[lose][:, None] + o[None, :, 0]; cx = px[lose][:, None] + o[None, :, 1]
-        okc = (cy >= 0) & (cy < H) & (cx >= 0) & (cx < W)
-        cl = gt['fov'][lose][:, None] * HW + cy.clamp(0, H - 1) * W + cx.clamp(0, W - 1)
-        okc &= tid[cl] < 0
-        dd = (gt['x'][lose][:, None] - cx) ** 2 + (gt['y'][lose][:, None] - cy) ** 2
-        dd = torch.where(okc, dd, torch.full_like(dd, 1e9))
-        j = dd.argmin(1); ok = dd.min(1).values < 1e8
-        lin2 = cl[torch.arange(len(lose), device=dev), j][ok]; l2 = lose[ok]
-        k2 = tot[l2] + 1e-6 * torch.arange(len(l2), device=dev)
-        best2 = torch.full((B * HW,), -1.0, device=dev).scatter_reduce(0, lin2, k2, 'amax')
-        w2 = k2 == best2[lin2]
-        tid[lin2[w2]] = l2[w2]
-    tid = tid.reshape(B, H, W)
-    label = (tid >= 0).float()
-    ign = ign.reshape(B, H, W) & (tid < 0)
-    yy, xx = torch.meshgrid(torch.arange(H, device=dev), torch.arange(W, device=dev), indexing='ij')
-    tc = tid.clamp(min=0)
-    off = torch.stack([gt['x'][tc] - xx, gt['y'][tc] - yy], 1)
-    return label, ign, tid, off

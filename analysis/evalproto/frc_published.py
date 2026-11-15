@@ -2,7 +2,7 @@
 
 Protocol (covpool.py): rows on the common window grid (window start % grid == 0; G3 at 0.5 / 2.5 nM), each set corrected
 with its own DME v2 drift (window start + 3), 5-115 px crop after correction, FRC std = 1/7 threshold, alternating 300-frame
-halves, 5-nm render (simcode.evalproto.lib.frc_std). Also reported on all rows (stride-1 window starts), the protocol of the
+halves, 5-nm render (simcode.evaluation.metrics.frc_std). Also reported on all rows (stride-1 window starts), the protocol of the
 earlier "published 19.3 / 25.0" numbers. The hdf5 is read only.
 
 usage: python analysis/evalproto/frc_published.py --name real0.5 --published <results>/sfhd-ndi.hdf5 --pub_drift <DME npz>
@@ -10,7 +10,7 @@ usage: python analysis/evalproto/frc_published.py --name real0.5 --published <re
 """
 import argparse, json
 import numpy as np
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 
 
 def load_drift(fn):

@@ -5,14 +5,14 @@ Rows per method ('full' = what each method outputs, as the preprint scored it):
   sf      <run>/base/sf/sf.hdf5 (pattern estimated from SMLM)      sf_gtp  <run>/base/sf_gtp/sf.hdf5 (ground-truth pattern)
   decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6)
   v2sig   <run>/v2_<model>/locs_p2_sim.npz, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
-          p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.strict.SIGMA_MAX_NM
-          (simcode.strict.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
+          p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.table.SIGMA_MAX_NM
+          (simcode.table.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
           (run_simcode.py --gt_diag, locs_p2gt_sim.npz; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
           (Removed 2026-11-14: the strict-subset row v2, the u <= 0.45 row v2q45 and the strict GT diagnostic v2gt.)
   v1      <run>/v1/locs.npz: the preprint's SIMCODE, merged 'sfhd-ndi+smlm' rows (run_simcode_v1.py), its MVU sigma
 Metrics:
   counts   n_all, n_disjoint (window start % 6 == 0, inside the FOV), n_frc
-  FRC      the fair protocol of analysis/paper/frc_fair.py (frc_halves = simcode.evalproto.lib.frc_std): disjoint windows,
+  FRC      the fair protocol of analysis/paper/frc_fair.py (frc_halves = simcode.evaluation.metrics.frc_std): disjoint windows,
            max(sigma_x, sigma_y) < 0.15 px with each method's own sigma, alternating 300-frame halves, 5-nm renders, 1/7.
            Simulation-specific: region = the whole simulated FOV [0, W) (not the sensor crop 5-115 px) and NO drift correction
            (the simulations have no drift, so the DME step of frc_fair is skipped).
@@ -85,7 +85,7 @@ def load_method(kind, path):
         z = np.load(path)
         if kind == 'v2sel': m = z['sel'].astype(bool)
         else:                     # user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the field
-            from simcode import strict as SP
+            from simcode import table as SP
             m = SP.select(z, SP.SIGMA_MAX_NM, crop=v2_crop(path))
         return dict(x=z['x'][m].astype(np.float64), y=z['y'][m].astype(np.float64), f=z['frame'][m].astype(np.int64),
                     sx=z['sx'][m].astype(np.float64), sy=z['sy'][m].astype(np.float64), photons=z['photons'][m].astype(np.float64))
@@ -96,7 +96,7 @@ def load_method(kind, path):
 def v2_crop(path):
     """output region (x0, y0, size) of a papersim v2 table: the crop of its run (run_simcode.py: (0, 0, W)), from
     locs_sim_info.json next to it, else the run's pass-1 files"""
-    from simcode import strict as SP
+    from simcode import table as SP
     d = os.path.dirname(os.path.abspath(path)); f = os.path.join(d, 'locs_sim_info.json')
     if os.path.exists(f) and json.load(open(f)).get('crop'): return tuple(float(v) for v in json.load(open(f))['crop'])
     return SP.run_crop(d)

@@ -1,6 +1,6 @@
 """Stage g (report): <out>/report/report.html (self-contained: tables + inline PNG figures) and report.json: settings, every
 stage summary with its checks, camera maps, PSF images per pattern angle and the held-out table, the in-situ pattern vs the
-pipeline's estimate, counts of the localization tables, the FRC of the paper's selection (simcode.evalproto.frc, 300-frame block halves,
+pipeline's estimate, counts of the localization tables, the FRC of the paper's selection (simcode.evaluation.frc, 300-frame block halves,
 drift-corrected with DME v2 when available), the gate table of stage e."""
 import base64, html, io, json, os
 import numpy as np
@@ -44,7 +44,7 @@ def frc_of(L, sel=None):
 
 def run(ds):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    from simcode.auto.pipeline import STAGES
+    from simcode.pipeline.localization_pipeline import STAGES
     c = ds.c; d = ds.dir('report'); R = dict(name=c['name'], config=c, stages={})
     parts = [f'<h1>SIMCODE v2 automatic pipeline: {html.escape(c["name"])}</h1><p>movie {html.escape(c["movie"])}<br>out {html.escape(ds.out)}</p>']
     rows = []

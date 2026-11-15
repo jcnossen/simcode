@@ -31,7 +31,7 @@ _c = {}
 
 
 def phase_thr(p, x, y, ph, thr=PMIN):
-    from simcode.strict import phase_thr as _pt      # = the development p2prior/lib.phase_thr
+    from simcode.table import phase_thr as _pt      # = the development p2prior/lib.phase_thr
     return _pt(p, x, y, ph, thr)
 
 

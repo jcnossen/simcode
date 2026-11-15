@@ -41,7 +41,7 @@ def write_blocked(src, cache, inv, mb_s=60.0, log=print):
 
 
 def verify(src, cache, inv, ncheck=4, log=print):
-    from simcode.fileio.movie import open_movie
+    from simcode.io.movie import open_movie
     S = _Src(src); M = open_movie(cache); NC = S.n // 6
     cyc = sorted({0, NC // 3, 2 * NC // 3, NC - 1})[:ncheck]
     ok = M.n == 6 * NC

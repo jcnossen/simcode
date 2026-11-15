@@ -1,6 +1,6 @@
 """Per-frame intensity and background vs their CRLBs (coordinator / user item, iteration 32). Evaluation only.
 Scenes regenerated with gate.gen (same seeds -> the same scenes as the gate npz). Per visible interior target:
-  I_t   network per-frame intensities (SCHead4 apply_head; no solve needed) vs GT per-frame photons; CRLB = the gate's
+  I_t   network per-frame intensities (emitter.model.apply_to_candidates; no solve needed) vs GT per-frame photons; CRLB = the gate's
         multi-emitter free-model per-frame intensity CRLB (crlb_dense.crlb_all 'fr_m': positions, z, per-angle bg free)
   bg_t  network per-frame bg vs the head's training target (true bg o['bg'] at the rounded true pixel, sc3.targets
         bgt_px); CRLB = multi-emitter Fisher over the head's 21 x 21 patch with a FLAT per-frame bg level b_t and the
@@ -14,10 +14,13 @@ import sys, os, math
 import numpy as np, torch
 sys.argv, ARGS = sys.argv[:1], sys.argv[1:]
 if not ARGS or ARGS[0] in ('-h', '--help'): print(__doc__); sys.exit(0)
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GA, sc as SCM
-from simcode.det.model import select_subpixel
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GA
+from simcode.emitter import model as SCM
+from simcode.layers import blocks as LB
+from simcode.detector import model as DM
+from simcode.detector.select import select_subpixel
 from simcode import config
 OUTR = config.root('out')
 
@@ -31,8 +34,8 @@ def bg_crlb(G, o, psS, tg, Ie):
     pxi, pyi = torch.round(G['x']).long(), torch.round(G['y']).long()
     n = len(tg); nb = o['nb']
     tb, tcx, tcy = G['fov'][tg], pxi[tg], pyi[tg]
-    bgp = SCM.patches(o['bg'], tb, tcy, tcx)                                   # [n,T,21,21] centred on the target pixel
-    rn2 = SCM.patches((o['rn'] ** 2).expand(nb, 1, S, S), tb, tcy, tcx)[:, 0]
+    bgp = LB.extract_patches(o['bg'], tb, tcy, tcx)                                   # [n,T,21,21] centred on the target pixel
+    rn2 = LB.extract_patches((o['rn'] ** 2).expand(nb, 1, S, S), tb, tcy, tcx)[:, 0]
     crl = torch.full((n, T), float('nan'), device=dev); flo = crl.clone(); pmean = crl.clone()
     u = torch.arange(PP, device=dev) - HP
     for i in range(n):
@@ -59,7 +62,7 @@ def bg_crlb(G, o, psS, tg, Ie):
 
 def run(ck, name, scenes, seeds, ntarget=3500):
     sim, rpsf, lut = CD.models(T)
-    det, _ = SCM.load_det_front(config.DET); det.eval()
+    det, _ = DM.load(config.DET); det.eval()
     head = SCM.load(ck); col = SCM.PSFCol(sim)
     for sc in scenes:
         rows = []
@@ -87,9 +90,9 @@ def run(ck, name, scenes, seeds, ntarget=3500):
                     c = select_subpixel(lgm, dd['dxy'].float(), 640, p_min=GA.THR0, radius=0.7)
                     keep = torch.isfinite(c['logit'])
                     b, iy, ix, x, y, lg = (c[k][keep] for k in ('b', 'iy', 'ix', 'x', 'y', 'logit'))
-                    nbr = SCM.nbr_for(head, lgm, b, iy, ix, x, y, lg)
+                    nbr = SCM.nbr_map(lgm.float(), b, iy, ix, x, y, lg)
                     sel = torch.sigmoid(lg) >= 0.5
-                    oh = SCM.apply_head(head, col, fr, None, b[sel], iy[sel], ix[sel], x[sel], y[sel], nbr=nbr, p=torch.sigmoid(lg[sel]))
+                    oh = SCM.apply_to_candidates(head, col, fr, None, b[sel], iy[sel], ix[sel], x[sel], y[sel], nbr=nbr, p=torch.sigmoid(lg[sel]))
                     bd, xd, yd = b[sel], x[sel], y[sel]
                     # one-to-one greedy match targets <-> detections within 1 px (same FOV)
                     D = torch.cdist(torch.stack([G['x'][tg], G['y'][tg]], 1), torch.stack([xd, yd], 1))
@@ -104,8 +107,8 @@ def run(ck, name, scenes, seeds, ntarget=3500):
                     fa = torch.nonzero((G['x'] > -0.5) & (G['x'] < S - 0.5) & (G['y'] > -0.5) & (G['y'] < S - 0.5) & (ph >= 50))[:, 0]
                     fb, fx, fy = G['fov'][fa], G['x'][fa], G['y'][fa]
                     fix, fiy = torch.round(fx).long(), torch.round(fy).long(); flg = torch.full_like(fx, 3.0)
-                    fnbr = SCM.nbr_for(head, lgm, fb, fiy, fix, fx, fy, flg)
-                    of = SCM.apply_head(head, col, fr, None, fb, fiy, fix, fx, fy, nbr=fnbr, p=torch.sigmoid(flg))
+                    fnbr = SCM.nbr_map(lgm.float(), fb, fiy, fix, fx, fy, flg)
+                    of = SCM.apply_to_candidates(head, col, fr, None, fb, fiy, fix, fx, fy, nbr=fnbr, p=torch.sigmoid(flg))
                     pos = {int(v): k for k, v in enumerate(fa.tolist())}
                     fi = torch.tensor([pos[int(t)] for t in tg.tolist()], device=dev)
                 bgt = o['bg'][G['fov'][tg], :, torch.round(G['y'][tg]).long(), torch.round(G['x'][tg]).long()]

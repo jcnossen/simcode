@@ -7,6 +7,6 @@
 CELL=${1:-NPC}; HEAD=${2:-v10}; COH=${3:-1.56}
 cd "$(dirname "$0")/../.."; export PATH=$HOME/miniconda3/envs/simcode-py311/bin:$PATH; O4=$(python -c "from simcode.fourpi.setup import P4; print(P4)")
 mkdir -p $O4/logs
-python -m simcode.fileio.launch --gpus ${GPUS:-${GPU:-1}} --log $O4/logs/full_${CELL}_${HEAD} -- \
+python -m simcode.io.launch --gpus ${GPUS:-${GPU:-1}} --log $O4/logs/full_${CELL}_${HEAD} -- \
   python -m simcode.fourpi.run --cell $CELL --all --head $HEAD --coh $COH --claim 1 --order ${ORDER:-fwd}
 echo FULL_DONE $CELL

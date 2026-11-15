@@ -1,6 +1,6 @@
 """
-Scene generator and multi-emitter Cramer-Rao bounds for the benchmark scenes (used by the gate suite simcode/hd/gate.py,
-the nuisance CRLB simcode/eff/crlb_nuis.py, the detector training data simcode/det/data.py).
+Scene generator and multi-emitter Cramer-Rao bounds for the benchmark scenes (used by the gate suite simcode/benchmark/gate.py,
+the nuisance CRLB simcode/benchmark/crlb_nuisance.py, the detector training data simcode/simulate/emitters.py).
 
 Multi-emitter CRLB (exact vectorial PSF, true pattern, per-pixel read noise, Poisson + Gaussian variance) on the fixed
 15 x 15 region around the target pixel; expected image = bg + all emitters; free parameters = every active emitter whose
@@ -15,10 +15,10 @@ The PSF / camera model comes from the in-situ calibration json `a.calib` (defaul
 import math, types
 import numpy as np, torch
 from scipy.optimize import linear_sum_assignment
-from simcode.sim.simulator import Simulator
+from simcode.simulate.simulator import Simulator
 from simcode import psf as spsf
 from simcode.psf import spline, angle_kwargs
-from simcode.nn.blocks import extract_patches
+from simcode.layers.blocks import extract_patches
 from simcode import config as _cfg
 
 a = types.SimpleNamespace(calib=_cfg.model(_cfg.INSITU_05))

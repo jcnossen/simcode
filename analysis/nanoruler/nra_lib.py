@@ -348,7 +348,7 @@ def frc_nm(x, y, seed=1, px=2.5):
     """Random-half-split FRC (1/7 threshold, 5-nm render) with the repository implementation (which takes coordinates in
     units of its PX constant; nm coordinates are divided by that constant, so no pixel-size assumption enters)."""
     sys.path.insert(0, '/home/jc/simcode2')
-    from simcode.evalproto import lib as E
+    from simcode.evaluation import metrics as E
     if len(x) < 100: return float('nan')
     h = np.random.default_rng(seed).random(len(x)) < 0.5
     return E.frc(x[h] / E.PX, y[h] / E.PX, x[~h] / E.PX, y[~h] / E.PX, px=px)

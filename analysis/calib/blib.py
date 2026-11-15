@@ -1,10 +1,10 @@
-"""Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode.hd.sc.sc_solve with a
+"""Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode.solve.solve.solve_emitters with a
 calibration dict, match targets as gate_report_xdet (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
 RMS / CRLB_SF_multi, zcal, the oracle convex mix with the prior (per-bin optimal alpha), paired FOV-bootstrap CIs."""
 import glob, json, os
 from simcode import config as _cfg
 import numpy as np, torch
-from simcode.hd.gate_report import match
+from simcode.benchmark.gate_report import match
 
 PX = 108.33
 FE = os.path.join(_cfg.root('out'), 'bright', 'fe')
@@ -41,7 +41,8 @@ def targets(R, thr=0.5):
 
 @torch.no_grad()
 def solve(R, oi, cal, patt='est', chunk=8192, dev='cuda'):
-    from simcode.hd import sc as SCM
+    from simcode.emitter import model as SCM
+    from simcode.solve import solve as SV
     P = torch.tensor(R['patt_est' if patt == 'est' else 'patt_true'], device=dev, dtype=torch.float32)
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     res = {k: [] for k in ('x', 'y', 'sx', 'sy', 'q', 'p', 'xp', 'yp', 'xmap', 'ymap')}
@@ -50,7 +51,7 @@ def solve(R, oi, cal, patt='est', chunk=8192, dev='cuda'):
         o = dict(I=tt(R['sc_I'][j]), L=tt(R['sc_L'][j]), x=tt(R['sc_x'][j]), y=tt(R['sc_y'][j]), lsxy=tt(R['sc_lsxy'][j]),
                  x_det=tt(R['sc_x_det'][j]), y_det=tt(R['sc_y_det'][j]))
         b = torch.tensor(R['sc_b'][j], device=dev).long()
-        s = SCM.sc_solve(o, P, b, cal)
+        s = SV.solve_emitters(o, P, b, cal)
         res['x'].append(s['r'][:, 0]); res['y'].append(s['r'][:, 1]); res['sx'].append(s['s_cal'][:, 0]); res['sy'].append(s['s_cal'][:, 1])
         res['q'].append(s['q']); res['p'].append(s['p'])
         rp = s.get('r_prior', torch.stack([o['x'], o['y']], 1))

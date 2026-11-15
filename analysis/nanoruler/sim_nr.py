@@ -29,20 +29,20 @@ DEFAULTS  tuned (2026-11-13) so that the quick Gaussian SMLM pass (quick_smlm.py
   the nominal movie (--dens 8.5e-5 --ev_per_site_30k 125 --on_model lognormal --win_med 1400 --bright_sd 0.36 --bg 1.65
   --bg_fluct -1) gave Gaussian-fit photons 850 instead of 1158 (the Gaussian fit on 11 x 11 px returns about 56 % of the full
   integral of this PSF), a mean level 0.45 ADU too high, Gaussian-fit bg 10.85 instead of 9.81, 1.6 x too much temporal noise
-  of 15 x 15 px block sums (RealSim fluct 0.15 at this low bg), 4 x too few rulers with 3.5 x too high duty each, and too few
+  of 15 x 15 px block sums (AcquisitionSim fluct 0.15 at this low bg), 4 x too few rulers with 3.5 x too high duty each, and too few
   long events (detection pair survival at 96 frames 0.17 instead of 0.38).
 BRIGHTNESS  per event lognormal (--win_med = median photons of a fully-on 6-frame window at mean illumination, --bright_sd);
-  variation as in RealSim: per-event angle factor exp(ang_sd N) (normalized to mean 1 over the two angles), per-event step
+  variation as in AcquisitionSim: per-event angle factor exp(ang_sd N) (normalized to mean 1 over the two angles), per-event step
   factor 1 + step_sd N (stored step index), per-frame factor 1 + frame_sd N (clamped at 0.2). --no_var sets all three to 0;
   the random draws are separate streams, so the same seed gives the same rulers / events / background / pattern with or
   without variation (camera-noise realizations differ where the expected image differs).
-PSF  RealSim LUT bank (calib PSF + --npsf - 1 weakly jittered LUTs, one LUT per SITE) + weak halo, as in sim_movie_r.py.
+PSF  AcquisitionSim LUT bank (calib PSF + --npsf - 1 weakly jittered LUTs, one LUT per SITE) + weak halo, as in sim_movie_r.py.
   The PSF image is rendered per 60-frame block at the block-centre drift position (drift within a block << 0.1 nm); the
   illumination uses the per-frame position.
 CAMERA  Poisson + per-pixel read noise (crop of camera_maps_nr80.npz), ADU = round(e / gain_true + offset map + residual),
   gain_true = gain (1 + gain_err N), residual offset error off_err ADU per pixel (static); uint16 TIFF.
 BACKGROUND  preset level (photons / px / frame), weak static structure, per-angle factor, temporal fluctuation (global AR(1)
-  + smooth field AR(1), RealSim 'fluct' model) evolving in acquisition order.
+  + smooth field AR(1), AcquisitionSim 'fluct' model) evolving in acquisition order.
 
 OUTPUTS (all under <out_dir>)
   sim_movie.tif   [NF, H, W] uint16 ADU, STORED frame order
@@ -91,7 +91,7 @@ def args_():
     def A(n, d, t=float, h=''):
         ap.add_argument('--' + n, type=t, default=E(n, d, t), help=h)
     A('calib', ND + ('calib_nr80.json' if os.path.exists(ND + 'calib_nr80.json') else 'calib_nr80_draft.json'), str)
-    A('preset_json', os.environ.get('NR_PRESET', ND + 'nr80_preset.json'), str, 'RealSim preset patch (as nrwrap.py)')
+    A('preset_json', os.environ.get('NR_PRESET', ND + 'nr80_preset.json'), str, 'AcquisitionSim preset patch (as nrwrap.py)')
     A('H', 256, int); A('W', 256, int); A('crop_x0', -1, int, 'camera-map crop origin (-1: centred)'); A('crop_y0', -1, int)
     A('dens', 9.5e-5, h='ON emitters per px per frame'); A('ev_per_site_30k', 40.0, h='binding events per site per 30000 frames')
     A('n_rulers', 0, int, '0: from dens'); A('frac3', 0.6, h='fraction of three-site rulers'); A('site_nm', 80.0)
@@ -103,7 +103,7 @@ def args_():
     A('win_med', 2150.0, h='median photons of a fully-on 6-frame window (full PSF integral)'); A('bright_sd', 0.30, h='log-sd')
     A('frame_sd', 0.10); A('step_sd', -1.0, h='-1: preset'); A('ang_sd', -1.0, h='-1: preset')
     ap.add_argument('--no_var', action='store_true', default=bool(int(os.environ.get('NR_SIM_NO_VAR', '0'))), help='frame_sd = step_sd = ang_sd = 0')
-    A('bg', 1.45, h='photons / px / frame (-1: preset)'); A('bg_sd', -1.0); A('bg_hp', -1.0); A('bg_fluct', 0.05, h='RealSim fluct scale (-1: preset)')
+    A('bg', 1.45, h='photons / px / frame (-1: preset)'); A('bg_sd', -1.0); A('bg_hp', -1.0); A('bg_fluct', 0.05, h='AcquisitionSim fluct scale (-1: preset)')
     A('drift_nm', 2.0, h='sample drift rms per axis over the movie (0: off)'); A('pdrift_nm', 1.5, h='pattern phase drift rms per angle (0: off)')
     A('npsf', 4, int, '1: exact calib PSF for all sites'); A('halo', -1.0, h='-1: preset')
     A('gain_err', 0.01); A('off_err', 0.3, h='ADU'); A('rn_mult', 1.0)
@@ -140,7 +140,7 @@ def place_rulers(rng, a, n_target):
 
 
 def sfield(n, H, W, sig, g):
-    """unit-sd smooth random fields [n, H, W] (as realsim.smooth_field, with an explicit generator)"""
+    """unit-sd smooth random fields [n, H, W] (as acquisition.smooth_field, with an explicit generator)"""
     k = int(3 * sig); o = torch.arange(-k, k + 1, device=dev, dtype=torch.float32)
     q = torch.exp(-0.5 * (o / sig) ** 2); q = q / q.sum()
     x = torch.randn(n, 1, H + 2 * k, W + 2 * k, device=dev, generator=g)
@@ -154,14 +154,14 @@ def main():
     assert NF % 6 == 0
     assert os.path.abspath(out).startswith('/home/jc/simcode2/out/nanoruler/sim'), 'outputs only under out/nanoruler/sim/'
     os.makedirs(out, exist_ok=True)
-    import simcode.hd.realsim as RS
+    import simcode.simulate.acquisition as RS
     NR = json.load(open(a.preset_json))                      # in-memory preset patch, as analysis/nanoruler/nrwrap.py
     for name, p_ in RS.PRESETS.items():
         p_.update({k: (tuple(v) if isinstance(v, list) and k != 'k' else v) for k, v in {**NR.get('common', {}), **NR.get(name, {})}.items()})
     PRE = '0.5nM'
     C = json.load(open(a.calib)); a.pixel_nm = 1000 * C['pixelsize_um']
     H, W = a.H, a.W
-    rs = RS.RealSim(PRE, H, W, 6, npsf=a.npsf, seed=seed, calib=a.calib)
+    rs = RS.AcquisitionSim(PRE, H, W, 6, npsf=a.npsf, seed=seed, calib=a.calib)
     p = rs.p; sim = rs.sim; R = sim.R
     assert not isinstance(rs.luts[0], tuple), 'per-angle PSF calib not supported here'
     for key in ('step_sd', 'ang_sd', 'bg', 'bg_sd', 'bg_hp', 'halo'):

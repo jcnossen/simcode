@@ -30,7 +30,7 @@ def stored_onf(t0, t1, f):
 
 
 def gt_windows_exact(G, grid=3, drift=True, margin=None):
-    """Exact counterpart of simcode.evalproto.lib.gt_windows_fast for the reordered movie.
+    """Exact counterpart of simcode.evaluation.metrics.gt_windows_fast for the reordered movie.
     Rows (event, stored window start w, w % grid == 0) with >= 1 on-frame; columns
       0 w (stored), 1 event, 2 x, 3 y (px, drift-free site/event position), 4 P (pattern-weighted window photons without the
       per-frame fluctuation, as gt_windows_fast; with the sample drift in the illumination phase if drift), 5 target flag

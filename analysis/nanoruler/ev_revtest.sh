@@ -11,9 +11,9 @@ export CUDA_VISIBLE_DEVICES=$(NEED_GB=4 pickgpu 4 "2 0 1"); mkdir -p $G $FE
 say() { echo "$(date +%F_%T) $*"; }
 say "revtest $t preset $NR_PRESET GPU $CUDA_VISIBLE_DEVICES"
 last=${SC##*,}
-[ -f $G/${last}__s303_hd_cur.npz ] || python -u $A/nrwrap.py simcode.hd.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal calib/calib_sc_hd_sc5nbb15_pm_bright.json \
+[ -f $G/${last}__s303_hd_cur.npz ] || python -u $A/nrwrap.py simcode.benchmark.gate --scen $SC --fronts sc --sc hd_sc5nb.pt --sccal calib/calib_sc_hd_sc5nbb15_pm_bright.json \
   --tag _hd_cur --out $G --ntarget 3500 --seeds $SEEDS || { say FAILED gate; exit 1; }
-SIMCODE_GATE_DIR=$G python -u $A/nrwrap.py simcode.p2.dump --scen $SC --seeds $SEEDS --fronts s1=$MD/det_nr80.pt:$MD/hd_nr80.pt,s2=$MD/p2det_nr80.pt:$MD/p2headL_nr80.pt --out $FE \
+SIMCODE_GATE_DIR=$G python -u $A/nrwrap.py simcode.processing.gate_dump --scen $SC --seeds $SEEDS --fronts s1=$MD/det_nr80.pt:$MD/hd_nr80.pt,s2=$MD/p2det_nr80.pt:$MD/p2headL_nr80.pt --out $FE \
   > $EV/logs/dump_$t.log 2>&1 || { say FAILED dump; exit 1; }
 grep -q "CRLB from None" $EV/logs/dump_$t.log && { say "FAILED: CRLB reference not found"; exit 1; }
 python $A/ev_p12.py $FE $SC > $EV/p12_gate_$t.txt.tmp && mv $EV/p12_gate_$t.txt.tmp $EV/p12_gate_$t.txt || { say FAILED p12; exit 1; }

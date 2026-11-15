@@ -1,5 +1,5 @@
 """Stage f (process): python -m simcode.run on the (blocked-order) movie with the dataset's calibration and model,
-through simcode/auto/runwrap.py for the instrument overrides of docs/AUTO_PIPELINE.md section 7 (pitch range, strict crop,
+through simcode/pipeline/run_with_overrides.py for the instrument overrides of docs/AUTO_PIPELINE.md section 7 (pitch range, strict crop,
 detector batch, the model of stage e). With the DMD-SIMFLUX defaults the wrapper changes nothing, so the run is the
 same as a plain simcode.run with the same arguments."""
 import json, os
@@ -39,7 +39,7 @@ def argv(ds, out, calib=None, nframes=None, chunk_list=None, model=None):
 def crop_of(ds):
     p = ds.c['process']
     if p['crop']: return [float(v) for v in p['crop']]
-    from simcode.fileio.movie import open_movie
+    from simcode.io.movie import open_movie
     H, W = open_movie(ds.movie).shape[-2:]
     return None if (H, W) == (120, 120) else [5.0, 5.0, float(min(H, W) - 10)]
 
@@ -80,7 +80,7 @@ def run(ds):
     key = hashlib.sha1(json.dumps([a0, open(calib).read() if os.path.exists(calib) else calib, ns[1], open(W).read()]).encode()).hexdigest()[:10]
     out = os.path.join(ds.dir('process'), 'run_' + key)     # keyed by arguments, calibration, model and overrides: chunk files are never stale
     g = ds.gpu(10)
-    txt = ds.sh(['-m', 'simcode.auto.runwrap', 'simcode.run'] + argv(ds, out, model=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
+    txt = ds.sh(['-m', 'simcode.pipeline.run_with_overrides', 'simcode.run'] + argv(ds, out, model=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)
     S = json.load(open(os.path.join(out, 'summary.json')))
     pe = json.load(open(os.path.join(out, 'pattern_est.json'))) if os.path.exists(os.path.join(out, 'pattern_est.json')) else {}
     r = dict(run=out, run_config=os.path.join(out, 'run_config.json'), model=ns[0], summary=S, wrap=json.load(open(W)))   # run_config.json = the complete record of the run

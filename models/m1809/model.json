@@ -19,7 +19,7 @@
   },
   "pass2_trainer_chain": "/home/jc/simcode2/out/z3d/runs/chain.sh m1809g (logs out/z3d/runs/m1809g/; pass-2 detector = out/p2generic g1809 + dg2s: analysis/p2generic/chain_gen.sh g1809, cont_det.sh dg2s)",
   "evaluation": "/home/jc/simcode2/out/z3d/runs/eval.sh m1809g (vs the dedicated pass 2: /home/jc/simcode2/out/z3d/eval/m1809g/accept_p2_ded.txt)",
-  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (hd/realsim.RealSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)"
+  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (simulate/acquisition.AcquisitionSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)"
  },
  "_files": {
   "psf": {

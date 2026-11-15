@@ -1,61 +1,54 @@
 """
-Gate-scene dumps for the pass-2 benchmark (as <out>/bright/dump_fe.py; simcode/hd/gate.gen, identical seeds
+Gate-scene dumps for the pass-2 benchmark (as <out>/bright/dump_fe.py; simcode/benchmark/gate.gen, identical seeds
 and iteration loop as gate.main). Per scene x seed x front-end: GT table, per-FOV patterns (estimate fed to the networks /
 the solve, and the truth), and the raw head outputs (I_t, Cholesky L, prior x, y, log sigma, bg, detector point, score; z,
 log s_z|xy, b of a 3D head),
 so the explicit pattern solve, the calibration and all reports run offline. CRLB gt_sf_m copied from an existing gate npz
 of the same scene / seed after checking that the GT is identical.
 Fronts:
-  p1   det_n1 + sc5nb (pattern-free pass 1)
-  p2L  pass-2 detector + the long fine-tuned pass-2 head (models/p2_head_long.pt, 'real' pattern-error model)
-  (other det / head pairs: --fronts name=det.pt:head.pt)
-Pattern fed (both passes, networks and solve): the scene's patt_est (gate default; exact for iso / pairs, realsim errors for
-*qm), or with --pert 1 a perturbed estimate of the truth (p2/illum.perturb, the training error model, own seed) with the
-GT moved into its gauge (shift = K^-1 e_angle, as realsim shift_est).
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.p2.dump --scen iso,pair1 --fronts p1,p2 --seeds 301,302,303
+  p1   pass-1 detector + emitter network of the default model (config.DET / HEAD; pattern-free)
+  p2L  pass-2 detector + emitter network of the default model (config.P2_DET / P2_HEAD)
+  (other detector / network pairs: --fronts name=det.pt:head.pt)
+Pattern fed (both passes, networks and solve): the scene's patt_est (gate default; exact for iso / pairs, the acquisition simulator errors for
+*qm), or with --pert 1 a perturbed estimate of the truth (pattern/illumination.perturb, the training error model, own seed) with the
+GT moved into its gauge (shift = K^-1 e_angle, as the acquisition simulator shift_est).
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.processing.gate_dump --scen iso,pair1 --fronts p1,p2 --seeds 301,302,303
 """
 import argparse, glob, os, sys, time
 import numpy as np, torch
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GA
-from simcode.hd import sc as SCM
-from simcode.p2 import illum as IL
-from simcode.p2 import head2 as H2
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GA
+from simcode.pattern import illumination as IL
+from simcode.emitter import model as EM
+from simcode.detector import model as DM
 
 from simcode import config as _cfg
 
 OUT = os.path.join(_cfg.root('out'), 'p2', 'fe')
 GATE = _cfg.env('GATE_DIR') or os.path.join(_cfg.root('out'), 'gate')   # env: opt-in (2026-11-11)
-FRONTS = dict(p1=(_cfg.model(_cfg.DET), H2.SC5NB),                    # production pass 1 (det_n1 + sc5nb)
-              p2L=(_cfg.model(_cfg.P2_DET), _cfg.model(_cfg.P2_HEAD)))  # production pass 2 (p2_det + p2_head_long)
-
-
-def load_head(path):
-    path = _cfg.resolve(path)
-    a = torch.load(path, map_location='cpu', weights_only=False).get('args', {})
-    if 'no_illum' in a or 'p2_head' in path:
-        return H2.load(path)
-    return SCM.load(path)
+FRONTS = dict(p1=(_cfg.model(_cfg.DET), _cfg.model(_cfg.HEAD)),         # pass 1 of the default model
+              p2L=(_cfg.model(_cfg.P2_DET), _cfg.model(_cfg.P2_HEAD)))  # pass 2 of the default model
 
 
 @torch.no_grad()
 def front_out(F, o, il, col, pf_head=None):
-    det, needs_il, head, il_on = F
+    """F = (detector, emitter network, illumination on): the network outputs on the gate scene o with the pattern maps il"""
+    det, head, il_on = F
     fr = o['frames']
     ilx = il if il_on else torch.zeros_like(il)
-    c, nbr, lgm = H2.candidates(det, needs_il, fr, ilx)
+    c, nbr, lgm = EM.detect_candidates(det, fr, ilx)
     if len(c['b']) == 0: return None
     p = torch.sigmoid(c['logit'])
     outs = []
     for c0 in range(0, len(p), 4096):
         sl = slice(c0, c0 + 4096)
         args = (fr, ilx, c['b'][sl], c['iy'][sl], c['ix'][sl], c['x'][sl], c['y'][sl], nbr, p[sl])
-        oh = H2.head_apply(head, col, *args)
+        oh = EM.apply_to_candidates(head, col, *args)
         r = {k: oh[k].float() for k in ('I', 'L', 'x', 'y', 'lsxy', 'bg')}
-        r.update(SCM.head_z(head, oh))           # 3D heads: z, lsz, bz (NaN for 2D checkpoints)
+        r.update(EM.head_z(head, oh))           # 3D networks: z, lsz, bz (NaN for 2D checkpoints)
         if pf_head is not None:
-            oa = H2.head_apply(pf_head, col, *args)
+            oa = EM.apply_to_candidates(pf_head, col, *args)
             r.update(pf_x=oa['x'].float(), pf_y=oa['y'].float(), pf_lsxy=oa['lsxy'].float(), pf_I=oa['I'].float(), pf_L=oa['L'].float())
         outs.append(r)
     out = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
@@ -65,7 +58,7 @@ def front_out(F, o, il, col, pf_head=None):
 
 def gauge_shift(pe, pt):
     """common per-angle phase error of the estimate (at the window centre) -> translation K^-1 e [nb,2]"""
-    from simcode import core as C
+    from simcode.solve import pattern as C
     ang = IL.angle_of(pt)
     cx = cy = (S - 1) / 2
     ph = lambda q: q[..., 2] - q[..., 0] * cx - q[..., 1] * cy           # phase offset at the centre
@@ -90,7 +83,7 @@ def main():
     ap.add_argument('--fronts', default='p1,p2L')     # names in FRONTS, or name=det.pt:head.pt
     ap.add_argument('--ntarget', type=int, default=3500)
     ap.add_argument('--pert', type=int, default=0)
-    ap.add_argument('--pert_model', default='v1')  # illum.MODELS ('real' = the p2_head_long training error model)
+    ap.add_argument('--pert_model', default='v1')  # illumination.MODELS ('real' = the p2_head_long training error model)
     ap.add_argument('--tag', default='')
     ap.add_argument('--p2', default='')           # override 'det,head' of the p2 front
     ap.add_argument('--out', default=OUT)
@@ -98,7 +91,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     CD.a.calib = GA.gate_calib()
     sim, _, _ = CD.models(6)
-    col = SCM.PSFCol(sim)
+    col = EM.PSFCol(sim)
     if a.p2: FRONTS['p2'] = tuple(a.p2.split(','))
     FR = {}
     pf_head = None
@@ -109,9 +102,9 @@ def main():
         fronts.append(f)
     for f in fronts:
         dp, hp = FRONTS[f]
-        det, needs = H2.load_det(dp)
-        FR[f] = (det, needs, load_head(hp), f != 'ctl')
-        if f == 'p2': pf_head = SCM.load(H2.SC5NB)
+        det, _ = DM.load(dp)
+        FR[f] = (det, EM.load(hp), f != 'ctl')
+        if f == 'p2': pf_head = EM.load(_cfg.model(_cfg.HEAD))
     for sc in a.scen.split(','):
         for seed in [int(s) for s in a.seeds.split(',')]:
             fns = {f: f'{a.out}/{sc}__s{seed}_{f}{a.tag}.npz' for f in FR}

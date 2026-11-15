@@ -1,153 +1,39 @@
 """
-det_up2 / det_n1 (2026-11-09): pattern-free detector with an optional 2x-upsampled output grid, trained on the
-experiment-matched simulator (simcode/hd/realsim.py via a copy of hd/data.Gen.batch) with the critic-29 mix.
+Trainer of the detector (detector/model.Detector), pass 1 and pass 2 (one trainer; the pass follows from the checkpoint,
+see --illum).
 
-Model (DetUp): the det_stem backbone (simcode/det/model.DetNet, inp 'stem', ch 48/96/160) unchanged; output head
-  up = 1 : the DetNet head (native 108 nm grid) -> det_n1 (native control on the same data)
-  up = 2 : last decoder features (48 ch, native) -> conv 3x3 48 -> 4*32 + PixelShuffle(2) -> 32 ch on the 2H x 2W grid
-           (54 nm cells) -> concat a bilinear 2x copy of the decoder features (48 ch) -> conv 3x3 + GELU -> 1x1 -> 4 maps
-  per cell: logit, offset (dx, dy) in NATIVE px relative to the cell centre (tanh range 1.5 / up), log-sigma (native px).
-  Fine cell j (per axis) covers native coordinates [j/up - 0.5, (j+1)/up - 0.5): centre c_j = (j + 0.5)/up - 0.5.
-Selection (select): sub-pixel greedy NMS (model.select_subpixel) on the cell grid with radius given in NATIVE px
-  (default 0.7 for up 1, 0.4 for up 2), window win cells; returns native-px points; iy / ix = the native pixel
-  containing the point (round), so the downstream SCHead patch gather is unchanged.
-Targets: model.data.assign on the cell grid (GT coordinates mapped to cell units; a colliding emitter takes the nearest
-  free 8-neighbour cell); positives need >= 1 on-frame and >= 60 window photons, others 'don't care'.
-Loss: focal BCE (as det.train) with per-positive nn-bin weights (sc4.nn_weights: < 1.5 / 1.5-2.5 / 2.5-4 / > 4 px carry
-  0.15 / 0.25 / 0.25 / 0.35 of each window's positive weight; nn over all active GT emitters) + the same per-cell
-  Gaussian NLL offset loss as det_stem (weighted by the same nn weights), w_off 1.
-Data (batch): realsim presets 0.5 / 2.5 nM per batch (as hd/data.Gen), density log-uniform 0.0005-0.04 /px, per-window
-  median per-frame brightness log-uniform 40-2500 (half the windows) / per-emitter log-uniform em_photons (other half),
-  pair_frac 0.25 with pair separations uniform 0.3-3.0 px (random direction), bg / bgmode / depth as Gen.batch.
-usage: CUDA_VISIBLE_DEVICES=2 python -m simcode.det.up2 train --up 2 --out runs/det_up2
+Targets (simulate/targets.detector_targets) on the native grid: positives need >= 1 on-frame and >= 60 window photons, others
+'don't care'; a colliding emitter takes the nearest free 8-neighbour cell. Loss: focal BCE (focal_w) with per-positive nn-bin
+weights (simulate/targets.nn_weights: < 1.5 / 1.5-2.5 / 2.5-4 / > 4 px carry 0.15 / 0.25 / 0.25 / 0.35 of each window's
+positive weight; nn over all active GT emitters) + the per-cell Gaussian NLL of the offset (same weights), x --w_off.
+Pass 1 (illum 0): TrainingBatches.detector_batch (the acquisition simulator: presets 0.5 / 2.5 nM per batch, density
+  log-uniform 0.0005-0.04 /px, per-window median per-frame brightness log-uniform 40-2500 / per-emitter EM_PHOTONS, pairs
+  0.3-3.0 px). --nnw 0: unit weights.
+Pass 2 (illum 1): the pass-1 detector + illumination inputs, zero-initialised from a pass-1 --init (starts exactly at it) or
+  continued from a pass-2 --init; batches alternate TrainingBatches.illumination_batch mix 'paper' (label-unit brightness +
+  bright tail) and 'det' (the pass-1 photon mix), pairs 0.3-3.0 px, perturbed pattern estimates as input, generic patterns in a
+  share 1 - --p_std of the FOVs. Held-out: fixed seeded batches (make_pattern_hold), recall at p >= 0.5 per nn bin and FP per
+  window, with the pass-1 detector --pass1_ref on the same batches as reference (eval_ref.json).
+--illum: default = that of --init (0 without --init). Pass 2 without --init starts from the default model's pass-1 detector.
+Checkpoints {'model', 'args' (ch, stem_ch, up = 1, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/det --calib <psf.json> ...
+       CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/p2det --illum 1 --init runs/det/final.pt --calib <psf.json> ...
+       python -m simcode.detector.train --check 1          (zero-init check: a pass-2 detector from a pass-1 one == that detector)
+       python -m simcode.detector.train --stats 40         (pass-1 training-mix statistics: target photons, nn bins)
+(models/README.md: the recipe of a model.)
 """
-import argparse, json, math, os, sys, time
-import torch
-import torch.nn as nn
+import argparse, json, os, time
+import numpy as np, torch
 import torch.nn.functional as F
 from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
-from simcode.det.model import DetNet, select_subpixel, n_params
+from simcode import config
+from simcode.detector.model import Detector, build, is_pass2, n_params
+from simcode.detector.select import select_points
+from simcode.simulate.targets import detector_targets, gt_nn, nn_weights
 
 dev = 'cuda'
-
-
-class DetUp(DetNet):
-    def __init__(self, up=2, T=6, ch=(48, 96, 160), stem_ch=16, fch=32):
-        super().__init__(T, 'stem', ch, stem_ch, dxy_range=1.5 / up)
-        self.up = up
-        c0 = ch[0]
-        if up > 1:
-            del self.head
-            self.shuf = nn.Sequential(nn.Conv2d(c0, fch * up * up, 3, padding=1), nn.PixelShuffle(up))
-            self.fhead = nn.Sequential(nn.Conv2d(fch + c0, 48, 3, padding=1), nn.GELU(), nn.Conv2d(48, 4, 1))
-            nn.init.constant_(self.fhead[-1].bias, 0.0)
-            with torch.no_grad():
-                self.fhead[-1].bias[0] = -5.0
-
-    def features(self, frames):
-        x = F.gelu(self.cin(self.make_input(frames)))
-        s0 = self.e0(x)
-        s1 = self.e1(self.d1(F.gelu(s0)))
-        x = self.e2(self.d2(F.gelu(s1)))
-        x = F.interpolate(self.u1(F.gelu(x)), scale_factor=2, mode='bilinear', align_corners=False) + s1
-        x = self.r1(x)
-        x = F.interpolate(self.u0(F.gelu(x)), scale_factor=2, mode='bilinear', align_corners=False) + s0
-        return self.r0(x)
-
-    def forward(self, frames):
-        if self.up == 1:
-            return super().forward(frames)
-        B, T, H, W = frames.shape
-        ph, pw = (-H) % 4, (-W) % 4
-        if ph or pw:
-            frames = F.pad(frames, (0, pw, 0, ph), mode='replicate')
-        x = F.gelu(self.features(frames))
-        u = self.up
-        f = torch.cat([F.gelu(self.shuf(x)), F.interpolate(x, scale_factor=u, mode='bilinear', align_corners=False)], 1)
-        o = self.fhead(f)[..., :H * u, :W * u]
-        return dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range,
-                    log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
-
-
-@torch.no_grad()
-def select(out, up, k=640, p_min=0.2, radius=None, win=3, H=None, W=None):
-    """-> dict b, iy, ix (native pixel of the point), x, y (native px), logit, iyf, ixf (cell); entries with
-    logit -inf are below p_min."""
-    if radius is None: radius = 0.7 if up == 1 else 0.4
-    lg = out['logit'].float(); dxy = out['dxy'].float() * up           # offsets in cell units for the NMS
-    c = select_subpixel(lg, dxy, k, p_min=p_min, radius=radius * up, win=win)
-    x = (c['x'] + 0.5) / up - 0.5; y = (c['y'] + 0.5) / up - 0.5
-    Hn = lg.shape[1] // up if H is None else H; Wn = lg.shape[2] // up if W is None else W
-    ix = torch.round(x).long().clamp(0, Wn - 1); iy = torch.round(y).long().clamp(0, Hn - 1)
-    if up == 1:
-        ix, iy = c['ix'], c['iy']        # identical to the old pipeline (NMS pixel)
-    return dict(b=c['b'], iy=iy, ix=ix, x=x, y=y, logit=c['logit'], iyf=c['iy'], ixf=c['ix'])
-
-
-def build(args):
-    net = DetUp(args.get('up', 2), 6, tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16), args.get('fch', 32))
-    return net
-
-
-def load(ck, dev='cuda'):
-    from simcode.config import resolve
-    c = torch.load(resolve(ck), map_location=dev, weights_only=False)
-    net = build(c['args']).to(dev); net.load_state_dict(c['model']); net.eval()
-    return net, c['args']
-
-
-# ------------------------------------------------------------------------------------------------ data
-EM_PHOTONS = (40.0, 2500.0)     # per-emitter photons of the per-emitter half of the windows (the trainer's flag value of every model)
-
-
-def batch(gen, nb, dens=(0.0005, 0.04), photons=(40.0, 6000.0), med_photons=(40.0, 2500.0), em_photons=None,
-          pair_frac=0.25, pair_sep=(0.3, 3.0), bgr=(1.0, 30.0)):
-    """copy of simcode/hd/data.Gen.batch with a pair_sep argument (critic-29 mix)"""
-    from simcode.hd.realsim import lu
-    pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
-    rs = gen.pick(pre)
-    g = lambda *s: torch.rand(*s, device=dev)
-    d = lu(*dens, nb); tau = lu(2.0, 80.0, nb)
-    med = lu(*med_photons, nb)
-    em = rs.emitters(nb, dens=d, tau=tau, bright=med, pair_frac=pair_frac, pair_sep=pair_sep)
-    N = len(em['fov'])
-    per_em = (g(nb) < 0.5)[em['fov']]
-    b_em = lu(*(em_photons or photons), N) * torch.exp(-(em['z'] - rs.p['z_med']) / rs.sim.tirf)
-    em['bright'] = torch.where(per_em, b_em, em['bright']).clamp(photons[0] * 0.3, photons[1] * 3)
-    u = torch.rand(1).item()
-    mode = 'flat' if u < 0.2 else ('struct' if u < 0.5 else 'fluct')
-    b0 = lu(*bgr, nb)
-    sdf = 0.4 * g(nb)
-    dep = 0.5 + 0.5 * torch.rand(1).item()
-    save = dict(rs.p)
-    rs.p['depth'] = (dep, min(1.0, dep + 0.03))
-    try:
-        o = rs.scene(nb, em=em, bgmode=mode, bg=b0, bg_sd=sdf * b0, bg_hp=0.05 * g(nb) * b0,
-                     fluct=1.5 * torch.rand(1).item() * (b0 / 11.7).sqrt())
-    finally:
-        rs.p.clear(); rs.p.update(save)
-    o['preset'] = pre
-    return o
-
-
-def gt_nn(gt):
-    """nearest-neighbour distance (px) among the active GT emitters of the same window"""
-    act = gt['onf'].sum(1) > 0
-    x, y, f = gt['x'], gt['y'], gt['fov']
-    nn_ = torch.full_like(x, 1e3)
-    D = (x[:, None] - x[None]) ** 2 + (y[:, None] - y[None]) ** 2
-    ok = (f[:, None] == f[None]) & act[None] & ~torch.eye(len(x), dtype=torch.bool, device=x.device)
-    D = torch.where(ok, D, torch.full_like(D, 1e6))
-    if len(x): nn_ = D.min(1).values.sqrt()
-    return nn_
-
-
-def targets(o, up, H, W):
-    from simcode.det import data as D
-    gt = o['gt']
-    g2 = dict(gt, x=(gt['x'] + 0.5) * up - 0.5, y=(gt['y'] + 0.5) * up - 0.5)
-    label, ign, tid, off = D.assign(g2, o['nb'], H * up, W * up)
-    return label, ign, tid, off / up                                    # offsets in native px
+# defaults that differ between the passes (None in the parser)
+DEFAULTS = {0: dict(lr=1e-3, seed=0), 1: dict(lr=3e-4, seed=11)}
 
 
 def focal_w(logits, label, ign, wpos, gamma=2.0, alpha=0.75):
@@ -158,67 +44,159 @@ def focal_w(logits, label, ign, wpos, gamma=2.0, alpha=0.75):
     return (w * (1 - pt) ** gamma * ce).sum() / label.sum().clamp(min=1)
 
 
-def _cfg_resolve(c):
-    from simcode.config import resolve
-    return resolve(c)
+def load_for_training(ck, illum):
+    """detector to train from checkpoint ck: illum = a pass-2 detector (from a pass-1 checkpoint: the illumination weights
+    zero, it starts exactly at that detector; from a pass-2 one: continued)"""
+    c = torch.load(config.resolve(ck), map_location=dev, weights_only=False)
+    p2 = is_pass2(c['model'])
+    if p2 and not illum: raise ValueError(f'{ck}: a pass-2 detector cannot be trained as a pass-1 detector')
+    if illum:
+        net = Detector(illum=True).to(dev)
+        if p2: net.load_state_dict(c['model'])
+        else: net.load_pass1(c['model'])
+        return net
+    net = build(c.get('args')).to(dev); net.load_state_dict(c['model'])
+    return net
 
 
-def train(argv):
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--out', required=True)
+# ------------------------------------------------------------------------------------------------ pass-2 held-out
+def make_pattern_hold(gen, n=24, nb=16, seed=777):
+    H = []
+    with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
+        torch.manual_seed(seed)
+        for i in range(n):
+            o = gen.illumination_batch(nb, mix='paper', pair_sep=(0.3, 3.0))
+            H.append(dict(frames=o['frames'], illum=o['illum_p2'], gt={k: v for k, v in o['gt'].items()}, nb=nb))
+    return H
+
+
+@torch.no_grad()
+def eval_pattern_hold(net, H, thr=0.5):
+    """recall (1 px, one-to-one, targets >= 1 on-frame, >= 200 window photons, interior) per nn bin x photon bin, FP / window"""
+    from simcode.benchmark.gate_report import match
+    was = net.training; net.eval()
+    rec = {}; nfp = 0; nw = 0
+    for h in H:
+        fr = h['frames']; S = fr.shape[-1]
+        with torch.autocast('cuda', dtype=torch.bfloat16):
+            out = net(fr, h['illum']) if net.illum else net(fr)
+        c = select_points(out, k=640, p_min=thr)
+        keep = torch.isfinite(c['logit'])
+        b, x, y = c['b'][keep].cpu().numpy(), c['x'][keep].cpu().numpy(), c['y'][keep].cpu().numpy()
+        G = h['gt']; act = G['onf'].sum(1) > 0
+        gx, gy, gf = G['x'][act].cpu().numpy(), G['y'][act].cpu().numpy(), G['fov'][act].cpu().numpy()
+        ph = G['phot'][act].sum(1).cpu().numpy()
+        nnd = gt_nn({k: v[act] for k, v in G.items()}).cpu().numpy()
+        og = match(gf, gx, gy, b, x, y, 1.0)
+        hit = np.zeros(len(gx), bool); hit[og[og >= 0]] = True
+        inter = (gx >= 4) & (gx < S - 4) & (gy >= 4) & (gy < S - 4)
+        tgt = inter & (ph >= 200)
+        oin = (x >= 4) & (x < S - 4) & (y >= 4) & (y < S - 4)
+        fp = (og < 0) & oin
+        nfp += int(fp.sum()); nw += h['nb']
+        for nm, (a, bb) in (('nn<1', (0, 1)), ('nn1-1.5', (1, 1.5)), ('nn1.5-2.5', (1.5, 2.5)), ('nn>2.5', (2.5, 1e9))):
+            for pl, phh in ((200, 700), (700, 2000), (2000, 1e9)):
+                m = tgt & (nnd >= a) & (nnd < bb) & (ph >= pl) & (ph < phh)
+                k = f'{nm}|{pl}-{phh:.0f}'
+                r = rec.setdefault(k, [0, 0]); r[0] += int(hit[m].sum()); r[1] += int(m.sum())
+    if was: net.train()
+    return dict(recall={k: (v[0] / max(v[1], 1), v[1]) for k, v in rec.items()}, fp_per_win=nfp / max(nw, 1))
+
+
+# ------------------------------------------------------------------------------------------------ training
+def parser():
+    ap = argparse.ArgumentParser(description='trainer of the detector (pass 1 and pass 2)')
+    ap.add_argument('--out', default='')
+    ap.add_argument('--illum', type=int, default=None, help='1: pass-2 detector (illumination inputs); default: that of --init')
+    ap.add_argument('--init', default='', help='start checkpoint (pass-1 or pass-2 detector; pass 2 default: the default model\'s detector)')
+    ap.add_argument('--pass1_ref', default='', help='pass 2: pass-1 detector of the held-out reference (default: --init if it is a '
+                    'pass-1 detector, else the default model\'s detector)')
     ap.add_argument('--steps', type=int, default=40000)
     ap.add_argument('--batch', type=int, default=16)
     ap.add_argument('--size', type=int, default=64)
-    ap.add_argument('--lr', type=float, default=1e-3)
+    ap.add_argument('--lr', type=float, default=None)
     ap.add_argument('--w_off', type=float, default=1.0)
-    ap.add_argument('--nnw', type=int, default=1)
-    ap.add_argument('--seed', type=int, default=0)
-    ap.add_argument('--init', default='')
+    ap.add_argument('--seed', type=int, default=None)
     ap.add_argument('--pct', type=float, default=0.05)
     ap.add_argument('--ckpt_every', type=int, default=5000)
-    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, hd/data.Gen calib)
-    ap.add_argument('--calib', required=True)
-    # (2026-11-12 g13 retrain; '' = the default range) ON-emitter density range 'lo,hi' (/px^2) of the batches
+    # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, simulate/batches.TrainingBatches calib)
+    ap.add_argument('--calib', default='')
+    # ('' = the batch defaults) training ranges 'lo,hi': ON-emitter density (/px^2); pass 2 also the mean on-time (frames)
     ap.add_argument('--dens', default='')
-    a = ap.parse_args(argv)
-    from simcode.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
-    from simcode.hd import data as HD
-    from simcode.hd.sc4 import nn_weights
+    ap.add_argument('--tau', default='')
+    # pass 1
+    ap.add_argument('--nnw', type=int, default=1)
+    # pass 2
+    ap.add_argument('--eval_every', type=int, default=2500)
+    ap.add_argument('--no_illum', type=int, default=0)     # control: same data / schedule, illumination inputs zeroed
+    # pattern draw: generic (any pitch / orientation / phases / frame order / depth / power; simulate/acquisition.AcquisitionSim._generic)
+    # in a share 1 - p_std of the FOVs, the SIMCODE pattern in the others (models/README.md recipe: 0.25, then 0.5 in the last stage)
+    ap.add_argument('--p_std', type=float, default=0.5)
+    ap.add_argument('--check', type=int, default=0, help='1: zero-init check only')
+    ap.add_argument('--stats', type=int, default=0, help='n > 0: training-mix statistics of n pass-1 batches only')
+    return ap
+
+
+def main(argv=None):
+    a = parser().parse_args(argv)
+    if a.check: return check()
+    if a.stats: return stats(a.stats)
+    if not a.out or not a.calib: raise SystemExit('--out and --calib are required')
+    if a.illum is None:
+        a.illum = int(bool(a.init) and is_pass2(torch.load(config.resolve(a.init), map_location='cpu', weights_only=False)['model']))
+    for k, v in DEFAULTS[a.illum].items():
+        if getattr(a, k) is None: setattr(a, k, v)
+    from simcode.util.proctitle import auto; auto('train-p2det' if a.illum else 'train-det')     # name in nvidia-smi / ps
+    (train_pass2 if a.illum else train_pass1)(a)
+
+
+def weights(o, label, tid, nnw=True):
+    """per-positive nn-bin weights (unit weights with nnw False) and their map"""
+    pm = label > 0
+    w = torch.ones(int(pm.sum()), device=dev)
+    if nnw and pm.any():
+        gi = tid[pm]
+        w = nn_weights(o['gt']['fov'][gi], gt_nn(o['gt'])[gi])
+    wmap = torch.zeros_like(label); wmap[pm] = w
+    return pm, w, wmap
+
+
+def loss_of(out, label, ign, off, pm, w, wmap, w_off):
+    lg = out['logit'].float(); dxy = out['dxy'].float(); ls = out['log_sig'].float()
+    l_det = focal_w(lg, label, ign, wmap)
+    e = None
+    if pm.any():
+        e = (dxy - off).permute(0, 2, 3, 1)[pm]
+        s = ls[pm][:, None]
+        l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
+    else:
+        l_off = torch.zeros((), device=dev)
+    return l_det + w_off * l_off, l_det, l_off, e, lg
+
+
+def train_pass1(a):
+    from simcode.simulate.batches import TrainingBatches, EM_PHOTONS
     os.makedirs(a.out, exist_ok=True)
     args = vars(a); args.update(up=1, ch=[48, 96, 160], stem_ch=16, fch=32)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    gen = HD.Gen(a.size, a.size, 6, seed=a.seed, calib=[_cfg_resolve(c) for c in a.calib.split(',')])
+    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
     net = build(args).to(dev)
     if a.init:
-        net.load_state_dict(torch.load(__import__('simcode.config', fromlist=['x']).resolve(a.init), map_location=dev, weights_only=False)['model'])
+        net.load_state_dict(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'])
     print('params', n_params(net), flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)
     log = open(a.out + '/log.jsonl', 'a')
-    t0 = time.time(); S = a.size; up = 1
+    t0 = time.time(); S = a.size
     for step in range(a.steps + 1):
         with torch.no_grad():
-            o = batch(gen, a.batch, em_photons=EM_PHOTONS, **({'dens': tuple(float(v) for v in a.dens.split(','))} if a.dens else {}))
-            label, ign, tid, off = targets(o, up, S, S)
-            pm = label > 0
-            w = torch.ones(int(pm.sum()), device=dev)
-            if a.nnw and pm.any():
-                gi = tid[pm]
-                nnd = gt_nn(o['gt'])[gi]
-                w = nn_weights(o['gt']['fov'][gi], nnd)
-            wmap = torch.zeros_like(label); wmap[pm] = w
+            o = gen.detector_batch(a.batch, em_photons=EM_PHOTONS, **({'dens': tuple(float(v) for v in a.dens.split(','))} if a.dens else {}))
+            label, ign, tid, off = detector_targets(o, 1, S, S)
+            pm, w, wmap = weights(o, label, tid, a.nnw)
         with torch.autocast('cuda', dtype=torch.bfloat16):
             out = net(o['frames'])
-        lg = out['logit'].float(); dxy = out['dxy'].float(); ls = out['log_sig'].float()
-        l_det = focal_w(lg, label, ign, wmap)
-        if pm.any():
-            e = (dxy - off).permute(0, 2, 3, 1)[pm]
-            s = ls[pm][:, None]
-            l_off = ((0.5 * (e / s.exp()) ** 2 + s).sum(1) * w).sum() / w.sum().clamp(min=1e-6)
-        else:
-            l_off = torch.zeros((), device=dev)
-        loss = l_det + a.w_off * l_off
+        loss, l_det, l_off, e, lg = loss_of(out, label, ign, off, pm, w, wmap, a.w_off)
         opt.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0)
@@ -236,19 +214,70 @@ def train(argv):
     ckpt_save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
 
 
-def stats(argv):
-    """training-mix statistics: target photon fraction in 500-5k, nn-bin fractions"""
-    ap = argparse.ArgumentParser(); ap.add_argument('--n', type=int, default=40); ap.add_argument('--em_photons', default='40,6000')
-    a = ap.parse_args(argv)
-    from simcode.util.proctitle import auto; auto('train-det')     # recognizable name in nvidia-smi / ps
-    from simcode.hd import data as HD
+def train_pass2(a):
+    from simcode.simulate.batches import TrainingBatches
+    from simcode.detector.model import load as load_det
+    init = a.init or config.DET
+    if not a.pass1_ref:
+        a.pass1_ref = config.DET if is_pass2(torch.load(config.resolve(init), map_location='cpu', weights_only=False)['model']) else init
+    os.makedirs(a.out, exist_ok=True)
+    args = vars(a); args.update(up=1, ch=[48, 96, 160], stem_ch=16)
+    json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
+    torch.manual_seed(a.seed)
+    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], p_std=a.p_std)
+    psub = {}
+    if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
+    if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))
+    net = load_for_training(init, True)
+    print('params', n_params(net), flush=True)
+    Hd = make_pattern_hold(gen)
+    if a.no_illum:
+        for h in Hd: h['illum'] = torch.zeros_like(h['illum'])
+    n1, _ = load_det(a.pass1_ref)
+    ref = eval_pattern_hold(n1, Hd); del n1
+    ev0 = eval_pattern_hold(net, Hd)
+    json.dump(dict(pass1_ref=ref, pass2_init=ev0), open(a.out + '/eval_ref.json', 'w'), indent=1)
+    print('REF pass-1 detector', json.dumps(ref), '\nINIT pass 2', json.dumps(ev0), flush=True)
+    opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
+    sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)
+    log = open(a.out + '/log.jsonl', 'a'); elog = open(a.out + '/eval.jsonl', 'a')
+    t0 = time.time(); S = a.size
+    for step in range(a.steps + 1):
+        with torch.no_grad():
+            mix = 'paper' if step % 2 == 0 else 'det'
+            o = gen.illumination_batch(a.batch, mix=mix, pair_sep=(0.3, 3.0), **psub)
+            label, ign, tid, off = detector_targets(o, 1, S, S)
+            pm, w, wmap = weights(o, label, tid)
+        with torch.autocast('cuda', dtype=torch.bfloat16):
+            out = net(o['frames'], o['illum_p2'] * (0.0 if a.no_illum else 1.0))
+        loss, l_det, l_off, e, lg = loss_of(out, label, ign, off, pm, w, wmap, a.w_off)
+        opt.zero_grad(set_to_none=True)
+        if torch.isfinite(loss):
+            loss.backward(); torch.nn.utils.clip_grad_norm_(net.parameters(), 1.0); opt.step()
+        sched.step()
+        if step % 250 == 0:
+            r = dict(step=step, t=round(time.time() - t0), loss=loss.item(), det=l_det.item(), off=l_off.item(), n_pos=int(pm.sum()),
+                     lr=sched.get_last_lr()[0], mem_gb=round(torch.cuda.max_memory_allocated() / 1e9, 2),
+                     w_il=float(net.cin_il.weight.abs().mean()), w_st=float(net.stem[0].weight[:, 1:].abs().mean()))
+            log.write(json.dumps(r) + '\n'); log.flush(); print(json.dumps(r), flush=True)
+        if step % a.eval_every == 0 and step > 0:
+            ev = eval_pattern_hold(net, Hd)
+            elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
+            print('EVAL', step, json.dumps(ev), flush=True)
+        if step % a.ckpt_every == 0 and step > 0:
+            ckpt_save(dict(model=net.state_dict(), args=args, step=step), a.out + f'/ckpt_{step}.pt')
+    ckpt_save(dict(model=net.state_dict(), args=args, step=a.steps), a.out + '/final.pt')
+
+
+def stats(n):
+    """pass-1 training-mix statistics: target photon fraction in 500-5k, nn-bin fractions"""
+    from simcode.simulate.batches import TrainingBatches, EM_PHOTONS
     torch.manual_seed(7)
-    gen = HD.Gen(64, 64, 6, seed=0)
-    emp = tuple(float(v) for v in a.em_photons.split(','))
+    gen = TrainingBatches(64, 64, 6, seed=0)
     P, NN = [], []
-    for i in range(a.n):
-        o = batch(gen, 16, em_photons=emp)
-        label, ign, tid, off = targets(o, 1, 64, 64)
+    for i in range(n):
+        o = gen.detector_batch(16, em_photons=EM_PHOTONS)
+        label, ign, tid, off = detector_targets(o, 1, 64, 64)
         gi = tid[label > 0]
         P.append(o['gt']['phot'].sum(1)[gi]); NN.append(gt_nn(o['gt'])[gi])
     P = torch.cat(P); NN = torch.cat(NN)
@@ -258,5 +287,20 @@ def stats(argv):
         print(f'nn {lo}-{hi}', float(((NN >= lo) & (NN < hi)).float().mean()))
 
 
+def check():
+    """zero-init check: a pass-2 detector from the default model's pass-1 detector == that detector on a realistic batch"""
+    from simcode.simulate.batches import TrainingBatches
+    from simcode.detector.model import load as load_det
+    torch.manual_seed(0)
+    gen = TrainingBatches(64, 64, 6, seed=0, p_std=0.5)
+    o = gen.illumination_batch(4)
+    n1, _ = load_det(config.DET); p2 = load_for_training(config.DET, True).eval()
+    with torch.no_grad():
+        a = n1(o['frames']); b = p2(o['frames'], o['illum_p2'])
+    print('max |dlogit|', float((a['logit'] - b['logit']).abs().max()), 'max |ddxy|', float((a['dxy'] - b['dxy']).abs().max()))
+    print('illum maps', o['illum_p2'].shape, float(o['illum_p2'][:, :6].std()), float(o['illum_p2'][:, 6:].std()))
+    print('patt err phase', float((o['patt_p2'][..., 2] - o['patt'][..., 2]).std()), 'depth', float((o['patt_p2'][..., 3] - o['patt'][..., 3]).mean()))
+
+
 if __name__ == '__main__':
-    {'train': train, 'stats': stats}[sys.argv[1]](sys.argv[2:])
+    main()

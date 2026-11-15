@@ -20,7 +20,7 @@ import numpy as np, torch
 from simcode.psf import VectorialPSF
 from simcode.psf import solve_linear
 from simcode import config
-from simcode.insitu import out
+from simcode.calibration import out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--tracks', default=out('tracks_0.5nM.npz'))

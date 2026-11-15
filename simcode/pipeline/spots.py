@@ -3,8 +3,8 @@
 used (6-frame moving sums, one window per frame start); the procedure is analysis/nanoruler/quick_smlm.py as a function:
 smoothed (sigma 1.5 px) difference to the per-chunk temporal median of the sums, local maxima (7 x 7) above thr x robust
 noise, Poisson Levenberg-Marquardt fit of x, y, I, bg, sigma of a pixel-integrated Gaussian on an R x R ROI.
-Coordinates: x = column, y = row, pixel centres at integers (as the pipeline and simcode/insitu).
-Chunks of 600 window starts are the units of simcode.fileio.work.Units (resumable); merged into a Picasso-style hdf5 'locs'."""
+Coordinates: x = column, y = row, pixel centres at integers (as the pipeline and simcode/calibration).
+Chunks of 600 window starts are the units of simcode.io.work.Units (resumable); merged into a Picasso-style hdf5 'locs'."""
 import os
 import numpy as np, torch, torch.nn.functional as Fn
 
@@ -87,8 +87,8 @@ def find_chunk(reader, c0, c1, gain, offset, nsum=6, thr=5.0, R=11, sigma0=1.3, 
 
 
 def run(movie, work, gain, offset, maxframe=30000, nsum=6, thr=5.0, R=11, sigma0=1.3, chunk=600, claim=False, dev='cuda', log=print):
-    from simcode.fileio.movie import open_movie
-    from simcode.fileio.work import Units
+    from simcode.io.movie import open_movie
+    from simcode.io.work import Units
     M = open_movie(movie)
     N = min(maxframe, M.n - nsum + 1)
     keys = list(range(0, N, chunk))

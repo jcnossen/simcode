@@ -1,8 +1,8 @@
 """
-Several GPUs = the same command once per GPU. Each copy claims its units (simcode.fileio.work.Units with claiming on), so the
+Several GPUs = the same command once per GPU. Each copy claims its units (simcode.io.work.Units with claiming on), so the
 copies share the work without a list being split beforehand, and a copy that dies is replaced by restarting the launcher.
 
-  python -m simcode.fileio.launch --gpus 1,2 [--log <prefix>] -- <command ...>
+  python -m simcode.io.launch --gpus 1,2 [--log <prefix>] -- <command ...>
 
 Starts <command> once per GPU with CUDA_VISIBLE_DEVICES set, waits for all copies and returns the largest exit code.
 --log <prefix>: stdout / stderr of each copy go to <prefix>_gpu<g>.log (appended); default: inherited.

@@ -32,7 +32,7 @@ g(u), u = the per-10-px-tile rank quantile of the calibrated sigma (tile_rank; c
 strict_u column; docs/CLEANUP_LOG.md.)
 The crop (x0, y0, size px) is the output region of the run: read from the run's pass-1 files (their 'crop' entry) unless
 --crop is given; (5, 5, 110) if neither is available.
-usage: python -m simcode.strict <out dir> [--tag est|est2] [--drift drift.npy] [--format npz,csv] [--sigma_max nm]
+usage: python -m simcode.table <out dir> [--tag est|est2] [--drift drift.npy] [--format npz,csv] [--sigma_max nm]
                                 [--subset 12,14] [--sig_u <json>] [--crop x0,y0,size]
 """
 import argparse, glob, json, os
@@ -134,7 +134,7 @@ def subset_name(max_precision_nm=SIGMA_MAX_NM):
 def write_subset(T, path_base, max_precision_nm=SIGMA_MAX_NM, crop=None, px_nm=None):
     """rows of select(T, max_precision_nm) as a small table <path_base>_sig<X>.npz (sel = True, x, y, frame, sx, sy, photons,
     scalar sigma_max) -> file name"""
-    from simcode.fileio.work import atomic_savez
+    from simcode.io.work import atomic_savez
     k = select(T, max_precision_nm, crop=crop, px_nm=px_nm)
     fn = f'{path_base}_{subset_name(max_precision_nm)}.npz'
     atomic_savez(fn, sel=np.ones(int(k.sum()), bool), x=T['x'][k], y=T['y'][k], frame=T['frame'][k], sx=T['sx'][k], sy=T['sy'][k],
@@ -173,7 +173,7 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
         # 3D heads (2026-11-14): z (px of the lateral pixel, relative to the PSF calibration's focal plane) after the solve, its
         # sd and covariances with x, y (px^2); NaN for 2D heads. Pass 1 (est): the pass-1 head's z conditioned on the pass-1
         # solved x, y. Pass 2 (est2): the LINKED PASS-1 candidate's z prior conditioned on the pass-2 solved x, y
-        # (sc.pass1_z_columns; NaN for rows without a pass-1 partner, p1_row = -1)
+        # (z_conditioning.pass1_z_columns; NaN for rows without a pass-1 partner, p1_row = -1)
         zinfo = 'pass 1: the pass-1 head z | pass-1 x, y' if not tag.endswith('2') else 'pass 1: the linked pass-1 head z | pass-2 x, y'
         T.update(z=R['z_hy0'].astype(np.float64), sz=R['sz_cal'].astype(np.float32), cov_xz=R['cov_xz'].astype(np.float32),
                  cov_yz=R['cov_yz'].astype(np.float32), z_prior=R['z_prior'].astype(np.float64))
@@ -211,7 +211,7 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
 def write_table(T, info, path_base, formats=('npz',)):
     out = []
     if 'npz' in formats:
-        from simcode.fileio.work import atomic_savez
+        from simcode.io.work import atomic_savez
         atomic_savez(path_base + '.npz', **T, px_nm=np.array(info['px_nm']), sigma_max=np.array(info.get('sigma_max', SIGMA_MAX_NM)))
         out.append(path_base + '.npz')
     if 'csv' in formats:
@@ -255,7 +255,7 @@ def main(argv=None):
     base = os.path.join(a.dest or a.out, a.name or ('locs_p1' if a.tag == 'est' else 'locs_p2' if a.tag == 'est2' else f'locs_{a.tag}'))
     files = write_table(T, info, base, a.format.split(','))
     files += [write_subset(T, base, s, crop=info['crop'], px_nm=px) for s in subset_thresholds(a.subset)]
-    from simcode.fileio.work import atomic_json
+    from simcode.io.work import atomic_json
     atomic_json(base + '_info.json', info, indent=1, default=str)
     print(json.dumps({k: v for k, v in info.items() if k != 'columns'}, default=str))
     print('written', *files)
@@ -264,9 +264,9 @@ def main(argv=None):
         import sys
         from simcode.util import runconfig as RC
         name = os.path.basename(base)
-        RC.log_command(a.out, 'simcode.strict', argv)
+        RC.log_command(a.out, 'simcode.table', argv)
         RC.append_step(a.out, dict(
-            step='strict', time=RC.now(), command='python -m simcode.strict ' + ' '.join(sys.argv[1:] if argv is None else argv),
+            step='strict', time=RC.now(), command='python -m simcode.table ' + ' '.join(sys.argv[1:] if argv is None else argv),
             settings=dict(out=os.path.abspath(a.out), tag=a.tag, name=name, dest=os.path.abspath(a.dest) if a.dest else '', px_nm=px,
                           drift=os.path.abspath(a.drift) if a.drift else '', sig_u=a.sig_u, sigma_max=a.sigma_max,
                           subset=a.subset, format=a.format, crop=info['crop'], p_good=P_GOOD),

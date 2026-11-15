@@ -3,13 +3,13 @@ Source: SIMCODE v2 pass-1 chunk files (pass1_<f0>.npz: network per-frame intensi
 photon normalisation, i.e. the normalisation of the PSF the baselines are trained / fitted with), rows p >= 0.63, inside the
 crop, disjoint windows (wstart % 6 == 0), every 4th chunk.  Per 6-frame sum: photons (sum of the 6 I_t), bg (sum of the 6
 per-frame bg, photons / px), emitters per 40 x 40 px window (= DECODE's training frame), on-time in sums (from the linked
-disjoint-window events, simcode.evalproto.lib.link_events).
+disjoint-window events, simcode.evaluation.metrics.link_events).
 usage: python analysis/baselines/decode/real_stats_paper2.py [out.json]"""
 import os, sys, glob, json
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, REPO)
-from simcode.evalproto.lib import link_events
+from simcode.evaluation.metrics import link_events
 
 RUNS = {'1809_2': f'{REPO}/out/paper/1809_2/v2/run_default', '2.5nM_2': f'{REPO}/out/full_2.5nM_m2_p2L_real',
         '20nM_2': f'{REPO}/out/full_20nM_m2_fast'}

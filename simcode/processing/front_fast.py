@@ -1,7 +1,7 @@
 """
-Fast versions of the sc front-end chunks (2026-11-10, throughput; the pipeline's code path). Same networks, same
-candidate rules, same outputs and file formats as the reference implementations simcode/pipeline/sc_front.py (pass 1,
-pattern solve) and simcode/p2/front.py (pattern-aware pass 2), which are kept as the test oracle (tests/test_fast_paths.py).
+Fast versions of the per-chunk fronts (2026-11-10, throughput; the pipeline's code path). Same networks, same
+candidate rules, same outputs and file formats as the reference implementations simcode/processing/front.py (pass 1,
+pattern solve) and simcode/processing/pass2_front.py (pattern-aware pass 2), which are kept as the test oracle (tests/test_fast_paths.py).
 
 Queued fixed-size batching (shared by pass 1 and pass 2):
   detector  on `det_batch` windows at a time (default 64) -> padded top-k -> neighbour maps from the padded list (no
@@ -9,16 +9,16 @@ Queued fixed-size batching (shared by pass 1 and pass 2):
             detector batch) are appended to a GPU queue of (window index, pixel, sub-pixel point, logit); the chunk's frames
             and neighbour maps stay on the GPU (zero-padded once per chunk), so a queue entry needs no patch storage
   head      drains the queue in fixed batches of `head_batch` (default 1024; the last one padded by repeating the last
-            entry) -> static shapes; patches are gathered from the padded chunk buffers (identical values to sc.patches);
-            pass 2's illumination patches are evaluated analytically per candidate (= illum.illum_maps + zero padding)
+            entry) -> static shapes; patches are gathered from the padded chunk buffers (identical values to layers.blocks.extract_patches);
+            pass 2's illumination patches are evaluated analytically per candidate (= illumination.illum_maps + zero padding)
   streams   detector and head on two CUDA streams (the head of batch k overlaps the detector of batch k+1; the only host
             syncs are the per-detector-batch candidate counts, on the detector stream)
   outputs   written into preallocated GPU tensors, post-processed (time centroid, central / inside / own flags) once per chunk,
             copied to the CPU once per chunk
-  compile   the heads are not compiled (torch.compile of SCHead4 changed the outputs far beyond the bf16 noise on the real
+  compile   the heads are not compiled (torch.compile of EmitterNet changed the outputs far beyond the bf16 noise on the real
             0.5 nM chunk: I up to 275 ph, p99.9 59 ph vs 1.4 ph run-to-run); `compile` ('auto' | 'on' | 'off') applies to the
-            pattern solve's LM step (msolve_fast)
-Pattern solve (the explicit intensity-domain solve; not "pass 2"): simcode/hd/msolve_fast.sc_solve_fast over the whole chunk
+            pattern solve's LM step (solve/solve_fast.py)
+Pattern solve (the explicit intensity-domain solve; not "pass 2"): simcode/solve/solve_fast.solve_emitters_fast over the whole chunk
 in batches of `solve_batch` rows (default 16384).
 Timing keys: read, detector, head, solve (GPU busy time per stage from CUDA events; with streams the stage sums can exceed
 the wall time) + wall.
@@ -27,21 +27,23 @@ import json, time
 import numpy as np, torch
 import torch.nn.functional as F
 from simcode.psf import TiffMovie
-from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
+from simcode.processing.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 PP = 21
 THR0 = 0.2
 from simcode import config as _cfg
-DET_N1 = _cfg.model(_cfg.DET)
+DET = _cfg.model(_cfg.DET)
+P2_DET = _cfg.model(_cfg.P2_DET)
+P2_HEAD = _cfg.model(_cfg.P2_HEAD)
 HEAD = _cfg.model(_cfg.HEAD)
 
 
 # ------------------------------------------------------------------------------------------------ helpers
 def nbr_map_padded(logit, b, iy, ix, x, y, lg):
-    """= simcode.hd.sc4.nbr_map on the kept (finite-logit) entries, computed on the padded top-k list without a boolean
+    """= simcode.emitter.model.nbr_map on the kept (finite-logit) entries, computed on the padded top-k list without a boolean
     compaction (invalid entries: p = sigmoid(-inf) = 0, out-of-range stamp pixels: weight 0 at a clamped index)"""
-    from simcode.hd.sc4 import OFFS, SIG_SPLAT
+    from simcode.emitter.model import OFFS, SIG_SPLAT
     B, H, W = logit.shape
     p = torch.sigmoid(lg.float())
     o = OFFS.to(logit.device)
@@ -58,7 +60,7 @@ def nbr_map_padded(logit, b, iy, ix, x, y, lg):
 
 def gather_patches(bufP, rows, iy, ix, P=PP):
     """bufP [N0, C, H + P - 1, W + P - 1] zero-padded by P // 2; rows [n] (index into N0) or [n, C'] (per-channel rows,
-    e.g. frames s0 + t) -> [n, C', P, P]; = sc.patches on the unpadded buffer"""
+    e.g. frames s0 + t) -> [n, C', P, P]; = layers.blocks.extract_patches on the unpadded buffer"""
     o = torch.arange(P, device=bufP.device)
     yy = (iy[:, None] + o[None])[:, None, :, None]
     xx = (ix[:, None] + o[None])[:, None, None, :]
@@ -70,7 +72,7 @@ def gather_patches(bufP, rows, iy, ix, P=PP):
 
 def illum_patches(PWc, iy, ix, H, W, P=PP):
     """illumination patches [n, 2T, P, P] of the per-candidate window pattern PWc [n, T, 5] at the candidate pixels, as
-    patches(illum.illum_maps(PW, H, W), b, iy, ix) (zero outside the H x W region)"""
+    patches(illumination.illum_maps(PW, H, W), b, iy, ix) (zero outside the H x W region)"""
     h = P // 2
     o = torch.arange(P, device=PWc.device)
     yy = (iy[:, None] + o[None] - h).float()[:, None, :, None]                 # [n,1,P,1] region rows
@@ -101,21 +103,19 @@ class _Ev:
 
 # ------------------------------------------------------------------------------------------------ queued front-end
 class QueuedFront:
-    """detector -> GPU queue -> fixed-size head batches (see the module doc); heads: dict name -> (module, kind) with kind
-    'sc' (sc.apply_head inputs: patch, off, psf, nbr) or 'p2' (+ illumination patches)"""
+    """detector -> GPU queue -> fixed-size emitter-network batches (see the module doc); heads: dict name -> EmitterNet (a
+    pass-2 network, net.illum, also gets the illumination patches; a pass-2 detector, det.illum, the illumination maps)"""
 
-    def __init__(self, det, needs_il, heads, col, dev='cuda'):
-        self.det, self.needs_il, self.col, self.dev = det, needs_il, col, dev
+    def __init__(self, det, heads, col, dev='cuda'):
+        self.det, self.col, self.dev = det, col, dev
         self.heads = dict(heads)
 
     def _head_call(self, nm, pt, off, nbp, ilp):
-        h, kind = self.heads[nm]
+        h = self.heads[nm]
         psf = self.col(off) if self.col is not None else None
-        if kind == 'p2':
+        if h.illum:
             return h(pt, None, off, psf, nbp, ilp)
-        if getattr(h, 'nbr', False):
-            return h(pt, None, off, psf, nbp)
-        return h(pt, None, off, psf)
+        return h(pt, None, off, psf, nbp)
 
     @torch.no_grad()
     def run(self, frames, starts, k_cand, PWall=None, det_batch=64, head_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
@@ -123,8 +123,8 @@ class QueuedFront:
         """frames [F,S,S] (photons, chunk), starts: window starts (relative frame index), PWall [nW,T,5] (pass 2) ->
         dict of per-candidate GPU tensors (queue order = window order, top-k order within a window, as the originals):
         w (window index), iy, ix, x_det, y_det, logit + per head {name: {out: tensor}}"""
-        from simcode.det.model import select_subpixel
-        from simcode.hd.sc4 import own_stamp
+        from simcode.detector.select import select_subpixel
+        from simcode.emitter.model import own_stamp
         dev = self.dev; ev = ev or _Ev()
         Fn, S, _ = frames.shape; h = PP // 2
         nW = len(starts)
@@ -177,8 +177,8 @@ class QueuedFront:
                 done = ev.rec('detector', s_det)
                 x = torch.stack([frames[starts[i]:starts[i] + T] for i in wi])
                 with torch.autocast('cuda', dtype=torch.bfloat16):
-                    if self.needs_il:
-                        from simcode.p2 import illum as IL
+                    if self.det.illum:
+                        from simcode.pattern import illumination as IL
                         dd = self.det(x, IL.illum_maps(PWall[wi[0]:wi[-1] + 1], S, S))
                     else:
                         dd = self.det(x)
@@ -202,7 +202,7 @@ class QueuedFront:
 
 
 def _flags(I, ws, gx, gy, l0, last_start, crop, own0, own1, dev):
-    """time centroid + the `out` rule of sc_front.run_chunk (central half, first / last loaded window ends, crop, own frames)"""
+    """time centroid + the `out` rule of front.Pass1Front.run_chunk (central half, first / last loaded window ends, crop, own frames)"""
     Ip = I.clamp(min=0)
     tc = (Ip * torch.arange(T, device=dev).float()[None]).sum(1) / Ip.sum(1).clamp(min=1e-3)
     central = (tc >= T / 4 - 0.5) & (tc < 3 * T / 4 - 0.5)
@@ -219,19 +219,19 @@ def _np(r):
 
 
 # ------------------------------------------------------------------------------------------------ pass 1
-class Pass1SCFast:
-    """= sc_front.Pass1SC (same constructor arguments) with the queued front-end"""
+class Pass1FrontFast:
+    """= front.Pass1Front (same constructor arguments) with the queued front-end"""
 
-    def __init__(self, calib_path, head=HEAD, det=DET_N1, dev='cuda'):
-        from simcode.hd import sc as SCM
-        from simcode.sim.simulator import Simulator
-        self.SCM = SCM
-        self.det, _ = SCM.load_det_front(det)
-        self.det.eval()
-        self.head = SCM.load(head)
-        self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
+    def __init__(self, calib_path, head=HEAD, det=DET, dev='cuda'):
+        from simcode.emitter import model as EM
+        from simcode.detector import model as DM
+        from simcode.simulate.simulator import Simulator
+        self.EM = EM
+        self.det, _ = DM.load(det)
+        self.head = EM.load(head)
+        self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
-        self.front = QueuedFront(self.det, False, {'h': (self.head, 'sc')}, self.col, dev)
+        self.front = QueuedFront(self.det, {'h': self.head}, self.col, dev)
 
     @torch.no_grad()
     def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, det_batch=64, head_batch=1024, streams=True,
@@ -252,7 +252,7 @@ class Pass1SCFast:
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
         q = self.front.run(frames, starts, k_cand, det_batch=det_batch, head_batch=head_batch, streams=streams, ev=ev)
-        oh = dict(q['heads']['h']); oh.update(self.SCM.head_z(self.head, oh))
+        oh = dict(q['heads']['h']); oh.update(self.EM.head_z(self.head, oh))
         I = oh['I']
         ws = torch.tensor(starts, device=dev)[q['w']] + l0
         gx, gy = oh['x'] + X0, oh['y'] + Y0
@@ -275,9 +275,9 @@ class Pass1SCFast:
 # ------------------------------------------------------------------------------------------------ pattern solve (pass-1 rows)
 @torch.no_grad()
 def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_batch=16384, timing=None, compile='auto'):
-    """= sc_front.run_chunk_pass2 (same output columns) with msolve_fast.sc_solve_fast, results kept on the GPU until the
+    """= front.run_chunk_pattern_solve (same output columns) with solve_fast.solve_emitters_fast, results kept on the GPU until the
     end of the chunk"""
-    from simcode.hd import msolve_fast as MF
+    from simcode.solve import solve_fast as MF
     timing = timing if timing is not None else {}
     t_ = time.time()
     cal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
@@ -290,8 +290,8 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
     uw, inv = np.unique(ws, return_inverse=True)
     PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
     G = {k: tt(R[k][idx_all]) for k in ('I', 'L', 'x', 'y', 'sx', 'sy', 'x_det', 'y_det')}
-    from simcode.pipeline.sc_front import z_inputs
-    from simcode.hd import sc as SCM
+    from simcode.processing.front import z_inputs
+    from simcode.solve import z_conditioning as ZC
     G.update(z_inputs(R, idx_all, tt))
     binv = torch.tensor(inv, device=dev)
     acc = {k: [] for k in ('r', 's_cal', 'kin', 'p', 'q', 'dnll', 'r_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
@@ -299,8 +299,8 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
         sl = slice(c0, c0 + solve_batch)
         o = dict(I=G['I'][sl], L=G['L'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
                  x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0, z=G['z'][sl], lsz=G['lsz'][sl], bz=G['bz'][sl])
-        so = MF.sc_solve_fast(o, PW, binv[sl], cal, compile=compile)
-        so.update(SCM.z_columns(o, so))
+        so = MF.solve_emitters_fast(o, PW, binv[sl], cal, compile=compile)
+        so.update(ZC.z_columns(o, so))
         for k in acc: acc[k].append(so.get(k, so['r']) if k != 'dnll' else so.get('dnll', torch.full_like(so['q'], float('nan'))))
     A = {k: torch.cat(v).float().cpu().numpy() if v else np.zeros((0, 2) if k in ('r', 's_cal', 'r_map') else 0, np.float32) for k, v in acc.items()}
     out = {}
@@ -325,29 +325,29 @@ def run_chunk_pattern_solve_fast(R, info, pattern, sc_cal, dev='cuda', solve_bat
 
 
 # ------------------------------------------------------------------------------------------------ pattern-aware pass 2
-class Pass2P2Fast:
-    """= p2.front.Pass2P2 (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
+class Pass2FrontFast:
+    """= pass2_front.Pass2Front (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
 
     def __init__(self, calib_path, head=None, det=None, dev='cuda', compile='auto'):
-        from simcode.hd import sc as SCM
-        from simcode.p2 import head2 as H2, front as FR
-        from simcode.sim.simulator import Simulator
-        head = head or FR.HEAD_P2; det = det or FR.DET_P2
-        self.SCM, self.H2 = SCM, H2
-        self.det, self.needs_il = H2.load_det(det)
-        self.head = H2.load(head) if ('p2_head' in head or H2.is_p2_head(head)) else SCM.load(head)
-        self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
+        from simcode.emitter import model as EM
+        from simcode.detector import model as DM
+        from simcode.solve import z_conditioning as ZC
+        from simcode.simulate.simulator import Simulator
+        head = head or P2_HEAD; det = det or P2_DET
+        self.ZC = ZC
+        self.det, _ = DM.load(det)        # a pattern-free (pass-1) detector or network also works (detector-only pass 2)
+        self.head = EM.load(head)
+        self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
-        kind = 'p2' if getattr(self.head, 'p2', False) else 'sc'
-        self.front = QueuedFront(self.det, self.needs_il, dict(h=(self.head, kind)), self.col, dev)
+        self.front = QueuedFront(self.det, dict(h=self.head), self.col, dev)
         self.compile = compile          # pattern solve LM step
 
     @torch.no_grad()
     def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, sc_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64,
                   head_batch=1024, streams=True, solve_batch=16384, timing=None, return_head=False):
         """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: z from pass 1
-        (= p2.front.Pass2P2.run_chunk; sc.pass1_z_columns)"""
-        from simcode.hd import msolve_fast as MF
+        (= pass2_front.Pass2Front.run_chunk; solve/z_conditioning.pass1_z_columns)"""
+        from simcode.solve import solve_fast as MF
         dev = self.dev
         timing = timing if timing is not None else {}
         tw = time.time()
@@ -381,7 +381,7 @@ class Pass2P2Fast:
         for c0 in range(0, len(k_), solve_batch):
             sl = slice(c0, c0 + solve_batch)
             oc = {kk: v[sl] for kk, v in o.items()}
-            so = MF.sc_solve_fast(oc, PWall, bw[sl], scal, compile=self.compile)
+            so = MF.solve_emitters_fast(oc, PWall, bw[sl], scal, compile=self.compile)
             for k in acc: acc[k].append(so[k])
         done()
         so = {k: torch.cat(v) if v else torch.zeros((0, 2) if k in ('r', 's_cal') else 0, device=dev) for k, v in acc.items()}
@@ -393,7 +393,7 @@ class Pass2P2Fast:
                  x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
                  x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
                  frame=fabs[k_], I_net=I[k_])
-        r.update(self.SCM.pass1_z_columns(p1, p1_cal, r['wstart'], r['x_det'], r['y_det'], torch.stack([r['x_hy0'], r['y_hy0']], 1),
+        r.update(self.ZC.pass1_z_columns(p1, p1_cal, r['wstart'], r['x_det'], r['y_det'], torch.stack([r['x_hy0'], r['y_hy0']], 1),
                                           torch.stack([r['sx_cal'], r['sy_cal']], 1)))      # z from pass 1 (the pass-2 head's z is not used)
         R = _np(r); R['wstart'] = R['wstart'].astype(np.int64)
         for k, v in ev.totals().items(): timing[k] = timing.get(k, 0) + v

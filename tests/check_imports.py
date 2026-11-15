@@ -1,7 +1,8 @@
 """
 Static check of the source tree (no GPU, nothing is executed): every tracked .py file must compile, every import of a
-package module (simcode.*) must point at an existing module and name, and every import of a sibling analysis script must
-resolve to a file. Shell scripts and markdown files are scanned for mentions of .py / .sh files that do not exist.
+package module (simcode.*) must point at an existing module and name, every attribute of an imported package module
+(`from simcode.x import y as Y; Y.name`) must be a top-level name of that module, and every import of a sibling analysis
+script must resolve to a file. Shell scripts and markdown files are scanned for mentions of .py / .sh files that do not exist.
 
   python tests/check_imports.py            exit code 0 = clean
 Used after removals / renames (run it directly; pytest does not collect this file).
@@ -68,6 +69,21 @@ def check():
         try: t = ast.parse(src)
         except SyntaxError as e:
             errs.append(f'{f}: syntax error {e}'); continue
+        aliases = {}       # local name -> package module (module objects imported by name)
+        for n in ast.walk(t):
+            if isinstance(n, ast.Import):
+                for a in n.names:
+                    if a.asname and a.name.split('.')[0] == 'simcode' and (mod_path(a.name) or '').endswith('.py'): aliases[a.asname] = a.name
+            elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module and n.module.split('.')[0] == 'simcode':
+                for a in n.names:
+                    p_ = mod_path(n.module + '.' + a.name)
+                    if p_ and p_.endswith('.py'): aliases[a.asname or a.name] = n.module + '.' + a.name
+        for n in ast.walk(t):
+            if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id in aliases:
+                m = aliases[n.value.id]; p_ = mod_path(m)
+                if p_ not in cache: cache[p_] = names_of(p_)
+                if n.attr not in cache[p_] and '__getattr__' not in cache[p_] and not mod_path(m + '.' + n.attr) and not n.attr.startswith('__'):
+                    errs.append(f'{f}:{n.lineno}: {n.value.id}.{n.attr}: {m} has no name {n.attr}')
         for n in ast.walk(t):
             mods = []
             if isinstance(n, ast.Import): mods = [(a.name, None) for a in n.names]

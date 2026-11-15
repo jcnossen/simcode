@@ -8,7 +8,7 @@ import argparse, json, math, pickle
 import numpy as np, torch
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from simcode.psf import VectorialPSF
-from simcode.insitu import SFCFG_05, data, out
+from simcode.calibration import SFCFG_05, data, out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--tracks', default=out('tracks_0.5nM.npz'))

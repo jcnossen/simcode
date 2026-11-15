@@ -1,0 +1,1 @@
+"""The emitter network of pass 1 and pass 2 (model.py: per-candidate intensities with covariance, bg, 3D position prior), its trainer (train.py) and the held-out set of the pass-1 trainer (heldout.py)."""

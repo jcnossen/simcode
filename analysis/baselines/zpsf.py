@@ -85,7 +85,7 @@ class SplinePSF:
 
 
 def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01, angles='avg'):
-    """knot stack of a calib json's VectorialPSF (as simcode.pipeline.common.load_calib, larger ROI). angles: 'avg' = mean of
+    """knot stack of a calib json's VectorialPSF (as simcode.processing.common.load_calib, larger ROI). angles: 'avg' = mean of
     the two angle images when the calib has a per-angle PSF; 0 / 1 = that angle; None = torch_psf.PSF.load(angle=None)."""
     from simcode import psf as spsf
     from simcode.config import resolve

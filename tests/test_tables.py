@@ -11,7 +11,7 @@ import os, sys, tempfile
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from simcode import strict as SP
+from simcode import table as SP
 
 
 def _run_dir(d, n=1000, crop=(5, 5, 110), seed=0, lo=0.0, hi=120.0):
@@ -94,7 +94,7 @@ def test_drift_rows():
 
 
 def test_frc():
-    from simcode.evalproto import frc as FR
+    from simcode.evaluation import frc as FR
     r = np.random.default_rng(3)
     sx_, sy_ = r.uniform(10, 30, 4000), r.uniform(10, 30, 4000)                         # random binding sites (broadband structure)
     def draw(n, blur_nm):

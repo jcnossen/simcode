@@ -10,7 +10,7 @@ CROP = (5, 5, 110)
 
 
 # ------------------------------------------------------------------ FRC (1/7 threshold, 5-nm render)
-from simcode.evalproto.frc import frc  # noqa (the one FRC implementation: simcode/evalproto/frc.py)
+from simcode.evaluation.frc import frc  # noqa (the one FRC implementation: simcode/evaluation/frc.py)
 
 
 def frc_split(x, y, fr, blk=300):

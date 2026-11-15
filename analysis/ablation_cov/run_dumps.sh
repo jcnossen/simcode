@@ -19,7 +19,7 @@ for s in 301 302; do
 python -c "
 from simcode.util import proctitle; proctitle.set_title('covabl')
 import sys; sys.argv=['gate','--scen','rs25qm','--seeds','$s','--sc','hd_m1809.pt','--sccal','calib/calib_sc_hd_m1809.json','--tag','_hd_cur','--out','$G','--ntarget','3500']
-from simcode.hd import gate; gate.main()"
+from simcode.benchmark import gate; gate.main()"
 SIMCODE_GATE_DIR=$G $D rs25qm $s out/ablation_cov/fe_m1809a "" - - s1,s2 3500
 done
 echo ALLDONE

@@ -20,17 +20,17 @@ python -m simcode.psf.beads --sign -1
 
 # 1a. gain / read noise: robust variance-vs-level fit of same-step frame differences (0.5 nM, 12000 frames:
 #     gain 0.552 e/ADU -> 0.56 used; rn 0.88 e at offset 99.3)
-python -m simcode.insitu.camera_gain --movie dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif
+python -m simcode.calibration.camera_gain --movie dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif
 
 # 1. camera maps: per-pixel offset (loc-masked temporal median minus its smooth part, + global offset 99.3) and read noise
 #    (MAD of same-step frame differences minus shot noise, floor 0.9 e), gain 0.56. The shipped map used the first
 #    10000 frames (--nframes 10000; the argparse default is 20000): this command reproduces camera_maps_0.5nM.npz bit for bit.
-python -m simcode.insitu.camera_maps --movie dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif --nframes 10000 \
+python -m simcode.calibration.camera_maps --movie dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif --nframes 10000 \
     --locs dnapaint/0.5nM/cover1/1/results/simflux_5.5ms_500mW/smlm.hdf5 --out <out>/insitu/camera_maps_0.5nM.npz
 
 # 2. isolated emitter tracks: smlm locs of frames < 30000 linked over frames (<= 0.8 px, 1-frame gaps allowed),
 #    >= 6 frames, no other loc within 7 px; cut into 11 x 11 x 12-frame ADU samples (0.5 nM: 52863 samples).
-python -m simcode.insitu.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
+python -m simcode.calibration.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
 
 # 3. stage A, camera: the shipped camera values (gain 0.56 e/ADU from the robust var-vs-level fit, camera_gain.py;
 #    offset 99.3 ADU, read noise 1.9 e) come from an earlier Adam fit of Zernikes + focus + offset + read noise on 8000
@@ -41,11 +41,11 @@ python -m simcode.insitu.extract_tracks --out <out>/insitu/tracks_0.5nM.npz
 #    solved exactly (torch_psf.varpro) each iteration, x, y, z per sample + Zernike 5..21 + focus by Adam (600 iterations,
 #    8000 samples), gain 0.56 / offset 99.3 / rn 1.9 fixed, z in [0, 0.2] um. Writes <tag>_psf.json/.pt and the
 #    per-frame intensities of all samples (<tag>_intensities.pt, PSF frozen) for stage B.
-python -m simcode.insitu.fit_insitu2 --gain 0.56 --zmax 0.2 --out <out>/insitu/insitu2_0.5nM
+python -m simcode.calibration.fit_insitu2 --gain 0.56 --zmax 0.2 --out <out>/insitu/insitu2_0.5nM
 
 # 5. stage B, pattern (initial estimate): I = A relint_s (1 + m_s cos(k_a.r - phi_s - dphi_a(t))) on fully-on frames,
 #    k / phases initialised from the SIMCODE pipeline's sf_fits_cfg.pickle, piecewise-linear phase drift (1500-frame knots).
-python -m simcode.insitu.fit_pattern --intensities <out>/insitu/insitu2_0.5nM_intensities.pt --out <out>/insitu/pattern_0.5nM
+python -m simcode.calibration.fit_pattern --intensities <out>/insitu/insitu2_0.5nM_intensities.pt --out <out>/insitu/pattern_0.5nM
 ```
 
 Then assemble `models/insitu/calib_<movie>.json` (see `calib_0.5nM.json` for the format):
@@ -57,14 +57,14 @@ Then assemble `models/insitu/calib_<movie>.json` (see `calib_0.5nM.json` for the
   to the json (copy the npz next to it)
 - `pattern`: k, phase and relint from step 5. The shipped depth (0.925 / 0.955) is the later cross-cycle estimate on the
   nn_overlap ≥ 3 subset. Step 5's regression depth is diluted and must not be written there (see `depth_note`).
-  The localization pipeline re-estimates the pattern from the data (`pipeline/pattern_est.py`). It uses only the PSF and
+  The localization pipeline re-estimates the pattern from the data (`processing/pattern_estimation.py`). It uses only the PSF and
   camera of `--calib`; the pattern block is read only by the simulator.
 
 Other movies of the same setup (`calib_2p5nM_m2.json`, `calib_20nM_m2*.json`) reuse the 0.5 nM PSF, i.e. they copy the
 fields above. They only get their own camera maps:
 
 ```bash
-python -m simcode.insitu.camera_maps --movie dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif \
+python -m simcode.calibration.camera_maps --movie dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif \
     --locs <its results/.../smlm.hdf5> --readnoise_from insitu/camera_maps_0.5nM.npz --out <out>/insitu/camera_maps_2p5nM_m2.npz
 ```
 
@@ -72,7 +72,7 @@ The read-noise map is a camera property. It is taken from the 0.5 nM map, shifte
 cross-correlation (22, 2). Uncovered pixels get the high-passed own estimate. The 20 nM movie-2 offset map is the
 shifted 0.5 nM map. The `camera.note` fields of the shipped jsons record which variant each file uses.
 
-`compare_pattern` (`python -m simcode.pipeline.compare_pattern --est <pattern_est.pt> --ref <pattern.pt> --nframes N`)
+`compare_pattern` (`python -m simcode.processing.compare_pattern --est <pattern_est.pt> --ref <pattern.pt> --nframes N`)
 compares an estimated pattern with a reference one (k, phases with the per-angle gauge, depth, relint, eps(t), and the
 per-tile residual phase of clean pass-1 emitters with `--pass1`).
 
@@ -113,9 +113,9 @@ Other flags:
 Consumers of the new keys:
 - `sim.simulator.Simulator` builds one LUT per angle (`lut_angle`; `lut` = their exact average) and renders each frame with its
   angle's PSF.
-- So do `hd.realsim.RealSim` (LUT-bank entries are (angle 0, angle 1) tuples), `analysis/simreal/sim_movie_r.py` and
+- So do `simulate.acquisition.AcquisitionSim` (LUT-bank entries are (angle 0, angle 1) tuples), `analysis/simreal/sim_movie_r.py` and
   `sim.crlb` (`psf_stack` returns 8 channels and `crlb_all` uses the per-frame PSF).
-- The pattern-free consumers (`pipeline.common.load_calib`, `psf.spline`, the DECODE LUT with `DEC_CALIB=...`) use the
+- The pattern-free consumers (`processing.common.load_calib`, `psf.spline`, the DECODE LUT with `DEC_CALIB=...`) use the
   angle average.
 
 The recipe for the paper movies is in `out/psf3d/run_final.sh` and `out/psf3d/run_final_ps.sh`:

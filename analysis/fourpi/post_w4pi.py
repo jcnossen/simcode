@@ -46,7 +46,7 @@ def main():
     F = int(R['frame'].max()) + 6
     tag = f'net_{a.cell}_{a.head}' + (f'_files{min(a.files)}-{max(a.files)}' if a.files else '')
     from simcode.util.drift import drift_of_table
-    from simcode.fileio.work import atomic_save
+    from simcode.io.work import atomic_save
     d, dinfo = drift_of_table(dict(frame=R['frame'][good], x=R['x'][good], y=R['y'][good], sx=R['sx'][good], sy=R['sy'][good]), F, return_info=True)
     print(f'DME v2 {dinfo["version"]} on {dinfo["n"]} rows, chosen {dinfo["chosen"]}; drift ptp {np.ptp(d, 0) * PX} nm')
     atomic_save(f'{OUT}/{tag}_drift.npy', d)

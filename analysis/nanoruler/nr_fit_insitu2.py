@@ -1,4 +1,4 @@
-"""NANORULER COPY of simcode/insitu/fit_insitu2.py (package file not edited). Only change: the optics / camera constants that are
+"""NANORULER COPY of simcode/calibration/fit_insitu2.py (package file not edited). Only change: the optics / camera constants that are
 hard-coded for the DMD-SIMFLUX setup come from the environment: NR_PX (pixel size um, 0.065), NR_WL (emission wavelength um, 0.68),
 NR_OFFSET (ADU, 100.0), NR_RN (read noise e, start / fixed value of the fit, 1.6). Original docstring follows.
 
@@ -26,7 +26,7 @@ import numpy as np, torch
 from simcode.psf import VectorialPSF
 from simcode.psf import solve_linear
 from simcode import config
-from simcode.insitu import out
+from simcode.calibration import out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--tracks', default=out('tracks_0.5nM.npz'))

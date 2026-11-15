@@ -1,9 +1,9 @@
 """psf3d retrain (2026-11-11), item 2: selection-aware sigma rescale (the model's sig_u) against the winner's curse of a
 sigma-ranked selection. sigma' = sigma * g(u), u = the per-10-px-tile sigma rank quantile among the rows with p >= 0.63 inside the
-run's crop (simcode.strict.tile_rank, as simcode.strict.build_table computes it for the rescale), g = the robust zcal of the
+run's crop (simcode.table.tile_rank, as simcode.table.build_table computes it for the rescale), g = the robust zcal of the
 matched rows per u bin, fitted on sim movies with GT. u is computed here from the table's sx, sy: the fit / test tables must be
 built WITHOUT a sig_u rescale (then u equals the u of the table build); only the reported sx, sy change. zcal = 1.4826 median |e / sigma| per axis on rows with |e| < 50 nm (robust),
-e = position - GT (window rows matched one-to-one within 1 px to GT event windows, evalproto/lib.match_fast; the median error of
+e = position - GT (window rows matched one-to-one within 1 px to GT event windows, evaluation/metrics.match_fast; the median error of
 the matched set, a global gauge offset, is removed per movie).
   fit:  python sigcal.py fit <out.json> <run_dir>:<sim_dir>:<tag est|est2>:<f_lo>:<f_hi> [...]
   test: python sigcal.py test <fit.json | none> <run_dir>:<sim_dir>:<tag>:<f_lo>:<f_hi> [...]   (zcal of the sigma <= 12 nm set in
@@ -12,8 +12,8 @@ the matched set, a global gauge offset, is removed per movie).
         windows; recall of the GT target windows, unmatched good rows (FP), GT RMS on identical GT windows per GT-photon bin, gross > 50 nm"""
 import json, os, sys
 import numpy as np
-from simcode.evalproto import lib as E
-from simcode import strict as SP
+from simcode.evaluation import metrics as E
+from simcode import table as SP
 
 PX = 108.33
 UE = [0.0, 0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.70, 1.0]

@@ -1,9 +1,9 @@
-"""Train det4pi: the det_n1 detector (simcode/det/up2.DetUp, up = 1) on 4Pi scenes.
+"""Train det4pi: the det_n1 detector (simcode/detector/model.Detector, up = 1) on 4Pi scenes.
 
 Input: the registered 4-channel sum of the 6 frames (6 planes, photons) = det_n1's input format, from the full-scene
-4Pi simulator (simcode/fourpi/realsim4pi.py: dense scenes 0.01-2 /um^2, filaments / rings / close pairs, kinetics,
+4Pi simulator (simcode/fourpi/acquisition4pi.py: dense scenes 0.01-2 /um^2, filaments / rings / close pairs, kinetics,
 pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss and nn weights: those of det_n1
-(det/up2.targets, focal_w, gt_nn, hd/sc4.nn_weights); the GT position is the emitter position (not the image centroid,
+(simulate/targets.detector_targets, focal_w, gt_nn, simulate/targets.nn_weights); the GT position is the emitter position (not the image centroid,
 which sits ~0.25 px away for the 4Pi PSF), so candidates come out centred on the emitter.
 Init from det_n1 (models/det_n1.pt). Data come from `--workers` generator processes (the simulator is the bottleneck).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --out out/4pi/models/det4pi --steps 20000
@@ -19,9 +19,9 @@ from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 def worker(q, seed, psf, B, size, dens, ksums=(1,)):
     import torch
-    from simcode.fourpi.realsim4pi import RealSim4Pi
+    from simcode.fourpi.acquisition4pi import AcquisitionSim4Pi
     st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
-    rs = RealSim4Pi(st, H=size, W=size, seed=seed, n_psf=6)
+    rs = AcquisitionSim4Pi(st, H=size, W=size, seed=seed, n_psf=6)
     while True:
         S = rs.sample(B=B, dens=dens, ksum=ksums[int(torch.randint(len(ksums), (1,)))])
         g = S['gt']
@@ -46,9 +46,11 @@ def main():
     ap.add_argument('--ksum', default='1', help='comma list of K (summed windows: K x background, sqrt(K) read noise), one drawn per batch')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('4pi-det')
-    from simcode.det.up2 import build, targets, focal_w, gt_nn
-    from simcode.det.model import n_params
-    from simcode.hd.sc4 import nn_weights
+    from simcode.detector.model import build
+    from simcode.simulate.targets import detector_targets, gt_nn
+    from simcode.detector.train import focal_w
+    from simcode.detector.model import n_params
+    from simcode.simulate.targets import nn_weights
     from simcode.config import resolve
     dev = 'cuda'
     os.makedirs(a.out, exist_ok=True)
@@ -69,7 +71,7 @@ def main():
     for step in range(a.steps + 1):
         o = to_dev(q.get(), dev)
         with torch.no_grad():
-            label, ign, tid, off = targets(o, 1, S, S)
+            label, ign, tid, off = detector_targets(o, 1, S, S)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)
             if pm.any():

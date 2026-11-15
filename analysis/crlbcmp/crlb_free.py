@@ -1,16 +1,16 @@
 """CRLB comparison (2026-11-13): the gate scenes' CRLB table extended by the free-model target block (the bound of a
 PATTERN-FREE position estimator on the modulated data: x, y, z, I_1..I_T free per emitter, bg per angle, multi-emitter) and the
 ideal two-stage bound (crlb.two_stage_bounds: free-model (x, y, I_t) of the target combined with its SIMFLUX model, full covariance).
-Same generator / seeds / iteration loop as simcode/hd/gate.main (GT checked against out/psfmatch/gate_m1809a), PSF of the m1809 set.
+Same generator / seeds / iteration loop as simcode/benchmark/gate.main (GT checked against out/psfmatch/gate_m1809a), PSF of the m1809 set.
 Output out/crlbcmp/crlbfree/<scen>__s<seed>.npz: gt_x, gt_phot, gt_target, fr_xy [n,2] (free-model x / y CRLB, px),
 cov_or [n,8,8], ts_full [n,2], sm_m, sf_m (check).
 usage: SIMCODE_GATE_CALIB=models/insitu/calib_1809_2_psf3d_avg.json CUDA_VISIBLE_DEVICES=1 python analysis/crlbcmp/crlb_free.py iso 301,302,303"""
 import os, sys, time
 import numpy as np, torch
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, S
-from simcode.sim import crlb as CR
-from simcode.hd import gate as GA
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, S
+from simcode.simulate import crlb as CR
+from simcode.benchmark import gate as GA
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(REPO, 'out', 'crlbcmp', 'crlbfree')

@@ -142,7 +142,7 @@ if __name__ == '__main__':
                '- phi_s - dphi_step[s](f))), r = (x = column, y = row) in movie px (65 nm), rel = exp(logrel - mean(logrel)), dphi_step '
                '[6, K] linear interpolation on frames j * knot_frames (last value held), mean 0 per step over the knots. '
                'dphi_shared [2, K] = mean of the three steps of the orientation, dphi_rel [6, K] = dphi_step - dphi_shared[a]. '
-               '"pipeline" = the same pattern in the common pattern-file format read by simcode.pipeline.common.pattern_frames '
+               '"pipeline" = the same pattern in the common pattern-file format read by simcode.processing.common.pattern_frames '
                '(every step its own "angle": k [6, 2], dphi [6, K], angle_of_step = [0..5]).',
         source=f'{chosen} fit of out/nanoruler/psf/bl_int_intensities.pt (analysis/nanoruler/pst_fit.py)', model=e['cfg'][0],
         k=t32(P.k.numpy()), phi=t32(P.phi.numpy() + gm[:, 0]), m=t32(P.m.numpy()), logrel=t32(P.logrel.numpy()),
@@ -154,8 +154,8 @@ if __name__ == '__main__':
                            dphi=out['dphi_step'].clone(), knot_frames=int(kf), angle_of_step=[0, 1, 2, 3, 4, 5],
                            note='per-step drift: each step is its own "angle" for pattern_frames (k repeated). depth per step.')
     torch.save(out, L.OUT + 'pattern_perstep.pt')
-    # check: pipeline.common.pattern_frames on the 'pipeline' dict reproduces the model phases
-    from simcode.pipeline.common import pattern_frames
+    # check: processing.common.pattern_frames on the 'pipeline' dict reproduces the model phases
+    from simcode.processing.common import pattern_frames
     ft = np.random.default_rng(0).integers(0, L.NFRAMES, 2000)
     PF = pattern_frames(out['pipeline'], ft, 0.0, 0.0, dev='cpu').numpy()
     with torch.no_grad():

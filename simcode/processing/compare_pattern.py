@@ -11,7 +11,7 @@ Compare an estimated pattern with a calibrated reference pattern (common file fo
   tiles    (optional, --pass1 dir) per 22 px tile: circular-mean residual phase of clean pass-1 emitters under each
            pattern (consistency with the pattern-free positions; the estimate is fitted to these data)
 nm = rad / |k| * px.
-usage: python -m simcode.pipeline.compare_pattern --est <pattern_est.pt> --ref <pattern.pt> --nframes N [--pass1 <dir>] --out <json>
+usage: python -m simcode.processing.compare_pattern --est <pattern_est.pt> --ref <pattern.pt> --nframes N [--pass1 <dir>] --out <json>
 """
 import argparse, glob, json, math
 import numpy as np, torch
@@ -75,7 +75,7 @@ def compare(E, Rf, nframes, crop=(5, 5, 110)):
 
 
 def tile_maps(pass1_glob, pats, crop=(5, 5, 110), tile=22):
-    from simcode.pipeline.pattern_est import select, angle_Z, _interp_eps
+    from simcode.processing.pattern_estimation import select, angle_Z, _interp_eps
     Ls = [np.load(f) for f in sorted(glob.glob(pass1_glob))]
     cols = ('wstart', 'x', 'y', 'sx', 'sy', 'I', 'phot', 'tc')
     keep = np.concatenate([(L['wstart'] >= int(L['own'][0]) - 3) & (L['wstart'] < int(L['own'][1]) - 3) for L in Ls])

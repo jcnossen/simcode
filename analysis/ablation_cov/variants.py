@@ -1,5 +1,5 @@
 """Covariance ablation: the solve variants. Each variant = a transform of the head's Cholesky factor L (what the solve is given as the
-network covariance) + the c terms of the calibration (cmult = c, cmult_ang = c_a). Nothing in the package is changed: sc_solve builds
+network covariance) + the c terms of the calibration (cmult = c, cmult_ang = c_a). Nothing in the package is changed: solve_emitters builds
 Sigma = L L^T * kap_I2(photon bin) + c^2 diag(mu^2) + c_a^2 (mu mu^T within each angle) from these inputs.
   A   full Sigma_net, c = c_a = 0.10                    (production)
   B   diagonal of Sigma_net only, c = c_a = 0.10

@@ -1,6 +1,6 @@
-# Automatic per-dataset pipeline (`simcode.auto`): design
+# Automatic per-dataset pipeline (`simcode.pipeline`): design
 
-Status: design 2026-11-13; implementation in `simcode/auto/` (stages a, b, c, d, f, g; e as a wrapper with `--quick`).
+Status: design 2026-11-13; implementation in `simcode/pipeline/` (stages a, b, c, d, f, g; e as a wrapper with `--quick`).
 Validation numbers: section 9 (filled in after the runs).
 
 Goal: one config file per dataset, then one command that
@@ -14,13 +14,13 @@ Goal: one config file per dataset, then one command that
 7. writes a report page.
 
 ```bash
-python -m simcode.auto <config.yaml | config.json | config.py> [--stages camera,spots,...|all] [--quick] [--redo <stage>] [--gpus 1,2]
-python -m simcode.auto <setup.py> [--only name1,name2] [--show]     # a Python file with several acquisitions (section 1.1)
+python -m simcode.pipeline <config.yaml | config.json | config.py> [--stages camera,spots,...|all] [--quick] [--redo <stage>] [--gpus 1,2]
+python -m simcode.pipeline <setup.py> [--only name1,name2] [--show]     # a Python file with several acquisitions (section 1.1)
 ```
 
 ```python
-from simcode.auto import LocalizationPipeline
-pipe = LocalizationPipeline('simcode/auto/configs/1809_2.yaml')   # or a ConfigDict / dict / .json / .py (section 1.1)
+from simcode.pipeline import LocalizationPipeline
+pipe = LocalizationPipeline('simcode/pipeline/configs/1809_2.yaml')   # or a ConfigDict / dict / .json / .py (section 1.1)
 pipe.run()                                 # all stages, skipping finished ones
 pipe.calibrate_camera(); pipe.find_spots() # single stages, each callable on its own
 pipe.estimate_psf(redo=True)               # run a finished stage again (force=True: accept failed checks)
@@ -35,8 +35,8 @@ One method per stage, in run order (command-line stage name in brackets): `deter
 `fit_beads()` [beads], `estimate_psf()` [psf], `train_model()` [train], `process()` [process], `report()` [report]. Each
 returns its summary, writes `<out>/<stage>/summary.json` last (the done marker) and is skipped when that file exists.
 
-A console script `simcode-auto = simcode.auto.pipeline:main` is proposed for `pyproject.toml` (section 8); until
-then the entry point is `python -m simcode.auto`.
+A console script `simcode-auto = simcode.pipeline.localization_pipeline:main` is proposed for `pyproject.toml` (section 8); until
+then the entry point is `python -m simcode.pipeline`.
 
 ## 1. Config (yaml, json, or Python)
 
@@ -128,7 +128,7 @@ are derived instead of copied. `simcode/util/cfgdict.py` has the class (the v2 c
 `config_dict`):
 
 ```python
-from simcode.util.cfgdict import ConfigDict            # also: from simcode.auto import ConfigDict
+from simcode.util.cfgdict import ConfigDict            # also: from simcode.pipeline import ConfigDict
 DATA = '/mnt/data/dmdsf/bn_dnapaint'
 base = ConfigDict(camera=dict(gain_e_per_adu=0.56, offset_adu=99.3),
                   optics=dict(pixel_um=0.10833, NA=1.49),
@@ -157,19 +157,19 @@ Accepted everywhere a config is: `LocalizationPipeline(cfg)` takes a `ConfigDict
 a Python file that defines `config`. A Python file may instead define a list `configs` (or a dict name -> config):
 
 ```bash
-python -m simcode.auto simcode/auto/configs/example_setup.py --show          # print the resolved configs, run nothing
-python -m simcode.auto simcode/auto/configs/example_setup.py                 # all acquisitions, one after the other
-python -m simcode.auto simcode/auto/configs/example_setup.py --only 20nM_2
+python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --show          # print the resolved configs, run nothing
+python -m simcode.pipeline simcode/pipeline/configs/example_setup.py                 # all acquisitions, one after the other
+python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --only 20nM_2
 ```
 
 ```python
-pipes = LocalizationPipeline.from_file('simcode/auto/configs/example_setup.py')      # [LocalizationPipeline, ...]
+pipes = LocalizationPipeline.from_file('simcode/pipeline/configs/example_setup.py')      # [LocalizationPipeline, ...]
 for p in pipes: p.run()
 ```
 
-Every form goes through the same schema (`simcode/auto/config.py`: unknown keys are errors, defaults filled in, names
+Every form goes through the same schema (`simcode/pipeline/acquisition_config.py`: unknown keys are errors, defaults filled in, names
 must be unique within a file), and `<out>/config_resolved.json` is written as before. The Python file runs as ordinary
-code with `__file__` set (it is not imported as a module). Examples in `simcode/auto/configs/`: `example_setup.py` (base
+code with `__file__` set (it is not imported as a module). Examples in `simcode/pipeline/configs/`: `example_setup.py` (base
 config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py`, `nr80.py` = the two yaml files in this style
 (`tests/test_cfgdict.py` checks that they resolve to the same config).
 
@@ -178,9 +178,9 @@ config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py`, `nr
 Run order (letters = the request's stage list): `order`, `camera` (a1), `spots` (c1), `cammaps` (a2), `tracks` (c2),
 `beads` (b), `psf` (d), [`psfrefine` (d2, slot)], `train` (e), `process` (f), `report` (g).
 
-Every stage writes `<out>/<stage>/summary.json` LAST and atomically (`simcode.fileio.work.atomic_json`); that file is the
+Every stage writes `<out>/<stage>/summary.json` LAST and atomically (`simcode.io.work.atomic_json`); that file is the
 done marker. A finished stage is skipped unless `--redo <stage>` (which also invalidates the stages after it).
-Long stages are resumable inside: `spots` and `process` work in chunks through `simcode.fileio.work.Units`, `train`
+Long stages are resumable inside: `spots` and `process` work in chunks through `simcode.io.work.Units`, `train`
 per trainer (a trainer with `final.pt` is skipped). The chunk directories are keyed by a hash of their inputs
 (`spots/chunks_<key>`: movie, gain, offset, spot settings; `process/run_<key>`: the simcode.run arguments, the calibration
 file content, the model and the overrides), so a redo with other settings never reuses stale chunks; stage d reuses a
@@ -197,7 +197,7 @@ Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run 
 - `train`: the summary and `<out>/train/model.json` hold `_recipe` (the acquisition config, every command in order: the five
   trainers, gate scenes, dumps, calibration fits, acceptance; steps, init files, gate seeds, overrides, code commit) and
   `_files` (size + sha256 of every network and calibration; for the networks the trainer arguments stored in the checkpoint).
-  `simcode.auto.train.export_model(model_json, dest)` copies a model next to the data (e.g. `<data>/simcode_results/model/`):
+  `simcode.pipeline.training.export_model(model_json, dest)` copies a model next to the data (e.g. `<data>/simcode_results/model/`):
   the files, `model.json` with relative paths, `_recipe`, `_files`, and a README that points to them.
 - `process`: the run directory has the complete `run_config.json` of `simcode.run`, including the in-memory overrides
   (`overrides` = the AUTO_WRAP json, with the model of stage e); `python -m simcode.run --config <that file> --out <new dir>`
@@ -206,22 +206,22 @@ Records (2026-11-14; the same kind of file as `simcode.run` writes, README "Run 
 | stage | what | output (in `<out>/<stage>/`) | checks |
 |---|---|---|---|
 | `order` | only for `frame_order != blocked`: writes the movie with every complete 6-frame cycle permuted to the blocked order (as `analysis/nanoruler/reorder_any.py`), or verifies an existing `pattern.cache` (frame count, first-cycle checksum against the permutation) | `movie_blocked.tif` (on the data disk) | frame count = 6 x cycles; per-slot mean level |
-| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `insitu/camera_gain.py` generalised: quantile bins of the per-pixel MEAN level (integer-valued movies), the 10 % noisiest pixels excluded); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
+| `camera` (a1) | gain, read noise (and offset, if not given) from the variance-vs-level fit of same-step frame differences (frames 6 apart; trimmed variance, robust to blinking; `calibration/camera_gain.py` generalised: quantile bins of the per-pixel MEAN level (integer-valued movies), the 10 % noisiest pixels excluded); dark frames, if given, give offset and read noise directly | `camera.json` | gain within 20 % of the config value if one is given; fit r^2; number of level bins >= 5 (else gain must be given) |
 | `spots` (c1) | pattern-free Gaussian SMLM on `sum`-frame moving sums (window start every frame; as the SIMCODE-pipeline smlm table): smoothed difference to the per-pixel temporal median, local maxima > thr x noise, Poisson LM fit of x, y, I, bg, sigma (`analysis/nanoruler/quick_smlm.py` as a function); good-fit filter (chi2, snr, sigma range from the optics) | `spots.hdf5` (Picasso-style `locs`), `spots_good.hdf5` | spots per frame; median sigma vs the diffraction estimate 0.21 lambda / NA (+-25 %); median photons |
-| `cammaps` (a2) | per-pixel offset deviation and read-noise maps (`python -m simcode.insitu.camera_maps`, masked by `spots_good.hdf5`) | `camera_maps.npz` | corr(offset_dev, loc density) < 0.05; read-noise median |
-| `tracks` (c2) | isolated emitter tracks from `spots_good.hdf5` (`python -m simcode.insitu.extract_tracks`: link <= 0.8 px with 1-frame gaps, >= 6 frames, isolation radius, cut into T = 12 frame samples) | `tracks.npz` | number of samples >= 2 x psf.nsamples |
+| `cammaps` (a2) | per-pixel offset deviation and read-noise maps (`python -m simcode.calibration.camera_maps`, masked by `spots_good.hdf5`) | `camera_maps.npz` | corr(offset_dev, loc density) < 0.05; read-noise median |
+| `tracks` (c2) | isolated emitter tracks from `spots_good.hdf5` (`python -m simcode.calibration.extract_tracks`: link <= 0.8 px with 1-frame gaps, >= 6 frames, isolation radius, cut into T = 12 frame samples) | `tracks.npz` | number of samples >= 2 x psf.nsamples |
 | `beads` (b) | optional bead z-stack fit (`python -m simcode.psf.beads` = torch_psf.ZStackEstimator with the optics of the config); without beads stage d starts from zero aberrations | `beads_psf.pt/json` | held-out stack NLL; |Z| < 0.15 waves |
-| `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/auto/psffit.py`, the same algorithm and defaults as `insitu/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
+| `psf` (d) | base fit from every start of `psf.init` (zero, focus-staggered f0.1-f0.3, beads), lowest NLL wins (focus / z gauge, section 9); d1: Zernike 5-21 + focus + line blur (variable projection: per-frame I and per-(sample, angle) bg exact, x, y, z per sample + PSF by Adam; `simcode/pipeline/psf_fit.py`, the same algorithm and defaults as `calibration/fit_insitu2.py` but with the optics / camera from the config); intensities of the fitted samples; pattern from the track intensities (k by a DFT over the config pitch range, per-step phases, depth, relint); d2: d1 frozen + photoselection 3 (k directions from the pattern step); held-out: the same two fits on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit); calib json per axis and averaged (`analysis/psf3d/make_calib.py` format) | `calib.json`, `calib_avg.json`, `camera_maps.npz` copy, `fit_*`, `heldout.json`, `psf_images.npz` | held-out NLL per sample: d1 <= base, photosel <= d1 (paired z); resid var in [0.85, 1.1]; |Z| < 0.15 waves; focus inside [0, zmax]; z median inside (0, zmax) |
 | `psfrefine` (d2, slot, not implemented) | refined PSF (free pupil map through the spline-gradient route, then the pattern term; section 5) | refined PSF file + `calib_refined.json` | held-out acceptance |
 | `train` (e) | model with the PSF-matched recipe (section 6); registers it in `<out>/train/model.json` | `models/*.pt`, calibs, `gates.txt` | gate acceptance |
 | `process` (f) | `simcode.run` on the movie with the set (pass 1, pattern, solve, pass 2, table, selections), through the in-memory overrides of section 7 | `run_<key>/locs_p*.npz`, `run_<key>/summary.json` | pattern pitch inside the config range; rows per frame; median sigma |
-| `report` (g) | `report.html` + `report.json`: settings, counts per stage, camera maps, PSF (images, residual moments per angle, held-out table), pattern (k, phases, depth vs the in-situ estimate), drift (DME on the table, if available), FRC (`simcode.evalproto.frc`), gate table, all checks | `report.html` | none |
+| `report` (g) | `report.html` + `report.json`: settings, counts per stage, camera maps, PSF (images, residual moments per angle, held-out table), pattern (k, phases, depth vs the in-situ estimate), drift (DME on the table, if available), FRC (`simcode.evaluation.frc`), gate table, all checks | `report.html` | none |
 
 ## 3. Spot finding without an external SMLM table (stage c)
 
 The in-situ recipe up to now used the SIMCODE-pipeline `smlm.hdf5` of each movie to find isolated emitters and to mask
 emitters out of the camera maps. Stage c replaces it by a built-in Gaussian SMLM on 6-frame moving sums (one window per frame
-start; `simcode/auto/spots.py` = `analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
+start; `simcode/pipeline/spots.py` = `analysis/nanoruler/quick_smlm.py` as a function, chunked through `Units`). A Gaussian fit
 is enough for both uses: the track extraction needs positions to 0.8 px and the isolation test, the camera-map mask
 positions to ~1 px. The pass-1 detector of an existing model is the other option; it is not the default because a new
 instrument has no set yet.
@@ -248,7 +248,7 @@ Alternating fit: per outer iteration
    through the table construction (d loss / d knots from the spline evaluation, then the vector-Jacobian product of the
    knots with respect to Zernikes, focus, blur, gamma, zeta). The cost of that step does not grow with the number of samples.
 
-Implementation (`simcode/auto/psffit.py`, `fit(..., lut=True)`): knots S = 8 per pixel, hz = 10 nm (spline error 4e-5
+Implementation (`simcode/pipeline/psf_fit.py`, `fit(..., lut=True)`): knots S = 8 per pixel, hz = 10 nm (spline error 4e-5
 of the peak, rms 5e-6), |x|, |y| <= 2 px; the spline is evaluated separably (only the 4 x 4P x 4P knots the P x P pixels use
 are gathered, then contracted along z, y, x: equal to `CubicSplinePSF.evaluate` to 1.5e-8 and independent of S); the 100 warm-up
 iterations (positions only) use one table; then one table per iteration with the graph to the PSF parameters; the last
@@ -288,13 +288,13 @@ branch `insitu-study`: `study/insitu/run_pattern.py`, `fit.py` (`fit_pupil_insit
 
 Note for stages c / d from the same study: a z-dependent lateral tilt of ~30 nm appeared only on patches cut from a movie by
 spot detection (crop around the smoothed peak), not on clean patches; the cause (centring or selection) is not established.
-Here the track samples are cut at round(mean of the track's fitted Gaussian centres) (`insitu/extract_tracks.py`), i.e. a
+Here the track samples are cut at round(mean of the track's fitted Gaussian centres) (`calibration/extract_tracks.py`), i.e. a
 refined-fit centre, not the smoothed peak; the validation checks the slope of (vectorial-fit position - Gaussian centre)
 against the fitted z (section 9).
 
 ## 6. Stage e: model (recipe of `runs/psfmatch/chain2.sh` + `eval.sh`)
 
-Trainers (unchanged entry points, run through `simcode/auto/runwrap.py`, which patches `simcode.hd.realsim.PRESETS` in
+Trainers (unchanged entry points, run through `simcode/pipeline/run_with_overrides.py`, which patches `simcode.simulate.acquisition.PRESETS` in
 memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `analysis/nanoruler/nrwrap.py`):
 
 Quick mode (`--quick`): `train.quick_steps` (30) steps per trainer, the detector starts from the template set's detector
@@ -304,14 +304,14 @@ if a calibration fit has no matched targets the template calibrations are copied
 
 | step | command (all with `--calib <out>/psf/calib_avg.json` + `train.extra`) | steps (full / quick) |
 |---|---|---|
-| det | `simcode.det.up2 train --up 1 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --em_photons 40,2500 --seed 0` | 40000 / 30 |
-| hd | `simcode.hd.sc4 train --arch sc4n --init hd_sc5nb.pt --det <det> --lr 1.5e-4 --ch 96 --paper 1 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
-| p2det | `simcode.p2.det2 train --init_n1 <det> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 --p_std 0.25` | 40000 / 30 |
-| p2det_c | `simcode.p2.det2 train --init <p2det> --init_n1 <det> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 --p_std 0.5` (the model's pass-2 detector) | 40000 / 30 |
-| p2head | `simcode.p2.head2 train --det <p2det ckpt 25k> --init <hd> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0 --pert_model v1 --p_std 0.25` | 24000 / 30 |
-| p2headL | `simcode.p2.head2 train --det <p2det> --init <p2head> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15 --p_std 0.25` | 50000 / 30 |
-| p2headL2 | `simcode.p2.head2 train --det <p2det> --init <p2headL> --lr 1e-4 --pct 0.05 --seed 41 --no_illum 0 --pert_model real --hold_v1 0 --p_std 0.5` (the model's pass-2 head) | 50000 / 30 |
-| gates | `simcode.hd.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.p2.dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
+| det | `simcode.detector.train --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --seed 0` | 40000 / 30 |
+| hd | `simcode.emitter.train --init hd_sc5nb.pt --det <det> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
+| p2det | `simcode.detector.train --illum 1 --init <det> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 --p_std 0.25` | 40000 / 30 |
+| p2det_c | `simcode.detector.train --init <p2det> --pass1_ref <det> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 --p_std 0.5` (the model's pass-2 detector) | 40000 / 30 |
+| p2head | `simcode.emitter.train --det <p2det ckpt 25k> --init <hd> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0 --pert_model v1 --p_std 0.25` | 24000 / 30 |
+| p2headL | `simcode.emitter.train --det <p2det> --init <p2head> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15 --p_std 0.25` | 50000 / 30 |
+| p2headL2 | `simcode.emitter.train --det <p2det> --init <p2headL> --lr 1e-4 --pct 0.05 --seed 41 --no_illum 0 --pert_model real --hold_v1 0 --p_std 0.5` (the model's pass-2 head) | 50000 / 30 |
+| gates | `simcode.benchmark.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 
@@ -328,34 +328,34 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
 
 | # | assumption (where) | resolution |
 |---|---|---|
-| 1 | 6-frame cycle, blocked order, angle = frame % 6 // 3 (`pipeline/pattern_est.py`, `pipeline/common.pattern_frames`, `sc_front*.py` (ws + t) % 6 // 3, `insitu/*`, `psf` per-angle PSF, `sim/*`) | `pattern.frame_order`: stage `order` writes a blocked-order cache; every later stage reads the cache. For interleaved data the windows starting at 6c + 3 mix two cycles: `process.cycle_aligned_only` keeps windows with frame % 6 == 0 in the selections. 4-step or 3-orientation schemes: refused by the config check (needs P1) |
-| 2 | 2 orientations classified by |kx| > |ky| (`core.angle_index`, `p2/illum.angle_of`, `hd/msolve`) | config check: the two fitted k (stage d pattern) must lie in different 45-degree sectors; otherwise stop with an explanation (P2) |
+| 1 | 6-frame cycle, blocked order, angle = frame % 6 // 3 (`processing/pattern_estimation.py`, `processing/common.pattern_frames`, `processing/front*.py` (ws + t) % 6 // 3, `calibration/*`, `psf` per-angle PSF, `simulate/*`) | `pattern.frame_order`: stage `order` writes a blocked-order cache; every later stage reads the cache. For interleaved data the windows starting at 6c + 3 mix two cycles: `process.cycle_aligned_only` keeps windows with frame % 6 == 0 in the selections. 4-step or 3-orientation schemes: refused by the config check (needs P1) |
+| 2 | 2 orientations classified by |kx| > |ky| (`solve/pattern.angle_index`, `pattern/illumination.angle_of`, `solve/solve`) | config check: the two fitted k (stage d pattern) must lie in different 45-degree sectors; otherwise stop with an explanation (P2) |
 | 3 | pitch search 1.6-2.8 px (`pattern_est.estimate_k(pitch_px=...)`) | stage f sets the default of `estimate_k` in memory to `pattern.pitch_px` (as `analysis/nanoruler/ev_run.py`; P3) |
-| 4 | strict CROP fixed to (5, 5, 110) (`strict.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `strict.CROP` and the bound defaults of `tile_of` / `tile_rank` / `in_crop` in memory (P4) |
+| 4 | strict CROP fixed to (5, 5, 110) (`table.py`), `--crop` default 5,5,110 | stage f passes `--crop` = `process.crop` (default: the sensor minus 5 px) and sets `table.CROP` and the bound defaults of `tile_of` / `tile_rank` / `in_crop` in memory (P4) |
 | 5 | detector batch 64 windows (`run_uncalibrated --det_batch`, not exposed by `run.py`); 400 x 400 px needs > 12 GB | `process.det_batch` is set as the argparse default in memory |
-| 6 | optics / camera constants in `insitu/fit_insitu2.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/auto/psffit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
-| 7 | `hd/realsim.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in realsim / plib / sigcal | stage e: in-memory preset patch (`simcode/auto/runwrap.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
-| 8 | gate photon settings hard-coded in `hd/gate.py` (rs05qm median 1260 ph) | reported; P7 |
+| 6 | optics / camera constants in `calibration/fit_insitu2.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/pipeline/psf_fit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
+| 7 | `simulate/acquisition.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in the acquisition simulator / plib / sigcal | stage e: in-memory preset patch (`simcode/pipeline/run_with_overrides.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
+| 8 | gate photon settings hard-coded in `benchmark/gate.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
-| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `hd/realsim.RealSim._generic`) in a share 1 - `--p_std` of the FOVs and the dataset's own pattern (preset patch) in the others |
+| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `simulate/acquisition.AcquisitionSim._generic`) in a share 1 - `--p_std` of the FOVs and the dataset's own pattern (preset patch) in the others |
 
 ## 8. Proposed changes in files this work does not edit
 
-- P1 (`pipeline/common.py`, `pattern_est.py`, `sc_front*.py`, `insitu/*`, `sim/*`): replace `frame % 6 // 3` by a
+- P1 (`processing/common.py`, `processing/pattern_estimation.py`, `processing/front*.py`, `calibration/*`, `simulate/*`): replace `frame % 6 // 3` by a
   per-dataset slot table (`cycle`, `angle_of_slot`), stored in the calib json (`pattern.frame_slots`), default the blocked
   6-frame cycle. Removes the reorder cache.
-- P2 (`core.angle_index`, `p2/illum.angle_of`, `hd/msolve`): take the orientation index from the pattern (per step) instead of |kx| > |ky|.
+- P2 (`solve/pattern.angle_index`, `pattern/illumination.angle_of`, `solve/solve`): take the orientation index from the pattern (per step) instead of |kx| > |ky|.
 - P3 (`pattern_est.estimate_k`, `run.py`, `run_uncalibrated.py`): a `--pitch_px lo,hi` flag (default 1.6,2.8).
-- P4 (`strict.py`): `build_table(..., crop=)` already takes the crop; `tile_of` / `tile_rank` / `in_crop` should default to it instead of
+- P4 (`table.py`): `build_table(..., crop=)` already takes the crop; `tile_of` / `tile_rank` / `in_crop` should default to it instead of
   the module constant `CROP`; `run.py --crop` default = the sensor minus 5 px.
-- P5 (`sim/simulator.py`, `det/psfpert.build_lut`, `hd/realsim.py`, `pipeline/common.load_calib`): optional calib key for the
+- P5 (`simulate/simulator.py`, `simulate/psf_perturbation.build_lut`, `simulate/acquisition.py`, `processing/common.load_calib`): optional calib key for the
   refined PSF of stage d2 (e.g. a pupil map): the Simulator / pipeline LUTs are built from it, the jitter bank applies its
   Zernike jitter on top of it.
-- P6 (`hd/realsim.py`, `analysis/calib/plib.py`, `analysis/psf3d_nets/sigcal.py`): pixel size and preset values from the
+- P6 (`simulate/acquisition.py`, `analysis/calib/plib.py`, `analysis/psf3d_nets/sigcal.py`): pixel size and preset values from the
   calib json / a preset json argument (`--preset`), instead of `PRESETS` / `PX_NM`.
-- P7 (`hd/gate.py`): scene photon / background settings from the preset.
+- P7 (`benchmark/gate.py`): scene photon / background settings from the preset.
 - P8 (`run.py`): expose `--det_batch`; accept a model given as a json file (`--model path.json`).
-- P9 (`pyproject.toml`): `[project.scripts] simcode-auto = "simcode.auto.pipeline:main"`.
+- P9 (`pyproject.toml`): `[project.scripts] simcode-auto = "simcode.pipeline.localization_pipeline:main"`.
 
 ## 9. Validation (2026-11-13)
 
@@ -363,7 +363,7 @@ Scripts and logs: `out/auto/val/` (`t_*.py`), `analysis/auto/cmp_calib.py`; work
 `/mnt/data/dmdsf/simcode2_out/auto/<name>`.
 
 ### 9.1 Stage d code against fit_insitu2
-- `psffit.fit` on the reference tracks with the reference start: bit-identical to `out/psf3d/final/m1809_bl` (Zernikes,
+- `psf_fit.fit` on the reference tracks with the reference start: bit-identical to `out/psf3d/final/m1809_bl` (Zernikes,
   focus, blur, residual variance) and, with photoselection, to `m1809_blps3` (gamma / zeta differ by 3e-8).
 - Spline-table mode: section 4 (1.24x / 1.56x, parameters within 0.0007 waves, 4 nm focus, 5e-5 gamma / zeta).
 

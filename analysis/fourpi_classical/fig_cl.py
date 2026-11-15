@@ -22,8 +22,8 @@ OUT = f'{P4}/classical'
 
 
 def frc(xa, ya, xb, yb, px=4.0):
-    """FRC (nm in, nm out), 1/7 threshold: simcode/evalproto/frc.py"""
-    from simcode.evalproto.frc import frc as _frc
+    """FRC (nm in, nm out), 1/7 threshold: simcode/evaluation/frc.py"""
+    from simcode.evaluation.frc import frc as _frc
     return _frc(xa, ya, xb, yb, px=px, units='nm')
 
 

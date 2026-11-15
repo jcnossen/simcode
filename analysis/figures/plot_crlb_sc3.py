@@ -10,7 +10,7 @@ import argparse, os
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from simcode import config
-from simcode.hd import gate_report as GR
+from simcode.benchmark import gate_report as GR
 
 PX = 108.33
 BINS = np.array([300, 500, 800, 1300, 2000, 3200, 5000, 8000, 13000, 20000])

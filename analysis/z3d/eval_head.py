@@ -1,26 +1,30 @@
 """z3d: pass-1 heads (2D and 3D checkpoints) on the same fixed simulated batches of the training generator (m1809 recipe:
 paper photons + bright tail, pairs, dens / med of the paper models), detector candidates matched to the GT (< 1 px, p >= 0.5).
-Two z distributions: 'real' (the presets' lognormal, median 50-55 nm) and 'train' (+ uniform 0-0.3 um share, hd/data.Z_UNIF).
+Two z distributions: 'real' (the presets' lognormal, median 50-55 nm) and 'train' (+ uniform 0-0.3 um share, simulate/batches.Z_UNIF).
 Metrics: x, y prior RMSE (nm) and z-score RMS, intensity NLL, modulation slope; z (3D heads): RMSE (nm) of the prior z and
 of z | true x, y vs the GT spread, z-score RMS, by photon bin and z bin.
 usage: python analysis/z3d/eval_head.py --heads a.pt,b.pt --det det_m1809.pt --calib <psf json> [--nb 40] [--out x.json]"""
 import argparse, json
 import numpy as np, torch
 from simcode import config
-from simcode.hd import data as D
-from simcode.hd import sc as SCM
-from simcode.hd.sc4 import match_gt, targets, nbr_map, nbr_patches, nll_full, NBR_PMIN, BRIGHT_TAIL
-from simcode.hd.sc import PSFCol, patches, mod_slope
-from simcode.det.model import select_subpixel
+from simcode.simulate import batches as D
+from simcode.emitter import model as SCM
+from simcode.detector import model as DM
+from simcode.simulate.targets import match_gt, emitter_targets
+from simcode.emitter.model import nbr_map, nbr_patches, nll_full, NBR_PMIN
+from simcode.simulate.batches import BRIGHT_TAIL
+from simcode.emitter.model import PSFCol, mod_slope
+from simcode.layers.blocks import extract_patches
+from simcode.detector.select import select_subpixel
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--heads', required=True); ap.add_argument('--det', required=True); ap.add_argument('--calib', required=True)
 ap.add_argument('--nb', type=int, default=40); ap.add_argument('--seed', type=int, default=777); ap.add_argument('--out', default='')
 a = ap.parse_args()
 dev = 'cuda'
-det, _ = SCM.load_det_front(a.det)
+det, _ = DM.load(a.det)
 heads = {h: SCM.load(h) for h in a.heads.split(',')}
-gen = D.Gen(64, 64, 6, seed=a.seed, calib=[config.resolve(a.calib)])
+gen = D.TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(a.calib)])
 sim = gen.rsm[0]['0.5nM'].sim; col = PSFCol(sim); PX = sim.c['pixelsize_um'] * 1000
 RES = {}
 for zmode in ('real', 'train'):
@@ -29,7 +33,7 @@ for zmode in ('real', 'train'):
     acc = {h: {k: [] for k in ('ex', 'ey', 'sx', 'sy', 'nll', 'I', 'Ig', 'z', 'zc', 'sz', 'szm', 'tz', 'ph', 'nn')} for h in heads}
     for it in range(a.nb):
         with torch.no_grad():
-            o = gen.batch(16, dens=(0.0005, 0.04), med_photons=(40, 2500), pair_frac=0.25, pair_curr=True, paper=True, tau_r=(15, 80),
+            o = gen.emitter_batch(16, dens=(0.0005, 0.04), med_photons=(40, 2500), pair_frac=0.25, pair_curr=True, paper=True, tau_r=(15, 80),
                           bright_tail=BRIGHT_TAIL)
             fr = o['frames']
             with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -41,9 +45,9 @@ for zmode in ('real', 'train'):
             c = dict(c, logit=torch.where(c['logit'] >= 0, c['logit'], torch.full_like(c['logit'], -float('inf'))))
             m = match_gt(o, c)
             if m is None: continue
-            t = targets(o, m, col)
+            t = emitter_targets(o, m, col)
             off = torch.stack([m['x'] - m['ix'].float(), m['y'] - m['iy'].float()], 1)
-            pt = patches(fr, m['b'], m['iy'], m['ix']); psf = col(off)
+            pt = extract_patches(fr, m['b'], m['iy'], m['ix']); psf = col(off)
             nbp = nbr_patches(nbr, m['b'], m['iy'], m['ix'], m['x'], m['y'], torch.sigmoid(lgm[m['b'], m['iy'], m['ix']]))
             tz = D.z_target_px(o['gt']['z'][m['g']], sim)
             for hn, h in heads.items():

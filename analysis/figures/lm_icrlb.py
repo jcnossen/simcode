@@ -9,11 +9,14 @@ import sys, os
 import numpy as np, torch
 ARGS = sys.argv[1:]; sys.argv = sys.argv[:1]
 if not ARGS or ARGS[0] in ('-h', '--help'): print(__doc__); sys.exit(0)
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GA, sc as SCM
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GA
+from simcode.emitter import model as SCM
+from simcode.solve import solve as SV
+from simcode.detector import model as DM
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lmref import LMRef, solve_input, LM_CAL
-from simcode.det.model import select_subpixel
+from simcode.detector.select import select_subpixel
 from simcode import config
 OUTR = config.root('out')
 
@@ -24,7 +27,7 @@ T = 6
 def run(P, scenes, seeds, ntarget=3500):
     CD.a.calib = config.model(config.INSITU_05)   # = the development calib_inputs/calib_0.5nM.json
     sim, rpsf, lut = CD.models(T)
-    det, _ = SCM.load_det_front(config.DET); det.eval()
+    det, _ = DM.load(config.DET); det.eval()
     ZF = os.environ.get('LM_ZFREE', '0') == '1'; zt = 'z' if ZF else ''      # z free (tag suffix 'z') or fixed 50 nm
     lm = LMRef(sim, P, zfree=ZF)
     for sc in scenes:
@@ -70,7 +73,7 @@ def run(P, scenes, seeds, ntarget=3500):
                         if bb is not None and len(bb):
                             cx, cy = torch.round(xx).long(), torch.round(yy).long()
                             q = lm.fit(fr, o['rn'], bb, cx, cy, xx, yy)
-                            so = SCM.sc_solve(solve_input(q, xx, yy), o['patt_est'], bb, LM_CAL)
+                            so = SV.solve_emitters(solve_input(q, xx, yy), o['patt_est'], bb, LM_CAL)
                             I_[m_] = q['I']; bg_[m_] = q['bg']; p_[m_] = torch.stack([q['x'], q['y']], 1); pm_[m_] = so['r']
                         r.update({f'I_{lab}': I_, f'bg_{lab}': bg_, f'pos_{lab}': p_, f'pospm_{lab}': pm_})
                 rows.append({k: v.detach().float().cpu().numpy() for k, v in r.items()})

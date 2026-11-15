@@ -25,7 +25,7 @@ pipeline) or a file of a multi-file acquisition (4Pi).
   U.fail(key, err)                   marker '<output>.failed' with the error text; failed units are skipped by todo()
                                      until the marker is deleted or redo is set
 
-Several GPUs = the same command started once per GPU with claiming on (python -m simcode.fileio.launch --gpus 1,2 -- <command>).
+Several GPUs = the same command started once per GPU with claiming on (python -m simcode.io.launch --gpus 1,2 -- <command>).
 """
 import json, os, shutil, socket, time
 import numpy as np

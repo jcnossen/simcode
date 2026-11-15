@@ -15,7 +15,7 @@ usage: python analysis/evalproto/covpool.py <dataset.json> [out_dir]   -> covpoo
 import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 spec = sys.argv[1]
 PX = E.PX
 LINES = []; OUT = {}

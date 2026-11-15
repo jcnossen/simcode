@@ -4,7 +4,7 @@ GT-free, and pattern-free beyond the pattern the solve already uses; the same co
 Noise model of a window's network intensities around the model mean mu(p) (T = 6 frames):
     Sigma(theta) = s * Sigma_net + c^2 diag(mu^2) + c_a^2 (mu mu^T within each angle)            theta = (s, c, c_a)
 (s = global scale of the network covariance incl. the kap_I2 bins, applied here as L -> sqrt(s) L; c = cal 'cmult', c_a = cal
-'cmult_ang': exactly the Sigma(p) of msolve.pattern_solve_all.)
+'cmult_ang': exactly the Sigma(p) of solve.pattern_solve_all.)
 Residuals e = I_net - mu(p_hat) at the solve's MAP. Non-kinetic, isolated rows (no other pass-1 detection within R_ISO px in the
 same window). For a GLS fit of p = (x, y, B) with the Gaussian position prior (precision P = diag(1/s_p^2), 0 for B) the
 residual covariance is exactly V_e(theta) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^T (J = d mu / d p at p_hat), so
@@ -46,9 +46,9 @@ def iso_flag(key, x, y, r=R_ISO):
 
 
 def pipeline_rows(d, chunks=None, nmax=120000, seed=0, pattern=None):
-    """rows of a pipeline output dir (pass1_<f0>.npz + pattern_est.pt): the 'out' rows as run_chunk_pass2 solves them.
+    """rows of a pipeline output dir (pass1_<f0>.npz + pattern_est.pt): the 'out' rows as run_chunk_pattern_solve solves them.
     Returns a list of (o-dict, PW, b, ph, iso) per chunk (subsampled to ~nmax rows in total)."""
-    from simcode.pipeline.common import pattern_frames
+    from simcode.processing.common import pattern_frames
     fs = sorted(glob.glob(f'{d}/pass1_*.npz'), key=lambda f: int(f.split('_')[-1][:-4]))
     if chunks is not None: fs = [fs[i] for i in chunks if i < len(fs)]
     Pt = torch.load(pattern or f'{d}/pattern_est.pt')
@@ -78,11 +78,12 @@ def with_theta(cal, th):
 @torch.no_grad()
 def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True):
     """pattern solve on all rows; per-row residual quantities at the MAP (torch, concatenated). Only non-kinetic isolated
-    rows are kept for the estimator unless keep_all. fast: msolve_fast.sc_solve_fast (exact restructuring) instead of
-    sc.sc_solve."""
-    from simcode.hd import sc as SCM, msolve_fast as MF
-    from simcode import core as C
-    solve = MF.sc_solve_fast if fast else SCM.sc_solve
+    rows are kept for the estimator unless keep_all. fast: solve_fast.solve_emitters_fast (exact restructuring) instead of
+    solve.solve_emitters."""
+    from simcode.solve import solve_fast as MF
+    from simcode.solve import solve as SV
+    from simcode.solve import pattern as C
+    solve = MF.solve_emitters_fast if fast else SV.solve_emitters
     acc = {}
     add = lambda k, v: acc.setdefault(k, []).append(v)
     for (o, PW, b, ph, iso) in rows:

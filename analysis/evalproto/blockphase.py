@@ -5,7 +5,7 @@ usage: python analysis/evalproto/blockphase.py <dataset.json> [out_dir]   -> blo
 import os, sys, json, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datasets as DS
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 spec = sys.argv[1]
 OFFS = (0, 75, 150, 225)
 LINES = []; OUT = {}

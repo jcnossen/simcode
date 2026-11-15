@@ -10,11 +10,13 @@ import sys, os, time
 import numpy as np, torch
 ARGS = sys.argv[1:]; sys.argv = sys.argv[:1]
 if not ARGS or ARGS[0] in ('-h', '--help'): print(__doc__); sys.exit(0)
-from simcode.sim.simtools import CD, dev, S
-from simcode.hd import gate as GA, sc as SCM
+from simcode.simulate.gate_layouts import CD, dev, S
+from simcode.benchmark import gate as GA
+from simcode.emitter import model as SCM
+from simcode.detector import model as DM
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from lmref import SFRef
-from simcode.det.model import select_subpixel
+from simcode.detector.select import select_subpixel
 from simcode import config
 OUTR = config.root('out')
 
@@ -32,7 +34,7 @@ def main():
     CD.a.calib = config.model(config.INSITU_05)   # = the development calib_inputs/calib_0.5nM.json
     T = 6
     sim, rpsf, lut = CD.models(T)
-    det, _ = SCM.load_det_front(config.DET); det.eval()
+    det, _ = DM.load(config.DET); det.eval()
     for sc in scenes:
         # kinetics: default OFF on every scene (one B per window). The on-interval model (SF_KIN=1, tag k1) was tested and is
         # worse: iso 1.2x vs 1.0x CRLB (t0 / t1 start inside the window on always-on emitters), rs05q nn > 6 px robust 1.3-1.5 vs 1.1-1.15

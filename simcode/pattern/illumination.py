@@ -1,7 +1,7 @@
 """
 Illumination inputs for the pass-2 networks.
 
-Pattern format (as realsim / pipeline.common.pattern_frames): per frame (kx, ky, phase, depth, relint), illumination
+Pattern format (as the acquisition simulator / processing.common.pattern_frames): per frame (kx, ky, phase, depth, relint), illumination
 relint (1 + depth cos(kx x + ky y - phase)), x = column, y = row (pixel centres at integer coordinates).
 
 illum_maps: per frame two channels, the zero-mean modulation  relint (1 + m cos(.)) - 1  and the quadrature  relint m sin(.)

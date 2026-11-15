@@ -6,7 +6,7 @@
   5. calib.json (per axis) / calib_avg.json (angle-averaged, the network-set PSF) + camera maps, psf_images.npz"""
 import json, math, os, shutil
 import numpy as np, torch
-from simcode.auto import psffit
+from simcode.pipeline import psf_fit
 
 
 def _inits(ds):
@@ -29,7 +29,7 @@ def _inits(ds):
 
 
 def psf_images(pt, z=(0.0, 0.03, 0.06, 0.1, 0.15), R=15, dev='cuda'):
-    F, _ = psffit.model_from_pt(pt, R, dev)
+    F, _ = psf_fit.model_from_pt(pt, R, dev)
     with torch.no_grad():
         pos = torch.tensor([[0.0, 0.0, zz] for zz in z], device=dev)
         p = F.psf_of(pos, F.G['focus'].expand(len(z)))
@@ -41,13 +41,13 @@ def calib_dict(ds, fit_js, fit_pt, pat, cam, maps_name, avg):
     c, o = ds.c, ds.c['optics']
     S = torch.load(fit_pt, weights_only=False); J = json.load(open(fit_js)); ex = S.get('extras', {})
     k = pat['k']
-    d = dict(source=f'simcode.auto in-situ calibration of {c["movie"]} (dataset {c["name"]}): {"angle-averaged" if avg else "per pattern axis"} PSF '
+    d = dict(source=f'simcode.pipeline in-situ calibration of {c["movie"]} (dataset {c["name"]}): {"angle-averaged" if avg else "per pattern axis"} PSF '
                     f'(Zernike 5-21 + focus + {c["psf"]["blur"]} blur, then frozen + photoselection {c["psf"]["photosel"]}); fit {fit_pt}',
              pixelsize_um=o['pixel_um'], wavelength_um=o['wavelength_um'], NA=float(S['NA']), n_imm=o['n_imm'], n_med=o['n_med'],
              apod=[float(v) for v in S['apod'].tolist()], zernike_noll=list(range(5, 22)), zernike_waves=[float(v) for v in S['zcoef'].tolist()],
              focus_um=float(S['focus']),
              camera=dict(gain_e_per_adu=cam['gain'], offset_adu=cam['offset'], readnoise_e=cam['readnoise_e'], maps=maps_name,
-                         note=f'gain {cam["gain_source"]}, offset {cam["offset_source"]}, read noise {cam["readnoise_source"]}; maps = simcode.insitu.camera_maps masked by the stage-c spots'),
+                         note=f'gain {cam["gain_source"]}, offset {cam["offset_source"]}, read noise {cam["readnoise_source"]}; maps = simcode.calibration.camera_maps masked by the stage-c spots'),
              pattern=dict(k_rad_per_px=k, pitch_nm=[float(2 * math.pi / np.hypot(*kk) * o['pixel_um'] * 1e3) for kk in k],
                           depth=pat['mod'], phase=pat['phase'], relint=pat['relint'],
                           note='in-situ estimate from the track intensities (blocked slot order, angle = slot // 3); depth = regression '
@@ -79,7 +79,7 @@ def run(ds):
         if os.path.exists(pre + '_psf.json') and not k.get('return_state') and os.path.getmtime(pre + '_psf.json') > os.path.getmtime(T):
             ds.log(f'psf: {pre} exists, reused'); return json.load(open(pre + '_psf.json'))
         ds.log(f'psf: fit {name} {split}')
-        return psffit.fit(D, pre, split=split, **kw, **k)
+        return psf_fit.fit(D, pre, split=split, **kw, **k)
     # 1-2 (base from every start; the lowest NLL / px picks the start of the later fits)
     ms = {}
     for tag, kw0 in starts:
@@ -92,9 +92,9 @@ def run(ds):
     for t in ms:
         if t != best: fits[f'base_{t}'] = ms[t]
     fits['bl'], st = F(f'bl_{best}', blur=P['blur'], return_state=True, **ini)
-    pat = psffit.pattern_from_intensities(st, c['pattern']['pitch_px'], dev=dev, log=ds.log)
+    pat = psf_fit.pattern_from_intensities(st, c['pattern']['pitch_px'], dev=dev, log=ds.log)
     torch.save(st, os.path.join(d, 'bl_intensities.pt')); json.dump(pat, open(os.path.join(d, 'pattern.json'), 'w'), indent=1)
-    cz = psffit.centre_vs_z(st, D, c['optics']['pixel_um'] * 1e3)
+    cz = psf_fit.centre_vs_z(st, D, c['optics']['pixel_um'] * 1e3)
     ds.log('psf: crop centre vs z:', json.dumps(cz))
     last = 'bl'
     if P['photosel']:
@@ -107,10 +107,10 @@ def run(ds):
         names = ['base', 'bl']
         if P['photosel']:
             F(f'ps3_{best}', 'cb0', photosel=3, kdir=pat['k'], init_fit=os.path.join(d, f'fit_bl_{best}_cb0_psf.pt'), freeze_base=True); names.append('ps3')
-        H = psffit.heldout(D, {n: os.path.join(d, f'fit_{n}_{best}_cb0_psf.pt') for n in names}, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
+        H = psf_fit.heldout(D, {n: os.path.join(d, f'fit_{n}_{best}_cb0_psf.pt') for n in names}, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
         np.savez(os.path.join(d, 'heldout.npz'), **{f'{n}_{k}': v[k] for n, v in H.items() for k in ('nll', 'chi2')})
         Hs = {n: {k: v for k, v in h.items() if k not in ('nll', 'chi2')} for n, h in H.items()}
-        for a, b in zip(names[:-1], names[1:]): Hs[f'{b}_minus_{a}'] = psffit.paired(H, a, b)
+        for a, b in zip(names[:-1], names[1:]): Hs[f'{b}_minus_{a}'] = psf_fit.paired(H, a, b)
         json.dump(Hs, open(os.path.join(d, 'heldout.json'), 'w'), indent=1)
     # 5: calib files
     shutil.copy(os.path.join(ds.out, 'cammaps', 'camera_maps.npz'), os.path.join(d, 'camera_maps.npz'))

@@ -9,7 +9,7 @@ converted with gain (1 + eg) and offset + eo ADU instead of the true ones).
 """
 import json, math
 import numpy as np, torch
-from simcode.sim.simulator import Simulator
+from simcode.simulate.simulator import Simulator
 from simcode import psf as spsf
 from simcode.psf import render
 

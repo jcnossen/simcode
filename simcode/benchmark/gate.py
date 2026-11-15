@@ -1,5 +1,5 @@
 """
-Gate benchmark suite (critic review 26 #2), simulation only, experiment-matched simulator (simcode/hd/realsim.py).
+Gate benchmark suite (critic review 26 #2), simulation only, experiment-matched simulator (simcode/simulate/acquisition.py).
 Scenes (64 x 64 FOVs, T = 6):
   iso         isolated always-on emitters (18 px grid), window photons log-uniform 100-20000, 0.5 nM preset EXACT model
   pair<s>     1:1 pairs at s = 1 / 1.5 / 2 / 3 px, random orientation, totals 300-5000, kinetics (>= 3 on-frames), exact
@@ -13,19 +13,19 @@ Scenes (64 x 64 FOVs, T = 6):
 Each scene x eval seed (301, 302, 303; tuning used 202 / 5202) stores the GT table (all active emitters: visible
 targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / isolated CRLBs; dim emitters are
 'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
-a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/hd/gate_report.py).
+a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_report.py).
 Front-end: sc = detector (--det) + head (--sc) + the explicit pattern solve with the calibration --sccal (defaults: the default
 model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
 SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
-Other front-ends (SIMCODE: simcode/eff/simcode_gate.py; pass 2: simcode/p2/dump.py) write the same npz format.
-Reports: python -m simcode.hd.gate_report_xdet --dir <out> --tag <tag> --scen iso,...
-usage: python -m simcode.hd.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
+Other front-ends (SIMCODE: simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
+Reports: python -m simcode.benchmark.gate_report_xdet --dir <out> --tag <tag> --scen iso,...
+usage: python -m simcode.benchmark.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
 """
 import argparse, json, math, os, time
 import numpy as np, torch
-from simcode.sim import simtools as ST
-from simcode.sim.simtools import CD, S
-from simcode.hd.realsim import RealSim
+from simcode.simulate import gate_layouts as ST
+from simcode.simulate.gate_layouts import CD, S
+from simcode.simulate.acquisition import AcquisitionSim
 from simcode import config
 
 dev = 'cuda'
@@ -43,11 +43,11 @@ def gate_calib():
 
 def rsim(pre):
     if pre not in RSI:
-        RSI[pre] = RealSim(pre, S, S, 6, calib=gate_calib())
+        RSI[pre] = AcquisitionSim(pre, S, S, 6, calib=gate_calib())
     return RSI[pre]
 
 
-POVER, SOVER = {}, {}     # mismatch ablation (analysis/ablation_cov/gate_dump.py): RealSim preset / scene() overrides for the *pm / *qm scenes
+POVER, SOVER = {}, {}     # mismatch ablation (analysis/ablation_cov/gate_dump.py): AcquisitionSim preset / scene() overrides for the *pm / *qm scenes
 Q_MED = {'0.5nM': 1260.0, '2.5nM': 1890.0}    # iteration 32: label-unit paper brightness (rs05q / rs25q) = SIMCODE fit x kappa, sc7/kappa.txt
 Q_SD = 0.45
 def gen(sc, it, seed, T=6):
@@ -78,7 +78,7 @@ def gen(sc, it, seed, T=6):
         if sc in ('rs25q', 'rs25qm'): nb = min(nb, 12)    # iteration 32: CRLB memory (brighter -> more visible neighbours)
         em = rs.emitters(nb, dens=dens)
         if sc[4:5] == 'q':       # iteration 32: label-unit paper brightness; 'qm' = + full mismatch (with the ablation overrides)
-            from simcode.hd.data import paper_bright
+            from simcode.simulate.batches import paper_bright
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, jitter=None, med0=Q_MED[pre], sd=Q_SD)
             if sc.endswith('qm'):
                 save = dict(rs.p); rs.p.update(POVER)
@@ -89,7 +89,7 @@ def gen(sc, it, seed, T=6):
             else:
                 o = rs.scene(nb, em=em, **exact)
         elif sc.endswith('pm'):    # iteration 31: paper photons (same draw as rs..p) + the full mismatch of rs05 / rs25
-            from simcode.hd.data import paper_bright
+            from simcode.simulate.batches import paper_bright
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, jitter=None)
             save = dict(rs.p); rs.p.update(POVER)
             try:
@@ -97,7 +97,7 @@ def gen(sc, it, seed, T=6):
             finally:
                 rs.p.clear(); rs.p.update(save)
         elif sc.endswith('p'):     # iteration 30b: paper-matched photons (data.paper_bright, no per-window jitter), exact model
-            from simcode.hd.data import paper_bright
+            from simcode.simulate.batches import paper_bright
             em['bright'] = paper_bright(pre, nb, em['fov'], em['z'], rs, jitter=None)
             o = rs.scene(nb, em=em, **exact)
         elif sc.endswith('x'):
@@ -125,10 +125,11 @@ def psf_rows(psS, rpsf, G, ai, focus):
 
 @torch.no_grad()
 def out_sc(SC, o, zmax):
-    """sc front-end: detector (sub-pixel NMS + top-k, p > THR0) -> SCHead (network I_t, full covariance, bg_t,
+    """the SIMCODE v2 front end: detector (sub-pixel NMS + top-k, p > THR0) -> emitter network (I_t, full covariance, bg_t,
     position prior) -> explicit intensity-domain pattern solve (fringe hypotheses, kinetic selection, chi2-aware sigma)."""
-    from simcode.det.model import select_subpixel
-    from simcode.hd import sc as SCM
+    from simcode.detector.select import select_subpixel
+    from simcode.emitter import model as EM
+    from simcode.solve import solve as SV
     det, head, col, cal = SC
     fr = o['frames']; nb = fr.shape[0]
     with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -137,12 +138,12 @@ def out_sc(SC, o, zmax):
     keep = torch.isfinite(c['logit'])
     b, iy, ix, x, y, lg = (c[k][keep] for k in ('b', 'iy', 'ix', 'x', 'y', 'logit'))
     if len(b) == 0: return None
-    nbr = SCM.nbr_for(head, dd['logit'], b, iy, ix, x, y, lg)
+    nbr = EM.nbr_map(dd['logit'].float(), b, iy, ix, x, y, lg)
     outs = []
     for c0 in range(0, len(b), 4096):
         sl = slice(c0, c0 + 4096)
-        oh = SCM.apply_head(head, col, fr, None, b[sl], iy[sl], ix[sl], x[sl], y[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
-        so = SCM.sc_solve(oh, o['patt_est'], b[sl], cal)
+        oh = EM.apply_to_candidates(head, col, fr, None, b[sl], iy[sl], ix[sl], x[sl], y[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
+        so = SV.solve_emitters(oh, o['patt_est'], b[sl], cal)
         outs.append(dict(x_sc=so['r'][:, 0], y_sc=so['r'][:, 1], s_sc=so['s'], scal_sc=so['s_cal'], q=so['q'],
                          x_prior=oh['x'], y_prior=oh['y'], s_prior=oh['lsxy'].exp(), I_net=oh['I'],
                          sI_net=oh['L'].pow(2).sum(-1).sqrt(), bg_net=oh['bg'], kin=so['kin'].float()))
@@ -168,10 +169,11 @@ def main():
     T = 6
     sim, rpsf, lut = CD.models(T)
     fronts = a.fronts.split(',')
-    assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE: simcode.eff.simcode_gate; pass 2: simcode.p2.dump)'
-    from simcode.hd import sc as SCM
-    det_, _ = SCM.load_det_front(a.det)
-    SC = (det_, SCM.load(config.resolve(a.sc)), SCM.PSFCol(sim), json.load(open(config.resolve(a.sccal))) if a.sccal else {})
+    assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE: simcode.benchmark.preprint_gate; pass 2: simcode.processing.gate_dump)'
+    from simcode.emitter import model as EM
+    from simcode.detector import model as DM
+    det_, _ = DM.load(a.det)
+    SC = (det_, EM.load(config.resolve(a.sc)), EM.PSFCol(sim), json.load(open(config.resolve(a.sccal))) if a.sccal else {})
     for sc in a.scen.split(','):
         for seed in [int(s_) for s_ in a.seeds.split(',')]:
             t0 = time.time(); GT, OUTS = [], {f: [] for f in fronts}; need = a.ntarget; it = 0; fov0 = 0

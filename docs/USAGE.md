@@ -22,7 +22,7 @@ print(ds)                                       # rows, frames, pixel size, medi
 ds.pos, ds.crlb, ds['score'], ds.keys()         # fields (tensors); ds.meta holds the metadata; ds.numpy(): dict of arrays
 ```
 
-With the automatic pipeline (`simcode.auto`): `ds = pipe.dataset_pass2()` (or `pipe.dataset_pass1()`) gives the same object.
+With the automatic pipeline (`simcode.pipeline`): `ds = pipe.dataset_pass2()` (or `pipe.dataset_pass1()`) gives the same object.
 `Dataset.from_run(d, columns=('sx', 'sy', 'p'))` loads only those table columns (x, y, frame always).
 
 ## Select and filter
@@ -30,7 +30,7 @@ With the automatic pipeline (`simcode.auto`): `ds = pipe.dataset_pass2()` (or `p
 ```python
 sel = ds.select()                               # the paper's selection: max(crlb) * pixel_nm <= 12 nm, score >= 0.63, in the crop
 tight = ds.select(max_precision_nm=8.0)         # another threshold (nm); min_score=..., in_region=False; None = no condition
-m = ds.mask()                                   # the boolean mask (= simcode.strict.select on the table)
+m = ds.mask()                                   # the boolean mask (= simcode.table.select on the table)
 full = ds[ds.sel]                               # the field sel: the recommended full output for renders and drift
 sub = ds.filter_photons(500, 5000).filter_frames(0, 30000).crop(20, 20, 100, 100)
 sub = ds.filter_crlb(max_nm=10)                 # torch_psf filters; in-place variants end with _
@@ -52,7 +52,7 @@ ds.set_drift(np.load('drift.npy'))              # or use a saved estimate
 
 ```python
 img = sel.render(pixel_nm=10)                   # 2D histogram [ny, nx]
-res = sel.frc()                                 # nm; halves = alternating 300-frame blocks, 1/7 threshold (= simcode.evalproto.frc)
+res = sel.frc()                                 # nm; halves = alternating 300-frame blocks, 1/7 threshold (= simcode.evaluation.frc)
 sel.save('sel.hdf5')                            # torch-psf format (docs/DATASET_FORMAT.md of torch-psf)
 again = Dataset.load('sel.hdf5')                # also torch_psf.Dataset.load('sel.hdf5') without SIMCODE
 sel.save_picasso('sel_picasso.hdf5')            # Picasso (+ .yaml); sel.save('sel.csv'): ThunderSTORM

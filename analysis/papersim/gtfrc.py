@@ -7,7 +7,7 @@ papersim); `unit_nm` converts the reported resolutions to nm.
   gt_frc(pos, gt, lo, hi, pixel, unit_nm)        FRC between the rendered reconstruction and the rendered ground truth (all
         labelling sites), both as histograms on the same fixed field [lo, hi) with the same pixel; FRC per shell of width
         1 / (largest field side), 5-shell moving average, resolution = 1 / (first shell, from shell 3 on, below the
-        threshold, default 1/7) -- the estimator of simcode.evalproto.frc.frc on a fixed field (a common Gaussian blur of
+        threshold, default 1/7) -- the estimator of simcode.evaluation.frc.frc on a fixed field (a common Gaussian blur of
         both renders would cancel per shell, so none is applied). Missing coverage (correlated power lost at all
         frequencies), false positives / ghosts (uncorrelated power) and imprecision (high-frequency fall-off) all lower it;
         no matching radius. -> dict(res_nm, freq (1/nm), curve)

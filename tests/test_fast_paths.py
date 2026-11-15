@@ -4,13 +4,13 @@ deterministic sim chunk. Run:  CUDA_VISIBLE_DEVICES=<gpu> python tests/test_fast
 Needs a CUDA GPU (~1 min) and the models directory (simcode/config.py). Networks and calibrations: the default model
 (m1809, simcode/models.json); PSF / camera: the in-situ calibration of the 1809/2 movie; pattern: the pattern estimate of
 the 1809/2 production run with that set (tests/data/pattern_est_1809_2.pt). Checks:
-  pass 1 (Pass1SC vs Pass1SCFast; queued, 1- and 2-stream, partial head batches):
+  pass 1 (Pass1Front vs Pass1FrontFast; queued, 1- and 2-stream, partial head batches):
     fp32 (bf16 autocast and TF32 off in both): identical candidate list, |dx|, |dy| < 1e-4 px, |dI| < 1e-2 ph
     bf16 (as in production): identical candidate list; I / x differences <= 2 x the bf16 noise reference (the original
          run with a different window batch, which changes the cuDNN algorithms) + 1e-6
-  pattern solve (sc.sc_solve vs msolve_fast.sc_solve_fast): median |dr| < 1e-5 px (compiled LM step: < 5e-5 px), p99 < 2e-3 px (the original
+  pattern solve (solve.solve_emitters vs solve_fast.solve_emitters_fast): median |dr| < 1e-5 px (compiled LM step: < 5e-5 px), p99 < 2e-3 px (the original
     solve's own sensitivity to a 1-ulp input change is p99.9 ~6e-4, max ~0.09 px), kinetic-model choice >= 99.9 % equal
-  pattern-aware pass 2 (Pass2P2 vs Pass2P2Fast, fp32): identical rows, |d prior| < 1e-4 px, solve positions as above; the
+  pattern-aware pass 2 (Pass2Front vs Pass2FrontFast, fp32): identical rows, |d prior| < 1e-4 px, solve positions as above; the
     z from pass 1: identical links to the pass-1 rows (> 90 % of the selection linked), z differences as the solve positions
 """
 import contextlib, json, os, sys
@@ -34,15 +34,15 @@ BF16_X, BF16_I, BF16_DET = 5e-3, 3.0, 1e-3
 
 
 def sim_movie():
-    """deterministic 2.5 nM-like 120 x 120 chunk (RealSim windows laid end to end, 240 frames) in ADU"""
+    """deterministic 2.5 nM-like 120 x 120 chunk (AcquisitionSim windows laid end to end, 240 frames) in ADU"""
     if 'mov' in _C: return _C['mov']
-    from simcode.pipeline.common import load_calib
+    from simcode.processing.common import load_calib
     from simcode.psf import ArrayMovie            # in-memory ADU stack with the reader interface
-    from simcode.hd.realsim import RealSim
+    from simcode.simulate.acquisition import AcquisitionSim
     cal = load_calib(CALIB)
     with torch.random.fork_rng(devices=[torch.cuda.current_device()]):
         torch.manual_seed(1234)
-        rs = RealSim('2.5nM', H=120, W=120, T=6, seed=1234, calib=CALIB)
+        rs = AcquisitionSim('2.5nM', H=120, W=120, T=6, seed=1234, calib=CALIB)
         o = rs.scene(40)
     fr = o['frames'].reshape(-1, 120, 120).cpu().numpy()
     adu = fr / cal['gain'] + cal['offset'][:120, :120][None]
@@ -83,14 +83,14 @@ def same_cands(Ra, Rb, tol):
 
 
 def _pass1(fp32, **kw):
-    from simcode.pipeline.sc_front import Pass1SC
-    from simcode.pipeline.sc_front_fast import Pass1SCFast
+    from simcode.processing.front import Pass1Front
+    from simcode.processing.front_fast import Pass1FrontFast
     mov, cal = sim_movie()
     if 'p1' not in _C:
-        A = Pass1SC(CALIB, head=HEAD, det=DET)
-        B = Pass1SCFast(CALIB, head=HEAD, det=DET)
+        A = Pass1Front(CALIB, head=HEAD, det=DET)
+        B = Pass1FrontFast(CALIB, head=HEAD, det=DET)
         B.det = A.det; B.head = A.head; B.front.det = A.det
-        B.front.heads = {'h': (A.head, 'sc')}
+        B.front.heads = {'h': A.head}
         _C['p1'] = (A, B)
     A, B = _C['p1']
     A.head.bf16 = not fp32
@@ -143,8 +143,9 @@ def _solve_cmp(a, c, tag, med_tol=1e-5):
 
 
 def test_pattern_solve():
-    from simcode.hd import sc as SCM, msolve_fast as MF
-    from simcode.pipeline.common import pattern_frames
+    from simcode.solve import solve_fast as MF
+    from simcode.solve import solve as SV
+    from simcode.processing.common import pattern_frames
     Ra, _, _ = _pass1(False)
     cal = json.load(open(SCAL))
     pat = torch.load(PATT, weights_only=False)
@@ -155,25 +156,25 @@ def test_pattern_solve():
     o = dict(I=tt(Ra['I'][keep]), L=tt(Ra['L'][keep]), x=tt(Ra['x'][keep]), y=tt(Ra['y'][keep]),
              lsxy=torch.log(tt(np.c_[Ra['sx'][keep], Ra['sy'][keep]])), x_det=tt(Ra['x_det'][keep]), y_det=tt(Ra['y_det'][keep]))
     b = torch.tensor(inv, device='cuda')
-    a = SCM.sc_solve(o, PW, b, cal)
-    _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal), 'pattern solve (eager)')
-    from simcode import fastutil
-    if fastutil.compile_available():
+    a = SV.solve_emitters(o, PW, b, cal)
+    _solve_cmp(a, MF.solve_emitters_fast(o, PW, b, cal), 'pattern solve (eager)')
+    from simcode.util import compile as torch_compile
+    if torch_compile.compile_available():
         # compiled LM step: float rounding of the fused kernels; on the rows of the stored-candidate cut 0.3 (more dim rows than
         # the earlier 0.5) the median is 2.3e-5 px (8.6e-6 px on the p >= 0.5 rows; docs/CLEANUP_LOG.md 2026-11-14)
-        _solve_cmp(a, MF.sc_solve_fast(o, PW, b, cal, compile='on'), 'pattern solve (compiled)', med_tol=5e-5)
+        _solve_cmp(a, MF.solve_emitters_fast(o, PW, b, cal, compile='on'), 'pattern solve (compiled)', med_tol=5e-5)
 
 
 def test_pass2_p2_fp32():
-    from simcode.p2.front import Pass2P2
-    from simcode.pipeline.sc_front_fast import Pass2P2Fast
+    from simcode.processing.pass2_front import Pass2Front
+    from simcode.processing.front_fast import Pass2FrontFast
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
-    A = Pass2P2(CALIB, head=P2H, det=P2D)
-    B = Pass2P2Fast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
+    A = Pass2Front(CALIB, head=P2H, det=P2D)
+    B = Pass2FrontFast(CALIB, head=P2H, det=P2D, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
     B.det = A.det; B.head = A.head
-    from simcode.pipeline.sc_front_fast import Pass1SCFast
-    P1, _ = Pass1SCFast(CALIB, head=HEAD, det=DET).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
+    from simcode.processing.front_fast import Pass1FrontFast
+    P1, _ = Pass1FrontFast(CALIB, head=HEAD, det=DET).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
     A.head.bf16 = False
     with fp32_mode():
         Ra = A.run_chunk(mov, cal, 0, mov.n, pat, P2CAL, P1, SCAL)
@@ -204,8 +205,8 @@ def test_pass2_p2_fp32():
 
 def test_prefetch_reader():
     """Prefetch (background read of the next chunk) returns the same frames as the reader, in plan order and on a miss"""
-    from simcode.pipeline.common import chunk_read_plan
-    from simcode.fileio.movie import Prefetch
+    from simcode.processing.common import chunk_read_plan
+    from simcode.io.movie import Prefetch
     mov, _ = sim_movie()
     plan = chunk_read_plan(mov, [0, 60, 120, 180], 60, mov.n, (5, 5, 110), 5)
     pm = Prefetch(mov, plan)

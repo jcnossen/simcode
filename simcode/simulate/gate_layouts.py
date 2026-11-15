@@ -1,12 +1,12 @@
 """
-Emitter layouts for the gate scenes (simcode/hd/gate.py) on top of simcode.sim.crlb (scene generator, multi-emitter CRLB,
+Emitter layouts for the gate scenes (simcode/benchmark/gate.py) on top of simcode.simulate.crlb (scene generator, multi-emitter CRLB,
 one-to-one matching): isolated grids, close pairs, Poisson scenes, wide brightness, nearest-neighbour distances, and the
 pattern-estimate error model (common per-angle phase error U(0, 0.05) rad sd, per-step 0.03 rad, depth +-10 % per FOV) so
 the estimators see an imperfect pattern while the CRLB uses the true one.
 """
 import math
 import torch
-import simcode.sim.crlb as CD
+import simcode.simulate.crlb as CD
 
 dev = 'cuda'
 S, P, h, R = CD.S, CD.P, CD.h, CD.R

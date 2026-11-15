@@ -75,7 +75,7 @@ def theil_sen(x, y, n=4000, seed=0):
     return float(np.median((y[i] - y[j])[ok] / (x[i] - x[j])[ok]))
 
 
-from simcode.evalproto.frc import frc, frc_halves as frc_split  # noqa (the one FRC implementation)
+from simcode.evaluation.frc import frc, frc_halves as frc_split  # noqa (the one FRC implementation)
 
 
 mad = lambda v: 1.4826 * np.median(np.abs(v - np.median(v))) if len(v) else np.nan
@@ -181,7 +181,7 @@ def main():
     pr(f'M2 photon units (ours label / SIMCODE, exact pairs, 200-2000): Theil-Sen {J["M2"]["theil_sen"]:.3f}, median ratio {J["M2"]["median_ratio"]:.3f} '
        f'(pre-registered kappa {K}); per SIMCODE bin: ' + ' '.join(f'{k}:{v:.2f}' for k, v in J['M2']['per_bin'].items()))
     # ---- M3 q/dof vs the sim reference (same network + calibration, same units)
-    from simcode.hd.gate_report import load, match as gmatch
+    from simcode.benchmark.gate_report import load, match as gmatch
     J['M3'] = {}
     rq = rp = None
     if a.ref_run:
@@ -245,7 +245,7 @@ def main():
            + ('   <-- 300-450' if 300 <= lo < 450 else ''))
     # ---- M6x (2026-11-09): our counts per output mode (per-window / photon-disjoint / merged chains) x detection cut, binned by
     #      our photons / kappa AND by our photons / the measured M2 ratio (empirical cross-calibration), vs SIMCODE
-    from simcode.pipeline import dedup as DD
+    from simcode.processing import dedup as DD
     J['M6x'] = {}
     Oa = {k: v[(O_all['wstart'] >= a.f0) & (O_all['wstart'] < a.f1) & np.isfinite(O_all['x_hy0'])] for k, v in O_all.items()}
     k2 = J['M2']['median_ratio']

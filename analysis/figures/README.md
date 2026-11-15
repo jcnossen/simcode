@@ -24,7 +24,7 @@ The evaluation-only references are generated on GPU with `run_crlb_refs.sh [icrl
 - `icrlb.py`: per-frame I_t and bg of a head vs their CRLBs.
 - `lm_icrlb.py` and `lm_gate.py`: the basic single-emitter LM.
 - `sf_gate.py`: the joint SIMFLUX MLE.
-- `simcode.eff.simcode_gate`: SIMCODE, which needs smlmtorch.
+- `simcode.benchmark.preprint_gate`: SIMCODE, which needs smlmtorch.
 
 `lmref.py` holds the LM and SIMFLUX-MLE references (`LMRef`, `SFRef`). They are not part of the method. It uses
 `simcode.psf.spline` (torch_psf.CubicSplinePSF), which equals the development `hd/solve.make_lut`. The first 175 detector candidates of

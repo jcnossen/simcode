@@ -7,19 +7,19 @@ SIMCODE v2 on a DMD-SIMFLUX DNA-PAINT movie, production settings.
 Stages (each skipped if its outputs exist, unless --redo):
   1  pass 1      detector + head on every 6-frame window (start every 3 frames): network per-frame intensities
                  with covariance, bg, pattern-free position prior; candidates with detector p >= 0.3 are stored
-                 (simcode/pipeline/common.CAND_PMIN)
+                 (simcode/processing/common.CAND_PMIN)
   2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift) estimated from
                  the pass-1 network intensities
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
                  with the model's fixed-c solve calibration
   4  pass 2      pattern-aware pass-2 detector + head (p2L) fed the estimated pattern, then the same solve
-  5  table       localization tables locs_p1.npz and locs_p2.npz (simcode/strict.py) with the model's selection-aware
+  5  table       localization tables locs_p1.npz and locs_p2.npz (simcode/table.py) with the model's selection-aware
                  sigma rescale (--sig_u); the paper's selection max(sx, sy) <= sigma_max nm on the rows with p >= 0.63
-                 inside the crop (--sigma_max; simcode.strict.select / simcode.dataset.Dataset.select) as small files
+                 inside the crop (--sigma_max; simcode.table.select / simcode.dataset.Dataset.select) as small files
                  locs_p*_sig<X>.npz (--subset); summary.json
 Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13;
 file names relative to the models directory, simcode/config.py), or the path of a model folder with a model.json (as written
-by the automatic pipeline's training stage / simcode.auto.train.export_model). There are no single-file overrides: a model
+by the automatic pipeline's training stage / simcode.pipeline.training.export_model). There are no single-file overrides: a model
 with other files is a model folder. --dataset <name> takes movie, calibration and model of a paper dataset from the
 '_production' entry of models.json (what the paper tables are made with).
 Run record: <out>/run_config.json (+ run_config.yaml), written at the start (status 'running') and completed at the end
@@ -28,7 +28,7 @@ pattern and selection outcome (simcode/util/runconfig.py; README "Run record").
   python -m simcode.run --config <run_config.json> --out <new dir>     re-run with exactly the settings of a record
 Code path: queued batching, the exact fast solve, torch.compile of the solve's LM step when available.
 Set CUDA_VISIBLE_DEVICES to choose the GPU; several GPUs: the same command once per GPU with --claim 1
-(python -m simcode.fileio.launch --gpus 1,2 -- python -m simcode.run ... --claim 1): the chunks of pass 1 and pass 2 are
+(python -m simcode.io.launch --gpus 1,2 -- python -m simcode.run ... --claim 1): the chunks of pass 1 and pass 2 are
 shared between the copies, the stages in between run in one of them.
 A 6000-frame 0.5 nM chunk takes ~0.5 min (pass 1 + solve) on an idle RTX 3090.
 """
@@ -39,7 +39,7 @@ PROD = config.production()
 
 
 def _uncal(args):
-    from simcode.pipeline import run_uncalibrated
+    from simcode.processing import run_uncalibrated
     run_uncalibrated.main(args)
 
 
@@ -66,11 +66,11 @@ def build_parser():
     ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
                     'selection region / sigma-rescale tiles use the corrected positions')
     ap.add_argument('--sigma_max', type=float, default=None, help="nm; threshold of the paper's selection (max(sx, sy) <= sigma_max on the rows with "
-                    'p >= 0.63 inside the crop; stored in the table; default strict.SIGMA_MAX_NM)')
+                    'p >= 0.63 inside the crop; stored in the table; default table.SIGMA_MAX_NM)')
     ap.add_argument('--subset', default=None, help="thresholds (nm) of the selection subset files locs_p*_sig<X>.npz, e.g. '12,14' "
                     "(default: sigma_max; '' = none)")
     ap.add_argument('--format', default='npz', help='table formats: npz,csv,hdf5')
-    ap.add_argument('--sig_u', default='set', help='selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (strict.build_table); '
+    ap.add_argument('--sig_u', default='set', help='selection-aware sigma rescale json per pass, "<pass1>,<pass2>" (table.build_table); '
                     "'set' (default) = the rescale of the model; '' = none")
     ap.add_argument('--redo', type=int, default=0)
     return ap
@@ -94,7 +94,7 @@ def resolve(ap, argv):
     a.p2_cal = N[f'p2_cal_{a.cal_kind}']
     if a.sig_u == 'set': a.sig_u = N['sig_u']
     if a.sigma_max is None:
-        from simcode import strict as SP
+        from simcode import table as SP
         a.sigma_max = SP.SIGMA_MAX_NM
     if a.subset is None: a.subset = f'{a.sigma_max:g}'
     cal = N[f'cal_{a.cal_kind}']
@@ -103,7 +103,7 @@ def resolve(ap, argv):
 
 def settings_of(a, cal):
     """the fully resolved settings of a run (run_config.json 'settings'): every argument after the defaults, files as absolute paths"""
-    from simcode import strict as SP
+    from simcode import table as SP
     r = config.resolve
     return dict(dataset=a.dataset, movie=r(a.movie, 'data'), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
                 det=r(a.det), head=r(a.head), cal=r(cal), p2_det=r(a.p2_det), p2_head=r(a.p2_head), p2_cal=r(a.p2_cal),
@@ -115,9 +115,9 @@ def settings_of(a, cal):
 
 def fixed_values():
     """what a run does that is not an option (run_config.json 'fixed'), read from the code so that an in-memory override shows"""
-    from simcode.pipeline import run_uncalibrated as RU, pattern_est as PE
-    from simcode.pipeline.common import CAND_PMIN
-    from simcode import strict as SP
+    from simcode.processing import run_uncalibrated as RU, pattern_estimation as PE
+    from simcode.processing.common import CAND_PMIN
+    from simcode import table as SP
     d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
     return dict(stages='pass 1, pattern estimation, pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
                 window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, autoc=0,
@@ -150,8 +150,8 @@ def _from_config(path, rest):
         print(f'simcode.run --config: the record used files other than those of model {M["name"]}: re-run with them as model {name}', flush=True)
     W = REC.get('overrides')
     if W and not os.environ.get('AUTO_WRAP'):
-        from simcode.auto import runwrap
-        runwrap.apply({k: v for k, v in W.items() if k != 'title'})
+        from simcode.pipeline import run_with_overrides
+        run_with_overrides.apply({k: v for k, v in W.items() if k != 'title'})
         print('simcode.run --config: applied the in-memory overrides of the record:', ', '.join(k for k in W if k != 'title'), flush=True)
     return RC.rerun_argv(REC) + rest, REC, W
 
@@ -168,7 +168,7 @@ def main(argv=None):
     a, N, cal = resolve(ap, argv)
     a.model_name = N['name']
     from simcode.util.proctitle import auto; auto('run')     # recognizable name in nvidia-smi / ps
-    from simcode.fileio.work import Units, atomic_json
+    from simcode.io.work import Units, atomic_json
     os.makedirs(a.out, exist_ok=True)
     # ---- the run record (run_config.json): written now with status 'running', completed at the end
     S = settings_of(a, cal); FX = fixed_values()
@@ -189,8 +189,8 @@ def main(argv=None):
     except BaseException as e:
         RC.finish(a.out, error=f'{type(e).__name__}: {e}')
         raise
-    from simcode import fastutil
-    RC.finish(a.out, timing=ST, extra=dict(torch_compile_used=fastutil._STATE.get('ok')))
+    from simcode.util import compile as torch_compile
+    RC.finish(a.out, timing=ST, extra=dict(torch_compile_used=torch_compile._STATE.get('ok')))
     print('done', json.dumps(ST), flush=True)
 
 
@@ -216,11 +216,11 @@ def _stages(a, N, cal, Units, atomic_json):
                      '--p2_cal', a.p2_cal, '--stages', 'pass2'])
     ST['pass2_s'] = time.time() - t0
     # 5: tables + selections (with --claim 1 the tables are written by one of the copies; the others skip them)
-    from simcode import strict as SP
+    from simcode import table as SP
     px = json.load(open(config.resolve(a.calib)))['pixelsize_um'] * 1e3
     crop = tuple(float(v) for v in a.crop.split(','))
     sigma_max = a.sigma_max
-    from simcode.pipeline.common import CAND_PMIN
+    from simcode.processing.common import CAND_PMIN
     summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.p2_cal, cand_pmin=CAND_PMIN,
                 run_config='run_config.json (the complete, resolved settings of this run)')
     tags = [('est', 'locs_p1'), ('est2', 'locs_p2')]

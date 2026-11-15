@@ -22,8 +22,8 @@ ci = lambda v: [float(v[0]), float(np.nanpercentile(v[1:], 2.5)), float(np.nanpe
 f3 = lambda c, d=2: ('%.{0}f [%.{0}f, %.{0}f]'.format(d)) % tuple(c)
 fd = lambda c: '%+.3f [%+.3f, %+.3f]' % tuple(c)
 def m12_of(T):
-    """the paper's selection (simcode.strict.select: p >= 0.63, inside the crop, max(sx, sy) * 65 nm <= 12 nm) of every row"""
-    from simcode import strict as SP
+    """the paper's selection (simcode.table.select: p >= 0.63, inside the crop, max(sx, sy) * 65 nm <= 12 nm) of every row"""
+    from simcode import table as SP
     return SP.select(T, A.SIGMA_MAX_NM, px_nm=A.PX)
 
 

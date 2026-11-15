@@ -5,7 +5,7 @@ import os, sys, json
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pblib as B
-from simcode import strict as SP
+from simcode import table as SP
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 
 RUN = {'1809_2': 'v2_matched', '2.5nM_2': 'v2_matched', '20nM_2': 'v2_m25'}

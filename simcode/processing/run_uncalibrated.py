@@ -3,9 +3,9 @@ Expert entry point of the SIMCODE v2 pipeline (same flags and file layout as the
 is `python -m simcode.run`, which calls this module's stages with the production defaults).
 
   pass1    detector + per-candidate head: network per-frame intensities with covariance, per-frame bg,
-           pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/pipeline/sc_front[_fast].py)
+           pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/front[_fast].py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
-           network intensities alone                                                (simcode/pipeline/pattern_est.py)
+           network intensities alone                                                (simcode/processing/pattern_estimation.py)
   pass2    --frontend sc:   the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz)
            --frontend sc2p: + the pattern-aware pass 2 (pass-2 detector + head fed the estimated pattern, then the same
                             solve; pass2_est2_<f0>.npz, head-prior variant pass2_est2b_<f0>.npz); the pass-1 solve is
@@ -13,17 +13,17 @@ is `python -m simcode.run`, which calls this module's stages with the production
 Only the camera maps and the PSF are taken from --calib (in-situ calibration json). Optional --ref_pattern: the solve is
 repeated with that pattern on the same detections (tag 'ref' / 'ref2'; for comparisons only).
 
-Code path: the fast front-ends (simcode/pipeline/sc_front_fast.py: queued detector -> head batching, 2 CUDA streams) and the
-fast solve (simcode/hd/msolve_fast.py, torch.compile of its LM step when available); the reference implementations
-(sc_front.py, p2/front.py, hd/sc.sc_solve) are the test oracle only (tests/test_fast_paths.py).
+Code path: the fast front-ends (simcode/processing/front_fast.py: queued detector -> head batching, 2 CUDA streams) and the
+fast solve (simcode/solve/solve_fast.py, torch.compile of its LM step when available); the reference implementations
+(front.py, processing/pass2_front.py, solve/solve.solve_emitters) are the test oracle only (tests/test_fast_paths.py).
 
-Chunks are the units of the shared work driver (simcode/fileio/work.py): a finished chunk is skipped (--redo 1 repeats it),
+Chunks are the units of the shared work driver (simcode/io/work.py): a finished chunk is skipped (--redo 1 repeats it),
 every output is written atomically (a killed run leaves no truncated chunk file), the free disk space is checked before a
 chunk starts (--min_free_gb), and each chunk leaves a small record (pass1_<f0>.json ...) from which runtime.json is merged.
-With --claim 1 several copies of the same command (one per GPU, python -m simcode.fileio.launch) share the chunks of the
+With --claim 1 several copies of the same command (one per GPU, python -m simcode.io.launch) share the chunks of the
 pass-1 and pass-2 stages; the pattern stage then runs in one of them, after all pass-1 chunks exist.
 
-usage: python -m simcode.pipeline.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir> [--frontend sc|sc2p]
+usage: python -m simcode.processing.run_uncalibrated --movie <tif> --calib <calib.json> --out <dir> [--frontend sc|sc2p]
        [--stages pass1,pattern,pass2] [--nframes N] [--chunk 6000] [--claim 1]
 Outputs in --out: pass1_<f0>.npz, pattern_est.pt / pattern_est.json, pass2_<tag>_<f0>.npz, runtime.json, log.txt
 """
@@ -36,7 +36,7 @@ def md5(p):
     return hashlib.md5(open(p, 'rb').read()).hexdigest()[:10]
 
 
-COMPILE = 'auto'          # torch.compile of the solve's LM step when available (simcode/fastutil.py)
+COMPILE = 'auto'          # torch.compile of the solve's LM step when available (simcode/util/compile.py)
 
 
 def build_parser():
@@ -59,7 +59,7 @@ def build_parser():
     ap.add_argument('--sc_head', default=config.HEAD)
     ap.add_argument('--sc_det', default=config.DET)
     ap.add_argument('--sc_cal', default=config.CAL_P1_REAL)
-    # --frontend sc2p (simcode/p2/front.py): pass 2 with the pattern-aware networks (pass-2 detector + head fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz
+    # --frontend sc2p (simcode/processing/pass2_front.py): pass 2 with the pattern-aware networks (pass-2 detector + head fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz
     # (solve) and pass2_est2b_<f0>.npz (variant b: the pass-2 head prior); with --ref_pattern also est2 / est2b on that pattern ('ref2')
     ap.add_argument('--p2_det', default=config.P2_DET)
     ap.add_argument('--p2_head', default=config.P2_HEAD)
@@ -69,7 +69,7 @@ def build_parser():
     ap.add_argument('--head_batch', type=int, default=1024)
     ap.add_argument('--solve_batch', type=int, default=16384)
     ap.add_argument('--prefetch', type=int, default=1)  # (2026-11-11) read the next chunk's frames in a background thread
-                                                        # (fileio/movie.Prefetch; identical data); 0 = synchronous reads
+                                                        # (io/movie.Prefetch; identical data); 0 = synchronous reads
     return ap
 
 
@@ -79,9 +79,9 @@ def main(argv=None):
     for k in ('calib', 'sc_head', 'sc_det', 'sc_cal', 'p2_det', 'p2_head', 'p2_cal', 'ref_pattern'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')
-    from simcode.pipeline.common import load_calib, load_pass1_rows, chunk_read_plan
-    from simcode.fileio.movie import open_movie, Prefetch
-    from simcode.fileio.work import Units, atomic_json, atomic_torch_save
+    from simcode.processing.common import load_calib, load_pass1_rows, chunk_read_plan
+    from simcode.io.movie import open_movie, Prefetch
+    from simcode.io.work import Units, atomic_json, atomic_torch_save
     os.makedirs(a.out, exist_ok=True)
     crop = tuple(int(v) for v in a.crop.split(','))
     rt_path = f'{a.out}/runtime.json'
@@ -106,8 +106,8 @@ def main(argv=None):
 
     if 'pass1' in stages:
         t0 = time.time()
-        from simcode.pipeline.sc_front_fast import Pass1SCFast
-        p1 = Pass1SCFast(a.calib, head=a.sc_head, det=a.sc_det)
+        from simcode.processing.front_fast import Pass1FrontFast
+        p1 = Pass1FrontFast(a.calib, head=a.sc_head, det=a.sc_det)
         RT['sc'] = dict(head=a.sc_head, det=a.sc_det, cal=a.sc_cal)
         RT['fast'] = dict(compile=COMPILE, det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch)
         torch.cuda.synchronize(); RT['setup_nets_s'] = time.time() - t0
@@ -134,7 +134,7 @@ def main(argv=None):
         # claiming the stage always runs when it is requested (as before)
         UP = Units(a.out, 'pattern', pattern='pattern_est.pt', claim=a.claim, redo=not a.claim, log=say)
         for _ in UP.todo(['']):
-            from simcode.pipeline.pattern_est import estimate_pattern
+            from simcode.processing.pattern_estimation import estimate_pattern
             t0 = time.time()
             # the constant prior-position bias of the head (sc_cal 'prior_off', px) is removed before the pattern estimation too;
             # otherwise the estimated phases absorb it and it reappears in the final positions
@@ -160,17 +160,17 @@ def main(argv=None):
                 L = dict(np.load(f'{a.out}/pass1_{f0}.npz'))
                 info = dict(X0=int(L['X0']), Y0=int(L['Y0']), S=int(L['S']), loaded=tuple(int(v) for v in L['loaded']))
                 tm = {}; t0 = time.time()
-                from simcode.pipeline.sc_front_fast import run_chunk_pattern_solve_fast
+                from simcode.processing.front_fast import run_chunk_pattern_solve_fast
                 O = run_chunk_pattern_solve_fast(L, info, Pt, a.sc_cal, timing=tm, solve_batch=a.solve_batch, compile=COMPILE)
                 tm['total'] = time.time() - t0
                 U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
     if 'pass2' in stages and a.frontend == 'sc2p':
-        from simcode.p2.front import direct_view
-        from simcode.pipeline.sc_front_fast import Pass2P2Fast
+        from simcode.processing.pass2_front import direct_view
+        from simcode.processing.front_fast import Pass2FrontFast
         t0 = time.time()
-        p2 = Pass2P2Fast(a.calib, head=a.p2_head, det=a.p2_det, compile=COMPILE)
+        p2 = Pass2FrontFast(a.calib, head=a.p2_head, det=a.p2_det, compile=COMPILE)
         torch.cuda.synchronize(); RT['setup_p2_s'] = time.time() - t0; RT['p2'] = dict(det=a.p2_det, head=a.p2_head, cal=a.p2_cal)
         pats = [('est2', f'{a.out}/pattern_est.pt')] + ([('ref2', a.ref_pattern)] if a.ref_pattern else [])
         for tag, pf in pats:
@@ -182,7 +182,7 @@ def main(argv=None):
                 mv2 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
             for f0 in U.todo(chunks):
                 tm = {}; t0 = time.time()
-                P1 = dict(np.load(f'{a.out}/pass1_{f0}.npz'))       # z of the pass-2 rows from pass 1 (sc.pass1_z_columns)
+                P1 = dict(np.load(f'{a.out}/pass1_{f0}.npz'))       # z of the pass-2 rows from pass 1 (z_conditioning.pass1_z_columns)
                 O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.p2_cal, P1, a.sc_cal, crop=crop, margin=a.margin, timing=tm,
                                  det_batch=a.det_batch, head_batch=a.head_batch, solve_batch=a.solve_batch)
                 tm['total'] = time.time() - t0

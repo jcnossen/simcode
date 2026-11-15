@@ -9,7 +9,7 @@ angle: S = sum v, Q = sum v (dx^2 - dy^2), W = sum v (dx^2 + dy^2), X = sum v 2 
 PSF sources: --fit <prefix>_psf.pt (fit_insitu2 output, with its opt-in 'extras') or --calib <calib json> (zernike_waves,
 focus_um, apod, NA and the opt-in psf_* keys). Test set: --test cb0 | cb1 = samples of that checkerboard parity (--tile px),
 '' = all; then --nsamples drawn with --seed (the same set for every PSF given the same tracks / test / seed).
-usage: python -m simcode.insitu.psf_heldout --tracks T.npz --fit F_psf.pt --test cb1 --out H.npz
+usage: python -m simcode.calibration.psf_heldout --tracks T.npz --fit F_psf.pt --test cb1 --out H.npz
 """
 import argparse, json, math
 import numpy as np, torch

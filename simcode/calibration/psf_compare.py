@@ -3,7 +3,7 @@ Per model: paired held-out NLL difference vs the first (reference) file (total, 
 second moments ddM = dM(data) - dM(model) (dM = Mxx - Myy, px^2; ratio of sums over samples, bootstrap SE over samples)
 overall / per pattern angle / per aperture, the angle contrast (angle 1 - angle 0), the radial width ratio W/S data / model, and a
 per-tile ddM chi^2 (4 x 4 tiles of 30 px).
-usage: python -m simcode.insitu.psf_compare ref.npz other.npz ... [--json out.json]"""
+usage: python -m simcode.calibration.psf_compare ref.npz other.npz ... [--json out.json]"""
 import sys, json
 import numpy as np
 

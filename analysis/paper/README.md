@@ -18,7 +18,7 @@
    - v2: calibrated sigma
 4. **Common region.** Keep x, y in [5, 115) px.
 5. **Drift.** Each method's own DME v2 drift, estimated on its rows from steps 1–4. Time = window start + 3.
-6. **FRC.** Alternating 300-frame halves (`window start // 300 % 2`), 5-nm histogram renders, 5-bin smoothing, 1/7 threshold. This equals `simcode.evalproto.lib.frc_std`; the code asserts it.
+6. **FRC.** Alternating 300-frame halves (`window start // 300 % 2`), 5-nm histogram renders, 5-bin smoothing, 1/7 threshold. This equals `simcode.evaluation.metrics.frc_std`; the code asserts it.
 7. **Counts.** `n_frc` (the FRC set) is reported next to the FRC, together with `n_disjoint` and `n_all`.
    - Secondary numbers: the FRC without the sigma filter, and with the paper's 30-frame halves.
 

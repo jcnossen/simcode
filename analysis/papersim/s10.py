@@ -134,30 +134,31 @@ def classical(S, R6, psf, rng):
 
 class Nets:
     def __init__(self, ns):
-        from simcode.hd import sc as SCM
-        from simcode.p2 import head2 as H2
-        from simcode.p2 import dump as DU
-        from simcode.sim.simulator import Simulator
+        from simcode.emitter import model as SCM
+        from simcode.detector import model as DM
+        from simcode.solve import solve as SV
+        from simcode.processing import gate_dump as DU
+        from simcode.simulate.simulator import Simulator
         from simcode import config
-        self.SCM, self.H2, self.DU = SCM, H2, DU
+        self.SCM, self.SV, self.DU = SCM, SV, DU
         sim = Simulator(C.resolve_calib(ns) if hasattr(C, 'resolve_calib') else ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
-        det, _ = SCM.load_det_front(ns['det'])
+        det, _ = DM.load(ns['det'])
         self.p1 = (det, SCM.load(config.resolve(ns['head'])), self.col,
                    json.load(open(config.resolve(ns['cal_sim']))))
-        d2, needs = H2.load_det(ns['p2_det'])
-        self.p2 = (d2, needs, DU.load_head(ns['p2_head']), True)
+        d2, _ = DM.load(ns['p2_det'])
+        self.p2 = (d2, SCM.load(config.resolve(ns['p2_head'])), True)
         self.p2cal = json.load(open(config.resolve(ns['p2_cal_sim'])))
 
     @torch.no_grad()
     def run(self, frames, patt):
-        from simcode.hd import gate as GA
-        from simcode.p2 import illum as IL
+        from simcode.benchmark import gate as GA
+        from simcode.pattern import illumination as IL
         o = dict(frames=frames, patt_est=patt)
         r1 = GA.out_sc(self.p1, o, 0.2)
         il = IL.illum_maps(patt, FOV, FOV)
         r2 = self.DU.front_out(self.p2, o, il, self.col)
-        so = self.SCM.sc_solve(r2, patt, r2['b'], self.p2cal)
+        so = self.SV.solve_emitters(r2, patt, r2['b'], self.p2cal)
         r2.update(x_sc=so['r'][:, 0], y_sc=so['r'][:, 1], scal_sc=so['s_cal'], s_prior=r2['lsxy'].exp())
         return r1, r2
 

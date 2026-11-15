@@ -18,7 +18,7 @@ with errors instead of silent None).
 
 Nested dicts (also inside lists / tuples) become ConfigDict objects. Keys are strings without a dot. A key with the
 name of a method (keys, items, get, update, ...) is only reachable as cfg['keys'].
-No torch import here; the schema of the automatic pipeline is in simcode/auto/config.py.
+No torch import here; the schema of the automatic pipeline is in simcode/pipeline/acquisition_config.py.
 """
 import copy, difflib, json, os
 from collections.abc import Mapping, MutableMapping

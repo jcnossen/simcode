@@ -1,5 +1,5 @@
 """
-Pattern geometry helpers of the explicit intensity-domain pattern solve (simcode/hd/msolve.py, msolve_fast.py).
+Pattern geometry helpers of the explicit intensity-domain pattern solve (simcode/solve/solve.py, solve_fast.py).
 Pattern per frame pt [T,5] = (kx, ky, phase, depth m, relint): ill_t(r) = rel_t (1 + m_t cos(k_t . r - phase_t)).
 """
 import math

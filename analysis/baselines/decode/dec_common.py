@@ -13,7 +13,7 @@ Paper usage (checked 2026-11-10):
   must not be modified).
 
 Matched models (this work): DECODE trained on DECODE's own simulator with the sim movie's PSF, density, photons, bg, camera:
-  PSF      = the movie's vectorial PSF LUTs (RealSim '2.5nM' calibration, 41x41 px ROI, base + 3 jittered LUTs drawn with a
+  PSF      = the movie's vectorial PSF LUTs (AcquisitionSim '2.5nM' calibration, 41x41 px ROI, base + 3 jittered LUTs drawn with a
              different seed than the movie's, + the 0-5 % sigma-4 px halo), z 10-150 nm (sim z p1-p99 22-140 nm)
   density  = emitters per 40x40 frame drawn per epoch uniformly in DENS_RANGE (covers m25qh 0.024 and m20qh 0.044 /px^2)
   photons  = lognormal (median, log-sd) of the sim's brightness (per frame: 313, 0.45 x the sine pattern with depth
@@ -59,7 +59,7 @@ class LutPSF(PSF):
         self.R = luts[0].shape[-1]
         self.zmax = zmax_um; self.halo = halo; self.device = device
 
-    def _render(self, lut, x, y, z):          # = simcode.sim.simulator.Simulator.render_psf
+    def _render(self, lut, x, y, z):          # = simcode.simulate.simulator.Simulator.render_psf
         fx, fy = x - torch.round(x), y - torch.round(y)
         tx = (fx + 0.5) * self.ls; ty = (fy + 0.5) * self.ls
         ix = tx.floor().long().clamp(0, self.ls - 1); iy = ty.floor().long().clamp(0, self.ls - 1)
@@ -166,14 +166,14 @@ _LUTS = None
 
 
 def sim_luts(device='cuda'):
-    """base + 3 jittered LUTs of the movie's PSF model (RealSim '2.5nM' calibration) with seed 3 (the movie used seed 7)."""
+    """base + 3 jittered LUTs of the movie's PSF model (AcquisitionSim '2.5nM' calibration) with seed 3 (the movie used seed 7)."""
     global _LUTS
     if _LUTS is None:
-        from simcode.hd.realsim import RealSim
+        from simcode.simulate.acquisition import AcquisitionSim
         # (2026-11-11, opt-in) DEC_CALIB=<calib json>: the movie's in-situ 3D PSF (e.g. models/insitu/calib_*_psf3d.json) instead of
         # the preset's; a per-pattern-angle PSF enters as its angle average (DECODE is pattern-free; exact for the 6-frame sums)
         over = {'calib': os.environ['DEC_CALIB']} if os.environ.get('DEC_CALIB') else {}
-        rs = RealSim('2.5nM', 40, 40, 6, seed=3, **over)
+        rs = AcquisitionSim('2.5nM', 40, 40, 6, seed=3, **over)
         luts = [(l[0] + l[1]) / 2 if isinstance(l, tuple) else l for l in rs.luts]
         _LUTS = (luts, rs.zmax, rs.p['halo'])
     return _LUTS

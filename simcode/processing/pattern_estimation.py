@@ -6,7 +6,7 @@ Model (frame t, step s = t % 6, angle a = s // 3):
 Unknowns: k_a (angle + pitch), per-step phases psi_s, depth m_a, per-step relative intensity rel_s (incl. the
 angle ratio; geometric mean 1), and a shared per-angle phase drift eps_a(t) (linear interpolation on 150-frame knots;
 mean removed = gauge, absorbed in psi). Coordinates: movie pixels. Output = the common pattern file format
-(k, phi = psi, m, logrel, dphi = eps, knot_frames), read by simcode.pipeline.common.pattern_frames.
+(k, phi = psi, m, logrel, dphi = eps, knot_frames), read by simcode.processing.common.pattern_frames.
 
 Inputs per localization (pass-1 'out' rows): window start w, position r (pattern-free), per-frame linear intensities
 I_j (frame w + j), photons, sigma; plus all detections of each window for the neighbour distance.
@@ -303,7 +303,7 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
     P = dict(k=torch.tensor(K, dtype=torch.float32), phi=torch.tensor(psi, dtype=torch.float32),
              m=torch.tensor(np.repeat(m, 3), dtype=torch.float32), logrel=torch.tensor(np.log(rel), dtype=torch.float32),
              dphi=torch.tensor(eps, dtype=torch.float32), knot_frames=kf,
-             note='estimated from pass-1 pattern-free localizations (simcode/pipeline/pattern_est.py)')
+             note='estimated from pass-1 pattern-free localizations (simcode/processing/pattern_estimation.py)')
     info = dict(k=kinfo, hist=hist, depth=dinfo, depth_vs_nn=nn_diag, eps_se=einfo['se'].tolist(), eps_n=einfo['n'].tolist(),
                 n_clean=int(sel.sum()), n_on=int(D['on'].sum()), n=int(len(D['w'])))
     return P, info

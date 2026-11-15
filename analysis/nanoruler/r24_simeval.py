@@ -30,7 +30,7 @@ def match(run, sim, sig=('sx', 'sy')):
              cx=(T['x'][ca] - cen[j, 0]) * PX, cy=(T['y'][ca] - cen[j, 1]) * PX, P=GW[j, 4], Ptot=Pt[j], full=GW[j, 6] >= 1, rul=rul[j],
              sx=T[sig[0]][ca] * PX, sy=T[sig[1]][ca] * PX, phot=T['photons'][ca])
     for k in ('good', 'sel'): R[k] = T[k][ca].astype(bool)
-    R['m12'] = A.selection(T, 'm12')[ca]          # the paper's selection (simcode.strict.select, stored sigma)
+    R['m12'] = A.selection(T, 'm12')[ca]          # the paper's selection (simcode.table.select, stored sigma)
     g0 = m & R['good'] & (R['f2'] < 0.05) & (np.hypot(R['ex'], R['ey']) < 50)
     med = (np.median(R['ex'][g0]), np.median(R['ey'][g0]))
     for a, b in (('ex', 0), ('ey', 1), ('cx', 0), ('cy', 1)): R[a] = R[a] - med[b]

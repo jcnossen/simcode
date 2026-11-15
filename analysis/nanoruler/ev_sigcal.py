@@ -1,12 +1,12 @@
 """nr80 evaluation: selection-aware sigma rescale and GT comparison on the simulated nanoruler movies.
 Variant of analysis/psf3d_nets/sigcal.py with the SAME statistics (sigma' = sigma * g(u), u = per-10-px-tile rank of the calibrated sigma among the
-good rows inside the run's crop (simcode.strict.tile_rank, as the table build's sigma rescale), g = robust zcal
+good rows inside the run's crop (simcode.table.tile_rank, as the table build's sigma rescale), g = robust zcal
 1.4826 median |e / sigma| of the matched good rows per u bin, same u bins, |e| < 50 nm, median error of the matched set removed
-per movie, test criterion zcal of the paper's selection m12 (simcode.strict.select: max(sx, sy) <= 12 nm, 65 nm px) after
+per movie, test criterion zcal of the paper's selection m12 (simcode.table.select: max(sx, sy) <= 12 nm, 65 nm px) after
 the rescale in [0.9, 1.15] (the strict product of earlier versions was removed 2026-11-14); cmp: recall of the GT target windows, unmatched good
 rows, RMS on identical GT windows per GT-photon bin, gross > 50 nm). Differences:
   1. pixel size 65 nm (sigcal.py: PX = 108.33 hard-coded; it sets the 50 nm limits and the nm columns).
-  2. cycle-aligned windows only: table rows with frame % 6 == 0 (frame = window start, simcode/strict.py) and GT windows on
+  2. cycle-aligned windows only: table rows with frame % 6 == 0 (frame = window start, simcode/table.py) and GT windows on
      the grid 6. The movies are stored reordered within each 6-frame cycle, windows starting at 6 c + 3 mix two cycles.
   3. GT windows from analysis/nanoruler/sim_nr_lib.gt_windows_exact (exact stored on-fractions; evalproto.lib.gt_windows_fast
      ignores the within-cycle permutation and flags targets inside the hard-coded 5-115 px crop of the other setup). Target =
@@ -22,7 +22,7 @@ import json, os, sys
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sim_nr_lib as NL
-from simcode.evalproto import lib as E
+from simcode.evaluation import metrics as E
 
 PX = 65.0
 MARGIN = float(os.environ.get('EV_MARGIN', 5))
@@ -48,7 +48,7 @@ def gt_windows(sim):
 
 def table(run, tag, flo=0, fhi=10 ** 9, need_u=False):
     """good, cycle-aligned rows of the run's table, with u (per-tile sigma rank, nan outside the crop) and m12 (the paper's selection)"""
-    from simcode import strict as SP
+    from simcode import table as SP
     import abl_lib as A
     T = A.load_table(f'{run}/locs_p{1 if tag == "est" else 2}.npz'); crop = tuple(float(v) for v in T['crop'])
     inc = T['good'].astype(bool) & SP.in_crop(T['x'], T['y'], crop); ii = np.nonzero(inc)[0]

@@ -1,5 +1,5 @@
 """In-situ calibration of the PSF, camera and illumination pattern from the DNA-PAINT movie itself (recipe: README.md
-in this directory). Default inputs are relative to the data root, default outputs go to <out>/insitu."""
+in this directory). Default inputs are relative to the data root, default outputs go to <out>/insitu (the output directory keeps its name)."""
 import os
 from simcode import config
 

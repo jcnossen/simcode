@@ -77,7 +77,7 @@ def load(cfg):
     L = _read(cfg)
     if len(L) != 1:
         raise ValueError(f'{cfg}: {len(L)} acquisition configs; LocalizationPipeline takes one (use '
-                         f'LocalizationPipeline.from_file(file) or python -m simcode.auto <file> [--only name])')
+                         f'LocalizationPipeline.from_file(file) or python -m simcode.pipeline <file> [--only name])')
     return _resolve(*L[0])
 
 
@@ -131,5 +131,5 @@ def sigma_px(c):
 
 
 def dump(c, path):
-    from simcode.fileio.work import atomic_json
+    from simcode.io.work import atomic_json
     atomic_json(path, c, indent=1, default=str)

@@ -1,17 +1,18 @@
 """
-sc front-end for the uncalibrated pipeline (iteration 31; run_uncalibrated --frontend sc). No linear-intensity stage
-anywhere: no pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
+Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated --frontend sc; the
+pipeline runs the fast versions in front_fast.py, these are the test oracle). No linear-intensity stage anywhere: no
+pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
 
   pass 1 (pattern-free)  per 6-frame window (stride 3, absolute start % 3 == 0, as pass1.py):
-                         detector det_n1 (sub-pixel NMS + top-k, p >= 0.2 for the neighbour map) -> SCHead4 sc5n on the
+                         pass-1 detector (sub-pixel NMS + top-k, p >= 0.2 for the neighbour map) -> pass-1 EmitterNet on the
                          p >= 0.5 candidates (21 x 21 x 6 patch + neighbour-splat / detector-probability channels) ->
                          network per-frame intensities I_t with the full T x T covariance (Cholesky L), per-frame bg,
                          pattern-free position prior (x, y) +- s.
                          Stored per detection (all detections of each window, flag `out` as pass1.py: the window whose
                          central half holds the time centroid of the network intensities, inside the crop, own frames),
                          in the pass-1 file format (wstart, x, y, sx, sy, z, p, phot, phot_t, I, sI, bg, out, tc, frame)
-                         + L [n,6,6], x_det, y_det. pattern_est.py runs on these network intensities unchanged.
-  pass 2                 the explicit intensity-domain pattern solve (simcode/hd/sc.sc_solve -> msolve: fringe starts,
+                         + L [n,6,6], x_det, y_det. pattern_estimation.py runs on these network intensities unchanged.
+  pass 2                 the explicit intensity-domain pattern solve (simcode/solve/solve.solve_emitters: fringe starts,
                          kinetic model selection, box 1.5, calibrated sigma, fringe-start posterior mean) with
                          the estimated pattern (pattern_frames of pattern_est.pt) on the stored head outputs; output in
                          the pass-2 format (x_hy0, y_hy0, sig_hy0 (mean calibrated sigma), kin_hy, fringe_hy, pf_hy,
@@ -22,32 +23,32 @@ Coordinates: movie (camera) pixels.
 import json, time
 import numpy as np, torch
 from simcode.psf import TiffMovie
-from simcode.pipeline.common import region, pattern_frames, CAND_PMIN
+from simcode.processing.common import region, pattern_frames, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
-DET_N1 = _cfg.model(_cfg.DET)
+DET = _cfg.model(_cfg.DET)
 HEAD = _cfg.model(_cfg.HEAD)
 SC_CAL = _cfg.model(_cfg.CAL_P1_REAL)
 THR0 = 0.2
 
 
 
-class Pass1SC:
-    def __init__(self, calib_path, head=HEAD, det=DET_N1, dev='cuda'):
-        from simcode.hd import sc as SCM
-        from simcode.sim.simulator import Simulator
-        self.SCM = SCM
-        self.det, _ = SCM.load_det_front(det)
-        self.det.eval()
-        self.head = SCM.load(head)
-        self.col = SCM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
+class Pass1Front:
+    def __init__(self, calib_path, head=HEAD, det=DET, dev='cuda'):
+        from simcode.emitter import model as EM
+        from simcode.detector import model as DM
+        from simcode.simulate.simulator import Simulator
+        self.EM = EM
+        self.det, _ = DM.load(det)
+        self.head = EM.load(head)
+        self.col = EM.PSFCol(Simulator(calib_path, H=32, W=32, T=T, device=dev))
         self.dev = dev
 
     @torch.no_grad()
     def run_chunk(self, movie: TiffMovie, cal, f0, f1, crop=(5, 5, 110), margin=5, pad=12, batch=16, timing=None):
-        from simcode.det.model import select_subpixel
-        dev = self.dev; SCM = self.SCM
+        from simcode.detector.select import select_subpixel
+        dev = self.dev; EM = self.EM
         timing = timing if timing is not None else {}
         sync = lambda: torch.cuda.synchronize()
         X0, Y0, S = region(movie, crop, margin)
@@ -76,15 +77,15 @@ class Pass1SC:
             sync(); timing['detector'] = timing.get('detector', 0) + time.time() - t_
             if len(b) == 0: continue
             t_ = time.time()
-            nbr = SCM.nbr_for(self.head, dd['logit'], b, iy, ix, xs, ys, lg)
-            s5 = torch.sigmoid(lg) >= CAND_PMIN                 # stored-candidate cut (pipeline.common)
+            nbr = EM.nbr_map(dd['logit'].float(), b, iy, ix, xs, ys, lg)
+            s5 = torch.sigmoid(lg) >= CAND_PMIN                 # stored-candidate cut (processing.common)
             b, iy, ix, xs, ys, lg = (v[s5] for v in (b, iy, ix, xs, ys, lg))
             if len(b) == 0: continue
             outs = []
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
-                oh = SCM.apply_head(self.head, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
-                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **SCM.head_z(self.head, oh)))
+                oh = EM.apply_to_candidates(self.head, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
+                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **EM.head_z(self.head, oh)))
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
             I = oh['I']; Ip = I.clamp(min=0)
@@ -120,9 +121,10 @@ def z_inputs(R, idx, tt):
 
 
 @torch.no_grad()
-def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=None):
+def run_chunk_pattern_solve(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=None):
     """pattern solve on the stored pass-1 head outputs of the `out` rows (identical rows for every pattern)"""
-    from simcode.hd import sc as SCM
+    from simcode.solve import solve as SV
+    from simcode.solve import z_conditioning as ZC
     timing = timing if timing is not None else {}
     t_ = time.time()
     cal = json.load(open(sc_cal)) if isinstance(sc_cal, str) else dict(sc_cal)
@@ -143,8 +145,8 @@ def run_chunk_pass2(R, info, pattern, sc_cal, dev='cuda', chunk=8192, timing=Non
                  lsxy=torch.log(tt(np.c_[R['sx'][idx], R['sy'][idx]])), x_det=tt(R['x_det'][idx] - X0), y_det=tt(R['y_det'][idx] - Y0),
                  **z_inputs(R, idx, tt))
         b = torch.tensor(inv[sl], device=dev)
-        so = SCM.sc_solve(o, PW, b, cal)
-        for k_, v in SCM.z_columns(o, so).items(): out[k_][sl] = v.cpu().numpy()
+        so = SV.solve_emitters(o, PW, b, cal)
+        for k_, v in ZC.z_columns(o, so).items(): out[k_][sl] = v.cpu().numpy()
         r = so['r'].cpu().numpy(); sc_ = so['s_cal'].cpu().numpy()
         out['x_hy0'][sl] = r[:, 0] + X0; out['y_hy0'][sl] = r[:, 1] + Y0
         out['sx_cal'][sl] = sc_[:, 0]; out['sy_cal'][sl] = sc_[:, 1]; out['sig_hy0'][sl] = sc_.mean(1)

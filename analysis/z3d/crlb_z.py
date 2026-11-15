@@ -3,7 +3,7 @@ informs x, y only), vectorial PSF of a calibration at its focus. Parameters x, y
 per frame (x 6 frames). usage: python analysis/z3d/crlb_z.py [calib] [N] [bg]"""
 import sys
 import numpy as np, torch
-from simcode.sim.simulator import Simulator
+from simcode.simulate.simulator import Simulator
 from simcode.psf import render
 
 calib = sys.argv[1] if len(sys.argv) > 1 else 'insitu/calib_1809_2_psf3d_avg.json'

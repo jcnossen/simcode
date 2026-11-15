@@ -1,6 +1,6 @@
 """(development sc6/sim_movie.py; the m05q / m05qh / m25qh movies, analysis/simreal/recipes.sh)
 Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated --frontend sc).
-rs05pm-like: RealSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
+rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
 jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,
 angle = step // 3, eps(t) random walk). 120 x 120 px (the real sensor crop; camera maps of the 0.5 nM calibration),
@@ -8,17 +8,17 @@ uint16 ADU multi-page TIFF. Rendering in 60-frame blocks.
 Outputs: <out>/sim_movie.tif, <out>/sim_gt.npz (events, pattern per frame), <out>/gt_pattern.pt (common pattern format,
 for --ref_pattern).
 usage: CUDA_VISIBLE_DEVICES=1 python analysis/simreal/sim_movie.py <out_dir> [n_frames] [seed]
-Optional env overrides (2026-11-09, SIMCODE-baseline worker; defaults unchanged): SIM_PRESET ('0.5nM' | '2.5nM', RealSim
+Optional env overrides (2026-11-09, SIMCODE-baseline worker; defaults unchanged): SIM_PRESET ('0.5nM' | '2.5nM', AcquisitionSim
 preset + paper_bright preset), SIM_MED / SIM_SD (paper_bright med0 / log-sd, e.g. label-unit brightness 1280 / 0.45).
 (2026-11-09, sim-realism worker): SIM_FRAME_SD / SIM_STEP_SD / SIM_ANG_SD (emitter-variation factors), SIM_HALO2 / SIM_HALO2_SIG
-(broad PSF halo, realsim.add_halo2: a fraction HALO2 of every emitter's light in a broad exponential-disc component of scale
-HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static light, realsim.filament_static_map: FILSTAT ph/px/frame x the
+(broad PSF halo, acquisition.add_halo2: a fraction HALO2 of every emitter's light in a broad exponential-disc component of scale
+HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static light, acquisition.filament_static_map: FILSTAT ph/px/frame x the
 unit-mean filament line map blurred SIG px; FOV-mean bg unchanged), SIM_STRUCT (struct_frac override: 1 = filament geometry)."""
 import math, os, sys
 from simcode import config as _cfg
 import numpy as np, torch, tifffile
-from simcode.hd.realsim import RealSim
-from simcode.hd.data import paper_bright
+from simcode.simulate.acquisition import AcquisitionSim
+from simcode.simulate.batches import paper_bright
 
 dev = 'cuda'
 
@@ -31,7 +31,7 @@ def main():
     PRE = os.environ.get('SIM_PRESET', '0.5nM')
     MED = float(os.environ['SIM_MED']) if os.environ.get('SIM_MED') else None
     SD = float(os.environ['SIM_SD']) if os.environ.get('SIM_SD') else None
-    rs = RealSim(PRE, H, W, NF, seed=seed)
+    rs = AcquisitionSim(PRE, H, W, NF, seed=seed)
     p = rs.p
     # (2026-11-09, sim-realism worker) emitter-variation overrides: SIM_FRAME_SD / SIM_STEP_SD / SIM_ANG_SD (defaults = preset);
     # the random draws are unchanged (same seed -> same events, bg, noise; only the factors scale)
@@ -62,22 +62,22 @@ def main():
     gb = gb / gb.sum((1, 2), keepdim=True) * psf.sum((1, 2), keepdim=True)
     hh = p['halo'] * torch.rand(N, 1, 1, device=dev)
     psf = (1 - hh) * psf + hh * gb
-    if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (realsim.add_halo2); no extra random draws
-        from simcode.hd.realsim import add_halo2
+    if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (acquisition.add_halo2); no extra random draws
+        from simcode.simulate.acquisition import add_halo2
         psf = add_halo2(psf, x, y, float(os.environ['SIM_HALO2']), float(os.environ.get('SIM_HALO2_SIG', '4.0')))
     # background over the whole movie (fluct mode), steps = frame % 6
     steps = (torch.arange(NF, device=dev) % 6)[None]
     bgt, _ = rs.background(1, steps, mode='fluct')
     bgt = bgt[0]
     FILSTAT = float(os.environ.get('SIM_FILSTAT', 0) or 0)
-    if FILSTAT > 0:   # filament-correlated dim static light (realsim.filament_static_map), FOV-mean bg unchanged
-        from simcode.hd.realsim import filament_static_map
+    if FILSTAT > 0:   # filament-correlated dim static light (acquisition.filament_static_map), FOV-mean bg unchanged
+        from simcode.simulate.acquisition import filament_static_map
         fp = em['fil_pts'][0] if em['fil_pts'] is not None and bool(em['fil_struct'][0]) else None
         Dm = filament_static_map(fp, H, W, float(os.environ.get('SIM_FILSTAT_SIG', '1.5'))).to(dev)
         bgt = (bgt + FILSTAT * (Dm[None] - 1)).clamp(min=0.3) if float(Dm.mean()) > 0 else bgt
         np.save(f'{out}/filstat_map.npy', Dm.cpu().numpy())
     cam = np.load(p['cam'])
-    from simcode.pipeline.common import load_calib  # noqa (format reference)
+    from simcode.processing.common import load_calib  # noqa (format reference)
     off_map = torch.tensor(np.load(_cfg.model('insitu/camera_maps_0.5nM.npz'))['offset_adu'], device=dev).float()
     rn = rs.rn_map[:H, :W]
     gain_true = sim.gain * (1 + 0.01 * torch.randn(1, device=dev).item())

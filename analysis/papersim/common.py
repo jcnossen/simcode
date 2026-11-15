@@ -4,7 +4,7 @@ the movie renderer, the simulated-camera calibration and the per-movie file layo
 Settings (preprint, smlmtorch 5a4fda9 scripts/fig_densities2.py and fig_moving_tubules.py; see STATUS.md in the output dir for
 every deviation):
   PSF       in-situ vectorial PSF of the 1809/2 movie averaged over the two pattern axes (models/insitu/calib_1809_2_psf3d_avg.json),
-            rendered with the simcode simulator's LUT (simcode/sim/simulator.py: VectorialPSF, 21 x 21 px ROI, 33 x 33
+            rendered with the simcode simulator's LUT (simcode/simulate/simulator.py: VectorialPSF, 21 x 21 px ROI, 33 x 33
             sub-pixel knots, bilinear) at the fixed emitter height Z_UM = the calib's emitter_z_median_um (0.055 um; a z knot,
             so no z interpolation). Every emitter of every simulation sits at that height (the preprint sims were 2D).
   pattern   2 angles x 3 steps, frame f has step f % 6, angle = step // 3 (the experimental order [[0,1,2],[3,4,5]]; the
@@ -164,7 +164,7 @@ class Renderer:
     """rows (frame, x, y, photons) -> expected images with the simulator's PSF LUT at the fixed z, + bg, Poisson, ADU"""
     def __init__(self, H, W, dev='cuda', psf='vectorial'):
         import torch
-        from simcode.sim.simulator import Simulator
+        from simcode.simulate.simulator import Simulator
         self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
         self.z = z_um()
         # z knots 0, z, 2z: the emitter plane is a knot (no z interpolation)

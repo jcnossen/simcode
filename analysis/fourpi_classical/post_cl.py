@@ -39,7 +39,7 @@ def main():
     tag = f'cl_{a.cell}{a.tag}'
     k = R['keep'] & np.isfinite(R['x'])
     from simcode.util.drift import drift_of_table
-    from simcode.fileio.work import atomic_save
+    from simcode.io.work import atomic_save
     d, dinfo = drift_of_table(dict(frame=R['frame'][k], x=R['x'][k], y=R['y'][k], sx=R['sx'][k], sy=R['sy'][k]), F, return_info=True)
     print(f'DME v2 {dinfo["version"]} on {dinfo["n"]} rows, chosen {dinfo["chosen"]}; drift ptp {np.ptp(d, 0) * 128.0} nm')
     atomic_save(f'{OUT}/{tag}_drift.npy', d)

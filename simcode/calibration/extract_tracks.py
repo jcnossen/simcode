@@ -2,7 +2,7 @@
 import argparse
 import numpy as np, h5py, tifffile
 from scipy.spatial import cKDTree
-from simcode.insitu import MOVIE_05, SMLM_05, data, out
+from simcode.calibration import MOVIE_05, SMLM_05, data, out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--movie', default=MOVIE_05)

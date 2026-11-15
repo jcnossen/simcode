@@ -1,7 +1,7 @@
 """End-to-end throughput, original vs fast, per stage, on one chunk (run on an otherwise idle GPU).
-  pass 1        read, detector, head                    (sc_front.Pass1SC  vs sc_front_fast.Pass1SCFast)
-  pattern solve on the pass-1 rows                      (sc_front.run_chunk_pass2 vs run_chunk_pattern_solve_fast [eager, compiled])
-  pass 2 (p2)   read, detector, head, pattern solve     (p2.front.Pass2P2 vs sc_front_fast.Pass2P2Fast [eager, compiled])
+  pass 1        read, detector, head                    (front.Pass1Front  vs front_fast.Pass1FrontFast)
+  pattern solve on the pass-1 rows                      (front.run_chunk_pattern_solve vs run_chunk_pattern_solve_fast [eager, compiled])
+  pass 2 (p2)   read, detector, head, pattern solve     (pass2_front.Pass2Front vs front_fast.Pass2FrontFast [eager, compiled])
   head variants (fast pass 1): head_batch 8192, channels_last, cudnn.benchmark (+ their I / x difference vs the original)
 Original-path stage times include its per-stage syncs (as logged by the pipeline); fast-path stage times are GPU busy times
 from CUDA events (the stages overlap with 2 streams) and 'wall' is the chunk wall time.  same stages / timing code on the simcode modules. The
@@ -15,9 +15,9 @@ import sys, os, json, time
 import numpy as np, torch
 from simcode import config
 from simcode.psf import TiffMovie
-from simcode.pipeline.common import load_calib
-from simcode.pipeline import sc_front as SF, sc_front_fast as SFF
-from simcode.p2 import front as FR
+from simcode.processing.common import load_calib
+from simcode.processing import front as SF, front_fast as SFF
+from simcode.processing import pass2_front as FR
 
 ARGS = sys.argv[1:]
 PAT = None
@@ -66,16 +66,16 @@ def diffs(Ra, Rb):
 
 
 # warm-up (cuDNN / allocator / module load) on a short chunk, not timed
-p1o = SF.Pass1SC(D['calib'], head=HEAD, det=DET); p1f = SFF.Pass1SCFast(D['calib'], head=HEAD, det=DET)
+p1o = SF.Pass1Front(D['calib'], head=HEAD, det=DET); p1f = SFF.Pass1FrontFast(D['calib'], head=HEAD, det=DET)
 p1f.det = p1o.det; p1f.front.det = p1o.det
 p1o.run_chunk(movie, cal, D['f0'], D['f0'] + 300); p1f.run_chunk(movie, cal, D['f0'], D['f0'] + 300)
 R1 = None
 if 'orig' in variants:
     tm = {}; (R1, info), w = timed(lambda: p1o.run_chunk(movie, cal, D['f0'], D['f1'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_pass1'] = dict(r2(tm), n_det=int(len(R1['x'])), n_out=int(R1['out'].sum())); save(); print('orig pass1', REP['orig_pass1'], flush=True)
-    tm = {}; _, w = timed(lambda: SF.run_chunk_pass2(R1, info, Pt, D['sc_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
+    tm = {}; _, w = timed(lambda: SF.run_chunk_pattern_solve(R1, info, Pt, D['sc_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_solve'] = r2(tm); save(); print('orig pattern solve', REP['orig_solve'], flush=True)
-    p2o = FR.Pass2P2(D['calib'], head=P2H, det=P2D, pf_head=PFH)
+    p2o = FR.Pass2Front(D['calib'], head=P2H, det=P2D, pf_head=PFH)
     p2o.run_chunk(movie, cal, D['f0'], D['f0'] + 300, Pt, D['p2_cal'])
     tm = {}; O, w = timed(lambda: p2o.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['p2_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['orig_pass2'] = dict(r2(tm), n=int(len(O['x_hy0']))); save(); print('orig pass2', REP['orig_pass2'], flush=True)
@@ -91,7 +91,7 @@ for v in ('fast', 'fastc'):
         Lw = dict(Rf); Lw['out'] = Rf['out'] & (np.cumsum(Rf['out']) <= 20000); SFF.run_chunk_pattern_solve_fast(Lw, info, Pt, D['sc_cal'], compile='on')
     tm = {}; _, w = timed(lambda: SFF.run_chunk_pattern_solve_fast(Rf, info, Pt, D['sc_cal'], timing=tm, compile=comp)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP[f'{v}_solve'] = r2(tm); save(); print(v, 'pattern solve', REP[f'{v}_solve'], flush=True)
-    p2f = SFF.Pass2P2Fast(D['calib'], head=P2H, det=P2D, pf_head=PFH, compile=comp)
+    p2f = SFF.Pass2FrontFast(D['calib'], head=P2H, det=P2D, pf_head=PFH, compile=comp)
     p2f.run_chunk(movie, cal, D['f0'], D['f0'] + 600, Pt, D['p2_cal'])
     tm = {}; O, w = timed(lambda: p2f.run_chunk(movie, cal, D['f0'], D['f1'], Pt, D['p2_cal'], timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP[f'{v}_pass2'] = dict(r2(tm), n=int(len(O['x_hy0']))); save(); print(v, 'pass2', REP[f'{v}_pass2'], flush=True)
@@ -112,7 +112,7 @@ if 'heads' in variants:
     tm = {}; (Rh, _), w = timed(lambda: p1f.run_chunk(movie, cal, D['f0'], f1h, timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['head_cudnn_benchmark'] = dict(r2(tm), frames=f1h - D['f0'], vs_orig=diffs(Rref, Rh)); save(); print('cudnn.benchmark', REP['head_cudnn_benchmark'], flush=True)
     torch.backends.cudnn.benchmark = False
-    p1c = SFF.Pass1SCFast(D['calib'], head=HEAD, det=DET, channels_last=True); p1c.det = p1o.det; p1c.front.det = p1o.det
+    p1c = SFF.Pass1FrontFast(D['calib'], head=HEAD, det=DET, channels_last=True); p1c.det = p1o.det; p1c.front.det = p1o.det
     p1c.run_chunk(movie, cal, D['f0'], D['f0'] + 300)
     tm = {}; (Rh, _), w = timed(lambda: p1c.run_chunk(movie, cal, D['f0'], f1h, timing=tm)); tm['wall'] = w; tm['peak_gb'] = PEAK['gb']; tm['epoch'] = PEAK['t']
     REP['head_channels_last'] = dict(r2(tm), frames=f1h - D['f0'], vs_orig=diffs(Rref, Rh)); save(); print('channels_last', REP['head_channels_last'], flush=True)

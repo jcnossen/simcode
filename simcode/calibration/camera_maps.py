@@ -10,7 +10,7 @@ import argparse, json
 import numpy as np, tifffile
 from scipy import ndimage as ndi
 from simcode import config
-from simcode.insitu import MOVIE_05, SMLM_05, data, out
+from simcode.calibration import MOVIE_05, SMLM_05, data, out
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--movie', default=MOVIE_05, help='movie (absolute or relative to the data root)')

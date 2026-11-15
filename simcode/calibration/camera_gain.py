@@ -4,11 +4,11 @@ differences (frames 6 apart), per 2-ADU bin of the per-pixel median level (101-1
 trimmed variance, corrected to sigma^2 of a normal, which rejects blinking emitters; the MAD variance is printed alongside.
 The slope gives the gain (0.5 nM: 0.552 e/ADU, which confirms the 0.56 of the SIMCODE paper); the intercept at the offset
 gives the read noise (~0.9-1.1 e). Ported unchanged (the development robust-gain script) apart from the CLI.
-usage: python -m simcode.insitu.camera_gain [--movie <tif>] [--nframes 12000]
+usage: python -m simcode.calibration.camera_gain [--movie <tif>] [--nframes 12000]
 """
 import argparse
 import numpy as np, tifffile
-from simcode.insitu import MOVIE_05, data
+from simcode.calibration import MOVIE_05, data
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--movie', default=MOVIE_05, help='movie (absolute or relative to the data root)')

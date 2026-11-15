@@ -15,7 +15,7 @@ Model: sklearn HistGradientBoostingClassifier (monotone: sig -, p +, nearest-nei
 training movie counts equally, then isotonic calibration fitted on the out-of-fold predictions of the training movies (4 folds of
 whole movies). Baselines: constant (the training rate) and sigma only (isotonic on sig).
 Evaluation per held-out movie: reliability (10 bins), Brier (model / constant / sigma only), ROC AUC; selections p_valid >= t
-(t 0.9 / 0.95 / 0.99) and the paper's rule sigma <= 12 nm (simcode.strict.select; it replaced u <= 0.45, removed 2026-11-14): fraction of rows kept, observed fraction valid, FRC
+(t 0.9 / 0.95 / 0.99) and the paper's rule sigma <= 12 nm (simcode.table.select; it replaced u <= 0.45, removed 2026-11-14): fraction of rows kept, observed fraction valid, FRC
 (frc_fair halves, disjoint windows) and Jaccard (10 nm, papersim movies).
 Also: sigma check (item 5): robust z-scale of e / sigma and the fraction |z| > 3 per axis, on valid rows, single and all.
 usage: python analysis/papersim/pvalid.py [--model m1809] [--test m05r3,D2,...] -> out/papersim/selection/pvalid_<model>.{json,png,joblib}"""
@@ -185,7 +185,7 @@ def main():
             k = pvv >= t
             sel[f'p_valid>={t}'] = dict(kept=float(k.mean()), n=int(k.sum()), obs_valid=float(L['valid'][k].mean()) if k.any() else None,
                                        obs_c30=float(L['c30'][k].mean()) if k.any() else None, **(frc_jac(D[n], z, k) if k.sum() > 200 else {}))
-        from simcode import strict as SP
+        from simcode import table as SP
         import metrics as MT
         k = SP.select(z, SP.SIGMA_MAX_NM, crop=MT.v2_crop(D[n]['locs']) if D[n]['kind'] == 'papersim' else SP.run_crop(os.path.dirname(D[n]['locs'])))
         sel['sigma<=12nm'] = dict(kept=float(k.mean()), n=int(k.sum()), obs_valid=float(L['valid'][k].mean()), obs_c30=float(L['c30'][k].mean()),

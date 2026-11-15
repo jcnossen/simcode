@@ -1,47 +1,36 @@
 """
-Pattern-free dense detector for modulated T-frame windows (detector input/output ablation, critic review 22 #5).
+The detector network of pass 1 and pass 2 (one class, `Detector`; the pass-2 detector is the same network with illumination
+inputs).
 
-Fully convolutional U-Net (3 levels, residual blocks, GroupNorm) -> per pixel: detection logit, sub-pixel offset
-(dx, dy) in [-1.5, 1.5] px relative to the pixel centre, log-sigma of the offset. Input variants (no illumination
-maps / pattern information at all):
-  sum        : normalised window mean (1 ch)
-  frames     : the T normalised frames as channels
-  frames_sum : T frames + window mean
-  stem       : a shared per-frame stem (2 conv layers, weights shared over frames) -> T x stem_ch channels,
-               + the window mean, fused by the input conv
-Normalisation: sign(x) log1p(|x| / 30) on photons (as the production network); the window mean (= sum / T) uses the
-same scale, so a pixel of the sum image is normalised like a frame of the same mean level.
+Fully convolutional U-Net (3 levels, residual blocks, GroupNorm) on a T-frame window (photons [B,T,H,W]) -> per pixel of the
+native 108 nm grid: detection logit, sub-pixel offset (dx, dy) in [-1.5, 1.5] px relative to the pixel centre, log-sigma
+of the offset. Input: a per-frame stem (2 conv layers, weights shared over the frames) -> T x stem_ch channels + the
+normalised window mean, fused by the input conv. Normalisation sign(x) log1p(|x| / 30) on photons (layers.blocks.norm_photons);
+the window mean uses the same scale.
+illum = True (pass 2): the illumination pattern estimated after pass 1 as input (pattern.illumination.illum_maps, [B,2T,H,W]):
+  the stem's first conv gets 2 extra input channels per frame (frame_t, cos_t, sin_t), so it can demodulate frame t with its
+  own illumination, and the fusion conv gets the 2T illumination maps (cin_il). Trained from a pass-1 detector with these
+  extra weights zero (detector.train), i.e. starting exactly at the pass-1 detector.
+Candidate selection: detector/select.py.
 
-Candidate selection (select_subpixel): every pixel with p > p_min proposes the point pixel + offset; greedy NMS on
-those POINTS with a sub-pixel radius (default 0.7 px; computed with shifted maps over a (2 win + 1)^2 neighbourhood,
-iterated to the greedy fixed point), so two candidates can come from neighbouring pixels; then top-k (static shapes).
+Checkpoints ({'model': state dict, 'args': training arguments, 'step'}) are read by load(): pass 1 or pass 2 follows from
+the state dict (the illumination weights cin_il), the channel widths from the args; every detector checkpoint since
+2026-11-09 has the native-grid output (args 'up' = 1).
 """
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from simcode.nn.blocks import ResBlock
-
-INPUTS = ('sum', 'frames', 'frames_sum', 'stem')
+from simcode.layers.blocks import ResBlock, norm_photons
 
 
-def norm_photons(x, scale=30.0):
-    return torch.sign(x) * torch.log1p(x.abs() / scale)
-
-
-class DetNet(nn.Module):
-    def __init__(self, T=6, inp='frames_sum', ch=(48, 96, 160), stem_ch=16, dxy_range=1.5):
+class Detector(nn.Module):
+    def __init__(self, T=6, ch=(48, 96, 160), stem_ch=16, illum=False, dxy_range=1.5):
         super().__init__()
-        assert inp in INPUTS
-        self.T, self.inp, self.dxy_range = T, inp, dxy_range
+        self.T, self.illum, self.dxy_range = T, bool(illum), dxy_range
         c0, c1, c2 = ch
-        if inp == 'stem':
-            self.stem = nn.Sequential(nn.Conv2d(1, stem_ch, 3, padding=1), nn.GELU(),
-                                      nn.Conv2d(stem_ch, stem_ch, 3, padding=1), nn.GELU())
-            cin = T * stem_ch + 1
-        else:
-            cin = {'sum': 1, 'frames': T, 'frames_sum': T + 1}[inp]
-        self.cin = nn.Conv2d(cin, c0, 3, padding=1)
+        self.stem = nn.Sequential(nn.Conv2d(1, stem_ch, 3, padding=1), nn.GELU(),
+                                  nn.Conv2d(stem_ch, stem_ch, 3, padding=1), nn.GELU())
+        self.cin = nn.Conv2d(T * stem_ch + 1, c0, 3, padding=1)
         self.e0 = nn.Sequential(ResBlock(c0), ResBlock(c0))
         self.d1 = nn.Conv2d(c0, c1, 3, stride=2, padding=1)
         self.e1 = nn.Sequential(ResBlock(c1), ResBlock(c1))
@@ -55,28 +44,41 @@ class DetNet(nn.Module):
         nn.init.constant_(self.head[-1].bias, 0.0)
         with torch.no_grad():
             self.head[-1].bias[0] = -4.0
+        if illum:      # pass 2: the pass-1 layers above (same construction order) + the illumination inputs
+            self.stem[0] = nn.Conv2d(3, stem_ch, 3, padding=1)
+            self.cin_il = nn.Conv2d(2 * T, c0, 3, padding=1, bias=False)
+            nn.init.zeros_(self.cin_il.weight)
 
-    def make_input(self, frames):
-        """frames: photons [B,T,H,W] -> network input"""
-        m = norm_photons(frames.mean(1, keepdim=True))
-        if self.inp == 'sum':
-            return m
-        f = norm_photons(frames)
-        if self.inp == 'frames':
-            return f
-        if self.inp == 'frames_sum':
-            return torch.cat([f, m], 1)
-        B, T, H, W = f.shape
-        s = self.stem(f.reshape(B * T, 1, H, W)).reshape(B, -1, H, W)
-        return torch.cat([s, m], 1)
+    def load_pass1(self, sd):
+        """pass-1 detector state dict -> this pass-2 detector, the illumination weights zero (= the pass-1 detector)"""
+        own = self.state_dict()
+        for k, v in sd.items():
+            if k == 'stem.0.weight':
+                w = torch.zeros_like(own[k]); w[:, :1] = v; own[k] = w
+            else:
+                own[k] = v
+        nn.init.zeros_(self.cin_il.weight)
+        own['cin_il.weight'] = torch.zeros_like(own['cin_il.weight'])
+        self.load_state_dict(own)
 
-    def forward(self, frames):
-        """frames [B,T,H,W] photons -> dict logit [B,H,W], dxy [B,2,H,W] (px, rel. to pixel centre), log_sig [B,H,W]"""
+    def forward(self, frames, illum=None):
+        """frames [B,T,H,W] photons, illum [B,2T,H,W] (pass 2 only; pattern.illumination.illum_maps) -> dict logit [B,H,W],
+        dxy [B,2,H,W] (px, rel. to pixel centre), log_sig [B,H,W]"""
+        if self.illum and illum is None: raise ValueError('a pass-2 detector needs the illumination maps')
         B, T, H, W = frames.shape
         ph, pw = (-H) % 4, (-W) % 4
         if ph or pw:
             frames = F.pad(frames, (0, pw, 0, ph), mode='replicate')
-        x = F.gelu(self.cin(self.make_input(frames)))
+            if self.illum: illum = F.pad(illum, (0, pw, 0, ph), mode='replicate')
+        m = norm_photons(frames.mean(1, keepdim=True))
+        f = norm_photons(frames)
+        Hp, Wp = f.shape[-2:]
+        if self.illum:
+            s = self.stem(torch.stack([f, illum[:, :T], illum[:, T:]], 2).reshape(B * T, 3, Hp, Wp)).reshape(B, -1, Hp, Wp)
+            x = F.gelu(self.cin(torch.cat([s, m], 1)) + self.cin_il(illum))
+        else:
+            s = self.stem(f.reshape(B * T, 1, Hp, Wp)).reshape(B, -1, Hp, Wp)
+            x = F.gelu(self.cin(torch.cat([s, m], 1)))
         s0 = self.e0(x)
         s1 = self.e1(self.d1(F.gelu(s0)))
         x = self.e2(self.d2(F.gelu(s1)))
@@ -85,55 +87,7 @@ class DetNet(nn.Module):
         x = F.interpolate(self.u0(F.gelu(x)), scale_factor=2, mode='bilinear', align_corners=False) + s0
         x = self.r0(x)
         o = self.head(F.gelu(x))[..., :H, :W]
-        out = dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range,
-                   log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
-        return out
-
-
-@torch.no_grad()
-def select_subpixel(logit, dxy, k, p_min=0.05, radius=0.7, win=3, iters=4, extra=None):
-    """Greedy NMS on sub-pixel points (pixel + offset) + top-k per image.
-    logit [B,H,W], dxy [B,2,H,W] -> dict b, iy, ix, x, y, logit (each [B*k]; entries below p_min have logit -inf
-    and should be dropped by thresholding). extra: dict of [B,(C,)H,W] maps read out at the candidates."""
-    B, H, W = logit.shape
-    dev = logit.device
-    yy, xx = torch.meshgrid(torch.arange(H, device=dev, dtype=torch.float32),
-                            torch.arange(W, device=dev, dtype=torch.float32), indexing='ij')
-    X = xx + dxy[:, 0].float(); Y = yy + dxy[:, 1].float()
-    s = logit.float()
-    valid = s > math.log(p_min / (1 - p_min))
-    s = torch.where(valid, s, torch.full_like(s, -1e9))
-    pad = lambda t, v: F.pad(t, (win, win, win, win), value=v)
-    sP, XP, YP = pad(s, -1e9), pad(X, 1e6), pad(Y, 1e6)
-    shifts = [(oy, ox) for oy in range(-win, win + 1) for ox in range(-win, win + 1) if (oy, ox) != (0, 0)]
-    # which neighbours (shift) suppress this pixel if they are kept: higher score and point within radius
-    sup_by = []
-    r2 = radius * radius
-    for oy, ox in shifts:
-        sl = (slice(None), slice(win + oy, win + oy + H), slice(win + ox, win + ox + W))
-        q_s, q_x, q_y = sP[sl], XP[sl], YP[sl]
-        higher = (q_s > s) | ((q_s == s) & ((oy, ox) < (0, 0)))
-        sup_by.append(higher & ((q_x - X) ** 2 + (q_y - Y) ** 2 < r2) & (q_s > -1e8))
-    keep = valid.clone()
-    for _ in range(iters):
-        kP = F.pad(keep, (win, win, win, win), value=False)
-        sup = torch.zeros_like(keep)
-        for (oy, ox), m in zip(shifts, sup_by):
-            sup |= m & kP[:, win + oy: win + oy + H, win + ox: win + ox + W]
-        new = valid & ~sup
-        if torch.equal(new, keep):
-            break
-        keep = new
-    sc = torch.where(keep, s, torch.full_like(s, -float('inf')))
-    top = sc.reshape(B, -1).topk(min(k, H * W), dim=1)
-    kk = top.indices.shape[1]
-    b = torch.arange(B, device=dev)[:, None].expand(B, kk).reshape(-1)
-    idx = top.indices.reshape(-1)
-    iy, ix = idx // W, idx % W
-    out = dict(b=b, iy=iy, ix=ix, x=X[b, iy, ix], y=Y[b, iy, ix], logit=top.values.reshape(-1))
-    for nm, mp in (extra or {}).items():
-        out[nm] = mp[b, ..., iy, ix] if mp.dim() == 3 else mp[b, :, iy, ix]
-    return out
+        return dict(logit=o[:, 0], dxy=torch.tanh(o[:, 1:3]) * self.dxy_range, log_sig=-5.0 + 6.0 * torch.sigmoid(o[:, 3]))
 
 
 def n_params(m):
@@ -148,17 +102,29 @@ def conv_flops(m, H, W, T=6):
     hs = [mm.register_forward_hook(hook) for mm in m.modules() if isinstance(mm, nn.Conv2d)]
     dev = next(m.parameters()).device
     with torch.no_grad():
-        m(torch.zeros(1, T, H, W, device=dev))
+        m(torch.zeros(1, T, H, W, device=dev), torch.zeros(1, 2 * T, H, W, device=dev) if m.illum else None)
     for h_ in hs: h_.remove()
     return tot[0]
 
 
-def build(args):
-    return DetNet(args.get('T', 6), args['inp'], tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16))
+def build(args=None, illum=False):
+    """a new detector with the channel widths of the training arguments (defaults if absent)"""
+    args = args or {}
+    return Detector(6, tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16), illum=illum)
+
+
+def is_pass2(sd):
+    """True for the state dict of a pass-2 detector (illumination inputs)"""
+    return 'cin_il.weight' in sd
 
 
 def load(ck, dev='cuda'):
+    """detector checkpoint (path; relative paths resolved in the models directory) -> (Detector in eval mode, args).
+    net.illum tells whether it needs the illumination maps (pass 2)."""
     from simcode.config import resolve
     c = torch.load(resolve(ck), map_location=dev, weights_only=False)
-    net = build(c['args']).to(dev); net.load_state_dict(c['model']); net.eval()
-    return net, c['args']
+    a = c.get('args') or {}
+    if a.get('up', 1) != 1 or a.get('inp', 'stem') != 'stem':
+        raise ValueError(f"{ck}: detector with output grid up={a.get('up')} / input {a.get('inp')!r} is not supported (native grid, per-frame stem)")
+    net = build(a, illum=is_pass2(c['model'])).to(dev); net.load_state_dict(c['model']); net.eval()
+    return net, a

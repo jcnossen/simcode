@@ -4,9 +4,9 @@ output region, and a model (--model: a name of simcode/models.json or a model fo
 realistic-PSF simulations). Solve calibrations: --cal_kind sim (default; the simulation sigma calibrations of the model, fixed c)
 or real (the real-movie calibrations the production runs used).
 
-After the run, the localization tables are rebuilt by simcode/strict.py on the simulation's FOV (build_table crop = (0, 0, W):
-the selection region and the sigma-rescale tiles). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as strict.py
-(p, sel, ...; the selection = simcode.strict.select(T, crop=(0, 0, W))), and <out>/locs_sim_info.json (with the crop).
+After the run, the localization tables are rebuilt by simcode/table.py on the simulation's FOV (build_table crop = (0, 0, W):
+the selection region and the sigma-rescale tiles). Output: <out>/locs_p2_sim.npz (+ locs_p1_sim.npz) with columns as table.py
+(p, sel, ...; the selection = simcode.table.select(T, crop=(0, 0, W))), and <out>/locs_sim_info.json (with the crop).
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/run_simcode.py <movie dir> [--model m1809] [--cal_kind sim|real]
           [--nframes N] [--out <movie dir>/v2_<model>] [--redo 0]"""
 import os, sys, json, time, argparse, subprocess
@@ -22,7 +22,7 @@ def model(name):
 
 
 def strict_tables(out, W, px_nm, sig_u=None, pass2=True):
-    import simcode.strict as SP
+    import simcode.table as SP
     crop = (0.0, 0.0, float(W))
     su = (sig_u.split(',') + [''])[:2] if sig_u else ['', '']
     from simcode import config
@@ -71,14 +71,14 @@ def main():
         # diagnostic (not the method): pass 2 with the GROUND-TRUTH pattern fed to the pass-2 networks and the solve
         # (run_uncalibrated --ref_pattern -> pass2_ref2_*.npz); table with the same crop and sigma rescale
         t1 = time.time()
-        ucmd = [sys.executable, '-m', 'simcode.pipeline.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
+        ucmd = [sys.executable, '-m', 'simcode.processing.run_uncalibrated', '--movie', os.path.join(md, 'movie.tif'),
                 '--calib', os.path.join(md, 'calib_sim.json'), '--out', out, '--crop', f'0,0,{W}',
                 '--sc_det', N['det'], '--sc_head', N['head'], '--frontend', 'sc2p', '--sc_cal', N[f'cal_{a.cal_kind}'],
                 '--p2_det', N['p2_det'], '--p2_head', N['p2_head'], '--p2_cal', N[f'p2_cal_{a.cal_kind}'], '--stages', 'pass2',
                 '--ref_pattern', os.path.join(md, 'gt_pattern.pt')]
         if a.nframes: ucmd += ['--nframes', str(a.nframes)]
         subprocess.run(ucmd, check=True, cwd=REPO)
-        import simcode.strict as SP
+        import simcode.table as SP
         from simcode import config
         su = (N['sig_u'].split(',') + [''])[:2][1]
         Tg, ig = SP.build_table(out, 'ref2', g['px_nm'], None, sig_u=config.resolve(su) if su else None, crop=(0.0, 0.0, float(W)))

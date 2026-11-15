@@ -1,12 +1,12 @@
 """SIMCODE v2 automatic per-dataset pipeline (docs/AUTO_PIPELINE.md): one config file -> camera calibration, optional bead
 fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
-  python -m simcode.auto <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
+  python -m simcode.pipeline <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
 
-  python -m simcode.auto <setup.py> [--only name1,name2] [--show]      a Python file that defines `config` or a list `configs`
+  python -m simcode.pipeline <setup.py> [--only name1,name2] [--show]      a Python file that defines `config` or a list `configs`
 
-  from simcode.auto import LocalizationPipeline
-  pipe = LocalizationPipeline(cfg)      # cfg: ConfigDict / dict / yaml / json / Python file (simcode/auto/configs/)
+  from simcode.pipeline import LocalizationPipeline
+  pipe = LocalizationPipeline(cfg)      # cfg: ConfigDict / dict / yaml / json / Python file (simcode/pipeline/configs/)
   pipe.run()                            # every stage, finished ones skipped
   pipe.estimate_psf()                   # one stage: determine_frame_order, calibrate_camera, find_spots, estimate_camera_maps,
                                         # extract_tracks, fit_beads, estimate_psf, train_model, process, report
@@ -22,8 +22,8 @@ os.environ['PATH'] = os.path.dirname(sys.executable) + ':' + os.environ.get('PAT
 os.environ.setdefault('TORCH_DISABLE_NATIVE_JIT', '1')
 os.environ.setdefault('PYTORCH_CUDA_ALLOC_CONF', 'expandable_segments:True')
 import numpy as np
-from simcode.auto import config as C
-from simcode.fileio.work import atomic_json
+from simcode.pipeline import acquisition_config as C
+from simcode.io.work import atomic_json
 
 # stage name (directory under <out>, command line) -> the public method, in run order
 METHODS = dict(order='determine_frame_order', camera='calibrate_camera', spots='find_spots', cammaps='estimate_camera_maps',
@@ -39,7 +39,7 @@ class StageFailed(RuntimeError):
 class LocalizationPipeline:
     def __init__(self, cfg, gpus=None, log=None, quick=None):
         """cfg: ConfigDict (simcode/util/cfgdict.py), dict, yaml / json path, or a Python file that defines one `config`;
-        validated against the schema of simcode/auto/config.py in every form. self.c = the resolved plain dict."""
+        validated against the schema of simcode/pipeline/acquisition_config.py in every form. self.c = the resolved plain dict."""
         self.c = C.load(cfg)
         if gpus is not None: self.c['gpus'] = list(gpus)
         if quick is not None: self.c['train']['quick'] = bool(quick)
@@ -157,7 +157,7 @@ class LocalizationPipeline:
         return txt
 
     def wrapfile(self, extra=None, name='wrap'):
-        """json of the in-memory overrides (runwrap.py) for this dataset"""
+        """json of the in-memory overrides (run_with_overrides.py) for this dataset"""
         c = self.c; W = {}
         if tuple(c['pattern']['pitch_px']) != (1.6, 2.8): W['pitch_px'] = c['pattern']['pitch_px']
         if extra: W.update(extra)
@@ -283,24 +283,24 @@ class LocalizationPipeline:
         c = self.c
         if not C.needs_reorder(c):
             return dict(movie=c['movie'], reordered=False, checks=[])
-        from simcode.auto import order
+        from simcode.pipeline import frame_order
         cache = c['pattern']['cache'] or os.path.join(self.out, 'movie_blocked.tif')
         inv = list(np.argsort(C.slot_of_frame(c)))           # cache slot s <- acquisition frame inv[s]
         if not os.path.exists(cache):
-            order.write_blocked(c['movie'], cache, inv, log=self.log)
-        chk = order.verify(c['movie'], cache, inv, log=self.log)
+            frame_order.write_blocked(c['movie'], cache, inv, log=self.log)
+        chk = frame_order.verify(c['movie'], cache, inv, log=self.log)
         return dict(movie=cache, reordered=True, perm_slot_from_frame=inv, **chk['info'], checks=chk['checks'])
 
     # ---- stage a1: camera
     def _st_camera(self):
-        from simcode.auto import camera
+        from simcode.pipeline import camera
         r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log)
         return r
 
     # ---- stage c1: spots
     def _st_spots(self):
         import torch
-        from simcode.auto import spots
+        from simcode.pipeline import spots
         c, sp = self.c, self.c['spots']; cam = self.summary('camera')
         d = self.dir('spots')
         self.torch_dev(4)
@@ -314,7 +314,7 @@ class LocalizationPipeline:
         nf = int(L['frame'].max()) + 1 if len(L) else 0
         G = L[m]
         o = c['optics']; area = None
-        from simcode.fileio.movie import open_movie
+        from simcode.io.movie import open_movie
         H, W = open_movie(self.movie).shape[-2:]
         area = H * W * o['pixel_um'] ** 2
         stats = dict(n=int(len(L)), n_good=int(m.sum()), n_windows=nf, per_window=len(L) / max(nf, 1), good_per_window=float(m.sum()) / max(nf, 1),
@@ -332,7 +332,7 @@ class LocalizationPipeline:
     # ---- stage a2: camera maps
     def _st_cammaps(self):
         c = self.c; cam = self.summary('camera'); d = self.dir('cammaps')
-        args = ['-m', 'simcode.insitu.camera_maps', '--movie', self.movie, '--nframes', c['camera']['map_frames'], '--gain', cam['gain'],
+        args = ['-m', 'simcode.calibration.camera_maps', '--movie', self.movie, '--nframes', c['camera']['map_frames'], '--gain', cam['gain'],
                 '--offset', cam['offset'], '--locs', self.spots_file(), '--out', os.path.join(d, 'camera_maps.npz')]
         if c['camera']['readnoise_from']: args += ['--readnoise_from', c['camera']['readnoise_from']]
         txt = self.sh(args, os.path.join(d, 'camera_maps.log'))
@@ -345,7 +345,7 @@ class LocalizationPipeline:
     # ---- stage c2: tracks
     def _st_tracks(self):
         sp = self.c['spots']; d = self.dir('tracks')
-        txt = self.sh(['-m', 'simcode.insitu.extract_tracks', '--movie', self.movie, '--locs', self.spots_file(),
+        txt = self.sh(['-m', 'simcode.calibration.extract_tracks', '--movie', self.movie, '--locs', self.spots_file(),
                        '--maxframe', sp['maxframe'], '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
                        '--out', os.path.join(d, 'tracks.npz')], os.path.join(d, 'tracks.log'))
         g = lambda pat: int(re.search(pat, txt).group(1))
@@ -375,22 +375,22 @@ class LocalizationPipeline:
 
     # ---- stage d: in-situ PSF
     def _st_psf(self):
-        from simcode.auto import stage_psf
-        return stage_psf.run(self)
+        from simcode.pipeline import psf_stage
+        return psf_stage.run(self)
 
     # ---- stage e: model (trained networks + calibrations)
     def _st_train(self):
-        from simcode.auto import train
-        return train.run(self)
+        from simcode.pipeline import training
+        return training.run(self)
 
     # ---- stage f: processing
     def _st_process(self):
-        from simcode.auto import process
+        from simcode.pipeline import process
         return process.run(self)
 
     # ---- stage g: report
     def _st_report(self):
-        from simcode.auto import report
+        from simcode.pipeline import report
         return report.run(self)
 
 

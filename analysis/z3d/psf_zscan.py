@@ -3,7 +3,7 @@ equivalent gamma = d f / d z_e (which focus shift reproduces an emitter-height c
 usage: python analysis/z3d/psf_zscan.py [calib]"""
 import sys, time
 import numpy as np, torch
-from simcode.sim.simulator import Simulator
+from simcode.simulate.simulator import Simulator
 
 calib = sys.argv[1] if len(sys.argv) > 1 else 'insitu/calib_1809_2_psf3d_avg.json'
 t = time.time()
