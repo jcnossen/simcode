@@ -457,8 +457,8 @@ G  Explicit pattern solve (simcode/solve/solve.py: solve_emitters, fringe_poster
      2 pi n_a, n_a in {-1, 0, 1}.
    - Kinetics: kept if q0 - q1 > thr = 9.21, where q = the solve cost = chi^2 incl. the prior and log det = -2 log L
      (fringe_posterior docstring). So the threshold is on -2 log L (= the 99 % point of chi^2 with 2 dof), i.e. an NLL
-     decrease of 4.6. docs/METHOD.md and the task brief say "lowers the NLL by > 9.21"; the figure writes
-     Delta(-2 log L) > 9.21 to match the code.
+     decrease of 4.6. The figure writes Delta(-2 log L) > 9.21, as the code (docs/METHOD.md corrected to match, branch
+     figfix).
    - Posterior over the deduplicated starts (dedup 0.15 px), weights exp(-(cost - cost_min) / 2); output r = posterior mean
      r_pm; sigma_cal = sqrt(f s_pm^2 + spread_pm^2) x sig_ph(photons), f = sig_a max(q/dof, 1)^sig_g; then the table's
      selection-aware sigma rescale (sigu_p{1,2}_<set>.json).
@@ -474,10 +474,9 @@ H  z and selection (simcode/solve/z_conditioning.py: link_pass1, z_given_xy, pas
 
 Possible caption decisions for the user
    - Keep or drop placeholder A (see A).
-   - Docs vs code: docs/METHOD.md ("Models") says the simulator PSF is "the averaged in-situ PSF" and models/README.md's
-     model table lists insitu/calib_1809_2_psf3d_avg.json for m1809; the shipped m1809 / m25 checkpoints were trained on
-     the in-situ PSF v2 (calib_1809_2_psf_v2.json / calib_2p5nM_m2_psf_v2.json; models/m1809/model.json 'psf'). The
-     figure follows the checkpoints.
+   - Docs vs code (resolved): models/README.md (5404c3e) and docs/METHOD.md (figfix) now name the in-situ PSF v2
+     (calib_1809_2_psf_v2.json / calib_2p5nM_m2_psf_v2.json; models/m1809/model.json 'psf'), as the checkpoints; METHOD.md
+     no longer lists the PSF template as an EmitterNet input channel (it only shapes the read-out weights).
 """
 
 

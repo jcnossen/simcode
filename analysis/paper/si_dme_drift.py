@@ -17,6 +17,16 @@ sample, so the rms difference bounds the estimation error of the pair), also aft
 the remainder (fast part).
 
   PYTHONPATH=. python analysis/paper/si_dme_drift.py [--smlm f] [--sf f] [--decode f] [--v2 f] [--outdir d] [--offset_nm 15]
+
+--dme fixed (2026-11-15): instead of the figure's drift caches (each method's DME v2 with its OWN data-chosen temporal resolution),
+estimate the drift here for every method with IDENTICAL DME settings, logged in the values json (dme_settings): DME v2 =
+dme.dme_grid.dme_grid_estimate at --fpb frames/bin (estimatePrecision False) + the learned-prior refinement dme.dme_prior.refine
+with --seg-frame segments and kernel scales --scales (the two stages dme_prior_estimate runs, with the choice fixed instead of
+cross-validated); sigma = the mean of the method's own per-localization sigma of its rows. Rows = frc_fair protocol steps 1-4 of
+the tables given with --tables (kind:path per method; SIMCODE v2 = the paper selection at --v2_sigma_max nm), frames f + 6 <= F.
+--auto_log 1 also logs each method's own cross-validated choice (dme_prior_estimate, same rows). Drifts are cached as
+<outdir>/<name>_<k>_drift.npy (same layout as the frc_fair caches).
+  CUDA_VISIBLE_DEVICES=0 PYTHONPATH=. python analysis/paper/si_dme_drift.py --dme fixed --tables smlm=smlm:<npy>,sf=sf:<hdf5>,decode=decode:<npz>,v2=v2:<run>
 """
 import os, sys, json, argparse
 import numpy as np
@@ -35,6 +45,40 @@ def runmean(v, n):
     return np.convolve(np.pad(v, (n // 2, n - 1 - n // 2), mode='edge'), k, mode='valid')
 
 
+def fixed_dme(tables, nframes, fpb, seg, scales, v2_sigma_max, outbase, auto_log=False, redo=False):
+    """identical-setting DME v2 for every method (module doc) -> drift caches <outbase>_<k>_drift.npy, info per method"""
+    import time
+    import frc_fair as FF
+    from simcode.util import drift as DR
+    DR.dme_package()
+    from dme.dme_grid import dme_grid_estimate
+    from dme.dme_prior import refine, dme_prior_estimate
+    from dme.dme_gpu import default_device
+    dev = default_device(None)
+    info = {}
+    for k, (kind, path) in tables.items():
+        cache = f'{outbase}_{k}_drift.npy'
+        T = FF.load(kind, path, **(dict(v2_sigma_max=v2_sigma_max) if kind == 'v2' else {}))
+        keep = T['f'] + 6 <= nframes; T = {kk: v[keep] for kk, v in T.items()}
+        _, filt = FF.masks(T)
+        pos, fr, crlb = DR.drift_rows(T['x'][filt], T['y'][filt], T['f'][filt] + 3, T['sx'][filt], T['sy'][filt], nframes, t_offset=0)
+        sig = crlb.mean(0).astype(np.float32)
+        I = dict(kind=kind, table=os.path.abspath(path), n_rows=int(len(pos)), sigma_mean_px=sig.tolist(), cache=cache)
+        t0 = time.time()
+        if os.path.exists(cache) and not redo:
+            I['cached'] = True
+        else:
+            d = dme_grid_estimate(pos, fr.astype(np.int32), sig, fpb, estimatePrecision=False, numframes=nframes, device=dev, verbose=False)
+            d = refine(pos, fr.astype(np.int32), sig, nframes, np.asarray(d, np.float32), seg, tuple(scales), dev)
+            np.save(cache, np.asarray(d, np.float32)[:nframes, :2]); I['s'] = round(time.time() - t0, 1)
+        if auto_log:
+            _, ai = dme_prior_estimate(pos, fr.astype(np.int32), crlb, numframes=nframes, device=dev, verbose=False, return_info=True)
+            I['auto_choice'] = dict(kind='smooth' if ai['segment_frames'] else 'dme', start_framesperbin=ai['start_framesperbin'],
+                                    segment_frames=ai['segment_frames'])
+        info[k] = I; print(k, json.dumps(I), flush=True)
+    return info
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     for k, lab, _ in METHODS:
@@ -46,9 +90,38 @@ def main():
     ap.add_argument('--name', default=None, help='output base name (default si_dme_drift / si_dme_drift_extended)')
     ap.add_argument('--offset_nm', type=float, default=15.0, help='vertical offset between successive traces (nm)')
     ap.add_argument('--slow', type=int, default=2000, help='running-mean window (frames) for the slow / fast split')
+    ap.add_argument('--dme', default='cache', choices=['cache', 'fixed'], help='cache: the figure drift caches; fixed: module doc')
+    ap.add_argument('--tables', default=None, help='--dme fixed: k=kind:path,... for k in smlm, sf, decode, v2')
+    ap.add_argument('--nframes', type=int, default=120000)
+    ap.add_argument('--fpb', type=int, default=2000, help='--dme fixed: frames per bin of the spline start')
+    ap.add_argument('--seg', type=int, default=96, help='--dme fixed: segment length (frames) of the learned-prior refinement')
+    ap.add_argument('--scales', default='4,2,1,1,1', help='--dme fixed: kernel scales of the refinement (dme_prior default)')
+    ap.add_argument('--v2_sigma_max', type=float, default=12.0, help='--dme fixed: SIMCODE v2 rows = paper selection at this nm')
+    ap.add_argument('--auto_log', type=int, default=1, help="--dme fixed: also log each method's own cross-validated choice")
+    ap.add_argument('--redo', type=int, default=0)
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     if a.name is None: a.name = 'si_dme_drift' if a.style == 'preprint' else 'si_dme_drift_extended'
+    fixed_info = None
+    if a.dme == 'fixed':
+        tables = {}
+        for spec in a.tables.split(','):
+            k, kp = spec.split('=', 1); kind, path = kp.split(':', 1); tables[k] = (kind, path)
+        assert set(tables) == {k for k, _, _ in METHODS}, tables
+        sc = [int(v) for v in a.scales.split(',')]
+        fixed_info = dict(settings=dict(estimator='DME v2, fixed choice: dme_grid_estimate(framesperbin=fpb, estimatePrecision=False) '
+                                                  '+ dme_prior.refine(segment L, scales); sigma = mean per-localization sigma of the rows',
+                                        fpb=a.fpb, segment_frames=a.seg, scales=sc, nframes=a.nframes, t='window start + 3',
+                                        rows='frc_fair steps 1-4: disjoint 6-frame windows, max(sigma) < 0.15 px, crop [5, 115) px; f + 6 <= F',
+                                        v2_selection_sigma_max_nm=a.v2_sigma_max),
+                          methods=fixed_info)
+        fixed_info['methods'] = fixed_dme(tables, a.nframes, a.fpb, a.seg, sc, a.v2_sigma_max, f'{a.outdir}/{a.name}', a.auto_log, a.redo)
+        try:
+            from simcode.util import drift as DR; fixed_info['settings']['dme_version'] = DR.version()
+        except Exception:
+            pass
+        for k, _, _ in METHODS: setattr(a, k, fixed_info['methods'][k]['cache'])
+        a.values = None
 
     dr = {}; files = {}
     for k, lab, _ in METHODS:
@@ -109,6 +182,7 @@ def main():
         V['main_figure_values'] = a.values
         V['tables'] = vj.get('paths'); V['dme_info'] = dict(zip(vj['labels'], vj['drift_info']))
         V['n_frc_rows'] = dict(zip(vj['labels'], vj['n_frc'])); V['drift_reused_from'] = vj.get('drift_reused_from')
+    if fixed_info is not None: V['dme_fixed'] = fixed_info
     json.dump(V, open(f'{a.outdir}/{a.name}_values.json', 'w'), indent=1, default=float)
     open(f'{a.outdir}/{a.name}_caption.txt', 'w').write(caption(V, a))
     print(json.dumps(V, indent=1, default=float))
@@ -122,8 +196,11 @@ def caption(V, a):
     L.append('DRAFT CAPTION')
     L.append('Estimated sample drift of the low-density DNA-PAINT movie of main-text Fig. 3 (1809/cover1/2, 120 000 frames), '
              "estimated separately for every method on its own localizations with DME v2 (Drift at Minimum Entropy, "
-             'github.com/jcnossen/drift-estimation; temporal resolution chosen from the data with a learned temporal prior), '
-             'as used for the fair comparison of Fig. 3: disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px (16.2 nm) '
+             + ('github.com/jcnossen/drift-estimation) with identical settings for all methods ('
+                f'{V["dme_fixed"]["settings"]["fpb"]}-frame spline bins refined with the learned temporal prior on '
+                f'{V["dme_fixed"]["settings"]["segment_frames"]}-frame segments), ' if 'dme_fixed' in V else
+                'github.com/jcnossen/drift-estimation; temporal resolution chosen from the data with a learned temporal prior), ')
+             + 'on the localizations of the fair comparison of Fig. 3: disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px (16.2 nm) '
              "with each method's own uncertainty, x, y in [5, 115) px, time = window start + 3. "
              + (f'X (top) and Y (bottom) drift' if a.style == 'preprint' else '(A) x and (B) y drift') +
              f' for SMLM, SIMFLUX, DECODE and SIMCODE v2; each trace has its mean removed and is offset '
@@ -141,6 +218,12 @@ def caption(V, a):
         L.append(f'  {k}: {v["all"][0]:.2f} / {v["all"][1]:.2f}; slow {v["slow"][0]:.2f} / {v["slow"][1]:.2f}; fast {v["fast"][0]:.2f} / {v["fast"][1]:.2f}')
     L.append('  (the difference of two independent estimates; its rms is ~sqrt(e1^2 + e2^2) of the two estimation errors, plus any '
              'genuine difference from the different localization sets, e.g. position-dependent bias.)')
+    if 'dme_fixed' in V:
+        S = V['dme_fixed']['settings']
+        L.append('DME SETTINGS (identical for every method; values json dme_fixed): ' + json.dumps(S))
+        for k, I in V['dme_fixed']['methods'].items():
+            L.append(f'  {k}: table {I["table"]}, rows {I["n_rows"]}, mean sigma {I["sigma_mean_px"][0]:.4f} / {I["sigma_mean_px"][1]:.4f} px'
+                     + (f'; its own cross-validated DME v2 choice would be {I["auto_choice"]}' if 'auto_choice' in I else ''))
     if 'n_frc_rows' in V:
         L.append('Rows entering each estimate (= the Fig. 3 FRC set, protocol steps 1-4): ' +
                  ', '.join(f'{k} {v}' for k, v in V['n_frc_rows'].items()))

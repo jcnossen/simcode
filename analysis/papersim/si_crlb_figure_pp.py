@@ -1,13 +1,13 @@
 """SI figure 'si_crlb_precision' in the preprint's layout (smlmtorch 5f7fdcb scripts/estimation_vs_crlb_fastpsf.py /
 estimation_vs_crlb_varying_bg.py; paper figure figures/si_crlb_precision.pdf), redrawn from s10.py's json:
-  A  'Localization precision vs signal photons (X axis)', constant background 1 photon/px/frame: CRLB SMLM / SIMFLUX / SIMCODE
+  A  'Localization precision vs signal photons (X axis)', constant background 1 photon/px/frame: CRLB SMLM / SIMFLUX, SIMCODE bound
      (dashed), SMLM MLE, SIMFLUX MLE, NN Output, SIMCODE (RMSD, 2 % trim)
   B  'Localization precision for fluctuating fluorescence background', bg ~ U(1, 6) per frame: SMLM CRLB, NN Output RMSD + predicted
-     precision, SIMCODE CRLB, SIMCODE RMSD + predicted precision (no SIMFLUX, as the preprint)
+     precision, SIMCODE bound, SIMCODE RMSD + predicted precision (no SIMFLUX, as the preprint)
   C  'Example 6-frame stack': the 6 frames of one U(1, 6)-background ROI (re-rendered with s10.py's scene / seed of that bin), each
      frame's bg, the true position (red +)
-SIMCODE CRLB = the SIMFLUX CRLB with a background per frame (crlb_sf_pfbg; there is no separate SIMCODE bound; SIMCODE fits a
-background per frame). Units: x precision in pixels (108.33 nm), log axes. Open symbols: bins where the network detected < 50 % of
+'SIMCODE bound' (legend) = the SIMFLUX CRLB with a background per frame (crlb_sf_pfbg; no separate SIMCODE CRLB is computed;
+SIMCODE fits a background per frame). Units: x precision in pixels (108.33 nm), log axes. Open symbols: bins where the network detected < 50 % of
 the emitters (NN Output / SIMCODE). NN Output = pass-1 head prior; SIMCODE = final pass-2 output with the true pattern.
 usage: python analysis/papersim/si_crlb_figure_pp.py [--tag m1809v2] [--example_bin 5] [--psf v2]
 output: out/paper_figs_v2/si_crlb_precision.{pdf,svg,png} (+ _values.json)"""
@@ -40,11 +40,16 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--tag', default='m1809v2'); ap.add_argument('--example_bin', type=int, default=7)
     ap.add_argument('--psf', default='v2'); ap.add_argument('--outdir', default=os.path.join(os.path.dirname(C.OUT), 'paper_figs_v2'))
     ap.add_argument('--name', default='si_crlb_precision')
+    ap.add_argument('--classical_tag', default='m1809v2_smlmstart',
+                    help="s10 json for the SMLM / SIMFLUX MLE rows (default: s10.py --start smlmfit --nets 0: SMLM from the centroid / "
+                         "border-median init, SIMFLUX from the SMLM fit of the 6-frame sum); '' = the --tag json (GT-near start)")
     a = ap.parse_args()
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
     R = json.load(open(os.path.join(C.OUT, 's10', f's10_{a.tag}.json')))
+    RC = json.load(open(os.path.join(C.OUT, 's10', f's10_{a.classical_tag}.json'))) if a.classical_tag else R
     def ser(cond, key, f='rmsd_trim2'):
-        q = [R['cond'][cond][b] for b in sorted(R['cond'][cond], key=int)]; ph = np.array([x['photons'] for x in q])
+        src = RC if key in ('smlm', 'sf', 'sf_pfbg') else R
+        q = [src['cond'][cond][b] for b in sorted(src['cond'][cond], key=int)]; ph = np.array([x['photons'] for x in q])
         if key.startswith('crlb'): return ph, np.array([x[key][0] for x in q]), None
         rec = np.array([x[key].get('recall', 1.0) for x in q], float); rec[~np.isfinite(rec)] = 1.0
         return ph, np.array([x[key][f][0] for x in q]), rec
@@ -53,12 +58,15 @@ def main():
     A = fig.add_subplot(gs[0]); B = fig.add_subplot(gs[1])
     # A (preprint: CRLB SMLM black dashed, SIMFLUX green dashed, SIMCODE grey dashed; SMLM black o, SIMFLUX green s, NN blue ^, SIMCODE red v)
     hA = []
-    for k, c, lab in (('crlb_smlm', 'k', 'SMLM CRLB'), ('crlb_sf', 'green', 'SIMFLUX CRLB'), ('crlb_sf_pfbg', 'grey', 'SIMCODE CRLB')):
+    for k, c, lab in (('crlb_smlm', 'k', 'SMLM CRLB'), ('crlb_sf', 'green', 'SIMFLUX CRLB'), ('crlb_sf_pfbg', 'grey', 'SIMCODE bound')):
         ph, y, _ = ser('const1', k); hA += A.plot(ph, y, '--', color=c, lw=1.2, label=lab)
     for k, c, mk, lab in (('smlm', 'k', 'o', 'SMLM MLE'), ('sf', 'green', 's', 'SIMFLUX MLE'), ('nn_p1', 'tab:blue', '^', 'NN Output'), ('v2_p2', 'red', 'v', 'SIMCODE')):
         ph, y, rec = ser('const1', k); low = rec < 0.5 if k in ('nn_p1', 'v2_p2') else np.zeros(len(ph), bool)
         hA += A.plot(ph, y, '-', color=c, marker=mk, ms=5, label=lab, markevery=list(np.nonzero(~low)[0]))
         if low.any(): A.plot(ph[low], y[low], mk, color=c, ms=5, mfc='white', ls='none')
+        if k in ('smlm', 'sf'):         # untrimmed RMSD next to the 2 % trimmed one
+            ph, yu, _ = ser('const1', k, 'rmsd')
+            hA += A.plot(ph, yu, ':', color=c, marker=mk, ms=4, mfc='white', lw=1.2, label=lab + ' (untrimmed)')
     A.set_title('Localization precision vs signal photons (X axis)')
     # B
     hB = []
@@ -67,7 +75,7 @@ def main():
     hB += B.plot(ph, y, '-', color='tab:blue', marker='o', ms=5, label='NN Output RMSD', markevery=list(np.nonzero(~low)[0]))
     if low.any(): B.plot(ph[low], y[low], 'o', color='tab:blue', ms=5, mfc='white', ls='none')
     ph, y, _ = ser('unif16', 'nn_p1', 'pred_mean'); hB += B.plot(ph, y, ':', color='tab:blue', marker='x', ms=5, lw=1.5, label='NN Output predicted precision')
-    ph, y, _ = ser('unif16', 'crlb_sf_pfbg'); hB += B.plot(ph, y, '--', color='red', lw=1, alpha=0.6, label='SIMCODE CRLB')
+    ph, y, _ = ser('unif16', 'crlb_sf_pfbg'); hB += B.plot(ph, y, '--', color='red', lw=1, alpha=0.6, label='SIMCODE bound')
     ph, y, rec = ser('unif16', 'v2_p2'); low = rec < 0.5
     hB += B.plot(ph, y, '-', color='red', marker='v', ms=5, label='SIMCODE RMSD', markevery=list(np.nonzero(~low)[0]))
     if low.any(): B.plot(ph[low], y[low], 'v', color='red', ms=5, mfc='white', ls='none')
@@ -93,7 +101,16 @@ def main():
     os.makedirs(a.outdir, exist_ok=True); out = os.path.join(a.outdir, a.name)
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         fig.savefig(f'{out}.{ext}', **kw); print(f'{out}.{ext}')
-    json.dump(dict(source=f's10_{a.tag}.json', example=dict(bin=a.example_bin, photons=phx, bg=list(map(float, bg)), x_roi=float(ex), y_roi=float(ey)),
+    cq = lambda cond, k: [RC['cond'][cond][b][k].get('fringe_off_frac') for b in sorted(RC['cond'][cond], key=int)]
+    ext = dict(classical_source=f's10_{a.classical_tag or a.tag}.json', classical_start=RC['protocol'].get('classical_start', 'gt'),
+               shown=dict(solid='RMSD with the 2 % largest errors removed (trim 2 %), all methods',
+                          dotted_open='untrimmed RMSD, SMLM MLE and SIMFLUX MLE (panel A)'),
+               photons=RC['protocol']['photons'],
+               fringe_off_frac={f'{cond}_{k}': cq(cond, k) for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg')},
+               fringe_off_definition='|error| > half a pattern period (224 / 2 nm) along x or y',
+               rmsd_x_px={f'{cond}_{k}_{f}': [RC['cond'][cond][b][k][f][0] for b in sorted(RC['cond'][cond], key=int)]
+                          for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg') for f in ('rmsd_trim2', 'rmsd')})
+    json.dump(dict(**ext, source=f's10_{a.tag}.json', example=dict(bin=a.example_bin, photons=phx, bg=list(map(float, bg)), x_roi=float(ex), y_roi=float(ey)),
                    simcode_crlb='crlb_sf_pfbg (SIMFLUX model with one background per frame)'), open(out + '_values.json', 'w'), indent=1)
 
 
