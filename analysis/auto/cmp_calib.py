@@ -33,7 +33,7 @@ def crlb(c, angle, I=1000.0, bg=6.0, z=0.05):
 
 
 def main(a, b, outp=None, zmed_ref=None):
-    A, B = dict(json.load(open(a)), _path=a), dict(json.load(open(b)), _path=b)
+    A, B = dict(spsf.read_calib(a), _path=a), dict(spsf.read_calib(b), _path=b)
     zA = A.get('emitter_z_median_um', 0.05); zB = float(zmed_ref) if zmed_ref else B.get('emitter_z_median_um', 0.05)
     r = {}
     za, zb = np.array(A['zernike_waves']), np.array(B['zernike_waves'])
@@ -63,7 +63,8 @@ def main(a, b, outp=None, zmed_ref=None):
     r['crlb_nm_xy'] = {str(ang): dict(auto=crlb(A, ang), ref=crlb(B, ang)) for ang in (0, 1, None)}
     for k in ('crlb_nm_xy',):
         for ang, v in r[k].items(): v['ratio'] = [x / y for x, y in zip(v['auto'], v['ref'])]
-    ma, mb = np.load(cam_maps(a, A['camera'])), np.load(cam_maps(b, B['camera']))
+    from simcode.psf import camera_maps
+    ma, mb = camera_maps(a, A), camera_maps(b, B)
     r['camera'] = dict(gain=[A['camera']['gain_e_per_adu'], B['camera']['gain_e_per_adu']], offset=[A['camera']['offset_adu'], B['camera']['offset_adu']])
     for k in ('offset_adu', 'readnoise_e'):
         x, y = ma[k].astype(np.float64), mb[k].astype(np.float64)

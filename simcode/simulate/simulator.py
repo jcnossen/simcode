@@ -23,7 +23,7 @@ class Simulator:
                  zmax=0.2, tirf_depth=None, zmin=0.0):
         from simcode.config import resolve
         calib_path = resolve(calib_path)
-        self.c = json.load(open(calib_path))
+        self.c = spsf.read_calib(calib_path)          # calib json or psf.zip
         self.H, self.W, self.T = H, W, T
         self.dev = torch.device(device)
         # LUT heights zmin .. zmax um (zmin < 0: below the coverslip, the analytic continuation of the vectorial model that an
@@ -62,9 +62,7 @@ class Simulator:
         self.gain, self.offset, self.rn = cam['gain_e_per_adu'], cam['offset_adu'], cam['readnoise_e']
         self.rn_map = None
         if cam.get('maps'):
-            import numpy as _np, os as _os
-            mp = cam['maps'] if _os.path.isabs(cam['maps']) else _os.path.join(_os.path.dirname(_os.path.abspath(calib_path)), cam['maps'])
-            self.rn_map = torch.tensor(_np.load(mp)['readnoise_e'], device=self.dev)   # per-pixel read noise [e]
+            self.rn_map = torch.tensor(spsf.camera_maps(calib_path, self.c)['readnoise_e'], device=self.dev)   # per-pixel read noise [e]
         p = self.c['pattern']
         self.k0 = torch.tensor(p['k_rad_per_px'], device=self.dev, dtype=torch.float32)   # [2,2]
         self.depth0 = torch.tensor(p['depth'], device=self.dev)

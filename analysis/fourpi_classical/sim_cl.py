@@ -10,6 +10,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.fourpi.lut4pi import LUT4Pi
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
 from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
@@ -53,7 +54,7 @@ def main():
     out = a.out or f'{P4}/classical/sim/{tag}_{a.field}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     F = dict(np.load(a.front or f'{d}/front_SIM_000_{a.model}.npz'))
-    st = json.load(open(f'{P4}/psf4pi/{meta["psf"]}.json'))['psf']
+    st = fourpi_state(meta["psf"], P4)
     lut = LUT4Pi(st, P=P, dev=dev)
     c4 = Classic4Pi(lut, delta=(0.0, math.radians(meta['delta_deg'])), dev=dev)
     t0 = time.time()

@@ -18,6 +18,7 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim
@@ -50,7 +51,7 @@ def main():
         return main_plain(a)
     from simcode.util.proctitle import auto; auto('4pi-train-w')
     torch.manual_seed(a.seed)
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=15)
     sim = FourPiPatchSim(lut, seed=a.seed)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut

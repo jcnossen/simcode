@@ -20,6 +20,7 @@ def out(*f):
 
 
 def cam_maps(calib_path, cam):
-    """camera-map path of a calibration json (relative paths are relative to the json, as in sim.simulator)"""
-    mp = cam['maps']
-    return mp if os.path.isabs(mp) else os.path.join(os.path.dirname(os.path.abspath(calib_path)), mp)
+    """camera-map file of a calibration (calib json: the npz, relative paths relative to the json; psf.zip: the zip itself;
+    simcode.psf.camera_maps_path). Read the maps with simcode.psf.camera_maps(calib_path)."""
+    from simcode.psf import camera_maps_path
+    return camera_maps_path(calib_path, dict(camera=cam))

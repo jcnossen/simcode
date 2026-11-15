@@ -25,6 +25,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.fourpi.lut4pi import LUT4Pi
 
 PX = 0.128
@@ -126,7 +127,7 @@ def main():
     print(f'sites {len(S)}, events {len(site)}, emitter-frames {len(fr)} ({len(fr) / T:.1f} per frame = {len(fr) / T / area:.2f} /um^2/frame)', flush=True)
     # render
     dev = 'cuda'
-    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = fourpi_state('NPC_f_dxy15', P4)
     R = 21; h = R // 2
     lut = LUT4Pi(st, P=R, dev=dev)
     img = torch.zeros(T, 4, H + 2 * h, W + 2 * h, device=dev)

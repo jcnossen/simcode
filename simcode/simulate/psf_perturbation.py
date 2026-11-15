@@ -22,7 +22,7 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle
     and the Zernikes changed (angle = that pattern angle's PSF, None = average).
     A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike / focus terms do not apply to it."""
     zmax = zmax or sim.zmax
-    c = json.load(open(sim.calib_path))
+    c = spsf.read_calib(sim.calib_path)
     if c.get('psf_gauss_sigma_um') is not None:
         base = spsf.PSF.load(c, roisize=sim.R, device=dev)
         psf = spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)

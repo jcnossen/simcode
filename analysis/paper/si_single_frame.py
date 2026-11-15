@@ -82,9 +82,9 @@ def main():
     a = ap.parse_args()
     from simcode.config import resolve
     from simcode.dataset import Dataset
-    cp = resolve(a.calib); c = json.load(open(cp))
-    from simcode.processing.common import camera_maps_path
-    maps = np.load(camera_maps_path(cp, c))
+    from simcode.psf import read_calib, camera_maps
+    cp = resolve(a.calib); c = read_calib(cp)
+    maps = camera_maps(cp, c)
     gain = float(c['camera']['gain_e_per_adu']); px_nm = c['pixelsize_um'] * 1e3
     x0, y0, s = CROP
     A = Dataset.load(a.run); V = A.select(12.0).numpy(); A = A.numpy()

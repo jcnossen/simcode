@@ -207,7 +207,8 @@ def _stages(a, N, cal, Units, atomic_json):
     ST['pass2_s'] = time.time() - t0
     # 5: tables (with --claim 1 the tables are written by one of the copies; the others skip them)
     from simcode import table as SP
-    px = json.load(open(config.resolve(a.calib)))['pixelsize_um'] * 1e3
+    from simcode import psf as spsf
+    px = spsf.read_calib(config.resolve(a.calib))['pixelsize_um'] * 1e3
     crop = tuple(float(v) for v in a.crop.split(',')) if a.crop else SP.run_crop(a.out)
     from simcode.processing.common import CAND_PMIN
     summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.cal_pass2, cand_pmin=CAND_PMIN,

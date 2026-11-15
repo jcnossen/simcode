@@ -99,11 +99,7 @@ def _settings(s):
 # ------------------------------------------------------------------------------------------------ (a) localization
 def _tp():
     """the torch_psf pieces of the in-situ chain (the pinned torch_psf of simcode/psf)"""
-    import simcode.psf  # noqa: F401  (the pinned torch_psf on the path)
-    from torch_psf.detect import filter_frames
-    from torch_psf.spots import extract_rois
-    from torch_psf.gaussian import AstigmaticGaussianPSF
-    from torch_psf.insitu.heldout import spot_deviance
+    from simcode.psf import filter_frames, extract_rois, AstigmaticGaussianPSF, spot_deviance
     return filter_frames, extract_rois, AstigmaticGaussianPSF, spot_deviance
 
 

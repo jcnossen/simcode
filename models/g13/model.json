@@ -1,6 +1,6 @@
 {
  "g13": {
-  "psf": "calib_gauss1.3.json",
+  "psf": "calib_gauss1.3.psf.zip",
   "detector": "det_g13.pt",
   "emitter": "hd_g13.pt",
   "cal_sim": "calib/calib_sc_hd_g13.json",

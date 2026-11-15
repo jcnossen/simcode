@@ -7,6 +7,7 @@
 import json, math, os, shutil
 import numpy as np, torch
 from simcode.pipeline import psf_fit
+from simcode import psf as spsf
 
 
 def _inits(ds):
@@ -117,6 +118,7 @@ def run(ds):
     js, pt = os.path.join(d, f'fit_{last}_{best}_psf.json'), os.path.join(d, f'fit_{last}_{best}_psf.pt')
     for avg, fn in ((False, 'calib.json'), (True, 'calib_avg.json')):
         json.dump(calib_dict(ds, js, pt, pat, cam, 'camera_maps.npz', avg), open(os.path.join(d, fn), 'w'), indent=1)
+        spsf.write_calib_zip(os.path.join(d, fn), device='cpu')   # the same calibration as psf.zip (calib.psf.zip, calib_avg.psf.zip)
     np.save(os.path.join(d, 'psf_images.npy'), psf_images(pt, dev=dev))
     # checks
     fl = fits[last]
