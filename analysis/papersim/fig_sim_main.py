@@ -1,6 +1,7 @@
 """Main-text simulation figure (agreed with the paper session, 2026-11-15).
 
-A  renders: rows = densities 0.5 / 1 / 2 / 4, columns = ground truth, SMLM, SIMFLUX, DECODE, SIMCODE (preprint), SIMCODE v2;
+A  renders: rows = densities 0.5 / 1 / 2 / 4, columns = ground truth, SMLM, SIMFLUX, DECODE, SIMCODE (paper version; --internal 1:
+   + SIMCODE (preprint), labels SIMCODE v2, *_internal);
    SIMFLUX and the preprint SIMCODE with the ESTIMATED pattern (as SIMCODE v2, which estimates it in situ); same crop and
    rendering as fig_overview.py; each tile gives only the GT-FRC and the number of localizations (the FRC set).
 B  PSF panel, xy | xz (psfpanel.py), short label; conditions / CRLBs go to the caption.
@@ -19,9 +20,13 @@ import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
 DENS = [0.5, 1, 2, 4]
-METH = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v1', 'SIMCODE\n(preprint)'), ('v2sig', 'SIMCODE v2')]
-TABLE = [('smlm', 'SMLM'), ('sf', 'SIMFLUX (estimated pattern)'), ('sf_gtp', 'SIMFLUX (true pattern)'), ('decode', 'DECODE (retrained)'),
-         ('v1', 'SIMCODE preprint (estimated pattern)'), ('v1gt', 'SIMCODE preprint (true pattern)'), ('v2sig', 'SIMCODE v2')]
+# paper version (default): no preprint SIMCODE columns / rows, method label 'SIMCODE'; --internal 1 (*_internal): with them
+METH_INTERNAL = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v1', 'SIMCODE\n(preprint)'), ('v2sig', 'SIMCODE v2')]
+TABLE_INTERNAL = [('smlm', 'SMLM'), ('sf', 'SIMFLUX (estimated pattern)'), ('sf_gtp', 'SIMFLUX (true pattern)'), ('decode', 'DECODE (retrained)'),
+                  ('v1', 'SIMCODE preprint (estimated pattern)'), ('v1gt', 'SIMCODE preprint (true pattern)'), ('v2sig', 'SIMCODE v2')]
+METH_PAPER = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v2sig', 'SIMCODE')]
+TABLE_PAPER = [('smlm', 'SMLM'), ('sf', 'SIMFLUX (estimated pattern)'), ('sf_gtp', 'SIMFLUX (true pattern)'), ('decode', 'DECODE (retrained)'),
+               ('v2sig', 'SIMCODE')]
 
 
 def letter(ax, s, dx=-0.08, dy=1.04):
@@ -30,7 +35,11 @@ def letter(ax, s, dx=-0.08, dy=1.04):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--suffix', default='_v2psf')
-    ap.add_argument('--model', default='m1809v2'); a = ap.parse_args()
+    ap.add_argument('--model', default='m1809v2')
+    ap.add_argument('--internal', type=int, default=0, help='1: with the preprint SIMCODE (columns, table rows) -> fig_sim_<..>_internal.*')
+    a = ap.parse_args()
+    METH, TABLE = (METH_INTERNAL, TABLE_INTERNAL) if a.internal else (METH_PAPER, TABLE_PAPER)
+    SC = dict(METH)['v2sig']
     runs = [os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}') for d in DENS]
     R = [json.load(open(os.path.join(r, 'full', f'metrics_{a.model}.json'))) for r in runs]
     G = [json.load(open(os.path.join(r, 'full', f'gtfrc_{a.model}.json')))['methods'] for r in runs]
@@ -86,7 +95,7 @@ def main():
     B.set_yscale('log'); B.axhline(fmax / 1e3, color='0.5', lw=0.8, ls=':'); B.set_ylim(0.15, fmax / 1e3 * 1.8)
     B.set_yticks([0.25, 1, 4, 15, 60]); B.set_yticklabels(['0.25', '1', '4', '15', '60']); B.minorticks_off()
     B.set_ylabel('frames (x1000)', fontsize=10); B.set_title('Frames to 30 nm GT-FRC vs density', fontsize=11); letter(B, 'D', dx=-0.16)
-    out = os.path.join(C.OUT, 'figures', f'fig_sim_{a.prefix}{a.suffix}'); os.makedirs(os.path.dirname(out), exist_ok=True)
+    out = os.path.join(C.OUT, 'figures', f'fig_sim_{a.prefix}{a.suffix}' + ('_internal' if a.internal else '')); os.makedirs(os.path.dirname(out), exist_ok=True)
     # SI table
     rows = []
     for i, d in enumerate(DENS):
@@ -100,7 +109,7 @@ def main():
     with open(out + '_table.csv', 'w', newline='') as fh:
         W = csv.DictWriter(fh, fieldnames=list(rows[0])); W.writeheader(); W.writerows(rows)
     f1 = lambda v, s='{:.1f}': '-' if v is None else s.format(v)
-    md = [f'# Simulation table ({a.prefix}{a.suffix}, SIMCODE v2 = {a.model}; 60 000 frames)', '',
+    md = [f'# Simulation table ({a.prefix}{a.suffix}, {SC} = {a.model}; 60 000 frames)', '',
           'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px); GT-FRC = FRC(reconstruction, ground truth), 1/7; '
           'frames to 30 nm GT-FRC ("-" = not reached in 60 000 frames, values <= 250 = reached in the first 250 frames); fair FRC = half-split FRC; '
           'Jaccard at 10 nm; false positive = a localization with no emitter ON in its window within 3 own σ.', '',
@@ -117,11 +126,12 @@ def main():
     zd = g0.get('z_dist_um')
     psfs = (f"the in-situ PSF of 1809/2 and the sCMOS camera maps of that movie (gain, offset, per-pixel read noise), emitter heights 0-400 nm "
             f"(median {zd['p50'] * 1e3:.0f} nm)" if zd else 'a Gaussian PSF')
-    cap = [f"Simulated {gt_desc(runs[0])}, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
+    cap = [f"Simulated {gt_desc(runs[0], paper=not a.internal)}, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
            f"(A) Renders of the same {w * C.PX_NM / 1000:.2f} µm crop for every method and emitter density (emitters/µm²/frame), same rendering in every "
            "tile; each tile gives the GT-FRC (FRC between the rendered reconstruction and the rendered ground truth of all labelling sites; 5 nm pixels, 1/7) "
-           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px). SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, "
-           "as SIMCODE v2 does; DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
+           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px). "
+           + ("SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; " if a.internal else
+              "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
            "Results with the true pattern, the fair half-split FRC, the Jaccard index and the false-positive fraction are in the SI table.",
            psfpanel.caption_text(info, what='(B)'),
            "(C) GT-FRC on the full movie vs emitter density. (D) Frames needed to reach 30 nm GT-FRC (GT-FRC on the first N frames, log-interpolated); "

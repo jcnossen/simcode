@@ -12,6 +12,8 @@ usage: CUDA_VISIBLE_DEVICES=1 python analysis/paper/fig_exp_new.py <1809_2|2.5nM
           [--smlm p] [--sf p] [--decode p] [--v2 <run dir or table>] [--v2_sigma_max nm] [--aoi auto]
   defaults: out/paper2/<ds>/{smlm/smlm.npy, sf/sf.hdf5, decode/locs.npz (locs_fixed.npz when it exists), v2 (run directory: locs_p2)}; v2 rows: sel, or with
   --v2_sigma_max the paper's selection at that threshold (Dataset.select); output out/paper2/fig/<ds>[_<tag>].*
+  (2026-11-15) paper version (no --v1): labels 'SIMCODE', caption / PSF table without version labels (paper_text); a redraw with
+  the same --outdir / --tag reuses every <out>_<k>_drift.npy (no DME) and the cached Pearson maps (no movie read).
   (2026-11-15) --outdir d: output directory instead of out/paper2/fig; --reuse_drift <prefix>: the methods other than v2 take
   their drift from an earlier figure's caches <prefix>_<kind>_drift.npy (copied to this figure's cache names; the same rows give
   the same DME v2 drift); --psf <calib json>: PSF panel (psfpanel.py: xy at the plotted v2 set's median height + xz, rms
@@ -95,15 +97,25 @@ def psf_axes(fig, cell, axJ, info, gap_in=0.3, right_in=0.5, max_h_frac=0.62):
     return axy, axz
 
 
-def psf_table(info, cond, values=None):
+def paper_text(s):
+    """(2026-11-15) paper version of a caption / table text: the method is 'SIMCODE' and no calibration carries a version label
+    (no 'SIMCODE v2', 'PSF v2', 'v2 camera'); 'DME v2' (the drift method's published name) and file names stay"""
+    import re
+    s = s.replace('SIMCODE = SIMCODE v2, networks', 'SIMCODE: networks').replace('SIMCODE v2', 'SIMCODE')
+    s = re.sub(r'(PSF|calibration) v2\b', r'\1', s)
+    s = s.replace('+ v2 camera', '+ camera calibration').replace('v2 camera', 'camera calibration')
+    return s
+
+
+def psf_table(info, cond, values=None, sc='SIMCODE v2'):
     """(2026-11-15) the SI table of the PSF panel: conditions + single-emitter CRLBs (rows: quantity, value, unit, note); returns
-    (markdown, csv) strings"""
+    (markdown, csv) strings. sc = the method's label (paper version: 'SIMCODE')"""
     c = info['crlb']; p = cond['pattern']; q = cond['z_quantiles_um']
     rows = [
         ('PSF model', os.path.basename(cond['calib']), '', 'in-situ vectorial PSF fit (Zernike Noll 5-21)'),
         ('rms aberration (Noll >= 5)', f"{info['rms_mwaves']:.0f}", 'mλ', ''),
         ('focal plane', f"{cond['focus_um'] * 1e3:.0f}", 'nm', 'above the coverslip'),
-        ('emitter height, median', f"{cond['z_median_um'] * 1e3:.0f}", 'nm', 'pass-1 z of the plotted SIMCODE v2 set'),
+        ('emitter height, median', f"{cond['z_median_um'] * 1e3:.0f}", 'nm', f'pass-1 z of the plotted {sc} set'),
         ('emitter height, q25-q75', f"{q['q25'] * 1e3:.0f}-{q['q75'] * 1e3:.0f}", 'nm', f"q05-q95 {q['q05'] * 1e3:.0f}-{q['q95'] * 1e3:.0f} nm"),
         ('rows without z', f"{100 * cond['z_nan_frac']:.2f}", '%', 'no pass-1 partner'),
         ('signal, median (PSF intensity parameter)', f"{cond['photons_median']:.0f}", 'photons / 6-frame window', 'network photons of the plotted set'),
@@ -121,7 +133,7 @@ def psf_table(info, cond, values=None):
         rows.append((f'CRLB {lab} x / y / z', f"{r['x']:.1f} / {r['y']:.1f} / {r['z']:.0f}", 'nm', '3D fit (x, y, z, I, bg)'))
         rows.append((f'CRLB {lab} x / y, z known', f"{r['xy_zfixed'][0]:.1f} / {r['xy_zfixed'][1]:.1f}", 'nm', '2D fit at the emitter height'))
     if values is not None:
-        rows.append(('SIMCODE v2 rows in the figure (n_frc)', f"{values:,}".replace(',', ' '), '', 'fair-FRC set'))
+        rows.append((f'{sc} rows in the figure (n_frc)', f"{values:,}".replace(',', ' '), '', 'fair-FRC set'))
     md = ['| quantity | value | unit | note |', '|---|---|---|---|'] + [f'| {a} | {b} | {u} | {n} |' for a, b, u, n in rows]
     import csv, io
     s = io.StringIO(); w = csv.writer(s); w.writerow(['quantity', 'value', 'unit', 'note']); w.writerows(rows)
@@ -271,12 +283,13 @@ def main():
         axy.text(0.0, -0.12, panel_text(psf_info, psf_cond), transform=axy.transAxes, fontsize=10, va='top', ha='left', linespacing=1.2)
     foot = ('All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.'
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))
+    txt = (lambda t: t) if a.v1 else paper_text     # paper version (no --v1): no version labels in the caption / table text
     if psf_info is not None:
-        open(f'{out}_caption.txt', 'w').write(caption_text(psf_info, psf_cond, foot) + '\n')
-        md, csv_s = psf_table(psf_info, psf_cond, int(res[KINDS.index('v2')]['n_frc']))
-        open(f'{out}_psf_table.md', 'w').write(md); open(f'{out}_psf_table.csv', 'w').write(csv_s)
+        open(f'{out}_caption.txt', 'w').write(txt(caption_text(psf_info, psf_cond, foot)) + '\n')
+        md, csv_s = psf_table(psf_info, psf_cond, int(res[KINDS.index('v2')]['n_frc']), sc=LABELS[KINDS.index('v2')])
+        open(f'{out}_psf_table.md', 'w').write(txt(md)); open(f'{out}_psf_table.csv', 'w').write(txt(csv_s))
     else:
-        open(f'{out}_caption.txt', 'w').write(foot + '\n')
+        open(f'{out}_caption.txt', 'w').write(txt(foot) + '\n')
     for ext, kw in (('svg', dict(dpi=300)), ('pdf', dict(dpi=300)), ('png', dict(dpi=150))):
         plt.savefig(f'{out}.{ext}', bbox_inches='tight', pad_inches=0.15, **kw)
     plt.close('all')

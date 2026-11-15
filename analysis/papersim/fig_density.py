@@ -31,12 +31,13 @@ def crop_of(md):
     return ((int(z[0]), int(z[1])), int(z[2])) if z else CROP
 
 
-def gt_desc(md):
-    """caption text of a movie set's ground truth"""
+def gt_desc(md, paper=False):
+    """caption text of a movie set's ground truth (paper=True: without the references to the preprint)"""
     s = json.load(open(os.path.join(md, 'gen.json'))).get('wsm')
-    if not s: return "randomly generated microtubules (the preprint's ground truth)"
+    if not s: return "randomly generated microtubules" + ('' if paper else " (the preprint's ground truth)")
     return (f"microtubules of webSMLM's cell model (the inSiliScope CellField world model; seed {s['seed']}, {s['n_labels']} labelling sites at "
-            f"{s['labels_per_nm']:.2f} per nm of filament (the preprint ground truth's line density), {s['mt_length_um']:.0f} µm of microtubule in the field)")
+            f"{s['labels_per_nm']:.2f} per nm of filament" + ('' if paper else " (the preprint ground truth's line density)")
+            + f", {s['mt_length_um']:.0f} µm of microtubule in the field)")
 
 
 def render(x, y, corner, w, zoom=20):

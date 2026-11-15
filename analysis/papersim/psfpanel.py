@@ -186,7 +186,7 @@ def sim_psf_info(md, dexp):
     else: ph, bg = g0['intensity_per_6frames'], g0['bg']
     pat = g0.get('pattern') or {}
     kw = {}
-    if md.rstrip('/').endswith(('_v2psf', '_v2psf_wsm')):
+    if '_v2psf' in os.path.basename(md.rstrip('/')):     # every v2-PSF set (_v2psf, _v2psf_wsm, _v2psf_wsmaxis, ...)
         rn = np.load(os.path.join(md, 'camera_sim.npz'))['readnoise_e']
         kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
     return psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)

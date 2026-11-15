@@ -37,7 +37,8 @@ import matplotlib.pyplot as plt
 PX = 108.33
 D = '/home/jc/simcode2/out/paper_v2psf/1809_2_fig3_psfv2'
 OUT = '/home/jc/simcode2/out/paper_figs_v2'
-METHODS = [('smlm', 'SMLM', 'blue'), ('sf', 'SIMFLUX', 'green'), ('decode', 'DECODE', 'orange'), ('v2', 'SIMCODE v2', 'red')]
+METHODS = [('smlm', 'SMLM', 'blue'), ('sf', 'SIMFLUX', 'green'), ('decode', 'DECODE', 'orange'), ('v2', 'SIMCODE', 'red')]
+SC = 'SIMCODE'                  # display label of the method (paper figures: never a version label)
 
 
 def runmean(v, n):
@@ -46,8 +47,20 @@ def runmean(v, n):
 
 
 def fixed_dme(tables, nframes, fpb, seg, scales, v2_sigma_max, outbase, auto_log=False, redo=False):
-    """identical-setting DME v2 for every method (module doc) -> drift caches <outbase>_<k>_drift.npy, info per method"""
+    """identical-setting DME v2 for every method (module doc) -> drift caches <outbase>_<k>_drift.npy, info per method.
+    Cheap redraw: when every cache exists (redo=0) and <outbase>_values.json logged the same tables (dme_fixed), that info
+    is reused as is: no table is read and no DME runs."""
     import time
+    prev = {}
+    try:
+        prev = json.load(open(f'{outbase}_values.json')).get('dme_fixed', {}).get('methods', {})
+    except Exception:
+        pass
+    if not redo and all(os.path.exists(f'{outbase}_{k}_drift.npy') and k in prev and
+                        prev[k].get('table') == os.path.abspath(path) and prev[k].get('kind') == kind
+                        for k, (kind, path) in tables.items()):
+        print('fixed DME: all caches + logged info present, reusing', outbase, flush=True)
+        return {k: dict(prev[k], cached=True) for k in tables}
     import frc_fair as FF
     from simcode.util import drift as DR
     DR.dme_package()
@@ -99,6 +112,8 @@ def main():
     ap.add_argument('--v2_sigma_max', type=float, default=12.0, help='--dme fixed: SIMCODE v2 rows = paper selection at this nm')
     ap.add_argument('--auto_log', type=int, default=1, help="--dme fixed: also log each method's own cross-validated choice")
     ap.add_argument('--redo', type=int, default=0)
+    ap.add_argument('--cache_base', default=None, help='--dme fixed: drift caches / logged info at <cache_base>_<k>_drift.npy '
+                    '(default <outdir>/<name>; e.g. the extended version reuses <outdir>/si_dme_drift)')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     if a.name is None: a.name = 'si_dme_drift' if a.style == 'preprint' else 'si_dme_drift_extended'
@@ -115,7 +130,7 @@ def main():
                                         rows='frc_fair steps 1-4: disjoint 6-frame windows, max(sigma) < 0.15 px, crop [5, 115) px; f + 6 <= F',
                                         v2_selection_sigma_max_nm=a.v2_sigma_max),
                           methods=fixed_info)
-        fixed_info['methods'] = fixed_dme(tables, a.nframes, a.fpb, a.seg, sc, a.v2_sigma_max, f'{a.outdir}/{a.name}', a.auto_log, a.redo)
+        fixed_info['methods'] = fixed_dme(tables, a.nframes, a.fpb, a.seg, sc, a.v2_sigma_max, a.cache_base or f'{a.outdir}/{a.name}', a.auto_log, a.redo)
         try:
             from simcode.util import drift as DR; fixed_info['settings']['dme_version'] = DR.version()
         except Exception:
@@ -157,7 +172,7 @@ def main():
             for k, lab, c in (METHODS[2], METHODS[0], METHODS[1]):        # DECODE first (densest), SIMFLUX on top
                 ax.plot(t, dr[k][:, ai] - dr['v2'][:, ai], color=c, lw=0.7, alpha=0.85)
             ax.axhline(0, color='k', lw=0.6)
-            ax.set_ylabel(f'$\\Delta${"xy"[ai]} to\nSIMCODE v2 (nm)', fontsize=13)
+            ax.set_ylabel(f'$\\Delta${"xy"[ai]} to\n{SC} (nm)', fontsize=13)
         axs[3].set_xlabel('frame'); axs[3].set_xlim(0, F)
         for i, ax in enumerate(axs):
             ax.text(-0.17, 1.02, 'ABCD'[i], transform=ax.transAxes, fontsize=20, weight='bold', va='top')
@@ -203,13 +218,13 @@ def caption(V, a):
              + 'on the localizations of the fair comparison of Fig. 3: disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px (16.2 nm) '
              "with each method's own uncertainty, x, y in [5, 115) px, time = window start + 3. "
              + (f'X (top) and Y (bottom) drift' if a.style == 'preprint' else '(A) x and (B) y drift') +
-             f' for SMLM, SIMFLUX, DECODE and SIMCODE v2; each trace has its mean removed and is offset '
+             f' for SMLM, SIMFLUX, DECODE and {SC}; each trace has its mean removed and is offset '
              f'by {a.offset_nm:.0f} nm from the next for clarity.' + ('' if a.style == 'preprint' else
-             ' (C, D) Difference of the SMLM, SIMFLUX and DECODE drift to the SIMCODE v2 drift (x, y; no offset).') +
-             f' The four independent estimates agree: rms difference (x / y) to SIMCODE v2 '
-             f'{pr("SMLM - SIMCODE v2")} (SMLM), {pr("DECODE - SIMCODE v2")} (DECODE) and {pr("SIMFLUX - SIMCODE v2")} '
+             f' (C, D) Difference of the SMLM, SIMFLUX and DECODE drift to the {SC} drift (x, y; no offset).') +
+             f' The four independent estimates agree: rms difference (x / y) to {SC} '
+             f'{pr("SMLM - " + SC)} (SMLM), {pr("DECODE - " + SC)} (DECODE) and {pr("SIMFLUX - " + SC)} '
              f'(SIMFLUX, which has the fewest localizations), against a drift range of '
-             f'{R["SIMCODE v2"][0]:.0f} nm (x) and {R["SIMCODE v2"][1]:.0f} nm (y).')
+             f'{R[SC][0]:.0f} nm (x) and {R[SC][1]:.0f} nm (y).')
     L.append('')
     L.append('NUMBERS (si_dme_drift_values.json)')
     L.append('Peak-to-peak drift (x, y) nm: ' + '; '.join(f'{k} {v[0]:.1f}, {v[1]:.1f}' for k, v in R.items()))
