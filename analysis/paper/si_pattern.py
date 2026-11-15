@@ -583,7 +583,7 @@ def cached_rows(meth, ds, ep, outdir):
     return R
 
 
-def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_pattern_plots'):
+def fig_pattern_plots(datasets, outdir, n_show=2000, seed=1, ep=0, name='si_pattern_plots'):
     """A (SIMFLUX) | B (SIMCODE) side by side, one row per dataset (2026-11-15 layout request: page aspect h / w ~0.8 with
     two datasets); pattern ep (default 0 = angle 0, step 0)"""
     nd = len(datasets)
@@ -592,7 +592,7 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
                             gridspec_kw=dict(hspace=0.36, wspace=0.22, left=0.12 if nd > 1 else 0.09, right=0.98,
                                              top=0.93 if nd > 1 else 0.88, bottom=0.15 if nd > 1 else 0.22))
     rng = np.random.default_rng(seed)
-    V = dict(pattern=ep, n_show_per_class=n_show, seed=seed, panels={}, layout='A SIMFLUX | B SIMCODE; rows = datasets')
+    V = dict(pattern=ep, n_show_per_panel=n_show, sampling='one random sample of the base population per panel (true proportions); red drawn first, blue on top', seed=seed, panels={}, layout='A SIMFLUX | B SIMCODE; rows = datasets')
     for ri, ds in enumerate(datasets):
         cfg = DS[ds]
         for ci, meth in enumerate(('SIMFLUX', 'SIMCODE')):
@@ -610,10 +610,12 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
                 ps = R['paper_sel'].astype(bool)
                 P['paper_selection_frac_of_base'] = float(ps.mean())
                 P['paper_selection_frac_within_0.1'] = float(R['inc'][ps].mean()) if ps.any() else float('nan')
-            for key, msk, col, lab in (('included', R['inc'], INC_COLOR, 'modulation error < 0.1'),
-                                       ('excluded', ~R['inc'], EXC_COLOR, 'modulation error $\\geq$ 0.1')):
+            samp = rng.choice(R['n'], min(n_show, R['n']), replace=False)        # one sample per panel: true proportions
+            P['n_shown'] = int(len(samp)); P['n_shown_included'] = int(R['inc'][samp].sum())
+            for key, msk, col, lab in (('excluded', ~R['inc'], EXC_COLOR, 'modulation error $\\geq$ 0.1'),     # red first, blue on top
+                                       ('included', R['inc'], INC_COLOR, 'modulation error < 0.1')):
                 idx = np.nonzero(msk)[0]
-                sh = rng.choice(idx, min(n_show, len(idx)), replace=False)
+                sh = samp[msk[samp]]
                 ax.scatter(R['x'][sh], R['y'][sh], s=4, marker='o', lw=0, color=col, label=lab, alpha=0.8, rasterized=True)
                 me, off = _fit_meff(R['x'][idx], R['y'][idx] / R['relint'], R['sin_conv'])
                 P[f'm_eff_{key}'] = me; P[f'phase_offset_deg_{key}'] = off
@@ -638,6 +640,7 @@ def fig_pattern_plots(datasets, outdir, n_show=1000, seed=1, ep=0, name='si_patt
             V['panels'][f'{ds}_{meth}'] = P
     if nd == 1: fig.suptitle(DS[datasets[0]]['title'], fontsize=15, y=0.995)
     h, l = axs[-1, 0].get_legend_handles_labels()
+    h, l = [h[1], h[0]] + h[2:], [l[1], l[0]] + l[2:]                             # legend: blue, red, pattern
     fig.legend(h, l, loc='lower center', ncol=3, fontsize=12, markerscale=3, frameon=True, bbox_to_anchor=(0.5, 0.0))
     save(fig, outdir, name)
     V['datasets'] = datasets; V['figsize_in'] = [W, H]
@@ -660,8 +663,8 @@ def caption_pattern_preprint(V):
          'accepted by the baseline (chi^2 <= 4 x ROI^2, 8 x 8 px ROI). SIMCODE: pass-1 network intensities and the pass-1 network '
          'position (before the pattern is used); population = the detections with score p >= 0.63 (no precision cut). Both inside '
          'the field of view x, y in [5, 115) px. '
-         f'{V["n_show_per_class"]} random localizations per class are shown in each panel (not the class proportions; the panel '
-         'text gives the fraction within 0.1). Black: the estimated illumination pattern of each method (SIMFLUX: depth fixed to '
+         f'{V["n_show_per_panel"]} random localizations per panel, in their true proportions (red drawn first, blue on top); the '
+         'panel text gives the fraction within 0.1 of the whole population. Black: the estimated illumination pattern of each method (SIMFLUX: depth fixed to '
          '0.9, as in the SIMFLUX pipeline; SIMCODE: the estimated depth), r_ij (1 + m_i sin(phase)).',
          '', 'NUMBERS (si_pattern_plots_values.json; m_eff = effective modulation depth, least-squares sine fit of y / relint over '
          'ALL rows of the class)']
@@ -696,7 +699,7 @@ if __name__ == '__main__':
     ap.add_argument('--which', default='all', choices=['all', 'decouple', 'pattern', 'pattern_ext'])
     ap.add_argument('--datasets', default='auto', help="comma list of DS keys for si_pattern_plots; auto = 1809_2 (+ 2.5nM_2 once done)")
     ap.add_argument('--nframes', type=int, default=120000)
-    ap.add_argument('--n_show', type=int, default=1000, help='rows plotted per class and panel in si_pattern_plots')
+    ap.add_argument('--n_show', type=int, default=2000, help='rows plotted per panel (one random sample, true proportions) in si_pattern_plots')
     a = ap.parse_args()
     os.makedirs(a.outdir, exist_ok=True)
     if a.which in ('all', 'decouple'): print(json.dumps(fig_phase_decouple(a.run, a.outdir, a.nframes), indent=1, default=float))
