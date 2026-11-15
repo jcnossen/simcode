@@ -55,14 +55,14 @@ def main():
                 summ.setdefault(t, {}).setdefault(h, {})[nm] = dict(recall=r['recall'], precision=r['precision'], xy=r['gtfrc_last_xy'], xz=r['gtfrc_last_xz'],
                                                                      T_fid=tf, fringe=fr, ghost_fixed=gh, cov_excess=cv, faithful=ok)
                 L.append(f"| {E['dens_fov']:.2f} | {h} | {LAB[nm]} | {r['recall']:.2f} | {r['precision']:.3f} | {f(r['gtfrc_last_xy'], '{:.0f}')} / {f(r['gtfrc_last_xz'], '{:.0f}')} | "
-                         f"{ft(r['frames_to_last_xy'], str(XY_T))} / {ft(r['frames_to_last_xz'], str(XZ_T))} | {'> T' if tf is None else f'{tf / 1000:.1f}k ({tf * 0.006:.0f} s)'} | "
+                         f"{ft(r['frames_to_last_xy'], str(XY_T))} / {ft(r['frames_to_last_xz'], str(XZ_T))} | {'> T' if tf is None else f'{tf / 1000:.1f}k ({tf * 5.575e-3:.0f} s)'} | "
                          f"{fr * 100:.1f} % ({f(r['wrong_fringe_24'] * 100, '{:.1f}')} %) | {gh * 100:.1f} % | {f(c.get('cv'), '{:.2f}')} ({f(c.get('poisson_cv'), '{:.2f}')}) / {cv:.2f} | "
                          f"{f(r['lat_rob'])} / {f(r['ax_rob'])} | {f(r['tube']['dip_lat'], '{:.2f}')} / {f(r['tube']['dip_ax'], '{:.2f}')} | {'yes' if ok else 'no'} |")
     L += ['', '## Best faithful selection per density and head (T_fid, frames)', '', '| movie | ' + ' | '.join(heads) + ' |', '|' + '---|' * (len(heads) + 1)]
     for t in TAGS:
         cells = []
         for h in heads:
-            b = best.get((t, h)); cells.append('–' if load(h, t) is None else ('not faithful' if b is None else f'{LAB[b[0]]}: {b[1] / 1000:.1f}k ({b[1] * 0.006:.0f} s)'))
+            b = best.get((t, h)); cells.append('–' if load(h, t) is None else ('not faithful' if b is None else f'{LAB[b[0]]}: {b[1] / 1000:.1f}k ({b[1] * 5.575e-3:.0f} s)'))
         L.append(f'| {t} | ' + ' | '.join(cells) + ' |')
     open(f'{OUT}/tables.md', 'w').write('\n'.join(L) + '\n')
     json.dump(dict(best={f'{t}|{h}': b for (t, h), b in best.items()}, rows=summ), open(f'{OUT}/best.json', 'w'), indent=1, default=float)
