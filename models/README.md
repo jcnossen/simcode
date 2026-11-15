@@ -30,7 +30,7 @@ One model = four networks, trained on one averaged in-situ PSF, and their calibr
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
 |---|---|---|---|
 | `m1809` (default) | `insitu/calib_1809_2_psf3d_avg.json` | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `det_m1809.pt` 8da168c18b993a54, `hd_m1809.pt` 75d26a156dcde604, `p2det_m1809.pt` b2610b51ccd07436, `p2headL_m1809.pt` ccfab3f89eec40ba |
-| `m25` | `insitu/calib_2p5nM_m2_psf3d_avg.json` | the 2.5 nM / 2 movie | `m25/`: `det_m25.pt` 96b7d846258d9b9d, `hd_m25.pt` 67ce95e2472a0442, `p2det_m25.pt` b54b2c16b76b0acc, `p2headL_m25.pt` 02acc8187848865a |
+| `m25` | `insitu/calib_2p5nM_m2_psf_v2.json` (2026-11-15; before: `calib_2p5nM_m2_psf3d_avg.json`, folder `archive_psf_v1/m25/`) | the 2.5 nM / 2 and 20 nM / 2 movies | `m25/`: `det_m25.pt` b3b03b7ee668d6b2, `hd_m25.pt` 81a4ca87744aaf44, `p2det_m25.pt` e7b92a4595681c60, `p2headL_m25.pt` 53a7373811a6c33d |
 | `g13` | `insitu/calib_gauss1.3.json` | the preprint-condition simulations (Gaussian PSF) | `g13/`: `det_g13.pt` 7a6130f3d34ca111, `hd_g13.pt` cbd17c8b098ccb3e, `p2det_g13.pt` d1037970932898d3, `p2headL_g13.pt` 7e23fbd57c05e2f2 |
 
 Sizes: detector 7.3 MB, head 5.5 MB, pass-2 detector 7.3 MB, pass-2 head 5.6 MB.
@@ -84,6 +84,22 @@ python -m simcode.emitter.train --out runs/S/p2headL2 --detector runs/S/p2det/fi
     --hold_v1 0 --calib $C --p_std 0.5
 # -> det_S.pt, hd_S.pt = runs/S/det, hd; p2det_S.pt = runs/S/p2det_c; p2headL_S.pt = runs/S/p2headL2 (final.pt)
 ```
+**Pass-2 detector of m25 (2026-11-15, replaces p2det / p2det_c above for m25):** the generic pass-2 cost of m25 / g13 was in the
+generic detector (close-pair recall, false positives; out/generic_mix/STATUS.md), so the detector starts from a DEDICATED one
+(SIMCODE pattern only, `--p_std 1`) and is then fine-tuned on the 50 / 50 pattern mix (`--p_std 0.5`), 40k + 40k:
+```bash
+python -m simcode.detector.train --out runs/S/d2ded --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 \
+    --eval_every 2500 --ckpt_every 5000 --illum 1 --init runs/S/det/final.pt --calib $C --p_std 1
+python -m simcode.detector.train --out runs/S/gft1 --steps 40000 --batch 16 --size 64 --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/d2ded/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
+python -m simcode.detector.train --out runs/S/gft2 --steps 40000 --batch 16 --size 64 --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71 \
+    --eval_every 5000 --ckpt_every 10000 --init runs/S/gft1/final.pt --pass1_ref runs/S/det/final.pt --calib $C --p_std 0.5
+# -> p2det_S.pt = runs/S/gft2/final.pt; the pass-2 emitter network stays the one trained on runs/S/p2det (above); the pass-2
+# calibrations and sigma rescale are fitted with this detector
+```
+On m25 (v2 gate scenes, vs the dedicated d2ded with the same emitter network, out/psf_v2/eval/m25v2/det2/accept_f2_vs_dd.txt):
+RMS/CRLB 200-1e9 iso +0.002, pair1 -0.020, pair2 -0.024, rs25qm -0.012; recall at 0.5 equal or higher on every scene
+(the generic p2det_c: pair1 recall at matched FP below the dedicated one). Recipe scripts: out/psf_v2/train/chain.sh, det2.sh.
 Pass 2 is trained on generic illumination patterns (since 2026-11-14 the only pass-2 training draw; `simulate/acquisition.AcquisitionSim._generic`,
 out/p2generic): per FOV, with probability 1 - `--p_std`, pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg
 (separation 60-120 deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, per-angle

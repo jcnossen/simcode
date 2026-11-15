@@ -12,54 +12,54 @@
  "kap_I2_raw": 0.7926039058284609,
  "box": 1.5,
  "mix_T": 1.0,
- "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/m25/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/m25/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json",
+ "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/psf_v2/eval/m25v2/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/psf_v2/eval/m25v2/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json",
  "cmult": 0.1,
  "cmult_ang": 0.1,
  "fit_scenes": [
-  "/home/jc/simcode2/out/z3d/eval/m25/fe:rs25qm"
+  "/home/jc/simcode2/out/psf_v2/eval/m25v2/fe:rs25qm"
  ],
  "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
  "sig_ph": {
   "ph": [
-   696.552001953125,
-   1026.5574951171875,
-   1563.622314453125,
-   2377.095703125,
-   3543.177734375
+   699.1398315429688,
+   1033.0367431640625,
+   1564.1839599609375,
+   2370.08251953125,
+   3495.558837890625
   ],
   "f": [
-   0.7165011763572693,
-   0.7170088291168213,
-   0.8088939189910889,
-   0.9034069776535034,
-   0.9427335858345032
+   0.5880608558654785,
+   0.6337243914604187,
+   0.7089898586273193,
+   0.8497649431228638,
+   0.895912230014801
   ]
  },
  "prior_off": [
-  0.03238091245293617,
-  0.0012671983567997813
+  0.029653145000338554,
+  0.011417977511882782
  ],
  "kap_bins": {
   "ph": [
-   696.552001953125,
-   1026.5574951171875,
-   1563.622314453125,
-   2377.095703125,
-   3543.177734375
+   699.1398315429688,
+   1033.0367431640625,
+   1564.1839599609375,
+   2370.08251953125,
+   3495.558837890625
   ],
   "kap_p": [
-   1.0327908992767334,
-   1.0063577890396118,
-   0.9417028427124023,
-   0.8949240446090698,
-   0.9554187059402466
+   1.1124955415725708,
+   0.9884059429168701,
+   0.9926369190216064,
+   0.9106220602989197,
+   1.0031654834747314
   ],
   "kap_I2": [
-   1.0495614384481655,
-   1.046122946123674,
-   1.0010020857876611,
-   0.8415301369738906,
-   0.9006366379915995
+   1.4096732851208458,
+   1.1698561326892474,
+   0.9685171852213479,
+   0.8757221160320547,
+   0.8951826877255122
   ]
  }
 }

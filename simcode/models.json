@@ -14,16 +14,16 @@
    },
    "2.5nM_2": {
     "movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_2p5nM_m2_psf3d.json",
+    "calib": "insitu/calib_2p5nM_m2_psf_v2.json",
     "crop": "5,5,110",
     "model": "m25"
    },
    "20nM_2": {
     "movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_20nM_m2_psf3d.json",
+    "calib": "insitu/calib_20nM_m2_psf_v2.json",
     "crop": "5,5,110",
-    "model": null,
-    "_doc": "no PSF-matched model was trained for this movie; a model must be chosen if it enters the paper"
+    "model": "m25",
+    "_doc": "2026-11-15: processed with m25 (trained on the 2.5 nM v2 PSF) and the movie's own v2 calibration"
    }
   }
  },
@@ -41,8 +41,8 @@
   "sig_u": "m1809/calib/sigu_p1_m1809.json,m1809/calib/sigu_p2_m1809.json"
  },
  "m25": {
-  "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/m25/ (not referenced by any config)",
-  "psf": "m25/calib_2p5nM_m2_psf3d_avg.json",
+  "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/m25/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); pass-2 detector = generic fine-tuned from a dedicated (SIMCODE-pattern) detector (out/generic_mix, out/psf_v2/eval/m25v2/det2); also the model of the 20 nM / 2 movie; the previous model is the folder archive_psf_v1/m25/ (not referenced)",
+  "psf": "m25/calib_2p5nM_m2_psf_v2.json",
   "detector": "m25/det_m25.pt",
   "emitter": "m25/hd_m25.pt",
   "cal_sim": "m25/calib/calib_sc_hd_m25.json",
