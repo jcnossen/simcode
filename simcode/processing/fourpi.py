@@ -39,12 +39,12 @@ def settings(c):
 
 def context(c):
     """networks and solver of an acquisition (the same for every file)"""
-    from simcode.fourpi.loadhead import load_head
+    from simcode.emitter.fourpi import load as load_emitter
     from simcode.detector.model import load as dload
     from simcode.detector.select import select_points as dselect
     from simcode.setups.fourpi import FourPiSetup
     f = c['fourpi']
-    net, ck = load_head(f['emitter'])
+    net, ck = load_emitter(f['emitter'])
     det, _ = dload(f['detector'])
     pat0 = json.load(open(f['pattern_ref']))
     sv = FourPiSolve(net.lut, net.wins, delta=FourPiSetup().delta(c)); sv.tab_lim = None; sv.coh_scale = f['coh']

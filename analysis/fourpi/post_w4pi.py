@@ -53,7 +53,7 @@ def main():
     fi_ = np.clip(R['frame'] + 3, 0, F - 1)
     R['xd'] = R['x'] - d[fi_, 0]; R['yd'] = R['y'] - d[fi_, 1]
     # sample z drift (structure based), from the good rows; global window index
-    from simcode.fourpi.zdrift import zdrift_struct
+    from simcode.util.drift import zdrift_struct
     wg = R['frame'] // 6
     zd = zdrift_struct(R['xd'][good] * PX, R['yd'][good] * PX, R['z'][good] * 1000, wg[good])
     R['zd'] = R['z'] - zd[np.clip(wg // 500, 0, len(zd) - 1)] / 1000.0

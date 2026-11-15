@@ -290,6 +290,9 @@ def load(ck):
     from simcode.config import resolve
     c = torch.load(resolve(ck), map_location=dev, weights_only=False)
     a = c.get('args') or {}
+    if 'state' in c and 'psf' in c:            # a 4Pi emitter network (simcode/emitter/fourpi.py, by its arch tag)
+        from simcode.emitter import fourpi
+        return fourpi.load(resolve(ck))[0]
     if ARCH_TAGS.get(a.get('arch', ARCH), a.get('arch', ARCH)) != ARCH:
         raise ValueError(f"{ck}: emitter network arch {a.get('arch')!r} is not supported (only the neighbour-aware {ARCH!r} network)")
     net = EmitterNet(6, a.get('ch', 96), P=PP, bf16=bool(a.get('bf16', 1)), illum=is_pass2(c['model'])).to(dev)

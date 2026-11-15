@@ -32,7 +32,8 @@ from simcode.config import root; P4 = root('fourpi')
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.lm import lm_poisson_j, fisher_j, crlb
+sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
+from pixel_lm import lm_poisson_j, fisher_j, crlb
 
 NM = PX * 1000
 

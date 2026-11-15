@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter, maximum_filter, convolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from simcode.fourpi.zdrift import zdrift_struct
+from simcode.util.drift import zdrift_struct
 from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 OUT = f'{P4}/classical'
 nshow = int(sys.argv[1]) if len(sys.argv) > 1 else 6

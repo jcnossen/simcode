@@ -18,11 +18,11 @@ def test_solve_oracle():
     if not os.path.exists(f) or not torch.cuda.is_available():
         print(f'  skip (needs a GPU and {f})'); return
     from simcode.fourpi.lut4pi import LUT4Pi
-    from simcode.fourpi.sim4pi import Sim4Pi
+    from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.solve.fourpi import FourPiSolve, psi_from_eps
     lut = LUT4Pi(json.load(open(f))['psf'], P=15)
     n = 2000
-    S = Sim4Pi(lut, seed=5).sample(n, p_nb=0.0, p_on=1.0)
+    S = FourPiPatchSim(lut, seed=5).sample(n, p_nb=0.0, p_on=1.0)
     g = torch.Generator(device='cuda').manual_seed(0)
     o = dict(T=S['T'], C=S['C'], L=torch.zeros(n, 6, 4, 2, 2, device='cuda'),
              dxy=torch.stack([S['x'], S['y']], 1) + 0.1 * torch.randn(n, 2, device='cuda', generator=g),

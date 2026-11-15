@@ -15,7 +15,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.channels.front import blur
 from simmovie4pi import reg_map, GAIN, OFF
-from simcode.fourpi.head4pi import Head4Pi
+from simcode.emitter.fourpi import FourPiPrior
 from simcode.fourpi.lut4pi import LUT4Pi
 
 from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
@@ -58,7 +58,7 @@ def main():
         from simcode.detector.select import select_points as dselect
         det, _ = dload(a.det)
     dev = 'cuda'
-    from simcode.fourpi.loadhead import load_head     # all head architectures (v2..v8)
+    from simcode.emitter.fourpi import load as load_head     # all head architectures (v2..v8)
     net, ck = load_head(a.model)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
     grid = [None]; maps = {}

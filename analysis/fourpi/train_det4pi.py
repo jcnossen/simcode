@@ -19,9 +19,9 @@ from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 def worker(q, seed, psf, B, size, dens, ksums=(1,)):
     import torch
-    from simcode.fourpi.acquisition4pi import AcquisitionSim4Pi
+    from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
-    rs = AcquisitionSim4Pi(st, H=size, W=size, seed=seed, n_psf=6)
+    rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6)
     while True:
         S = rs.sample(B=B, dens=dens, ksum=ksums[int(torch.randint(len(ksums), (1,)))])
         g = S['gt']

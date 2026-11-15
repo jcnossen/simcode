@@ -1,7 +1,7 @@
 """
 Outputs of every network checkpoint on a fixed batch (GPU): every detector and emitter network under the models directory
 (models.json models, the model folders, models/archive_*, the other shipped weights) and the 4Pi detector / heads of the 4Pi
-work directory, loaded with simcode.detector.model.load / simcode.emitter.model.load / simcode.fourpi.loadhead.load_head.
+work directory, loaded with simcode.detector.model.load / simcode.emitter.model.load / simcode.emitter.fourpi.load.
 The fixed batch (4 windows of 6 x 64 x 64 photons, a fixed pattern, 4Pi patches) is drawn from a seeded CPU generator; the
 emitter networks run on the candidates of the m1809 pass-1 detector with the PSF template of the 1809_2 calibration and with
 the Gaussian template. Used to check that a code change leaves every checkpoint's outputs bit-identical (2026-11-15
@@ -94,9 +94,9 @@ def outputs():
                 o = h(pt, None, off, cl, nbp, ilp) if h.illum else h(pt, None, off, cl, nbp)
                 for k, v in o.items(): R[f'head|{rel(f)}|{cn}|{k}'] = v.float().cpu()
             R[f'head|{rel(f)}|z3d'] = torch.tensor(float(getattr(h, 'z3d', -1)))
-        from simcode.fourpi.loadhead import load_head
+        from simcode.emitter.fourpi import load as load_fourpi
         for tag in ('v10', 'v3L'):
-            net, _ = load_head(tag)
+            net, _ = load_fourpi(tag)
             o = net(D['img4'].to(dev), D['doff'].to(dev))
             for k, v in o.items():
                 if torch.is_tensor(v): R[f'head4pi|{tag}|{k}'] = v.float().cpu()

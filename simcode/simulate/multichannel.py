@@ -1,7 +1,10 @@
-"""Experiment-matched full-scene 4Pi-SIMFLUX simulator for network training (analogue of simcode/simulate/acquisition.py).
+"""MultiChannelAcquisitionSim: experiment-matched full-scene simulator of a multi-channel acquisition (the 4Pi-SIMFLUX
+set-up: 4 interference channels; the analogue of simcode/simulate/acquisition.py for one channel), for the training of
+the 4Pi detector and the simulated 4Pi movies.
 
-A batch = B scenes of H x W px (ch0 grid), 6 frames (2 angles x 3 steps), 4 interference channels. Each channel is
-rendered in its OWN crop coordinates through the real in-situ registration (out/4pi/smlm/reg/reg_insitu_<cell>.json),
+A batch = B scenes of H x W px (ch0 grid), 6 frames (2 angles x 3 steps), C channels (C = the channels of the PSF table,
+4 for the 4Pi LUT). Each channel is rendered in its OWN crop coordinates through the in-situ registration map of the
+scene's cell (<4Pi work dir>/smlm/reg/reg_insitu_<cell>.json, a PolyMap: simcode/channels/registration.py),
 for a scene origin drawn inside the illuminated field (ch0 x 60-300, y 0-200), so the front end's code path (registered
 sum by bilinear warp for the detector; unwarped channel patches at mapped positions for the head) is the real one.
 
@@ -10,16 +13,21 @@ filament-like lines (label radius 20 nm, tilted in z), NPC-like rings (8 corners
 pairs (0.3-3 px, dz up to +-0.3 um). z in `zr`. DNA-PAINT kinetics inside the window (on-through, start / end in the
 window), per-event photon rate log-normal around `F_med` e/frame (sd log 0.6, clipped to `F_rng`).
 Pattern: k from the measured value +- 0.3 %, step phases 120 deg +- 3 deg, the phase at every position arbitrary (a
-per-scene offset uniform over 2 pi: the v3 lesson), depth 0.6-0.95.
-4Pi phase: smooth random field over the scene (+- 60 deg) + per-scene offset uniform over 2 pi, per-angle offset delta_a in
-[-16, -8] deg.
+per-scene offset uniform over 2 pi: the v3 lesson), depth 0.6-0.95. patterns=False: no SIM modulation (plain 4Pi; the
+same random draws, so the scenes are otherwise those of patterns=True).
+4Pi phase field: smooth random field over the scene (+- phase_field_deg, 60) + per-scene offset uniform over 2 pi,
+per-angle offset delta_a in [-16, -8] deg.
+Registration error (reg_shift_sd px, reg_lin_sd; default 0 = none): per scene and channel c >= 1 a random shift and
+linear distortion of the TRUE registration, drawn from a separate generator (the other draws are unchanged); the
+channels are rendered through the true map, the detector input (registered sum) and the returned crop origins use the
+nominal map, as a front end with an estimated map does.
 PSF: a bank of LUTs (the fitted model + perturbations: blur, Noll 6, inter-pair phase, tau, coherence), one per scene.
 Background per channel: measured levels x log-uniform(0.5, 2), smooth structure +-30 %, slow per-frame fluctuation.
 Camera: Poisson + Gaussian read noise (1.14 e) + per-pixel offset error (0.2 e), output in e (offset-subtracted, x gain).
 Returns dict:
   img [B,6,4,H,W] channel crops (e), origin [B,4,2] (crop origin of each channel, channel px), det_in [B,6,H,W]
   (registered 4-channel sum per frame), and per emitter-window GT lists: b, x, y (ch0 px in the scene), z, Nt [6],
-  q [6], Phi (4Pi phase at the emitter), T [6,4], C [6,4] (read-out targets as in sim4pi).
+  q [6], Phi (4Pi phase at the emitter), T [6,C], C [6,C] (read-out targets as in simulate/fourpi_patches.py).
 """
 import json, math
 import numpy as np
@@ -33,22 +41,26 @@ BG = {'MT': (0.42, 1.06, 0.54, 1.17), 'NPC': (0.41, 0.93, 0.51, 1.15)}
 K0 = {'MT': ((3.839, -0.024), (0.003, 3.851)), 'NPC': ((3.826, -0.028), (0.013, 3.845))}
 
 
-def _feats(x, y, order):
-    u, v = (x - 180.0) / 180.0, (y - 100.0) / 100.0
-    return torch.stack([u ** i * v ** j for i in range(order + 1) for j in range(order + 1 - i)], -1)
+class TorchMap:
+    """the inverse of a registration map (PolyMap) in torch: ch0 crop coords -> channel c crop coords"""
+    def __init__(self, pm, dev):
+        self.order, self.norm = pm.order, pm.norm
+        self.ci = {int(c): torch.tensor(v, device=dev, dtype=torch.float32) for c, v in pm.ci.items()}
 
-
-class RegMap:
-    """the in-situ polynomial map (register.PolyMap) in torch: ch0 crop coords -> channel c crop coords"""
-    def __init__(self, cell, dev):
-        d = json.load(open(f'{P4}/smlm/reg/reg_insitu_{cell}.json'))
-        self.order = d['order']
-        self.ci = {int(c): torch.tensor(v, device=dev, dtype=torch.float32) for c, v in d['inv'].items()}
+    def feats(self, x, y):
+        cx, cy, sx, sy = self.norm
+        u, v = (x - cx) / sx, (y - cy) / sy
+        return torch.stack([u ** i * v ** j for i in range(self.order + 1) for j in range(self.order + 1 - i)], -1)
 
     def __call__(self, c, x, y):
         if c == 0: return x, y
-        Fm = _feats(x, y, self.order) @ self.ci[c]
+        Fm = self.feats(x, y) @ self.ci[c]
         return Fm[..., 0], Fm[..., 1]
+
+
+def cell_map(cell, dev, W=360, H=200):
+    from simcode.channels.registration import PolyMap
+    return TorchMap(PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json', size=(W, H)), dev)
 
 
 def perturbed_states(st, n, rng):
@@ -66,14 +78,18 @@ def perturbed_states(st, n, rng):
     return out
 
 
-class AcquisitionSim4Pi:
-    def __init__(self, psf_state, H=64, W=64, cells=('MT', 'NPC'), n_psf=6, P=17, dev='cuda', seed=0, wsd=1.0, sub=2):
+class MultiChannelAcquisitionSim:
+    def __init__(self, psf_state, H=64, W=64, cells=('MT', 'NPC'), n_psf=6, P=17, dev='cuda', seed=0, wsd=1.0, sub=2,
+                 patterns=True, phase_field_deg=60.0, reg_shift_sd=0.0, reg_lin_sd=0.0):
         self.H, self.W, self.dev, self.P, self.wsd = H, W, dev, P, wsd
         self.g = torch.Generator(device=dev).manual_seed(seed)
         rng = np.random.default_rng(seed)
         self.luts = [LUT4Pi(s, P=P, dev=dev, sub=sub) for s in perturbed_states(psf_state, n_psf, rng)]
         self.cells = cells
-        self.reg = {c: RegMap(c, dev) for c in cells}
+        self.reg = {c: cell_map(c, dev) for c in cells}
+        self.C = len(self.luts[0].luts[0])
+        self.patterns, self.phase_field_deg, self.reg_shift_sd, self.reg_lin_sd = patterns, phase_field_deg, reg_shift_sd, reg_lin_sd
+        self.g_reg = torch.Generator(device=dev).manual_seed(seed + 7919)
 
     # ---- random helpers
     def u(self, n, lo=0.0, hi=1.0):
@@ -136,7 +152,7 @@ class AcquisitionSim4Pi:
     def sample(self, B=8, dens=(0.01, 2.0), zr=(-0.4, 0.4), F_med=450.0, F_rng=(60.0, 6000.0), p_through=0.5,
                rn=1.14, offerr=0.2, kind=None, delta_deg=None, ksum=1):
         """vectorised over scenes: one LUT evaluation per (PSF variant, channel, angle), one scatter per (channel, frame)"""
-        dev, H, W, P = self.dev, self.H, self.W, self.P
+        dev, H, W, P, NC = self.dev, self.H, self.W, self.P, self.C
         h = P // 2; pad = h + 2
         dsc = self.lu(B, *dens)
         ci = (self.u(B) * len(self.cells)).long().clamp(max=len(self.cells) - 1)              # cell per scene
@@ -154,7 +170,7 @@ class AcquisitionSim4Pi:
         lut_i = (self.u(B) * len(self.luts)).long().clamp(max=len(self.luts) - 1)
         cxy = self.u(B * 4, -1, 1).reshape(B, 4); phi_off = self.u(B, 0, 2 * math.pi)
         delta = torch.deg2rad(self.u(B, -16, -8)) if delta_deg is None else torch.full((B,), math.radians(delta_deg), device=dev)
-        bgl = torch.stack([torch.tensor(BG[c], device=dev) for c in cell]) * self.lu(B * 4, 0.5, 2.0).reshape(B, 4)
+        bgl = torch.stack([torch.tensor(BG[c], device=dev) for c in cell]) * self.lu(B * NC, 0.5, 2.0).reshape(B, NC)
         if ksum != 1:   # K summed windows (real dense data by summing): K x background, sqrt(K) read noise, K x offset error
             bgl = bgl * ksum; rn = rn * math.sqrt(ksum); offerr = offerr * ksum
         # per emitter
@@ -162,31 +178,34 @@ class AcquisitionSim4Pi:
         ang = torch.tensor([0, 0, 0, 1, 1, 1], device=dev); st = torch.tensor([0, 1, 2, 0, 1, 2], device=dev)
         kk = k0[sb][:, ang]                                                                    # [n,6,2]
         Pt = 1 + mdep[sb, None] * torch.cos(kk[..., 0] * X[:, None] + kk[..., 1] * Y[:, None] - psi[sb][:, ang, st])
+        if not self.patterns: Pt = torch.ones_like(Pt)                                      # plain 4Pi (no SIM)
         q = self.kinetics(n, p_through)
         Fr = (F_med * torch.exp(0.6 * torch.randn(n, device=dev, generator=self.g))).clamp(*F_rng)
         Nt = Fr[:, None] * q * Pt
         c4 = cxy[sb]
-        Phi = phi_off[sb] + math.radians(60) * (c4[:, 0] * x / W + c4[:, 1] * y / H + c4[:, 2] * (x / W) * (y / H))
+        Phi = phi_off[sb] + math.radians(self.phase_field_deg) * (c4[:, 0] * x / W + c4[:, 1] * y / H + c4[:, 2] * (x / W) * (y / H))
         # channel positions and crop origins (registration of the scene's cell)
-        origin = torch.zeros(B, 4, 2, device=dev)
-        lx = torch.zeros(n, 4, device=dev); ly = torch.zeros(n, 4, device=dev)
+        origin = torch.zeros(B, NC, 2, device=dev)
+        lx = torch.zeros(n, NC, device=dev); ly = torch.zeros(n, NC, device=dev)
+        rerr = self.registration_error(B)
         for cname in set(cell):
             msc = torch.tensor([c == cname for c in cell], device=dev); me = msc[sb]
             reg = self.reg[cname]
-            for c in range(4):
+            for c in range(NC):
                 xc, yc = reg(c, X[me], Y[me])
+                if rerr is not None and c > 0: xc, yc = self.perturb(rerr, c, sb[me], xc, yc)
                 cx0, cy0 = reg(c, ox[msc], oy[msc])
                 origin[msc, c, 0] = torch.round(cx0); origin[msc, c, 1] = torch.round(cy0)
                 lx[me, c] = xc - origin[sb[me], c, 0]; ly[me, c] = yc - origin[sb[me], c, 1]
-        img = torch.zeros(B, 6, 4, H + 2 * pad, W + 2 * pad, device=dev)
-        T = torch.zeros(n, 6, 4, device=dev); C = torch.zeros(n, 6, 4, device=dev)
+        img = torch.zeros(B, 6, NC, H + 2 * pad, W + 2 * pad, device=dev)
+        T = torch.zeros(n, 6, NC, device=dev); C = torch.zeros(n, 6, NC, device=dev)
         o_ = torch.arange(P, device=dev)
         for li in range(len(self.luts)):
             me = lut_i[sb] == li
             if not me.any(): continue
             idx = torch.nonzero(me)[:, 0]
             lut = self.luts[li]
-            for c in range(4):
+            for c in range(NC):
                 ix, iy = torch.round(lx[idx, c]), torch.round(ly[idx, c])
                 pos = torch.stack([lx[idx, c] - ix, ly[idx, c] - iy, z[idx]], 1)
                 ex = (o_[None, None, :] - h).float() - pos[:, 0, None, None]; ey = (o_[None, :, None] - h).float() - pos[:, 1, None, None]
@@ -205,12 +224,12 @@ class AcquisitionSim4Pi:
                         T[idx, t, c] = Nt[idx, t] * gs; C[idx, t, c] = Nt[idx, t] * gw
         img = img[..., pad:pad + H, pad:pad + W]
         yy, xx = torch.meshgrid(torch.arange(H, device=dev) / H, torch.arange(W, device=dev) / W, indexing='ij')
-        a1, a2, a3 = self.u(B * 4, -0.3, 0.3).reshape(B, 1, 4, 1, 1), self.u(B * 4, 0, 2 * math.pi).reshape(B, 1, 4, 1, 1), self.u(B * 4, 0.3, 1.5).reshape(B, 1, 4, 1, 1)
+        a1, a2, a3 = self.u(B * NC, -0.3, 0.3).reshape(B, 1, NC, 1, 1), self.u(B * NC, 0, 2 * math.pi).reshape(B, 1, NC, 1, 1), self.u(B * NC, 0.3, 1.5).reshape(B, 1, NC, 1, 1)
         struct = 1 + a1 * torch.sin(2 * math.pi * a3 * xx + a2) * torch.cos(2 * math.pi * a3 * yy)
-        fl = 1 + 0.05 * torch.randn(B, 6, 4, 1, 1, device=dev, generator=self.g)
+        fl = 1 + 0.05 * torch.randn(B, 6, NC, 1, 1, device=dev, generator=self.g)
         lam = img + bgl[:, None, :, None, None] * struct * fl
         obs = torch.poisson(lam.clamp(min=0), generator=self.g) + rn * torch.randn(lam.shape, device=dev, generator=self.g) \
-            + offerr * torch.randn(B, 1, 4, H, W, device=dev, generator=self.g)
+            + offerr * torch.randn(B, 1, NC, H, W, device=dev, generator=self.g)
         det_in = self.register_sum(obs, origin, ox, oy, cell)
         inside = (x >= 0) & (x < W) & (y >= 0) & (y < H)
         G = dict(b=sb[inside], x=x[inside], y=y[inside], z=z[inside], Nt=Nt[inside], q=q[inside], Phi=Phi[inside], T=T[inside],
@@ -220,19 +239,34 @@ class AcquisitionSim4Pi:
         return dict(img=obs, mu=lam, origin=origin, ox=ox, oy=oy, cell=cell, det_in=det_in, gt=G, dens=dsc, bg=bgl, scene=scene)
 
     @staticmethod
-    def phase_at(scene, b, x, y, H, W):
+    def phase_at(scene, b, x, y, H, W, phase_field_deg=60.0):
         """4Pi phase field value of scene b at scene ch0 position (x, y) (as rendered)"""
         c4 = scene['cxy'][b]
-        return scene['phi_off'][b] + math.radians(60) * (c4[:, 0] * x / W + c4[:, 1] * y / H + c4[:, 2] * (x / W) * (y / H))
+        return scene['phi_off'][b] + math.radians(phase_field_deg) * (c4[:, 0] * x / W + c4[:, 1] * y / H + c4[:, 2] * (x / W) * (y / H))
+
+    def registration_error(self, B):
+        """per scene and channel: shift (2) and linear terms (4) of the registration error, or None"""
+        if self.reg_shift_sd <= 0 and self.reg_lin_sd <= 0: return None
+        g, dev = self.g_reg, self.dev
+        return dict(shift=self.reg_shift_sd * torch.randn(B, self.C, 2, device=dev, generator=g),
+                    lin=self.reg_lin_sd * torch.randn(B, self.C, 2, 2, device=dev, generator=g))
+
+    def perturb(self, e, c, b, x, y):
+        """true channel-c coordinates = nominal + shift + lin . ((x, y) - crop centre) / crop half size"""
+        cx, cy, sx, sy = next(iter(self.reg.values())).norm
+        u, v = (x - cx) / sx, (y - cy) / sy
+        L = e['lin'][b, c]
+        return (x + e['shift'][b, c, 0] + L[:, 0, 0] * u + L[:, 0, 1] * v,
+                y + e['shift'][b, c, 1] + L[:, 1, 0] * u + L[:, 1, 1] * v)
 
     def register_sum(self, obs, origin, ox, oy, cell):
-        """registered 4-channel sum per frame on the ch0 grid (bilinear warp, as fourpi/front.Front.detect)"""
+        """registered channel sum per frame on the ch0 grid (bilinear warp with the nominal map, as ChannelFront.registered_sum)"""
         B, T_, C_, H, W = obs.shape
         yy, xx = torch.meshgrid(torch.arange(H, device=self.dev, dtype=torch.float32), torch.arange(W, device=self.dev, dtype=torch.float32), indexing='ij')
         out = obs[:, :, 0].clone()
         for b in range(B):
             reg = self.reg[cell[b]]
-            for c in (1, 2, 3):
+            for c in range(1, C_):
                 xc, yc = reg(c, xx + ox[b], yy + oy[b])
                 gx = (xc - origin[b, c, 0]) / (W - 1) * 2 - 1; gy = (yc - origin[b, c, 1]) / (H - 1) * 2 - 1
                 grid = torch.stack([gx, gy], -1)[None].expand(T_, -1, -1, -1)

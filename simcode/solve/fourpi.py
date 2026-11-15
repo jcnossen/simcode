@@ -1,6 +1,6 @@
 """Explicit 4Pi-SIMFLUX solve on the K read-outs per (frame, channel) of the 4Pi emitter network (no pixel fit).
 
-Data per candidate: Y [n,6,4,K] (frame t, channel c, read-out window k; windows of simcode/fourpi/windows4pi.py) with a
+Data per candidate: Y [n,6,4,K] (frame t, channel c, read-out window k; windows of simcode/emitter/fourpi.py) with a
 K x K Cholesky factor per (t, c) Lb [n,6,4,K,K]; the network prior (dx, dy, z) +- sigma. Known: the SIM pattern per frame
 (k_a, phase psi_t incl. drift and the candidate's absolute position, depth m_t), the 4Pi phase field value Phi0 at the
 candidate (+ per-angle offset delta_a), the channel sub-pixel offsets doff [n,4,2], the 4Pi PSF spline table (LUT).
@@ -28,8 +28,8 @@ self.coh_scale scales the interference terms of the PSF model (real data: in-sit
 """
 import math
 import torch
-from simcode.fourpi.sim4pi import DELTA_A, K_PAT
-from simcode.fourpi.windows4pi import window, DEFAULT
+from simcode.simulate.fourpi_patches import DELTA_A, K_PAT
+from simcode.emitter.fourpi import window, WINDOWS_TC
 
 ANG = (0, 0, 0, 1, 1, 1)
 
@@ -40,7 +40,7 @@ def psi_from_eps(eps):
 
 
 class FourPiSolve:
-    def __init__(self, lut, wins=DEFAULT, wsd=1.0, P=15, k=K_PAT, delta=DELTA_A, dev='cuda'):
+    def __init__(self, lut, wins=WINDOWS_TC, wsd=1.0, P=15, k=K_PAT, delta=DELTA_A, dev='cuda'):
         self.lut, self.wsd, self.P, self.dev, self.k, self.delta = lut, wsd, P, dev, tuple(k), tuple(delta)
         o = torch.arange(P, device=dev, dtype=torch.float32) - (P - 1) / 2
         self.oy, self.ox = torch.meshgrid(o, o, indexing='ij')

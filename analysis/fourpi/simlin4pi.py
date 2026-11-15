@@ -22,7 +22,7 @@ from simcode.processing.fourpi_pattern_phase import repattern_xy
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.solve.fourpi import kin_starts, best_of
 from simcode.solve.fourpi import FourPiSolve
-from simcode.fourpi.linread4pi import linear_readout, border_bg
+from simcode.emitter.fourpi import linear_readout, border_bg
 
 WINS = (('mf', 0.003), ('cr', 0.003), ('ci', 0.003), ('flat', 0.0))
 dev = 'cuda'
@@ -69,12 +69,12 @@ def main():
     bm = border_bg(img).to(dev)
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
-        from simcode.fourpi.loadhead import load_head
+        from simcode.emitter.fourpi import load as load_head
         net, _ = load_head(a.head); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
         net.vread = a.ksum * 1.14 ** 2 + (0.2 * a.ksum) ** 2
         nbr = None
         if getattr(net, 'nbr_in', False):   # pass 0: the head's prior positions -> map of the other candidates of each window
-            from simcode.fourpi.head4pi_w import candidate_neighbours, nbr_map
+            from simcode.emitter.fourpi import candidate_neighbours, neighbour_map
             with torch.no_grad():
                 p0 = torch.cat([net(img[i:i + 1000], D['doff'][i:i + 1000])['dxy'] for i in range(0, n, 1000)]).cpu().numpy()
             ndx, ndy, nval = candidate_neighbours(F['w'], F['cx'] + p0[:, 0], F['cy'] + p0[:, 1])
@@ -83,7 +83,7 @@ def main():
         with torch.no_grad():
             for i in range(0, n, 1000):
                 j = slice(i, i + 1000)
-                oh = net(img[j], D['doff'][j], **({'nbr': nbr_map(nbr[0][j], nbr[1][j], nbr[2][j], D['doff'][j])} if nbr is not None else {}))
+                oh = net(img[j], D['doff'][j], **({'nbr': neighbour_map(nbr[0][j], nbr[1][j], nbr[2][j], D['doff'][j])} if nbr is not None else {}))
                 Ys.append(oh['Y']); Ls.append(oh['Lb']); Wss.append(oh['Wsum']); Wl.append(oh['W']); bl.append(oh['bgc'])
                 for k in pri: pri[k].append(oh[k])
         D.update({k: torch.cat(v) for k, v in pri.items()})     # the head's own prior (trained for these conditions)

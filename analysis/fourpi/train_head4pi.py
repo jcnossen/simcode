@@ -11,8 +11,8 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.sim4pi import Sim4Pi
-from simcode.fourpi.head4pi import Head4Pi, nll_2x2, nll_prior
+from simcode.simulate.fourpi_patches import FourPiPatchSim
+from simcode.emitter.fourpi import FourPiPrior, nll_2x2, nll_prior
 
 OUT = f'{P4}/models'
 
@@ -33,8 +33,8 @@ def main():
     torch.manual_seed(a.seed)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
-    sim = Sim4Pi(lut, seed=a.seed)
-    net = Head4Pi(ch=a.ch, nblk=a.nblk).cuda()
+    sim = FourPiPatchSim(lut, seed=a.seed)
+    net = FourPiPrior(ch=a.ch, nblk=a.nblk).cuda()
     if a.init:
         net.load_state_dict(torch.load(a.init if a.init.startswith('/') else f'{REPO}/{a.init}', weights_only=False)['state'])
     if a.template == 'lut':

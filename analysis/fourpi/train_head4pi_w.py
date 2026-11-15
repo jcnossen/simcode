@@ -15,12 +15,12 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.sim4pi import Sim4Pi
-from simcode.fourpi.head4pi import nll_prior
-from simcode.fourpi.windows4pi import WINS_K
-from simcode.fourpi.head4pi_w import Head4PiW
+from simcode.simulate.fourpi_patches import FourPiPatchSim
+from simcode.emitter.fourpi import nll_prior
+from simcode.emitter.fourpi import WINDOWS_K
+from simcode.emitter.fourpi import FourPiEmitterNet
 from simcode.solve.fourpi import FourPiSolve
-from simcode.fourpi.solveloss4pi import solve_loss
+from simcode.emitter.fourpi import solve_loss
 
 OUT = f'{P4}/models'
 
@@ -38,21 +38,21 @@ def main():
     p.add_argument('--ksum', default='1', help='comma list of K (summed windows): per step one K: background 0.2 K - 2 K e/px, read sd 1.14 sqrt(K), offset error 0.2 K')
     p.add_argument('--nbr_in', type=int, default=0, help='1: neighbour-candidate map input (v11)'); p.add_argument('--train_prior', type=int, default=0)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
-    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINS_K]
+    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
     from simcode.util.proctitle import auto; auto('4pi-train-w')
     torch.manual_seed(a.seed)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
-    sim = Sim4Pi(lut, seed=a.seed)
-    net = Head4PiW(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
-    from simcode.fourpi.head4pi_w import nbr_map, load_v10
+    sim = FourPiPatchSim(lut, seed=a.seed)
+    net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
+    from simcode.emitter.fourpi import neighbour_map, init_from_v10
     ksums = [int(v) for v in a.ksum.split(',')]
     ld = lambda f: torch.load(f if f.startswith('/') else f'{REPO}/{f}', weights_only=False)['state']
     if a.init: net.load_state_dict(ld(a.init))
-    elif a.init_v10: load_v10(net, ld(a.init_v10))
+    elif a.init_v10: init_from_v10(net, ld(a.init_v10))
     elif a.init_v3: net.prior.load_state_dict(ld(a.init_v3))
     net.train()
-    sv = FourPiSolve(lut, WINS_K); sv.tab_lim = None
+    sv = FourPiSolve(lut, WINDOWS_K); sv.tab_lim = None
     opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps, pct_start=0.05)
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')
@@ -68,7 +68,7 @@ def main():
                     kk = int(nb['sel'].sum())
                     dxn[nb['sel'], j] = nb['x'] + 0.3 * torch.randn(kk, device='cuda'); dyn[nb['sel'], j] = nb['y'] + 0.3 * torch.randn(kk, device='cuda')
                     val[nb['sel'], j] = (torch.rand(kk, device='cuda') > 0.2) & (nb['N'].sum(1) > 150)
-                nbr = nbr_map(dxn, dyn, val, S['doff'])
+                nbr = neighbour_map(dxn, dyn, val, S['doff'])
         net.vread = K * 1.14 ** 2 + (0.2 * K) ** 2
         o = net(S['img'], S['doff'], nbr=nbr)
         Ystar = torch.einsum('nckuv,ntcuv->ntck', o['W'], S['mu0'])

@@ -1,4 +1,7 @@
-"""Batched Levenberg-Marquardt Poisson MLE (sCMOS read-noise shift v: mu + v ~ Poisson) with a central-difference
+"""(analysis code of the classical 4Pi baselines; moved out of the package 2026-11-15: the network pipeline has no pixel fit.
+torch_psf.fit.lm_poisson is the same scheme but not numerically identical: damping start 1.0 vs 1e-2, lambda floor 1e-4
+vs 1e-6, double-precision step, no clamp of d + v; the classical tables were made with this one.)
+Batched Levenberg-Marquardt Poisson MLE (sCMOS read-noise shift v: mu + v ~ Poisson) with a central-difference
 Jacobian; generic model f(theta [n,p]) -> mu [n,M]. Also the Fisher matrix / CRLB at theta. Used for the classical
 4Pi baselines (pixel MLE on the 24 sub-images, summed astigmatic SMLM) and the explicit intensity solve (Gaussian
 NLL variant `lm_gauss`)."""

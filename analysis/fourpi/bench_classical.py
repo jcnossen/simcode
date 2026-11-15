@@ -17,8 +17,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
-from simcode.fourpi.lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
+from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
+sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
+from pixel_lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
 
 OUT = f'{P4}/sim'
 V = 1.14 ** 2 + 0.2 ** 2
@@ -27,7 +28,7 @@ V = 1.14 ** 2 + 0.2 ** 2
 def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
     st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
     lut = LUT4Pi(st, P=15, dev=dev)
-    sim = Sim4Pi(lut, dev=dev, seed=seed)
+    sim = FourPiPatchSim(lut, dev=dev, seed=seed)
     S = sim.sample(n, p_nb=0.0, p_on=1.0, eps_range=eps_range)
     img = S['img']                                                     # [n,6,4,P,P]
     P = 15; ang = torch.tensor([0, 0, 0, 1, 1, 1], device=dev)

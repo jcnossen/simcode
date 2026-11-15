@@ -1,6 +1,7 @@
-"""Candidate-patch simulator for 4Pi-SIMFLUX windows (6 frames = 2 angles x 3 steps, 4 interference channels).
+"""FourPiPatchSim: candidate-patch simulator for 4Pi-SIMFLUX windows (6 frames = 2 angles x 3 steps, 4 interference channels).
 
-One sample = the 24 unwarped channel patches (P x P, e) around a candidate, i.e. what the 4Pi head sees, plus GT.
+One sample = the 24 unwarped channel patches (P x P, e) around a candidate, i.e. what the 4Pi emitter network sees
+(simcode/emitter/fourpi.py), plus GT. The training data of the 4Pi emitter networks and the gates of the 4Pi solve.
 Geometry: the main emitter is at (x, y) px relative to the candidate (detection jitter sd `jit`); channel c patch is
 centred on round(x_cand + d_c) with a per-sample fractional channel offset d_c (the registration map's sub-pixel
 part), so the emitter sits at (x, y) + o_c in that patch, o_c = d_c - round(d_c) in x and y ([n,4,2]); the head gets o_c.
@@ -20,7 +21,7 @@ K_PAT = (3.839, 3.851)            # rad/px (MT; NPC 3.826 / 3.845)
 DELTA_A = (0.0, math.radians(-12.0))
 
 
-class Sim4Pi:
+class FourPiPatchSim:
     def __init__(self, lut, P=15, wsd=1.0, dev='cuda', seed=0):
         self.lut, self.P, self.wsd, self.dev = lut, P, wsd, dev
         self.g = torch.Generator(device=dev).manual_seed(seed)

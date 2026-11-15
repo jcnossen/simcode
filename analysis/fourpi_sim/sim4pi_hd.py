@@ -1,7 +1,7 @@
 """Dense-scene variant of the 4Pi candidate-patch simulator (simcode/fourpi/sim4pi.py, imported read-only; only the neighbour
 generator is replaced). For the high-density head (hd) experiment, 2026-11-15.
 
-Main emitter, kinetics, SIM pattern, 4Pi phase, background, camera noise and the GT targets are Sim4Pi's, unchanged.
+Main emitter, kinetics, SIM pattern, 4Pi phase, background, camera noise and the GT targets are FourPiPatchSim's, unchanged.
 The neighbours ('other ON emitters' in the patch) follow a per-sample scene mode:
   iso      (p_iso)      no neighbour;
   v10      (p_v10)      the v10 rule: 1..3 neighbours at r log-uniform 0.6-7 px, z = z0 + N(0, 0.15 um);
@@ -14,20 +14,20 @@ The neighbours ('other ON emitters' in the patch) follow a per-sample scene mode
   uniform  (rest)       the same density law, all uniform in the square, z = z0 + N(0, 0.15) or uniform over the z range (1:1).
 In line / uniform scenes a CLOSE PAIR is added with p_close: one neighbour at r log-uniform [0.5, 2.5] px, z = z0 + U(-0.4, 0.4) um
 (the fringe-ambiguous overlaps). Neighbours are kept inside |dx|, |dy| <= 7.8 px (the LUT's offset limit is 8.5 px incl. the
-channel offset). Brightness / kinetics / 4Pi phase of the neighbours as in Sim4Pi. At most nb_cap neighbours per sample.
+channel offset). Brightness / kinetics / 4Pi phase of the neighbours as in FourPiPatchSim. At most nb_cap neighbours per sample.
 nnb = number of neighbours whose centre is inside the 15 x 15 patch (|dx|, |dy| < 7.5), as the sweep's crowding count.
 """
 import math, os, sys
 import torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.sim4pi import Sim4Pi
+from simcode.simulate.fourpi_patches import FourPiPatchSim
 
 PX_UM = 0.128
 HALF = 7.8
 
 
-class Sim4PiHD(Sim4Pi):
+class Sim4PiHD(FourPiPatchSim):
     def __init__(self, lut, p_iso=0.2, p_v10=0.2, p_line=0.4, rho=(0.08, 2.0), cf=1.7, p_close=0.3, nb_cap=24, **kw):
         super().__init__(lut, **kw)
         self.p_iso, self.p_v10, self.p_line, self.rho, self.cf, self.p_close, self.nb_cap = p_iso, p_v10, p_line, rho, cf, p_close, nb_cap

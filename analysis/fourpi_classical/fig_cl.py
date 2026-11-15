@@ -53,7 +53,7 @@ def render_xz(ax, x, z, xr, zr, sr, title):
     ax.set_title(title, fontsize=8); ax.tick_params(labelsize=6); ax.set_ylabel('z (nm)', fontsize=7)
 
 
-from simcode.fourpi.zdrift import zdrift_struct  # noqa (structure-based sample z drift; used by the scripts that import this module)
+from simcode.util.drift import zdrift_struct  # noqa (structure-based sample z drift; used by the scripts that import this module)
 
 
 def load(cl_fn, net_fn, files=None, wmax=None, zdrift=False):

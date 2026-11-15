@@ -13,8 +13,8 @@ for p_ in (REPO, os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.sim4pi import Sim4Pi, DELTA_A, K_PAT
-from simcode.fourpi.lm import fisher_j, crlb
+from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
+from pixel_lm import fisher_j, crlb
 from cl4pi import Classic4Pi, run_chunk
 
 OUT = f'{P4}/classical'
@@ -32,7 +32,7 @@ def main():
     c4 = Classic4Pi(lut, delta=DELTA_A, dev=dev)
     print(f'calibration: fringe {c4.fringe_um * 1000:.0f} nm, monotone {c4.monotone}, tau {c4.tau.cpu().numpy().round(3)}, '
           f'|e| {c4.e.abs().cpu().numpy().round(3)}, arg e {np.degrees(np.angle(c4.e.cpu().numpy())).round(0)}', flush=True)
-    sim = Sim4Pi(lut, dev=dev, seed=a.seed)
+    sim = FourPiPatchSim(lut, dev=dev, seed=a.seed)
     k = torch.tensor([[K_PAT[0], 0.0], [0.0, K_PAT[1]]], device=dev)
     R = {}; T = {}
     t0 = time.time()

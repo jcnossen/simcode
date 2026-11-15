@@ -1,6 +1,6 @@
 """COPY of analysis/fourpi/train_head4pi_w.py for the high-density head experiment (hd, 2026-11-15); differences:
   --sim hd: the dense-scene neighbour generator of analysis/fourpi_sim/sim4pi_hd.py (density 0.08-2 ON /um^2 per sample,
-  microtubule-like lines, crossings, close pairs with z offsets); --sim v10: the original Sim4Pi rule.
+  microtubule-like lines, crossings, close pairs with z offsets); --sim v10: the original FourPiPatchSim rule.
   Outputs in $P4/models/head4pi_<tag>/ (checkpoint head4pi_<tag>.pt, log head4pi_<tag>.log); --log_every.
   Everything else (head, loss, optimiser, schedule) is the v10 trainer's.
 Original docstring:
@@ -21,12 +21,12 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
-from simcode.fourpi.sim4pi import Sim4Pi
-from simcode.fourpi.head4pi import nll_prior
-from simcode.fourpi.windows4pi import WINS_K
-from simcode.fourpi.head4pi_w import Head4PiW
+from simcode.simulate.fourpi_patches import FourPiPatchSim
+from simcode.emitter.fourpi import nll_prior
+from simcode.emitter.fourpi import WINDOWS_K
+from simcode.emitter.fourpi import FourPiEmitterNet
 from simcode.solve.fourpi import FourPiSolve
-from simcode.fourpi.solveloss4pi import solve_loss
+from simcode.emitter.fourpi import solve_loss
 
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 from sim4pi_hd import Sim4PiHD
@@ -47,22 +47,22 @@ def main():
     p.add_argument('--sim', default='hd'); p.add_argument('--p_iso', type=float, default=0.2); p.add_argument('--p_close', type=float, default=0.3)
     p.add_argument('--rho_hi', type=float, default=2.0); p.add_argument('--log_every', type=int, default=250)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
-    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINS_K]
+    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
     from simcode.util.proctitle import auto; auto('4pi-train-hd')
     OUT = f'{P4}/models/head4pi_{a.tag}'; os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
     lut = LUT4Pi(st, P=15)
-    sim = Sim4PiHD(lut, seed=a.seed, p_iso=a.p_iso, p_close=a.p_close, rho=(0.08, a.rho_hi)) if a.sim == 'hd' else Sim4Pi(lut, seed=a.seed)
-    net = Head4PiW(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
-    from simcode.fourpi.head4pi_w import nbr_map, load_v10
+    sim = Sim4PiHD(lut, seed=a.seed, p_iso=a.p_iso, p_close=a.p_close, rho=(0.08, a.rho_hi)) if a.sim == 'hd' else FourPiPatchSim(lut, seed=a.seed)
+    net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
+    from simcode.emitter.fourpi import neighbour_map, init_from_v10
     ksums = [int(v) for v in a.ksum.split(',')]
     ld = lambda f: torch.load(f if f.startswith('/') else f'{REPO}/{f}', weights_only=False)['state']
     if a.init: net.load_state_dict(ld(a.init))
-    elif a.init_v10: load_v10(net, ld(a.init_v10))
+    elif a.init_v10: init_from_v10(net, ld(a.init_v10))
     elif a.init_v3: net.prior.load_state_dict(ld(a.init_v3))
     net.train()
-    sv = FourPiSolve(lut, WINS_K); sv.tab_lim = None
+    sv = FourPiSolve(lut, WINDOWS_K); sv.tab_lim = None
     opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps, pct_start=0.05)
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')
@@ -78,7 +78,7 @@ def main():
                     kk = int(nb['sel'].sum())
                     dxn[nb['sel'], j] = nb['x'] + 0.3 * torch.randn(kk, device='cuda'); dyn[nb['sel'], j] = nb['y'] + 0.3 * torch.randn(kk, device='cuda')
                     val[nb['sel'], j] = (torch.rand(kk, device='cuda') > 0.2) & (nb['N'].sum(1) > 150)
-                nbr = nbr_map(dxn, dyn, val, S['doff'])
+                nbr = neighbour_map(dxn, dyn, val, S['doff'])
         net.vread = K * 1.14 ** 2 + (0.2 * K) ** 2
         o = net(S['img'], S['doff'], nbr=nbr)
         Ystar = torch.einsum('nckuv,ntcuv->ntck', o['W'], S['mu0'])
