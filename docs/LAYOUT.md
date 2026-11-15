@@ -8,6 +8,7 @@ The repository holds two comparisons and what they need:
 - **SIMCODE preprint vs SIMCODE v2** on DMD-SIMFLUX DNA-PAINT movies: the v2 pipeline below with the PSF-matched models, the
   preprint's model as a baseline (`analysis/baselines/run_simcode*.py`), and the paper's other baselines (SMLM, SIMFLUX, DECODE).
 - **4Pi-SIMFLUX (classical, as published) vs 4Pi-SIMCODE** (network): the 4Pi modules below (`setups/fourpi.py`, `channels/`, `*/fourpi*.py`) and `analysis/fourpi_classical/`.
+- **Plain 4Pi (4Pi-SMS, no SIM pattern)**: the same 4Pi modules with single-frame windows (T = 1; setup `fourpi_plain`), on the public data set of Li & Ries (`pipeline/configs/fourpi_plain.py`, `analysis/fourpi_plain/`).
 
 ## How the pieces fit (2D pipeline)
 
@@ -50,7 +51,7 @@ simcode/
     model.py                  EmitterNet: the per-candidate network of pass 1 and pass 2 (I_t with full covariance, bg_t, 3D position prior; illum=True: + illumination patches); neighbour inputs, PSF template, detect_candidates / apply_to_candidates, load() of every checkpoint (2D ones with zero z rows)
     train.py                  trainer of both passes: python -m simcode.emitter.train (pass 2: a pass-2 --detector or --init); intensity / prior / z NLL, anti-shrinkage and slope terms
     heldout.py                held-out gate-type patches of the pass-1 trainer (python -m simcode.emitter.heldout [--set 5]) and their metrics
-    fourpi.py                 the 4Pi emitter network: FourPiEmitterNet (learned windows, v10; arch tag 'w') with the frozen FourPiPrior (v3L) inside, the read-out windows, the fixed-window read-out, the training losses (solve_loss), load() of the 4Pi checkpoints by their arch tag
+    fourpi.py                 the 4Pi emitter network: FourPiEmitterNet (learned windows, v10; arch tag 'w') with the frozen FourPiPrior (v3L) inside, T frames per window (6; plain 4Pi 1: arch tags 'fourpi_emitter' / 'fourpi_prior' carry T, zmax, vread), the read-out windows, the fixed-window read-out, the training losses (solve_loss), load() of the 4Pi checkpoints by their arch tag
   solve/
     __init__.py               package doc
     solve.py                  the multi-start explicit pattern solve (reference implementation) and solve_emitters: the solve of the emitter-network outputs with a model calibration
@@ -58,7 +59,7 @@ simcode/
     pattern.py                pattern geometry of the solve (illumination at a position, angle index, fringe shifts, kinetics starts, chi2 p-value)
     z_conditioning.py         z after the solve: the network's 3D prior conditioned on the solved x, y; pass-2 rows linked to pass-1 candidates for their z
     autoc.py                  opt-in automatic noise scale (s, c, c_a) of the network intensities from the solve's own residuals (analysis only)
-    fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background), kinetics starts
+    fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background; T frames, k None = no pattern), kinetics starts
   pattern/
     __init__.py               package doc
     illumination.py           illumination input maps of a pattern (cos / sin per frame) and perturbed pattern estimates (training error models v1 / real / realw)
@@ -72,7 +73,7 @@ simcode/
     pattern_estimation.py     the illumination pattern from the pass-1 rows (k, per-step phases, depth, relative intensities, per-angle phase drift)
     pattern_field.py          per-cell phase map and smooth depth field on top of the global pattern (analysis only)
     gate_dump.py              raw network outputs of pass 1 / pass 2 on the gate scenes (input of a model's calibration fit): python -m simcode.processing.gate_dump
-    fourpi.py                 4Pi-SIMCODE per file (the process stage of the fourpi set-up): read, detect, patches, network, pattern, phase field, solve; python -m simcode.processing.fourpi <config>
+    fourpi.py                 4Pi-SIMCODE per file (the process stage of the fourpi / fourpi_plain set-ups): read, detect, patches, network, pattern (fourpi.pattern), phase field, solve, windows of fourpi.window frames; python -m simcode.processing.fourpi <config>
     fourpi_pattern_phase.py   per-file SIM pattern (slot DFT, per-candidate pattern phases) and 4Pi phase field (tile map + block drift) of the 4Pi pipelines
   simulate/
     __init__.py               package doc
@@ -83,8 +84,8 @@ simcode/
     crlb.py                   scene generator and multi-emitter CRLB of the benchmark scenes
     gate_layouts.py           emitter layouts of the gate scenes (grids, pairs, Poisson scenes, wide brightness) and the pattern-estimate error model
     psf_perturbation.py       bank of perturbed PSF LUTs (width, aberrations, focus) and camera errors
-    fourpi_patches.py         FourPiPatchSim: 4Pi candidate patches (24 channel patches) with GT read-out targets (4Pi emitter-network training, solve gates)
-    multichannel.py           MultiChannelAcquisitionSim: full multi-channel scenes through the registration maps (4Pi detector training, simulated movies; patterns=False: plain 4Pi; random registration error)
+    fourpi_patches.py         FourPiPatchSim: 4Pi candidate patches (T x 4 channel patches; pattern=False: plain 4Pi) with GT read-out targets (4Pi emitter-network training, solve gates)
+    multichannel.py           MultiChannelAcquisitionSim: full multi-channel scenes through the registration maps of CellSpec acquisitions (4Pi detector training, simulated movies; patterns=False: plain 4Pi with T frames; random registration error), candidate_patches (plain-4Pi emitter-network training)
   benchmark/
     __init__.py               package doc
     gate.py                   the gate suite: fixed simulated scenes (isolated, pairs, realistic) through a front end: python -m simcode.benchmark.gate
@@ -100,7 +101,7 @@ simcode/
     __main__.py               python -m simcode.pipeline <config>
     localization_pipeline.py  LocalizationPipeline: the stages of the acquisition's set-up in order (widefield: order, camera, spots, cammaps, tracks, beads, psf, train, process, report; fourpi: registration, process, report), done markers, checks
     acquisition_config.py     the acquisition config: defaults (+ the set-up's section), setup / channels / registration keys, yaml / json / Python files, validation, frame-order helpers
-    configs/                  acquisitions: 1809_2.py / .yaml, nr80.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies)
+    configs/                  acquisitions: 1809_2.py / .yaml, nr80.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies); fourpi_plain.py (plain 4Pi: Li & Ries Cell11)
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
@@ -132,10 +133,10 @@ simcode/
     registration.py           PolyMap (channel c <-> channel 0, json with feats_norm) and the in-situ registration per file (per-channel fits, coarse alignment incl. flips, matching, robust order-2 map + inverse, held-out residual, self-consistency): register_insitu, checks
     front.py                  ChannelFront: camera conversion, registered channel sum, classical detection, per-channel patches at the mapped positions
   setups/                     set-ups of the pipeline: what differs between acquisition types
-    __init__.py               get(name): widefield | fourpi
+    __init__.py               get(name): widefield | fourpi | fourpi_plain
     base.py                   the Setup interface (defaults, validate, stages, st_<stage>, movie_files, reader)
     widefield.py              SIMCODE on DMD-SIMFLUX movies (the pipeline's own stages; registration with several channels)
-    fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name)
+    fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name); FourPiPlainSetup (fourpi_plain): no pattern, fourpi.window frames, the training recipe (section fourpi_train, sim_kw)
   fourpi/                     the 4Pi PSF until torch-psf ships it (torch_psf.FourPiPSF on the torch-psf branch multichannel)
     __init__.py               package doc
     psf4pi.py                 coherent two-arm vectorial 4Pi PSF with four interference channels
@@ -172,13 +173,14 @@ heads give bit-identical outputs with the code before and after the 2026-11-15 r
   - `papersim/`: the paper simulations (generators, all methods, metrics, figures); `reproduce.sh` lists the commands.
   - `fourpi/`: 4Pi calibration chain, the v10 trainers and gates, post-processing, real-data comparisons, the simulated showcase.
   - `fourpi_classical/`: the classical 4Pi-SIMFLUX pipeline (published-style detection and fits, pixel MLE).
+  - `fourpi_plain/`: plain 4Pi on the Li & Ries data: `psf_astig.py` (astigmatism scale of the bead-fitted PSF), `compare_published.py` (counts, z relation, precision on the same emitters, Nup96 radius / two-layer z vs their localizations), `sim_bench.py` (simulated movie through the real driver vs GT, sigma calibration), `quick_eval.py` (no-GT metrics of a table); training: `fourpi/train_det4pi.py --acq`, `fourpi/train_head4pi_w.py --acq`
   - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF files).
   - `pixbias/`, `crlbcmp/`, `ablation_cov/`, `p2generic/`, `selection_global/`: the pixel-bias, CRLB, ablation, generic-pass-2 and selection analyses of the paper / SI; `simreal/`: the benchmark sim movies (sigma-rescale fits); `z3d/`: 3D models (acceptance, model-folder swap); `figures/`: zoom picking and skeletons of the figures; `auto/`: calibration comparison of the automatic pipeline; `results/`: text snapshots cited by docs/RESULTS.md
   - `fourpi_sim/`: 4Pi-SIMCODE simulations on microtubule cell fields (`mt_cells.py`: port of the inSiliScope world model, BSD-3-Clause, notice in the file), density sweeps, the hd-head experiment (`hd_run.sh`); `solvegap/`: the paper's solve-gap analysis (pattern solve vs the SIMFLUX fit on the same frames)
   - `maintenance/`: `rename_model_keys.py` (model.json key names), `cleanup_outputs.py` (out/ + models/ clean-up, dry run by default)
   - archived on 2026-11-15 (git tag `archive-2026-11-15`, `docs/ARCHIVE.md`): nanoruler, tput, hd_compare, evalproto, gate, dme, psfshape, most of figures, the development parts of baselines / papersim / simreal / psf3d / z3d / fourpi; deleted: zimflux.
 - `models/`: calibrations (`calib/`, `insitu/`), model folders (`model.json`, calibrations, README); network weights are not in git (`models/README.md`).
-- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_cfgdict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
+- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_cfgdict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
 - `docs/`: this file, method, evaluation, results (development phase), usage, dataset format, automatic pipeline, PSF polarization note, the cleanup log, the cleanup candidate list and the archive index (`ARCHIVE.md`).
 
 ## Renamed (2026-11-15)

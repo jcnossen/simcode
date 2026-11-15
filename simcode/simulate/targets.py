@@ -64,11 +64,12 @@ def assign(gt, B, H, W, min_on=1.0, min_phot=60.0, dontcare=None):
     return label, ign, tid, off
 
 
-def detector_targets(o, up, H, W):
-    """cell targets of a batch o (o['gt'], o['nb']) on the up x grid (up = 1: the detector's native grid; offsets in native px)"""
+def detector_targets(o, up, H, W, **kw):
+    """cell targets of a batch o (o['gt'], o['nb']) on the up x grid (up = 1: the detector's native grid; offsets in native px);
+    kw: min_on / min_phot of assign"""
     gt = o['gt']
     g2 = dict(gt, x=(gt['x'] + 0.5) * up - 0.5, y=(gt['y'] + 0.5) * up - 0.5)
-    label, ign, tid, off = assign(g2, o['nb'], H * up, W * up)
+    label, ign, tid, off = assign(g2, o['nb'], H * up, W * up, **kw)
     return label, ign, tid, off / up                                    # offsets in native px
 
 

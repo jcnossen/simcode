@@ -1,15 +1,16 @@
-"""4Pi-SIMCODE processing of the files of a 4Pi-SIMFLUX acquisition (the process stage of the fourpi set-up,
+"""4Pi-SIMCODE processing of the files of a 4Pi acquisition (the process stage of the fourpi / fourpi_plain set-ups,
 simcode/setups/fourpi.py): the learned-window emitter network (v10 ...), one read per file, all candidate patches in host
-memory. Network intensities -> explicit solve; no pixel fit.
+memory. Network intensities -> explicit solve; no pixel fit. Windows of T frames (fourpi.window: 4Pi-SIMFLUX 6 = 2
+angles x 3 steps; plain 4Pi 1); fourpi.pattern = false (plain 4Pi): no SIM pattern (stage B skipped, pattern factor 1).
 
 Per file (process_file):
   A. read (prefetched in a background thread) -> camera offset / gain -> 4Pi detector candidates on the registered
-     4-channel sum (6 planes per window; the file's registration map) -> unwarped P x P channel patches (host RAM,
+     4-channel sum (T planes per window; the file's registration map) -> unwarped P x P channel patches (host RAM,
      float16; never written to disk) -> emitter network: prior, intensities
-  B. SIM pattern of the file from the per-frame photon read-outs at the prior positions (slot DFT)
+  B. SIM pattern of the file from the per-frame photon read-outs at the prior positions (slot DFT; patterns only)
   C. 4Pi phase field: per-candidate phase (z held by the prior) on bright isolated candidates -> tile map + time blocks
   D. per chunk from RAM: network (intensities Y, windows W', covariance) -> explicit solve with the window model and a
-     residual background per channel: on-through vs kinetics (kept if chi2 drops by > dnll; no free fallback)
+     residual background per channel: on-through vs kinetics (T > 1; kept if chi2 drops by > dnll; no free fallback)
 
 Files are the units of the shared work driver (simcode/io/work.py): finished files are skipped, outputs are written
 atomically, the disk is checked before a file starts, and with --claim 1 several workers (one per GPU, python -m
@@ -37,17 +38,24 @@ def settings(c):
     return SimpleNamespace(**c['fourpi'], cell=c['name'])
 
 
+def setup_of(c):
+    from simcode.setups import get
+    return get(c['setup'])
+
+
 def context(c):
     """networks and solver of an acquisition (the same for every file)"""
     from simcode.emitter.fourpi import load as load_emitter
     from simcode.detector.model import load as dload
     from simcode.detector.select import select_points as dselect
-    from simcode.setups.fourpi import FourPiSetup
     f = c['fourpi']
     net, ck = load_emitter(f['emitter'])
+    net.use_cs = f['learned_cs']
     det, _ = dload(f['detector'])
-    pat0 = json.load(open(f['pattern_ref']))
-    sv = FourPiSolve(net.lut, net.wins, delta=FourPiSetup().delta(c)); sv.tab_lim = None; sv.coh_scale = f['coh']
+    if net.T != f['window'] or det.T != f['window']:
+        raise ValueError(f"{c['name']}: networks for {net.T} / {det.T} frames, config fourpi.window = {f['window']}")
+    pat0 = json.load(open(f['pattern_ref'])) if f['pattern'] else None
+    sv = FourPiSolve(net.lut, net.wins, **setup_of(c).solve_kw(c, net)); sv.tab_lim = None; sv.coh_scale = f['coh']
     return dict(net=net, det=det, dselect=dselect, pat0=pat0, sv=sv, px_nm=c['optics']['pixel_um'] * 1000)
 
 
@@ -56,6 +64,7 @@ def process_file(rd, fr, ctx, a, fi, nfr):
     nfr frames -> (table dict, phase-field arrays dict(M, d), summary dict)"""
     net, det, dselect, pat0, sv = (ctx[k] for k in ('net', 'det', 'dselect', 'pat0', 'sv'))
     P, XLIM, H, W = fr.P, fr.xlim, fr.H, fr.W
+    T = a.window
     h = P // 2
     plan = [(a0, min(a0 + a.chunk, nfr)) for a0 in range(0, nfr, a.chunk)]
     pf = Prefetch(rd, plan)
@@ -65,13 +74,13 @@ def process_file(rd, fr, ctx, a, fi, nfr):
     for a0, a1 in plan:
         raw = pf.read(a0, a1)
         with torch.no_grad():
-            E = fr.to_e(raw); nW = E.shape[0] // 6
+            E = fr.to_e(raw); nW = E.shape[0] // T
             if nW == 0: continue
-            Rs = fr.registered_sum(E[:nW * 6])
-            Rf = Rs.reshape(nW, 6, H, W); ccs = []
-            for b0 in range(0, nW, 20):                      # detector in batches of 20 windows (memory)
+            Rs = fr.registered_sum(E[:nW * T])
+            Rf = Rs.reshape(nW, T, H, W); ccs = []
+            for b0 in range(0, nW, a.det_batch):             # detector in batches of det_batch windows (memory)
                 with torch.autocast('cuda', dtype=torch.bfloat16):
-                    dout = det(Rf[b0:b0 + 20])
+                    dout = det(Rf[b0:b0 + a.det_batch])
                 c1 = dselect({k: v.float() for k, v in dout.items()}, k=2048, p_min=a.p_min)
                 c1['b'] = c1['b'] + b0; ccs.append(c1)
             cc = {k: torch.cat([c1[k] for c1 in ccs]) for k in ('b', 'iy', 'ix', 'logit')}
@@ -79,35 +88,45 @@ def process_file(rd, fr, ctx, a, fi, nfr):
             w, cy, cx, pd = cc['b'][okc], cc['iy'][okc], cc['ix'][okc], torch.sigmoid(cc['logit'][okc])
             if len(w) == 0: continue
             dd = nn_dist(w, cx, cy)
-            img, doff, ok = fr.patches(E, w, cy, cx)
+            img, doff, ok = fr.patches(E, w, cy, cx, window=T)
             sel = torch.nonzero(ok)[:, 0]
             img = img[sel]; doff = doff[sel]
-            outs = [net(img[i:i + a.batch], doff[i:i + a.batch]) for i in range(0, len(sel), a.batch)]
+            outs = [net(img[i:i + a.batch], doff[i:i + a.batch], learned=a.learned) for i in range(0, len(sel), a.batch)]
             o = {k: torch.cat([u[k] for u in outs]) for k in ('Y', 'dxy', 'z', 'ls')}
             kp = o['Y'][..., 0].sum((1, 2)) >= a.min_photons
             o = {k: v[kp] for k, v in o.items()}; img = img[kp]; doff = doff[kp]; sel = sel[kp]
-        for k, v in (('w', w[sel] + a0 // 6), ('cx', cx[sel]), ('cy', cy[sel]), ('doff', doff), ('img', img.half()), ('dxy', o['dxy']), ('z', o['z']),
+        for k, v in (('w', w[sel] + a0 // T), ('cx', cx[sel]), ('cy', cy[sel]), ('doff', doff), ('img', img.half()), ('dxy', o['dxy']), ('z', o['z']),
                      ('ls', o['ls']), ('I', o['Y'][..., 0].sum(2)), ('pdet', pd[sel]), ('nn', dd[sel])):
             acc[k].append(v.cpu().numpy())
     pf.close()
     R = {k: np.concatenate(v) for k, v in acc.items()}; del acc
     n = len(R['w']); cx, cy = R['cx'].astype(np.float64), R['cy'].astype(np.float64)
     tA = time.time() - t0
-    print(f'{a.cell} {fi}: {n} candidates ({n / (nfr // 6):.1f} per window), patches {R["img"].nbytes / 1e9:.2f} GB in RAM, read + network {tA:.0f}s', flush=True)
+    print(f'{a.cell} {fi}: {n} candidates ({n / (nfr // T):.1f} per window), patches {R["img"].nbytes / 1e9:.2f} GB in RAM, read + network {tA:.0f}s', flush=True)
     I = R['I']; mI = I.mean(1); Tsum = I.sum(1)
     Xp = np.stack([cx + R['dxy'][:, 0], cy + R['dxy'][:, 1]], 1)
     # ---- B: pattern
-    selp = (mI * 6 > 1500) & (R['nn'] > 6) & (I.min(1) > 0.25 * mI)
-    patf = PP.repattern_xy(I, Xp, pat0, selp)
-    psi, m, _ = PP.pattern_psi(patf, cx, cy, dev)
-    sv.k2 = tuple(tuple(patf[f'angle{i}']['k']) for i in range(2))
+    if a.pattern:
+        selp = (mI * 6 > 1500) & (R['nn'] > 6) & (I.min(1) > 0.25 * mI)
+        patf = PP.repattern_xy(I, Xp, pat0, selp)
+        psi, m, _ = PP.pattern_psi(patf, cx, cy, dev)
+        sv.k2 = tuple(tuple(patf[f'angle{i}']['k']) for i in range(2))
+    else:   # plain 4Pi: pattern factor 1 (the solve ignores m, psi)
+        psi = m = torch.zeros(n, T, device=dev); patf = None
     tdoff = torch.tensor(R['doff'], device=dev)
 
-    def chunk_out(j):
+    def _resolve_at(j, z0):
+        """on-through solve of rows j started at z0 only (the 4Pi period of z0)"""
+        oo, o = chunk_out(j); jt = torch.tensor(j, device=dev)
+        r = sv.solve(dict(oo, z0=torch.tensor(z0, device=dev, dtype=torch.float32)), Phi0[jt], tdoff[jt], m[jt], psi[jt], mode='on',
+                     iters=a.iters, zstarts=(0.0,))
+        return {k: v.cpu().numpy() for k, v in r.items()}, o['bgc'].cpu().numpy()
+
+    def chunk_out(j, at=None):
         with torch.no_grad():
-            o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j])
+            o = net(torch.tensor(R['img'][j].astype(np.float32), device=dev), tdoff[j], learned=a.learned, at=at)
         return dict(Y=o['Y'], Lb=o['Lb'], dxy=o['dxy'], z=o['z'], ls=o['ls'], W=o['W'], Wsum=o['Wsum'],
-                    sb=torch.full((len(j), 4), 0.2, device=dev)), o
+                    sb=torch.full((len(j), 4), a.sb, device=dev)), o
 
     # ---- C: phase field from bright isolated candidates
     cand = np.nonzero((Tsum > 800) & (R['nn'] > 4))[0]
@@ -115,14 +134,15 @@ def process_file(rd, fr, ctx, a, fi, nfr):
     phi = np.zeros(len(cand)); sphi = np.zeros(len(cand))
     for i in range(0, len(cand), a.batch):
         j = cand[i:i + a.batch]; oo, _ = chunk_out(j); jt = torch.tensor(j, device=dev)
-        rp = sv.solve(oo, torch.zeros(len(j), device=dev), tdoff[jt], m[jt], psi[jt], mode='free', fit_phi=True, iters=a.iters)
+        rp = sv.solve(oo, torch.zeros(len(j), device=dev), tdoff[jt], m[jt], psi[jt], mode='free', fit_phi=True, iters=a.iters, Lam=a.z_period_um)
         phi[i:i + len(j)] = rp['th'][:, -5].cpu().numpy(); sphi[i:i + len(j)] = rp['sig'][:, -5].cpu().numpy()
     gphi = sphi < 0.8
     f, diag = PP.phase_field(Xp[cand, 0], Xp[cand, 1], R['w'][cand], phi, gphi / np.maximum(sphi, 0.05) ** 2, tile=a.tile, tblk=a.tblk, H=H, Wd=W)
     Phi0 = torch.tensor(f(Xp[:, 0], Xp[:, 1], R['w']), device=dev, dtype=torch.float32)
     tC = time.time() - t0 - tA
-    print(f'{a.cell} {fi}: pattern psi {[np.round(patf[f"angle{i}"]["psi_deg"], 1).tolist() for i in range(2)]} m {patf["angle0"]["m_median"]:.2f}/{patf["angle1"]["m_median"]:.2f}'
-          f' R {patf["angle0"]["R"]:.2f}/{patf["angle1"]["R"]:.2f} ({int(selp.sum())} emitters); phase field R {diag["R"]:.3f} ({int(gphi.sum())} used), {tC:.0f}s', flush=True)
+    pmsg = (f'pattern psi {[np.round(patf[f"angle{i}"]["psi_deg"], 1).tolist() for i in range(2)]} m {patf["angle0"]["m_median"]:.2f}/{patf["angle1"]["m_median"]:.2f}'
+            f' R {patf["angle0"]["R"]:.2f}/{patf["angle1"]["R"]:.2f} ({int(selp.sum())} emitters); ') if a.pattern else ''
+    print(f'{a.cell} {fi}: {pmsg}phase field R {diag["R"]:.3f} ({int(gphi.sum())} used), {tC:.0f}s', flush=True)
     if a.regions:   # keep only the candidates inside the boxes for the final solve
         bx = [b for b in json.load(open(a.regions))['boxes'] if b.get('save', True)]
         inb = np.zeros(n, bool)
@@ -136,33 +156,75 @@ def process_file(rd, fr, ctx, a, fi, nfr):
     for i in range(0, n, a.batch):
         j = np.arange(i, min(i + a.batch, n)); oo, o = chunk_out(j); jt = torch.tensor(j, device=dev)
         arg = (Phi0[jt], tdoff[jt], m[jt], psi[jt])
-        ron = sv.solve(oo, *arg, mode='on', iters=a.iters)
-        o2 = dict(oo, z0=ron['th'][:, 2], xy0=ron['th'][:, :2])     # free / kinetics start at the on-through solution (one z start)
-        # kinetics starts from the per-frame photon read-outs (matched-filter read-out summed over channels); no free solve
-        k1, k2 = kin_starts({'th': torch.cat([ron['th'][:, :3], oo['Y'][..., 0].sum(2).clamp(min=0) / 0.85], 1)}, m[jt], psi[jt], sv)
-        rk = best_of(sv.solve(o2, *arg, mode='kin', kin0=k1, iters=a.iters, zstarts=(0.0,)), sv.solve(o2, *arg, mode='kin', kin0=k2, iters=a.iters, zstarts=(0.0,)))
+        ron = sv.solve(oo, *arg, mode='on', iters=a.iters, Lam=a.z_period_um, zstarts=tuple(a.zstarts))
+        for _ in range(a.refine):   # windows re-placed at the solved position, solved again from there (prior unchanged)
+            oo, o = chunk_out(j, at=ron['th'][:, :3])
+            rr = sv.solve(dict(oo, z0=ron['th'][:, 2]), *arg, mode='on', iters=a.iters, zstarts=(0.0,))
+            ron = best_of(ron, rr) if a.refine_keep_best else rr
+        if T > 1:
+            o2 = dict(oo, z0=ron['th'][:, 2], xy0=ron['th'][:, :2])     # free / kinetics start at the on-through solution (one z start)
+            # kinetics starts from the per-frame photon read-outs (matched-filter read-out summed over channels); no free solve
+            k1, k2 = kin_starts({'th': torch.cat([ron['th'][:, :3], oo['Y'][..., 0].sum(2).clamp(min=0) / 0.85], 1)}, m[jt], psi[jt], sv)
+            rk = best_of(sv.solve(o2, *arg, mode='kin', kin0=k1, iters=a.iters, zstarts=(0.0,)), sv.solve(o2, *arg, mode='kin', kin0=k2, iters=a.iters, zstarts=(0.0,)))
+        else:   # one frame: no kinetics model (the on fraction is part of F)
+            nan = torch.full((len(j),), float('nan'), device=dev)
+            rk = dict(th=torch.cat([ron['th'][:, :4], nan[:, None], nan[:, None], ron['th'][:, 4:]], 1), sig=ron['sig'], chi2=nan)
         usek = (ron['chi2'] - rk['chi2']) > a.dnll
         pick = lambda A, B: torch.where(usek.reshape(-1, *([1] * (A.dim() - 1))), A, B)
-        tw = (torch.minimum(rk['th'][:, 5], torch.tensor(6.0, device=dev)) - torch.maximum(rk['th'][:, 4], torch.tensor(0.0, device=dev))).clamp(min=0)
+        tw = (torch.minimum(rk['th'][:, 5], torch.tensor(float(T), device=dev)) - torch.maximum(rk['th'][:, 4], torch.tensor(0.0, device=dev))).clamp(min=0)
         for k, v in (('th', pick(rk['th'][:, :3], ron['th'][:, :3])), ('sig', pick(rk['sig'][:, :3], ron['sig'][:, :3])), ('chi2', pick(rk['chi2'], ron['chi2'])),
-                     ('kin', usek), ('chi2_on', ron['chi2']), ('chi2_kin', rk['chi2']), ('N', torch.where(usek, rk['th'][:, 3] * tw, ron['th'][:, 3] * 6)),
+                     ('kin', usek), ('chi2_on', ron['chi2']), ('chi2_kin', rk['chi2']), ('N', torch.where(usek, rk['th'][:, 3] * tw, ron['th'][:, 3] * T)),
                      ('ton', rk['th'][:, 4]), ('toff', rk['th'][:, 5]), ('bg', o['bgc'] + pick(rk['th'][:, -4:], ron['th'][:, -4:])), ('cs', o['cs'])):
             cols[k].append(v.cpu().numpy())
         if (i // a.batch) % 10 == 0:
             print(f'{a.cell} {fi}: solved {i + len(j)}/{n}, {time.time() - t0:.0f}s', flush=True)
     C = {k: np.concatenate(v) for k, v in cols.items()}
-    dof = np.where(C['kin'], 86.0, 88.0); good = C['chi2'] / dof < a.chi2_max
-    out = dict(x=cx + C['th'][:, 0], y=cy + C['th'][:, 1], z=C['th'][:, 2], sx=C['sig'][:, 0], sy=C['sig'][:, 1], sz=C['sig'][:, 2], N=C['N'],
+    C['wrap'] = np.zeros(n, np.int8)
+    if a.unwrap_r_px > 0:   # ---- E: 4Pi period from the structure (continuous samples, e.g. the nuclear envelope)
+        C['wrap'] = unwrap(C, cx, cy, R['z'], Tsum, a, lambda j, z0: _resolve_at(j, z0), T)
+    nY = T * 4 * net.K; dof = np.where(C['kin'], nY - 10.0, nY - 8.0); good = C['chi2'] / dof < a.chi2_max
+    ss = a.sig_scale
+    out = dict(x=cx + C['th'][:, 0], y=cy + C['th'][:, 1], z=C['th'][:, 2], sx=C['sig'][:, 0] * ss[0], sy=C['sig'][:, 1] * ss[1], sz=C['sig'][:, 2] * ss[2], N=C['N'],
                on=np.ones(n, bool), kin=C['kin'], ton=C['ton'], toff=C['toff'], chi2=C['chi2'], dof=dof, good=good, chi2_on=C['chi2_on'], chi2_free=C['chi2_kin'],
                Phi0=Phi0.cpu().numpy(), zprior=R['z'], szprior=np.exp(R['ls'][:, 2]), xprior=Xp[:, 0], yprior=Xp[:, 1], cx=R['cx'], cy=R['cy'],
-               w=R['w'], frame=R['w'] * 6, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
+               w=R['w'], frame=R['w'] * T, nn=R['nn'], Tsum=Tsum, pdet=R['pdet'], bg=C['bg'], cs=C['cs'], file_index=fi)
+    if a.unwrap_r_px > 0: out['wrap'] = C['wrap']; out['zref'] = C['zref']
     g2 = good & (Tsum > 2000) & (Tsum < 4000)
     px = ctx['px_nm']
-    summ = dict(n=n, per_window=n / (nfr // 6), good_frac=float(good.mean()), kin_frac=float(C['kin'].mean()), field_R=diag['R'],
-                chi2_dof_median=float(np.median(C['chi2'] / dof)), pattern={k: patf[k] for k in ('angle0', 'angle1')},
+    summ = dict(n=n, per_window=n / (nfr // T), good_frac=float(good.mean()), kin_frac=float(C['kin'].mean()), field_R=diag['R'],
+                chi2_dof_median=float(np.median(C['chi2'] / dof)), pattern={k: patf[k] for k in ('angle0', 'angle1')} if a.pattern else None,
                 sig_med_nm_2_4k=[float(np.median(out['sx'][g2]) * px), float(np.median(out['sy'][g2]) * px), float(np.median(out['sz'][g2]) * 1000)],
                 coh=a.coh, t_read_network=tA, t_field=tC, t_total=time.time() - t0)
     return out, dict(M=diag['M'], d=diag['d']), summ
+
+
+def unwrap(C, cx, cy, zprior, Tsum, a, resolve, T):
+    """4Pi period from the structure: reference z = median z of the nearest (<= 30) bright rows within unwrap_r_px whose z
+    agrees with their own astigmatic prior (|z - zprior| < unwrap_tol um); a row whose z is more than half a period
+    (z_period_um) from its reference and does not agree with its own prior is solved again started one or more periods over (on-through rows only; the new
+    solution is kept). C is updated in place (and C['zref'] = the reference z, NaN without 5 references: the table column
+    zref; |z - zref| > half a period marks a localization whose period the structure contradicts); -> the period shift k per row (int8)"""
+    from scipy.spatial import cKDTree
+    th = C['th']; X = cx + th[:, 0]; Y = cy + th[:, 1]; z = th[:, 2]; L = a.z_period_um
+    ref = (np.abs(z - zprior) < a.unwrap_tol) & (Tsum > 1000) & ~C['kin']
+    k = np.zeros(len(z), np.int8); C['zref'] = np.full(len(z), np.nan)
+    if ref.sum() < 50: return k
+    d, q = cKDTree(np.c_[X[ref], Y[ref]]).query(np.c_[X, Y], k=31, distance_upper_bound=a.unwrap_r_px)
+    zr = z[ref]; ok = np.isfinite(d) & (d > 1e-6)                                     # not the row itself
+    zz = np.where(ok, zr[np.minimum(q, len(zr) - 1)], np.nan)
+    cnt = ok.sum(1); zref = np.where(cnt >= 5, np.nanmedian(np.where(cnt[:, None] >= 5, zz, 0.0), 1), np.nan)
+    C['zref'] = zref
+    kk = np.where(np.isfinite(zref), np.round((zref - z) / L), 0).astype(int)
+    kk = np.where(np.abs(kk) <= a.unwrap_kmax, kk, 0)                               # farther: not a period slip, left as is
+    redo = np.nonzero((kk != 0) & ~C['kin'] & (np.abs(z - zprior) > a.unwrap_tol))[0]     # rows that agree with their own prior stay
+    for i in range(0, len(redo), a.batch):
+        j = redo[i:i + a.batch]
+        r, bgc = resolve(j, np.clip(z[j] + kk[j] * L, -0.98, 0.98))
+        C['th'][j] = r['th'][:, :3]; C['sig'][j] = r['sig'][:, :3]; C['chi2'][j] = r['chi2']; C['chi2_on'][j] = r['chi2']
+        C['N'][j] = r['th'][:, 3] * T; C['bg'][j] = bgc + r['th'][:, -4:]
+        k[j] = kk[j]
+    print(f'{a.cell}: unwrap: {len(redo)} rows ({len(redo) / max(len(z), 1):.3f}) solved again one or more 4Pi periods over', flush=True)
+    return k
 
 
 def output_units(c, out=None, claim=None, redo=None):
@@ -192,7 +254,6 @@ def main(argv=None):
     a = p.parse_args(argv)
     from simcode.util.proctitle import auto; auto('4pi-process')
     from simcode.pipeline import acquisition_config as AC
-    from simcode.setups.fourpi import FourPiSetup
     L = AC.load_all(a.config)
     if a.only: L = [c for c in L if c['name'] == a.only]
     if len(L) != 1: raise SystemExit(f'{a.config}: {len(L)} acquisitions; give --only <name>')
@@ -200,7 +261,7 @@ def main(argv=None):
     for kv in a.set:
         k, v = kv.split('=', 1); c['fourpi'][k] = json.loads(v)
     if a.nframes is not None: c['fourpi']['nframes'] = a.nframes
-    S = FourPiSetup()
+    S = setup_of(c)
     files = a.files or S.files(c)
     U = output_units(c, a.out, a.claim, a.redo)
     fs = os.path.join(U.out, f'locs{c["fourpi"]["tag"]}_summary.json')

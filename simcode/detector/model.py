@@ -14,8 +14,11 @@ illum = True (pass 2): the illumination pattern estimated after pass 1 as input 
 Candidate selection: detector/select.py.
 
 Checkpoints ({'model': state dict, 'args': training arguments, 'step'}) are read by load(): pass 1 or pass 2 follows from
-the state dict (the illumination weights cin_il), the channel widths from the args; every detector checkpoint since
-2026-11-09 has the native-grid output (args 'up' = 1); since 2026-11-15 the args carry the tag arch = ARCH.
+the state dict (the illumination weights cin_il), the channel widths and the window length T (default 6; plain 4Pi: 1)
+from the args; every detector checkpoint since 2026-11-09 has the native-grid output (args 'up' = 1); since 2026-11-15 the
+args carry the tag arch = ARCH.
+init_T(net, sd): a T-frame detector from a 6-frame state dict (the input conv's per-frame slots summed: on T identical
+frames ... the start equals the 6-frame detector on a window of 6 copies of the frame when T = 1).
 """
 import torch
 import torch.nn as nn
@@ -97,9 +100,22 @@ def n_params(m):
 
 
 def build(args=None, illum=False):
-    """a new detector with the channel widths of the training arguments (defaults if absent)"""
+    """a new detector with the window length T and channel widths of the training arguments (defaults if absent: T = 6)"""
     args = args or {}
-    return Detector(6, tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16), illum=illum)
+    return Detector(args.get('T', 6), tuple(args.get('ch', (48, 96, 160))), args.get('stem_ch', 16), illum=illum)
+
+
+def init_T(net, sd):
+    """pass-1 state dict of a detector with another window length -> net (T frames): every weight copied except the
+    input conv, whose per-frame stem slots are summed into one and spread evenly over net's T slots (the window-mean
+    slot copied). For T = 1 the start is the source detector applied to copies of the frame."""
+    own = net.state_dict(); w = sd['cin.weight']; S = net.stem[0].out_channels
+    T0 = (w.shape[1] - 1) // S; T = net.T
+    for k, v in sd.items():
+        if k != 'cin.weight': own[k] = v
+    ws = w[:, :T0 * S].reshape(w.shape[0], T0, S, *w.shape[2:]).sum(1) / T
+    own['cin.weight'] = torch.cat([ws[:, None].expand(-1, T, -1, -1, -1).reshape(w.shape[0], T * S, *w.shape[2:]), w[:, T0 * S:]], 1)
+    net.load_state_dict(own)
 
 
 def is_pass2(sd):
