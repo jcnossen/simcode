@@ -181,9 +181,10 @@ class MultiChannelAcquisitionSim:
         return (torch.minimum(t[None] + 1, toff[:, None]) - torch.maximum(t[None], ton[:, None])).clamp(0, 1)
 
     def sample(self, B=8, dens=(0.01, 2.0), zr=(-0.4, 0.4), F_med=450.0, F_rng=(60.0, 6000.0), p_through=0.5,
-               rn=1.14, offerr=0.2, kind=None, delta_deg=None, ksum=1, F_sd=0.6, bg_rng=(0.5, 2.0), det=True):
+               rn=1.14, offerr=0.2, kind=None, delta_deg=None, ksum=1, F_sd=0.6, bg_rng=(0.5, 2.0), det=True, phase=None):
         """vectorised over scenes: one LUT evaluation per (PSF variant, channel, angle), one scatter per (channel, frame).
-        bg_rng: range of the log-uniform factor on the cell's background levels; det=False: no detector input"""
+        bg_rng: range of the log-uniform factor on the cell's background levels; det=False: no detector input;
+        phase = dict(phi_off (rad), cxy (4)): the same 4Pi phase field in every scene (simulated movies; drawn otherwise)"""
         dev, H, W, P, NC, T_ = self.dev, self.H, self.W, self.P, self.C, self.T
         h = P // 2; pad = h + 2
         dsc = self.lu(B, *dens)
@@ -206,6 +207,9 @@ class MultiChannelAcquisitionSim:
         mdep = self.u(B, 0.6, 0.95)
         lut_i = (self.u(B) * len(self.luts)).long().clamp(max=len(self.luts) - 1)
         cxy = self.u(B * 4, -1, 1).reshape(B, 4); phi_off = self.u(B, 0, 2 * math.pi)
+        if phase is not None:
+            cxy = torch.tensor(phase['cxy'], device=dev, dtype=torch.float32)[None].expand(B, 4).contiguous()
+            phi_off = torch.full((B,), float(phase['phi_off']), device=dev)
         delta = torch.deg2rad(self.u(B, -16, -8)) if delta_deg is None else torch.full((B,), math.radians(delta_deg), device=dev)
         bgl = torch.stack([torch.tensor(s.bg, device=dev) for s in sp]) * self.lu(B * NC, *bg_rng).reshape(B, NC)
         if ksum != 1:   # K summed windows (real dense data by summing): K x background, sqrt(K) read noise, K x offset error

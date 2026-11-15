@@ -32,7 +32,7 @@ def acquisition(cell, movies):
                     psf=f'{W4}/psf/psf4pi_{cell}_astig.json',
                     detector=f'{W4}/models/det/final.pt', emitter=f'{W4}/models/emitter.pt',
                     tile=12.0, tblk=200, coh=1.0, min_photons=150.0, sb=1.0),
-        fourpi_train=dict(bg=[24.1, 19.6, 23.2, 20.0]),
+        fourpi_train=dict(bg=[24.1, 19.6, 23.2, 20.0], emitter_size=128, emitter_scenes=16, emitter_steps=16000),
         gpus=[0])
 
 
