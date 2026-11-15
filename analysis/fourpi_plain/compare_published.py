@@ -159,7 +159,7 @@ def main():
     Os['x'] = Os['x'] + dxy[0]; Os['y'] = Os['y'] + dxy[1]; O['x'] = O['x'] + dxy[0]; O['y'] = O['y'] + dxy[1]
     ex, ey = pub['x'][ib] - Os['x'][ia], pub['y'][ib] - Os['y'][ia]
     R['match'] = dict(offset_nm=dxy, n=int(len(ia)), frac_of_pub=float(len(ib) / len(pub['x'])), frac_of_ours=float(len(ia) / len(Os['x'])),
-                      dx_sd_nm=robust_sd(ex), dy_sd_nm=robust_sd(ey))
+                      dx_sd_nm=robust_sd(ex), dy_sd_nm=robust_sd(ey), photon_ratio_median=float(np.median(Os['N'][ia] / pub['N'][ib])))
     # ---- z: our z against theirs on the matched pairs (robust line), per 1000-frame block offsets
     zo, zt = Os['z'][ia], pub['z'][ib]
     from scipy.stats import theilslopes
@@ -212,6 +212,7 @@ def main():
         common = sites['ours'][ok]
         for nm, d in (('ours', Os), ('theirs', pub)):
             S, rad, zc = site_stats(d, common)
+            if nm == 'theirs': pooled['common_theirs'] = S
             sep, sd, _ = two_gauss_sep(zc)
             npc[nm]['common'] = dict(sites=len(S), R_median_nm=float(np.median([s['R'] for s in S])) if S else None,
                                      zsep_site_median_nm=float(np.median([s['zsep'] for s in S])) if S else None, zsep_pooled_nm=sep,
@@ -222,92 +223,105 @@ def main():
     figure(a.out, Os, pub, R, pooled, sites)
 
 
-def render(ax, d, ext, px=10.0, title='', zr=(0, 450)):
-    import matplotlib.colors as mc
+C_OURS, C_THEIRS = '#2a78d6', '#eb6834'      # categorical slots 1 / 2 (validated pair)
+
+
+def render(ax, d, ext, px=10.0, title='', zr=(0, 450), bar_nm=None):
+    """density x z-colour render (turbo for z, brightness for density) of the localizations inside ext (nm)"""
+    import matplotlib.cm as cm
     x0, x1, y0, y1 = ext
-    nx, ny = int((x1 - x0) / px), int((y1 - y0) / px)
+    nx, ny = max(1, int((x1 - x0) / px)), max(1, int((y1 - y0) / px))
     m = (d['x'] >= x0) & (d['x'] < x1) & (d['y'] >= y0) & (d['y'] < y1)
     H, _, _ = np.histogram2d(d['y'][m], d['x'][m], bins=(ny, nx), range=((y0, y1), (x0, x1)))
     Z, _, _ = np.histogram2d(d['y'][m], d['x'][m], bins=(ny, nx), range=((y0, y1), (x0, x1)), weights=d['z'][m])
     zz = np.where(H > 0, Z / np.maximum(H, 1), np.nan)
-    v = np.clip(H / max(np.percentile(H[H > 0], 99.5), 1), 0, 1) if (H > 0).any() else H
-    import matplotlib.cm as cm
+    v = np.clip(H / max(np.percentile(H[H > 0], 99.0), 1), 0, 1) ** 0.7 if (H > 0).any() else H
     rgb = cm.turbo(np.clip((np.nan_to_num(zz, nan=zr[0]) - zr[0]) / (zr[1] - zr[0]), 0, 1))[..., :3] * v[..., None]
-    ax.imshow(rgb, extent=(x0 / 1000, x1 / 1000, y1 / 1000, y0 / 1000), interpolation='nearest')
-    ax.set_title(title, fontsize=9); ax.set_xticks([]); ax.set_yticks([])
+    ax.imshow(rgb, extent=(0, (x1 - x0) / 1000, (y1 - y0) / 1000, 0), interpolation='nearest')
+    ax.set_title(title, fontsize=8.5); ax.set_xticks([]); ax.set_yticks([])
+    if bar_nm:
+        L = bar_nm / 1000; W, Hh = (x1 - x0) / 1000, (y1 - y0) / 1000
+        ax.plot([W * 0.95 - L, W * 0.95], [Hh * 0.93] * 2, color='w', lw=2)
+        ax.text(W * 0.95 - L / 2, Hh * 0.89, f'{bar_nm:g} nm' if bar_nm < 1000 else f'{bar_nm / 1000:g} um', color='w', ha='center', fontsize=7)
 
 
 def figure(out, Os, pub, R, pooled, sites):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
+    plt.rcParams.update({'font.size': 8, 'axes.spines.top': False, 'axes.spines.right': False})
+    zl = R['z_relation']; Oz = dict(Os, z=zl['slope'] * Os['z'] + zl['offset_nm'])       # our z in their frame for the colour scale
     zr = (np.percentile(pub['z'], 2), np.percentile(pub['z'], 98))
-    # our z mapped onto theirs (the fitted line) for the colour scale of the renders
-    zl = R['z_relation']; Oz = dict(Os, z=zl['slope'] * Os['z'] + zl['offset_nm'])
-    fig = plt.figure(figsize=(13, 8.6))
-    gs = fig.add_gridspec(3, 4, height_ratios=[1.25, 1, 1])
-    ext = (np.percentile(pub['x'], 0.5), np.percentile(pub['x'], 99.5), np.percentile(pub['y'], 0.5), np.percentile(pub['y'], 99.5))
-    ax = fig.add_subplot(gs[0, 0]); render(ax, Oz, ext, 20, f'SIMCODE plain 4Pi ({R["n_ours_sel"]} locs)', zr)
-    ax = fig.add_subplot(gs[0, 1]); render(ax, pub, ext, 20, f'published ({R["n_theirs_pub"]} locs)', zr)
-    # zooms: the common sites with most localizations
-    S_o = pooled['ours'][3]
+    fig = plt.figure(figsize=(12.5, 11))
+    gs = fig.add_gridspec(3, 4, height_ratios=[1.35, 1, 1], hspace=0.38, wspace=0.32)
+    ext = (np.percentile(pub['x'], 0.3), np.percentile(pub['x'], 99.7), np.percentile(pub['y'], 0.3), np.percentile(pub['y'], 99.7))
+    render(fig.add_subplot(gs[0, 0]), Oz, ext, 25, f'A  SIMCODE plain 4Pi ({R["n_ours_sel"]:,} locs)', zr, 2000)
+    render(fig.add_subplot(gs[0, 1]), pub, ext, 25, f'B  published ({R["n_theirs_pub"]:,} locs)', zr, 2000)
+    S_o = pooled.get('common_theirs') or pooled['theirs'][3]       # zooms: the published-set sites (common ones first) with most localizations
+    sub = gs[0, 2:].subgridspec(2, 3, wspace=0.05, hspace=0.18)
     if S_o:
-        top = sorted(S_o, key=lambda s: -s['n'])[:2]
+        top = sorted(S_o, key=lambda s: -s['n'])[:3]
         for k, s in enumerate(top):
-            e2 = (s['x'] - 150, s['x'] + 150, s['y'] - 150, s['y'] + 150)
-            for j, (nm, d) in enumerate((('SIMCODE', Oz), ('published', pub))):
-                ax = fig.add_subplot(gs[0, 2 + k]) if j == 0 else ax.inset_axes([0.0, -1.05, 1.0, 1.0])
-                render(ax, d, e2, 4, f'{nm} site {k + 1}', zr)
-    # radial distribution
+            e2 = (s['x'] - 140, s['x'] + 140, s['y'] - 140, s['y'] + 140)
+            render(fig.add_subplot(sub[0, k]), Oz, e2, 4, ('C  SIMCODE, ' if k == 0 else '') + f'site {k + 1}', zr, 100 if k == 0 else None)
+            render(fig.add_subplot(sub[1, k]), pub, e2, 4, ('published, ' if k == 0 else '') + f'site {k + 1}', zr)
+    lab = {'ours': 'SIMCODE', 'theirs': 'published'}; col = {'ours': C_OURS, 'theirs': C_THEIRS}
     ax = fig.add_subplot(gs[1, 0])
-    for nm, col in (('ours', 'C0'), ('theirs', 'C1')):
-        rad = pooled[nm][0]
-        ax.hist(rad, bins=55, range=(0, 110), histtype='step', density=True, color=col,
-                label=f'{"SIMCODE" if nm == "ours" else "published"}: R {R["npc"][nm]["R_median_nm"]:.1f} nm ({R["npc"][nm]["sites"]} sites)')
-    ax.axvline(53.7, color='k', lw=0.6, ls=':'); ax.set_xlabel('distance from site centre (nm)'); ax.legend(fontsize=7); ax.set_title('Nup96 ring radius', fontsize=9)
-    # two layers
+    for nm in ('ours', 'theirs'):
+        ax.hist(pooled[nm][0], bins=55, range=(0, 110), histtype='step', lw=1.5, density=True, color=col[nm],
+                label=f'{lab[nm]}: R {R["npc"][nm]["R_median_nm"]:.1f} nm ({R["npc"][nm]["sites"]} sites)')
+    ax.axvline(53.7, color='0.4', lw=0.8, ls=':'); ax.set_xlabel('distance from site centre (nm)'); ax.set_ylabel('density')
+    ax.legend(fontsize=7, frameon=False); ax.set_title('D  Nup96 ring radius', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[1, 1])
-    for nm, col in (('ours', 'C0'), ('theirs', 'C1')):
-        c, h, p = pooled[nm][2]
+    for nm in ('ours', 'theirs'):
         zc = pooled[nm][1] * (abs(zl['slope']) if nm == 'ours' else 1.0)
-        ax.hist(zc, bins=60, range=(-120, 120), histtype='step', density=True, color=col,
-                label=f'{"SIMCODE" if nm == "ours" else "published"}: {R["npc"][nm]["zsep_pooled_nm"]:.1f} nm')
-    ax.set_xlabel('z - site centre (nm; SIMCODE x |slope|)'); ax.legend(fontsize=7); ax.set_title('two-layer z separation (pooled)', fontsize=9)
-    # z relation
+        sep = R['npc'][nm]['zsep_pooled_nm'] * (abs(zl['slope']) if nm == 'ours' else 1.0)
+        ax.hist(zc, bins=60, range=(-120, 120), histtype='step', lw=1.5, density=True, color=col[nm], label=f'{lab[nm]}: {sep:.1f} nm')
+    ax.set_xlabel('z - site centre (nm, published z units)'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('E  two layers (pooled fit)', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[1, 2])
     i, j = match(Os, pub, 100.0)
-    ax.plot(Os['z'][i], pub['z'][j], ',', alpha=0.3)
-    zz = np.linspace(Os['z'][i].min(), Os['z'][i].max(), 10); ax.plot(zz, zl['slope'] * zz + zl['offset_nm'], 'k-', lw=0.8)
-    ax.set_xlabel('SIMCODE z (nm, model)'); ax.set_ylabel('published z (nm)'); ax.set_title(f'matched locs: slope {zl["slope"]:.3f}', fontsize=9)
-    # precision vs photons
-    for k, ax_ in enumerate(('xy', 'z')):
-        ax = fig.add_subplot(gs[2, k])
-        for nm, col in (('ours', 'C0'), ('theirs', 'C1')):
-            B = R['precision'][nm]['bins']
-            if not B: continue
-            Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in B]
-            if ax_ == 'xy':
-                ax.plot(Nc, [0.5 * (b['emp_x'] + b['emp_y']) for b in B], 'o-', color=col, label=f'{nm} empirical')
-                ax.plot(Nc, [0.5 * (b['rep_x'] + b['rep_y']) for b in B], 's--', color=col, mfc='none', label=f'{nm} reported')
-            else:
-                sc = abs(zl['slope']) if nm == 'ours' else 1.0
-                ax.plot(Nc, [b['emp_z'] * sc for b in B], 'o-', color=col, label=f'{nm} empirical')
-                if 'rep_z' in B[0]: ax.plot(Nc, [b['rep_z'] * sc for b in B], 's--', color=col, mfc='none', label=f'{nm} reported')
-        ax.set_xscale('log'); ax.set_yscale('log'); ax.set_xlabel('photons'); ax.set_ylabel(f'precision {ax_} (nm)'); ax.legend(fontsize=7)
-        ax.set_title(f'{ax_} precision (consecutive-frame pairs)', fontsize=9)
+    ax.hexbin(Os['z'][i], pub['z'][j], gridsize=60, bins='log', cmap='Greys', mincnt=1)
+    zz = np.linspace(np.percentile(Os['z'][i], 1), np.percentile(Os['z'][i], 99), 10); ax.plot(zz, zl['slope'] * zz + zl['offset_nm'], color=C_OURS, lw=1.2)
+    ax.set_xlabel('SIMCODE z (nm, model z)'); ax.set_ylabel('published z (nm)')
+    ax.set_title(f'F  z of matched localizations (slope {zl["slope"]:.3f})', fontsize=8.5, loc='left')
+    ax = fig.add_subplot(gs[1, 3])
+    for nm in ('ours', 'theirs'):
+        B = R['precision'][nm]['bins']
+        Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in B]
+        ax.plot(Nc, [b['emp_x'] for b in B], 'o-', color=col[nm], ms=4, label=f'{lab[nm]} x')
+        ax.plot(Nc, [b['emp_y'] for b in B], 's--', color=col[nm], ms=4, mfc='none', label=f'{lab[nm]} y')
+    ax.set_xscale('log'); ax.set_xlabel('photons'); ax.set_ylabel('nm'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('G  lateral precision (consec. frames)', fontsize=8.5, loc='left')
+    ax = fig.add_subplot(gs[2, 0])
+    for nm in ('ours', 'theirs'):
+        B = R['precision'][nm]['bins']; sc = abs(zl['slope']) if nm == 'ours' else 1.0
+        Nc = [np.sqrt(b['N'][0] * b['N'][1]) for b in B]
+        ax.plot(Nc, [b['emp_z'] * sc for b in B], 'o-', color=col[nm], ms=4, label=f'{lab[nm]} empirical')
+        if 'rep_z' in B[0]: ax.plot(Nc, [b['rep_z'] * sc for b in B], 's--', color=col[nm], ms=4, mfc='none', label=f'{lab[nm]} reported')
+    ax.set_xscale('log'); ax.set_xlabel('photons'); ax.set_ylabel('nm (published z units)'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('H  z precision (consecutive frames)', fontsize=8.5, loc='left')
+    ax = fig.add_subplot(gs[2, 1])
+    for nm, d in (('ours', Os), ('theirs', pub)):
+        ax.hist(np.log10(np.maximum(d['N'], 1)), bins=60, range=(2.5, 4.6), histtype='step', lw=1.5, color=col[nm], label=lab[nm])
+    ax.set_xlabel('log10 photons per localization'); ax.set_ylabel('localizations'); ax.legend(fontsize=7, frameon=False)
+    ax.set_title('I  photons (selected sets)', fontsize=8.5, loc='left')
     ax = fig.add_subplot(gs[2, 2:]); ax.axis('off')
-    M = R['match']; N_ = R['npc']
-    txt = [f'frames {R["frames"]}; SIMCODE {R["n_ours_all"]} solved, {R["n_ours_sel"]} selected; published {R["n_theirs_pub"]} (raw {R["n_theirs_raw"]})',
-           f'matched (<= 100 nm, same frame): {M["n"]} = {100 * M["frac_of_pub"]:.1f} % of published, {100 * M["frac_of_ours"]:.1f} % of SIMCODE',
-           f'z: published = {zl["slope"]:.3f} x SIMCODE + {zl["offset_nm"]:.0f} nm (resid sd {zl["resid_sd_nm"]:.1f} nm)',
-           f'empirical precision (all pairs) x / y / z nm: SIMCODE {R["precision"]["ours"]["all"]["emp_x"]:.1f} / {R["precision"]["ours"]["all"]["emp_y"]:.1f} / {R["precision"]["ours"]["all"]["emp_z"]:.1f}'
-           f'  published {R["precision"]["theirs"]["all"]["emp_x"]:.1f} / {R["precision"]["theirs"]["all"]["emp_y"]:.1f} / {R["precision"]["theirs"]["all"]["emp_z"]:.1f}',
+    M = R['match']; N_ = R['npc']; P = R['precision']
+    txt = [f'frames {R["frames"]:,}; SIMCODE {R["n_ours_all"]:,} solved, {R["n_ours_sel"]:,} selected; published {R["n_theirs_pub"]:,} (their raw {R["n_theirs_raw"]:,})',
+           f'selection: {R["selection"]}',
+           f'matched (<= 100 nm, same frame): {M["n"]:,} = {100 * M["frac_of_pub"]:.1f} % of published, {100 * M["frac_of_ours"]:.1f} % of SIMCODE',
+           f'z: published = {zl["slope"]:.3f} x SIMCODE {zl["offset_nm"]:+.0f} nm (resid sd {zl["resid_sd_nm"]:.1f} nm)',
+           'empirical precision, all pairs, x / y / z nm:',
+           f'   SIMCODE   {P["ours"]["all"]["emp_x"]:.1f} / {P["ours"]["all"]["emp_y"]:.1f} / {P["ours"]["all"]["emp_z"] * abs(zl["slope"]):.1f}   (median {P["ours"]["median_N"]:.0f} photons)',
+           f'   published {P["theirs"]["all"]["emp_x"]:.1f} / {P["theirs"]["all"]["emp_y"]:.1f} / {P["theirs"]["all"]["emp_z"]:.1f}   (median {P["theirs"]["median_N"]:.0f} photons)',
            f'NPC sites: SIMCODE {N_["ours"]["sites"]}, published {N_["theirs"]["sites"]}; ring radius {N_["ours"]["R_median_nm"]:.1f} / {N_["theirs"]["R_median_nm"]:.1f} nm',
-           f'two-layer separation (pooled fit): {N_["ours"]["zsep_pooled_nm"]:.1f} nm (x |slope| {N_["ours"]["zsep_pooled_nm"] * abs(zl["slope"]):.1f}) / {N_["theirs"]["zsep_pooled_nm"]:.1f} nm']
+           f'two-layer separation (pooled): {N_["ours"]["zsep_pooled_nm"] * abs(zl["slope"]):.1f} / {N_["theirs"]["zsep_pooled_nm"]:.1f} nm (published z units)']
     if 'common' in N_['ours']:
-        txt.append(f'common sites {N_["ours"]["common"]["sites"]}: R {N_["ours"]["common"]["R_median_nm"]:.1f} / {N_["theirs"]["common"]["R_median_nm"]:.1f} nm, '
-                   f'z sep {N_["ours"]["common"]["zsep_pooled_nm"]:.1f} / {N_["theirs"]["common"]["zsep_pooled_nm"]:.1f} nm, locs/site {N_["ours"]["common"]["locs_per_site"]:.0f} / {N_["theirs"]["common"]["locs_per_site"]:.0f}')
-    ax.text(0, 1, '\n'.join(txt), va='top', fontsize=7.5, family='monospace')
-    fig.suptitle('Plain 4Pi (4Pi-SMS, Nup96-AF647, Li & Ries Cell11): SIMCODE network intensities + explicit solve vs published', fontsize=10)
-    fig.tight_layout(); fig.savefig(os.path.join(out, 'compare_cell11.png'), dpi=130)
+        c_o, c_t = N_['ours']['common'], N_['theirs']['common']
+        txt.append(f'common sites ({c_o["sites"]}): R {c_o["R_median_nm"]:.1f} / {c_t["R_median_nm"]:.1f} nm, '
+                   f'z sep {c_o["zsep_pooled_nm"] * abs(zl["slope"]):.1f} / {c_t["zsep_pooled_nm"]:.1f} nm, locs per site {c_o["locs_per_site"]:.0f} / {c_t["locs_per_site"]:.0f}')
+    ax.text(0, 1, '\n'.join(txt), va='top', fontsize=7.3, family='monospace')
+    fig.suptitle('Plain 4Pi (4Pi-SMS), Nup96-AF647, Li & Ries Cell11: SIMCODE (network read-outs + explicit solve) vs published localizations', fontsize=10)
+    fig.savefig(os.path.join(out, 'compare_cell11.png'), dpi=140, bbox_inches='tight')
 
 
 if __name__ == '__main__':

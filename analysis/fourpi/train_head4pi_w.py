@@ -128,6 +128,7 @@ def main_plain(a):
     sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, train_prior=True, T=T, zmax=t['zmax'], vread=vread, wins=WINDOWS_PLAIN, excess=a.excess).to(dev); net.lut = lut
     if a.init: net.load_state_dict(torch.load(a.init, weights_only=False)['state'])
+    if a.init and a.tag == 'v10' and os.path.abspath(a.init) == os.path.abspath(out): raise SystemExit('--init: copy the checkpoint first (it would be overwritten)')
     net.train()
     sv = FourPiSolve(lut, WINDOWS_PLAIN, dev=dev, **S_.solve_kw(c, net)); sv.tab_lim = None
     opt = torch.optim.AdamW([q for q in net.parameters() if q.requires_grad], lr=a.lr, weight_decay=1e-4)
@@ -159,7 +160,7 @@ def main_plain(a):
         with torch.no_grad():
             iso = (S['nnb'] == 0); u = info['u']
             dz = (o['z'] - S['z']).abs().median().item() * 1000
-            acc.append([L.item(), ls_.mean().item() / 3, lp.mean().item(), lb.mean().item(),
+            if iso.any() and not iso.all(): acc.append([L.item(), ls_.mean().item() / 3, lp.mean().item(), lb.mean().item(),
                         u[iso].abs().median().item() * 1.4826, u[~iso].abs().median().item() * 1.4826 if (~iso).any() else float('nan'),
                         (u[iso] ** 2).clamp(max=25).mean().sqrt().item(), (u[~iso] ** 2).clamp(max=25).mean().sqrt().item() if (~iso).any() else float('nan'),
                         o['cs'][iso].mean().item(), dz, info['var'][iso].sqrt().median(0).values[0].item() * 128])
