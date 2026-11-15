@@ -197,8 +197,22 @@ class Evaluator:
 
 
 def read_csv(fn):
+    """rows of <model dir>/eval_log.jsonl (the source; eval_log.csv is regenerated from it with the union of the keys), or of a
+    train_log.csv"""
+    if fn.endswith('eval_log.csv'):
+        j = fn[:-4] + '.jsonl'
+        if not os.path.exists(j): return []
+        return [json.loads(l) for l in open(j) if l.strip()]
     if not os.path.exists(fn): return []
     with open(fn) as f: return list(csv.DictReader(f))
+
+
+def append_row(fn, row):
+    j = fn[:-4] + '.jsonl'
+    with open(j, 'a') as f: f.write(json.dumps(row, default=float) + '\n')
+    rows = read_csv(fn); keys = list(dict.fromkeys(k for r in rows for k in r))
+    with open(fn, 'w', newline='') as f:
+        w = csv.DictWriter(f, fieldnames=keys); w.writeheader(); [w.writerow(r) for r in sorted(rows, key=lambda r: r['epoch'])]
 
 
 def plot(names, ref, fn):
@@ -213,7 +227,8 @@ def plot(names, ref, fn):
             axs[0, 0].plot(ep, [float(r['train_loss']) for r in L], color=c, lw=0.5, alpha=0.4)
             ax2 = axs[1, 0]; ax2.semilogy(ep, [float(r['lr']) for r in L], color=c, label=nm)
         if not E: continue
-        e = np.array([float(r['epoch']) for r in E]); g = lambda k: np.array([float(r.get(k) or np.nan) for r in E])
+        E = sorted(E, key=lambda r: r['epoch'])
+        e = np.array([float(r['epoch']) for r in E]); g = lambda k: np.array([np.nan if r.get(k) is None else float(r[k]) for r in E])
         for k in [k for k in E[-1] if k.startswith('real_') and k.endswith('_c1_x')]:
             ds = k[5:-5]
             axs[0, 4].plot(e, g(k), 'o-', ms=3, color=c, label=f'{nm} {ds} x'); axs[0, 4].plot(e, g(f'real_{ds}_c1_y'), 's--', ms=3, color=c, label='y')
@@ -270,6 +285,7 @@ def main():
     json.dump(ref, open(os.path.join(OUT, f'eval_ref_{a.tag or "_".join(names)}.json'), 'w'), indent=1)
     print('ref', ref, flush=True)
     figfn = os.path.join(OUT, 'fig_progress_' + (a.tag or '_'.join(names)) + '.png')
+    failed = set()
     while True:
         new = 0
         for nm in names:
@@ -279,12 +295,10 @@ def main():
             for k, sp in enumerate(snaps):
                 e = int(re.findall(r'model_e(\d+)\.pt', sp)[0])
                 if e in done or (k % a.every and k != len(snaps) - 1): continue
+                if sp in failed: continue
                 try: r = ev(nm, sp)
-                except Exception as ex: print('eval failed', sp, repr(ex), flush=True); continue
-                row = dict(epoch=e, **r)
-                hdr = not os.path.exists(fn)
-                with open(fn, 'a', newline='') as f:
-                    w = csv.DictWriter(f, fieldnames=list(row)); (w.writeheader() if hdr else None); w.writerow(row)
+                except Exception as ex: print('eval failed', sp, repr(ex), flush=True); failed.add(sp); continue
+                append_row(fn, dict(epoch=e, **r))
                 print(nm, 'epoch', e, {k: round(v, 4) if isinstance(v, float) else v for k, v in r.items()}, flush=True)
                 new += 1
         if new:
