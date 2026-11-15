@@ -7,7 +7,10 @@ NN output (no own colour in the paper) is purple. CRLBs dashed in the colour of 
 open symbols = bins where the detector found < 50 % of the emitters (network curves only; the RMSD there is over the found ones).
 Options (the user decides; defaults = current choice): --sf both|paper|pfbg (SIMFLUX under fluctuating bg), --p2prior 0|1
 (panel B: also the pass-2 head prior), --cut 0|<photons> (drop bins below that photon count instead of marking them).
-usage: python analysis/papersim/si_crlb_figure.py [--tag m1809] -> out/papersim/s10/si_crlb_precision_<tag>.{pdf,svg,png}"""
+x axis: 'signal photons' (the intensity parameter, old scenes) or 'detected signal photons' for the PSF-v2 scenes (s10.py --psf v2;
+read from the json's protocol.photons_are).
+Also writes the per-bin table s10_table_<tag>.md (RMSD trim 2 %, CRLBs, predicted precision, ratios, recall; x precision, nm).
+usage: python analysis/papersim/si_crlb_figure.py [--tag m1809] -> out/papersim/s10/si_crlb_precision_<tag>.{pdf,svg,png}, s10_table_<tag>.md"""
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
@@ -53,7 +56,8 @@ def main():
     line(Cc, 'unif16', 'v2_p2', COL['v2'], None, ':', 'SIMCODE, predicted', f='pred_mean')
     if a.sf in ('both', 'paper'): line(Cc, 'unif16', 'sf', COL['sf'], 's', '-', 'SIMFLUX (one background)')
     if a.sf in ('both', 'pfbg'): line(Cc, 'unif16', 'sf_pfbg', COL['sf'], 'D', '-.', 'SIMFLUX (background per frame)')
-    Cc.set_yscale('log'); Cc.set_ylim(top=Cc.get_ylim()[1] * 30)          # room for the legend above the curves
+    Cc.set_yscale('log'); Cc.set_ylim(top=Cc.get_ylim()[1] * 30)
+    A.set_yscale('log'); A.set_ylim(top=A.get_ylim()[1] * 4)            # room for the 2-column legend          # room for the legend above the curves
     titles = ('constant background', 'fluctuating background: NN output', 'fluctuating background: SIMCODE')
     for ax, letter, t in zip(axs, 'ABC', titles):
         ax.set_xscale('log'); ax.set_yscale('log')
@@ -62,14 +66,29 @@ def main():
         yt = [1, 2, 5, 10, 20, 50, 100, 200]
         lo, hi = ax.get_ylim(); yt = [v for v in yt if lo <= v <= hi * 1.01]
         ax.yaxis.set_major_locator(FixedLocator(yt)); ax.yaxis.set_major_formatter(FixedFormatter([str(v) for v in yt])); ax.yaxis.set_minor_formatter(NullFormatter())
-        ax.set_xlabel('signal photons (6 frames)'); ax.set_ylabel('x precision (nm)')
+        ax.set_xlabel(('detected ' if str(R['protocol'].get('photons_are', '')).startswith('detected') else '') + 'signal photons (6 frames)'); ax.set_ylabel('x precision (nm)')
         ax.set_title(t, fontsize=7); ax.text(-0.2, 1.06, letter, transform=ax.transAxes, fontsize=10, fontweight='bold')
-        ax.legend(loc='upper right', handlelength=2.2, borderaxespad=0.3)
+        ax.legend(loc='upper right', handlelength=2.2, borderaxespad=0.3, ncol=2 if letter == 'A' else 1, columnspacing=0.8)
         ax.grid(True, which='major', lw=0.3, alpha=0.4)
     fig.tight_layout(w_pad=0.8)
     base = os.path.join(D, f'si_crlb_precision_{a.tag}')
     for ext in ('pdf', 'svg', 'png'): fig.savefig(f'{base}.{ext}', dpi=300)
     print(base)
+    table(R, os.path.join(D, f's10_table_{a.tag}.md'))
+
+
+def table(R, fn):
+    """per-bin table (x precision in nm; v2 RMSD / CRLB: SIMFLUX one-bg CRLB at const1, per-frame-bg CRLB at unif16)"""
+    nm = lambda v: v * C.PX_NM
+    L = ['| cond | photons | CRLB SMLM / SF / SF(bg per frame) | SMLM | SF (1 bg) | SF (bg per frame) | NN p1 (pred) | v2 (pred) | v2 RMSD / CRLB SF | v2 pred / RMSD | recall v2 |',
+         '|---|---|---|---|---|---|---|---|---|---|---|']
+    for cond in R['cond']:
+        for b in sorted(R['cond'][cond], key=int):
+            q = R['cond'][cond][b]; r = lambda k: nm(q[k]['rmsd_trim2'][0]); pr = lambda k: nm(q[k]['pred_mean'][0])
+            cr = nm(q['crlb_sf'][0] if cond == 'const1' else q['crlb_sf_pfbg'][0])
+            L.append(f"| {cond} | {q['photons']:.0f} | {nm(q['crlb_smlm'][0]):.2f} / {nm(q['crlb_sf'][0]):.2f} / {nm(q['crlb_sf_pfbg'][0]):.2f} | {r('smlm'):.2f} | {r('sf'):.2f} | "
+                     f"{r('sf_pfbg'):.2f} | {r('nn_p1'):.2f} ({pr('nn_p1'):.2f}) | {r('v2_p2'):.2f} ({pr('v2_p2'):.2f}) | {r('v2_p2') / cr:.2f} | {pr('v2_p2') / r('v2_p2'):.2f} | {q['v2_p2']['recall']:.3f} |")
+    open(fn, 'w').write('\n'.join(L) + '\n'); print(fn)
 
 
 if __name__ == '__main__':

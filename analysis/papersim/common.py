@@ -83,10 +83,12 @@ def heights_v2(n, rng, calib=PSF_CALIB_V2):
     return np.clip(z, lo, hi)
 
 
-def camera_v2():
-    """(gain, offset_adu [40,40], readnoise_e [40,40]) of the v2-PSF movies"""
+def camera_v2(H=40, W=40):
+    """(gain, offset_adu [H,W], readnoise_e [H,W]) of the v2-PSF movies: the crop with top-left CAM_V2_CROP (40 x 40 for the density
+    movies, 50 x 50 for the moving movie moving_exp_v2psf)"""
     m = np.load(CAM_V2); r, c = CAM_V2_CROP
-    return float(m['gain']), m['offset_adu'][r:r + 40, c:c + 40].astype(np.float32), m['readnoise_e'][r:r + 40, c:c + 40].astype(np.float32)
+    assert r + H <= m['offset_adu'].shape[0] and c + W <= m['offset_adu'].shape[1]
+    return float(m['gain']), m['offset_adu'][r:r + H, c:c + W].astype(np.float32), m['readnoise_e'][r:r + H, c:c + W].astype(np.float32)
 
 
 def z_um():
@@ -211,12 +213,11 @@ def write_sim_calib(d, H, W, P, psf='vectorial'):
 
 def _write_sim_calib_v2(d, H, W, P):
     """calib_sim.json of a v2-PSF movie: the v2 calibration (PSF, emitter-height keys) with the movie's camera (camera_v2 crop)"""
-    assert (H, W) == (40, 40)
     c = json.load(open(PSF_CALIB_V2))
-    g, off, rn = camera_v2()
+    g, off, rn = camera_v2(H, W)
     np.savez(os.path.join(d, 'camera_sim.npz'), offset_adu=off, readnoise_e=rn, gain=np.float32(g))
     c['source'] = ('papersim simulated movie (v2 PSF set): PSF of ' + os.path.basename(PSF_CALIB_V2) + '; camera = the v2 1809/2 camera '
-                   'on the 40 x 40 crop at (row, col) %s of %s: gain %.4f e/ADU, offset map, per-pixel read noise' % (CAM_V2_CROP, os.path.basename(CAM_V2), g))
+                   'on the %d x %d crop at (row, col) %s of %s: gain %.4f e/ADU, offset map, per-pixel read noise' % (H, W, CAM_V2_CROP, os.path.basename(CAM_V2), g))
     c['camera'] = dict(gain_e_per_adu=g, offset_adu=float(np.median(off)), readnoise_e=float(np.median(rn)), maps='camera_sim.npz',
                        note='simulated: Poisson + per-pixel Gaussian read noise (readnoise_e map), offset map; = the maps that rendered the movie')
     c['pattern'] = dict(k_rad_per_px=P['k'].tolist(), pitch_nm=[PITCH_NM, PITCH_NM], depth=P['m'].tolist(), phase=P['phi'].tolist(),
@@ -235,7 +236,7 @@ class RendererV2:
         self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
         self.sim = Simulator(PSF_CALIB_V2, H=H, W=W, T=6, device=dev, psf_roi=41, psf_lut_z=41, psf_lut_sub=32, zmin=0.0, zmax=0.40)
         self.R = self.sim.R
-        g, off, rn = camera_v2()
+        g, off, rn = camera_v2(H, W)
         self.gain = g; self.off = torch.tensor(off, device=self.dev); self.rn = torch.tensor(rn, device=self.dev)
         L = self.sim.lut
         self.coll = L[:, L.shape[1] // 2, L.shape[2] // 2].sum((-2, -1)).double().cpu().numpy()    # [nz] collected fraction per LUT plane

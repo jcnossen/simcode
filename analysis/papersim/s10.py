@@ -26,9 +26,16 @@ CRLB from the ground truth (Poisson, zpsf PSF at z_fit, 16 x 16 ROI): SMLM (x, y
 (x, y, I, bg) and SIMFLUX with a bg per frame (x, y, I, bg_1..6; the bound that applies under the U(1, 6) condition).
 Per bin the stored numbers are: RMSD per axis (trim 2 %, trim 5 %, none), mean and RMS of the predicted sigma, mean CRLBs
 (the old script's .mean(0)), recall (networks), n.
+PSF v2 (2026-11-15, --psf v2; the default for a model trained on the in-situ PSF v2, e.g. the current m1809): scenes rendered with
+the in-situ PSF v2 of 1809/2 (common.RendererV2 LUT: 41 x 41 px, 10 nm planes 0-0.40 um) at ONE fixed height for every emitter =
+the calibration's emitter_z_median_um (0.116 um; the old scenes: 0.055 um = the old PSF's fit plane); the x axis is DETECTED
+photons (as the v2-PSF movies: intensity parameter = photons / collected(z), collected(0.116 um) = the rendered 41 x 41 px image
+sum); still pure Poisson in photons (no camera / read noise, as the preprint protocol); SMLM / SIMFLUX fit and the CRLBs use
+zpsf.load(PSF v2) at the same height (2D fits, z known); the networks' PSF template column = the scene PSF (as simcode.run,
+which builds it from the movie's calibration).
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/s10.py [--model m1809] [--bins all|i,j] [--cond const1,unif16]
-          [--n 1000] [--out out/papersim/s10]
-outputs: <out>/s10_<model>.json (+ per-emitter npz), s10_<model>.png"""
+          [--n 1000] [--out out/papersim/s10] [--psf vectorial|v2|gauss1.3] [--tag NAME]
+outputs: <out>/s10_<tag>.json (+ per-emitter npz), s10_<tag>.png; tag default <model> (+ _gauss1.3; + v2 for --psf v2)"""
 import os, sys, json, time, math, argparse, importlib.util
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -66,7 +73,10 @@ def scene(nfov, ph, cond, rng):
 
 
 def render(S, R, gen):
-    mu = R.expected(0, S['nfov'] * 6, S['fr'], np.repeat(S['x'], 6), np.repeat(S['y'], 6), S['phf'].ravel())
+    if isinstance(R, C.RendererV2):     # fixed height R.z for every emitter; phf is the intensity parameter
+        mu = R.expected(0, S['nfov'] * 6, S['fr'], np.repeat(S['x'], 6), np.repeat(S['y'], 6), np.full(S['n'] * 6, R.z), S['phf'].ravel())
+    else:
+        mu = R.expected(0, S['nfov'] * 6, S['fr'], np.repeat(S['x'], 6), np.repeat(S['y'], 6), S['phf'].ravel())
     mu = mu.reshape(S['nfov'], 6, FOV, FOV) + torch.as_tensor(S['bg'], device=dev, dtype=torch.float32)[..., None, None]
     return torch.poisson(mu, generator=gen)
 
@@ -133,7 +143,7 @@ def classical(S, R6, psf, rng):
 
 
 class Nets:
-    def __init__(self, ns):
+    def __init__(self, ns, psf_calib=None):
         from simcode.emitter import model as SCM
         from simcode.detector import model as DM
         from simcode.solve import solve as SV
@@ -141,7 +151,7 @@ class Nets:
         from simcode.simulate.simulator import Simulator
         from simcode import config
         self.SCM, self.SV, self.DU = SCM, SV, DU
-        sim = Simulator(C.resolve_calib(ns) if hasattr(C, 'resolve_calib') else ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
+        sim = Simulator(psf_calib or ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
         det, _ = DM.load(ns['detector'])
         self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col,
@@ -197,23 +207,34 @@ def main():
     ap.add_argument('--n', type=int, default=1000)
     ap.add_argument('--seed', type=int, default=10)
     ap.add_argument('--out', default=os.path.join(C.OUT, 's10'))
-    ap.add_argument('--psf', default='vectorial', help="'vectorial' (averaged 1809/2) or 'gauss1.3' (the preprint's PSF: rendering AND the SMLM / SIMFLUX fits)")
+    ap.add_argument('--psf', default='vectorial', help="'vectorial' (averaged 1809/2), 'v2' (in-situ PSF v2 of 1809/2 at the calibration's median "
+                    "height, detected photons; module doc) or 'gauss1.3' (the preprint's PSF: rendering AND the SMLM / SIMFLUX fits)")
+    ap.add_argument('--tag', default='', help='output name (default: see usage)')
     ap.add_argument('--nets', type=int, default=1, help='0: classical methods only (network rows nan)')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-s10')
     from simcode.config import model_set
     os.makedirs(a.out, exist_ok=True)
     ns = model_set(a.model)
-    gauss = a.psf.startswith('gauss')
-    psf = PP.zpsf.load(f'gauss:{a.psf[5:]}' if gauss else C.PSF_CALIB)
-    R = C.Renderer(FOV, FOV, psf=a.psf)
+    gauss = a.psf.startswith('gauss'); v2 = a.psf == 'v2'
+    coll = 1.0
+    if v2:
+        psf = PP.zpsf.load(C.PSF_CALIB_V2)                  # fit plane z_fit = the calib's emitter_z_median_um
+        R = C.RendererV2(FOV, FOV); R.z = float(psf.z_fit)
+        coll = float(R.collected(R.z))                      # detected photons -> intensity parameter
+        ns = dict(ns, psf_calib=C.PSF_CALIB_V2)
+    else:
+        psf = PP.zpsf.load(f'gauss:{a.psf[5:]}' if gauss else C.PSF_CALIB)
+        R = C.Renderer(FOV, FOV, psf=a.psf)
     if gauss: ns = dict(ns, psf_calib=C.GAUSS_CALIB)        # the head's PSF template = the movie's Gaussian (calib key psf_gauss_sigma_um)
     nets = Nets(ns) if a.nets else None
-    tag = a.model + ('_' + a.psf if gauss else '')
+    tag = a.tag or (a.model + ('_' + a.psf if gauss else '') + ('v2' if v2 else ''))
     bins = range(len(PHOTONS)) if a.bins == 'all' else [int(v) for v in a.bins.split(',')]
     nfov = int(math.ceil(a.n / (NC * NC)))
     res = dict(protocol=dict(photons=PHOTONS.tolist(), n_per_bin=nfov * NC * NC, trim_keep=TRIM_KEEP, roi=CELL, edge=EDGE, fov=FOV,
-                             pitch_nm=C.PITCH_NM, depth=C.DEPTH, psf=a.psf if gauss else C.PSF_CALIB, z_um=R.z, model=a.model, nets=ns, units='px'), cond={})
+                             pitch_nm=C.PITCH_NM, depth=C.DEPTH, psf=a.psf if gauss else (C.PSF_CALIB_V2 if v2 else C.PSF_CALIB), z_um=R.z, model=a.model, nets=ns, units='px',
+                             photons_are=('detected (intensity parameter = photons / %.4f, the 41 x 41 px PSF image sum at z)' % coll) if v2 else 'intensity parameter',
+                             collected_at_z=coll), cond={})
     fn = os.path.join(a.out, f's10_{tag}.json')
     if os.path.exists(fn):
         old = json.load(open(fn)); res['cond'] = old.get('cond', {})
@@ -223,7 +244,7 @@ def main():
             ph = float(PHOTONS[bi]); t0 = time.time()
             rng = np.random.default_rng([a.seed, bi, 0 if cond == 'const1' else 1])
             gen = torch.Generator(device=dev); gen.manual_seed(a.seed * 1000 + bi * 10 + (0 if cond == 'const1' else 1))
-            S = scene(nfov, ph, cond, rng)
+            S = scene(nfov, ph / coll, cond, rng)
             frames = render(S, R, gen)
             cl = classical(S, rois(frames, S), psf, rng)
             patt = torch.as_tensor(S['patt'], device=dev, dtype=torch.float32)
@@ -233,7 +254,7 @@ def main():
             else:
                 r1 = r2 = None
             gxy = np.c_[S['x'], S['y']]
-            out = dict(photons=ph, n=S['n'], crlb_smlm=np.mean(cl['crlb_smlm'], 0).tolist(), crlb_sf=np.mean(cl['crlb_sf'], 0).tolist(),
+            out = dict(photons=ph, intensity_param=ph / coll, n=S['n'], crlb_smlm=np.mean(cl['crlb_smlm'], 0).tolist(), crlb_sf=np.mean(cl['crlb_sf'], 0).tolist(),
                        crlb_sf_pfbg=np.mean(cl['crlb_sf_pfbg'], 0).tolist(), bg_mean=float(S['bg'].mean()))
             out['smlm'] = summarize(cl['smlm'], cl['smlm_sig']); out['sf'] = summarize(cl['sf'], cl['sf_sig'])
             out['sf_pfbg'] = summarize(cl['sf_pfbg'], cl['sf_pfbg_sig'])
