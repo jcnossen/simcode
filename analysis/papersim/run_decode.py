@@ -24,6 +24,7 @@ def main():
     ap.add_argument('--out', default=None)
     ap.add_argument('--maxframes', type=int, default=None)
     ap.add_argument('--starts', default='0,3')
+    ap.add_argument('--model_file', default=None, help='weights (default <model dir>/model_final.pt), e.g. a frozen snapshot')
     a = ap.parse_args()
     from simcode.util.proctitle import auto; auto('psim-decode')
     md = os.path.abspath(a.movie_dir)
@@ -32,7 +33,7 @@ def main():
     mdir = f'{D.SPD}/lutpsf/{a.name}'
     pj = json.load(open(f'{mdir}/psf.json'))
     DP.setup_psf(pj['psf'], pj['halo'], pj.get('zmax_um', DP.ZMAX))
-    mf = f'{mdir}/model_final.pt'
+    mf = a.model_file or f'{mdir}/model_final.pt'
     inst = D.load_trained(a.name, pj.get('variant_name', 'sum6p'), model_file=mf if os.path.exists(mf) else None)
     tif = os.path.join(md, 'movie.tif')
     cam = np.load(os.path.join(md, 'camera_sim.npz'))
@@ -58,7 +59,7 @@ def main():
     torch.cuda.synchronize()
     R = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
     T = dict(frame_label=DP.D.FRAME_LABEL, infer_s=time.time() - t0, model=a.name, psf=pj['desc'], movie=md, nframes=nf, starts=a.starts, gain=gain,
-             offset='camera_sim.npz (flat %.1f ADU)' % float(off.mean()), train_variant=pj.get('variant'))
+             offset='camera_sim.npz (flat %.1f ADU)' % float(off.mean()), train_variant=pj.get('variant'), model_file=mf)
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     np.savez_compressed(out, **R, info=json.dumps(T))
     print(md, a.name, 'n', len(R['frame']), 'infer s', round(T['infer_s'], 1), '->', out, flush=True)

@@ -108,7 +108,7 @@ def infer(a):
     mdir = f'{D.SPD}/lutpsf/{a.name}'
     pj = json.load(open(f'{mdir}/psf.json'))
     setup_psf(pj['psf'], pj['halo'], pj.get('zmax_um', ZMAX))
-    mf = f'{mdir}/model_final.pt'
+    mf = a.model_file or f'{mdir}/model_final.pt'
     inst = D.load_trained(a.name, pj.get('variant_name', 'sum6p'), model_file=mf if os.path.exists(mf) else None)
     rel, camf = DATASETS[a.dataset]
     if a.camera == 'v2': camf = camf.replace('.npz', '_v2.npz')     # camera v2 (gain 0.4256 + v2 offset map): the v3 models' units
@@ -136,7 +136,7 @@ def infer(a):
     torch.cuda.synchronize()
     R = {k: np.concatenate([p[k] for p in parts]) for k in parts[0]}
     T = dict(frame_label=D.FRAME_LABEL, infer_s=time.time() - t0, model=a.name, psf=pj['desc'], dataset=a.dataset, nframes=nf, starts=a.starts, gain=gain,
-             offset='camera map ' + camf)
+             offset='camera map ' + camf, model_file=mf)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     np.savez_compressed(a.out, **R, info=json.dumps(T))
     print(a.dataset, a.name, 'n', len(R['frame']), 'infer s', round(T['infer_s'], 1), '->', a.out, flush=True)
@@ -151,6 +151,7 @@ if __name__ == '__main__':
     ap.add_argument('--pseudo', type=int, default=8192); ap.add_argument('--halo', type=float, default=0.0)
     ap.add_argument('--zmax_um', type=float, default=ZMAX); ap.add_argument('--z_nm', default='10,150')
     ap.add_argument('--e_per_adu', type=float, default=None)
+    ap.add_argument('--model_file', default=None, help='infer: weights (default <model dir>/model_final.pt)')
     ap.add_argument('--camera', default='old', choices=['old', 'v2'], help="infer: 'v2' = models/insitu/camera_maps_<ds>_v2.npz (models trained in camera-v2 units: dec_m1809v3, dec_m25v3)")
     ap.add_argument('--variant', default='sum6p'); ap.add_argument('--vover', default=None); ap.add_argument('--out'); ap.add_argument('--maxframes', type=int, default=None); ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
