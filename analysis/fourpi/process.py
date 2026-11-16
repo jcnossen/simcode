@@ -5,13 +5,13 @@ file), detection, astigmatic Gaussian MLE (x, y, N, bg, sx, sy) with CRLBs, plus
   fmean   [F,4]               per-frame mean signal of each channel over the illuminated area (e/px)
 Read noise variance in the 6-frame 4-channel sum: 24 x rn^2 (rn 1.14 e); the bilinear warp of channels 1-3 lowers it
 by a position-dependent factor (ignored: v = 24 x 1.3 e^2 is used as the noise floor).
-usage: python process.py <out_dir> <nworkers> CELL:fi[:nframes] ...  (one sequential reader process + workers)
+usage: python process.py <out_dir> <nworkers> CELL:fi[:nframes] ... --work <4Pi work folder> --data <raw 4Pi movie folder>
+       (one sequential reader process + workers)
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import os, sys, time
+import os, sys, time, argparse
 import numpy as np
 import torch
 from scipy import ndimage as ndi
@@ -21,10 +21,10 @@ from register import PolyMap
 from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
-from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN   # 4Pi camera gain (the same for MT and NPC)
 RN2 = 1.3
 PS, PC = 15, 11
-from simcode.setups.fourpi import acquisition; XLIM = tuple(acquisition('MT')['fourpi']['xlim'])   # illuminated columns of a 4Pi channel crop
+from simcode.setups.fourpi import DEFAULTS; XLIM = tuple(DEFAULTS['xlim'])   # illuminated columns of a 4Pi channel crop
 CHUNK = 600
 
 
@@ -63,12 +63,12 @@ def detect_chunk(E, a0, warp, pm):
     return out
 
 
-def _reader(jobs, q, nworkers):
+def _reader(jobs, q, nworkers, P4, data):
     cams = {}
     for cell, fi, n in jobs:
         if cell not in cams:
             cams[cell] = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
-        fn = [f for f in movie_files(cell) if file_index(f) == fi][0]
+        fn = [f for f in movie_files(cell, P4, data) if file_index(f) == fi][0]
         d = Dcimg(fn); n = n or d.nframes
         for a0 in range(0, n, CHUNK):
             E = ((crops(d.raw(a0, CHUNK)) - cams[cell]) * GAIN).astype(np.float32)
@@ -76,7 +76,7 @@ def _reader(jobs, q, nworkers):
     for _ in range(nworkers): q.put(None)
 
 
-def _worker(q, r):
+def _worker(q, r, P4):
     torch.set_num_threads(1)
     warps = {}
     while True:
@@ -110,15 +110,20 @@ def finish(cell, fi, n, parts, out_dir):
 
 if __name__ == '__main__':
     import multiprocessing as mp
-    # usage: python process.py <out_dir> <nworkers> CELL:fi[:nframes] ...
-    out_dir, nw = sys.argv[1], int(sys.argv[2]); os.makedirs(out_dir, exist_ok=True)
+    # usage: python process.py <out_dir> <nworkers> CELL:fi[:nframes] ... --work <4Pi work folder> --data <raw 4Pi movie folder>
+    ap = argparse.ArgumentParser()
+    ap.add_argument('out_dir'); ap.add_argument('nworkers', type=int); ap.add_argument('jobs', nargs='+', help='CELL:fi[:nframes]')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+    A = ap.parse_args()
+    out_dir, nw = A.out_dir, A.nworkers; os.makedirs(out_dir, exist_ok=True)
     jobs = []
-    for s in sys.argv[3:]:
+    for s in A.jobs:
         p = s.split(':'); jobs.append((p[0], int(p[1]), int(p[2]) if len(p) > 2 else None))
     torch.set_num_threads(4)
     q, r = mp.Queue(maxsize=3), mp.Queue()
-    rd = mp.Process(target=_reader, args=(jobs, q, nw)); rd.start()
-    ws = [mp.Process(target=_worker, args=(q, r)) for _ in range(nw)]
+    rd = mp.Process(target=_reader, args=(jobs, q, nw, A.work, A.data)); rd.start()
+    ws = [mp.Process(target=_worker, args=(q, r, A.work)) for _ in range(nw)]
     for w in ws: w.start()
     got = {}; t = time.time(); done = set()
     while len(done) < len(jobs):

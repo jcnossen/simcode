@@ -1,11 +1,10 @@
 """Summed-channel PSF: bead z-stack fit -> in-situ fit on bright isolated 6-frame 4-channel sums -> held-out deviance.
-usage: python run_psf.py <cell> <tag> [--px 0.128 --NA 1.35 --lam 0.60 --nmed 1.406 --two_arm 0 --ntrain 3000 --nheld 2000]
-Outputs out/4pi/smlm/psf/<cell>_<tag>.json (+ _knots.npz with --knots 1).
+usage: python run_psf.py <cell> <tag> --work <4Pi work folder> [--px 0.128 --NA 1.35 --lam 0.60 --nmed 1.406 --two_arm 0 --ntrain 3000 --nheld 2000]
+Outputs <work>/smlm/psf/<cell>_<tag>.json (+ _knots.npz with --knots 1).
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 import os, sys, json, argparse, time, glob
 import numpy as np
 import torch
@@ -14,6 +13,7 @@ from psffit import SumPSF, fit, z_grid_init, summary, render_knots, nll, varpro_
 
 ap = argparse.ArgumentParser()
 ap.add_argument('cell'); ap.add_argument('tag')
+ap.add_argument('--work', required=True, help='4Pi work folder')
 ap.add_argument('--px', type=float, default=0.128); ap.add_argument('--NA', type=float, default=1.35)
 ap.add_argument('--lam', type=float, default=0.60); ap.add_argument('--nmed', type=float, default=1.406)
 ap.add_argument('--nimm', type=float, default=1.406); ap.add_argument('--depth', type=float, default=0.0)
@@ -21,7 +21,7 @@ ap.add_argument('--two_arm', type=int, default=0)
 ap.add_argument('--ntrain', type=int, default=3000); ap.add_argument('--nheld', type=int, default=2000)
 ap.add_argument('--iters', type=int, default=300); ap.add_argument('--knots', type=int, default=0)
 ap.add_argument('--init', default=''); ap.add_argument('--threads', type=int, default=4)
-a = ap.parse_args()
+a = ap.parse_args(); P4 = a.work
 torch.set_num_threads(a.threads); torch.manual_seed(0)
 OUT = f'{P4}/smlm/psf'; os.makedirs(OUT, exist_ok=True)
 t0 = time.time()

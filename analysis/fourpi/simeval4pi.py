@@ -10,7 +10,7 @@ Classical on the same detections: (a) summed SMLM: MLE of the registered 4-chann
 of the 4Pi PSF (x, y, z, N, bg); (b) published-style 4Pi z: r = 3 px aperture photometry per channel (frames summed,
 at the SMLM position mapped into each channel), z = least squares of the channel fractions against the model curve
 within +-Lambda/2 of the SMLM z, given the TRUE 4Pi phase field (an advantage the real method does not have).
-Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simeval4pi.py --tag d1 --pattern iter
+Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simeval4pi.py --work <4Pi work folder> --tag d1 --pattern iter
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
@@ -18,7 +18,6 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
 from simcode.fourpi.spline_table import LUT4Pi
@@ -218,7 +217,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--tag', default='d1'); p.add_argument('--model', default='v2'); p.add_argument('--pattern', default='iter')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--chi2_max', type=float, default=4.0); p.add_argument('--sxy_max', type=float, default=0.12)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-sim')
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     meta = json.load(open(f'{d}/meta.json'))

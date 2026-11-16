@@ -4,7 +4,7 @@ thresholds, unwarped 15 x 15 channel patches at the mapped positions, head4pi), 
 the same solve code runs on it.
 The sensor layout [T, H, 4 W] is cropped and channels 2/3 un-mirrored as in dc.crops; offset 100 ADU, gain 0.23.
 The registration map is the simulator's (the real pipeline uses the in-situ map in the same way).
-Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simfront4pi.py --tag d1 --model v2
+Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simfront4pi.py --work <4Pi work folder> --tag d1 --model v2
 """
 import argparse, json, os, sys, time
 import numpy as np, torch
@@ -12,13 +12,12 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.channels.front import blur
 from simmovie4pi import reg_map, GAIN, OFF
 from simcode.emitter.fourpi import FourPiPrior
 from simcode.fourpi.spline_table import LUT4Pi
 
-from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
+from simcode.setups.fourpi import DEFAULTS; P = DEFAULTS['patch']   # 4Pi candidate patch (px)
 def detect(E, grid, border, noise='mad', k=8.0, nms=7, s1=1.5):
     nW = E.shape[0] // 6; H, W = E.shape[-2:]
     S6 = E[:nW * 6].reshape(nW, 6, 4, H, W).sum(1)
@@ -47,7 +46,8 @@ def main():
     p.add_argument('--p_min', type=float, default=0.3)
     p.add_argument('--save_img', type=int, default=0, help='1: keep the candidate patches [n,6,4,15,15] (e, float16) in the front file (small simulated movies only; for the linear read-out, simlin4pi.py)')
     p.add_argument('--noise', default='low'); p.add_argument('--k', type=float, default=8.0); p.add_argument('--out', default=''); p.add_argument('--nms', type=int, default=7); p.add_argument('--s1', type=float, default=1.5)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-sim')
     d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
@@ -59,7 +59,7 @@ def main():
         det, _ = dload(a.det)
     dev = 'cuda'
     from simcode.emitter.fourpi import load as load_head     # all head architectures (v2..v8)
-    net, ck = load_head(a.model)
+    net, ck = load_head(a.model, work=P4)
     yy, xx = np.mgrid[0:H, 0:W].astype(np.float64)
     grid = [None]; maps = {}
     for c in (1, 2, 3):

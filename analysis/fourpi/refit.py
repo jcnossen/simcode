@@ -6,13 +6,12 @@ PSF MLE: theta = (x, y, z, N, bg) on the 15 x 15 registered 6-frame 4-channel su
 Amplitudes: per (frame t, channel c): data = the unwarped 11 x 11 channel image, model A_tc g_c + b_tc where g_c is the
 summed PSF at the fitted (x, y, z) mapped into channel c's pixel grid (PSF normalised to the full plane); weighted
 linear LSQ (weights 1 / (mu + rn^2), 3 reweighting passes, A unconstrained), errors from the 2 x 2 Fisher matrix.
-usage: python refit.py <cell> <file_index> <psf_knots.npz>
+usage: python refit.py <cell> <file_index> <psf_knots.npz> --work <4Pi work folder>
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import os, sys, time
+import os, sys, time, argparse
 import numpy as np
 import torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -21,7 +20,6 @@ from zpsf import knot_spline
 from mle import PSFModel, lm_fit, loglik
 from register import PolyMap
 
-P1 = f'{P4}/smlm/p1'
 RN2 = 1.3
 
 
@@ -121,9 +119,11 @@ def link_on(w, x, y, r=1.0):
     return on
 
 
-def run(cell, fi, knots, out=None):
+def run(cell, fi, knots, P4, out=None):
     """PSF refit of detections with Gaussian N > 600 and the Gaussian centre within 2 px of the ROI centre; amplitude fits
-    for the diagnostic subset: refit N > 800, linked on in windows w-1 and w+1, nearest other detection >= 5 px."""
+    for the diagnostic subset: refit N > 800, linked on in windows w-1 and w+1, nearest other detection >= 5 px.
+    P4: the 4Pi work folder."""
+    P1 = f'{P4}/smlm/p1'
     t0 = time.time()
     D = np.load(f'{P1}/p1_{cell}_{fi:03d}.npz')
     g = D['gfit']
@@ -147,4 +147,8 @@ def run(cell, fi, knots, out=None):
 
 if __name__ == '__main__':
     torch.set_num_threads(int(os.environ.get('NT', '2')))
-    run(sys.argv[1], int(sys.argv[2]), sys.argv[3])
+    ap = argparse.ArgumentParser()
+    ap.add_argument('cell'); ap.add_argument('file_index', type=int); ap.add_argument('knots')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    A = ap.parse_args()
+    run(A.cell, A.file_index, A.knots, A.work)

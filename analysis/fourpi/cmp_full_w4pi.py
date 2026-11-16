@@ -1,9 +1,9 @@
 """Whole-movie comparison of the learned-window network table (post_w4pi.py) with the classical 4Pi-SIMFLUX table, using
 the classical worker's comparison code (analysis/fourpi_classical/fig_cl.py; imported read-only, its output directory
-redirected to out/4pi/net/cmp_<head>/ so nothing of the classical worker is overwritten): whole-field numbers (FRC, DAFL
-on the same emitters, offsets), NPC averaged pore, and the individual pore sites of out/4pi/classical/sites/sites.json
+redirected to <work>/net/cmp_<head>/ so nothing of the classical worker is overwritten): whole-field numbers (FRC, DAFL
+on the same emitters, offsets), NPC averaged pore, and the individual pore sites of <work>/classical/sites/sites.json
 rendered for the network and the classical pixel MLE with the same layout as npc_site.py.
-Usage: python analysis/fourpi/cmp_full_w4pi.py --cell NPC --head v10 [--files 2 3 10]
+Usage: python analysis/fourpi/cmp_full_w4pi.py --work <4Pi work folder> --cell NPC --head v10 [--files 2 3 10]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -12,7 +12,6 @@ import matplotlib.pyplot as plt
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
-from simcode.config import root; P4 = root('fourpi')
 import fig_cl as FC
 
 
@@ -68,7 +67,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cell', default='NPC'); ap.add_argument('--head', default='v10'); ap.add_argument('--files', type=int, nargs='*')
     ap.add_argument('--cltag', default='_wv'); ap.add_argument('--sel', type=int, default=0, help="1: network rows = the 'sel' column (>= 1000 e, |z| <= 0.3 um) instead of 'good'")
-    a = ap.parse_args()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    a = ap.parse_args(); P4 = a.work
     CL = f'{P4}/classical'
     out = f'{P4}/net/cmp_{a.head}'; os.makedirs(f'{out}/fig', exist_ok=True); os.makedirs(f'{out}/real', exist_ok=True)
     FC.OUT = out

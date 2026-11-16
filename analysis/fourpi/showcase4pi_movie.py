@@ -9,15 +9,14 @@ per 2 nm of axis, random angle. Heights: crossings at dz 270 / 150 / 100 nm, one
 one at a small angle to it 100 nm higher (long x-y overlap, separated only in z), one descending. Axis |z| <= 0.25 um,
 labels |z| <= 0.275 um: inside the range where the heads were trained (+-0.45 um) and the CRLB is flat (|z| < 0.3 um).
 Rendering is chunked in time (GPU memory independent of the movie length).
-Output: out/4pi/simmovie/<tag>/ like simmovie4pi.py (+ gt_axis.npz: dense axis samples x, y px, z um, tangent, filament).
-Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_movie.py --tag sc_d1 --dens 1.0 --frames 6000
+Output: <work>/simmovie/<tag>/ like simmovie4pi.py (+ gt_axis.npz: dense axis samples x, y px, z um, tangent, filament).
+Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_movie.py --work <4Pi work folder> --tag sc_d1 --dens 1.0 --frames 6000
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
 from simcode.fourpi.spline_table import LUT4Pi
@@ -77,7 +76,8 @@ def main():
     p.add_argument('--W', type=int, default=60); p.add_argument('--ton', type=float, default=10.0)
     p.add_argument('--r', type=float, default=0.025, help='label radius um (0.025 antibody, 0.0125 bare tube)')
     p.add_argument('--seed', type=int, default=0); p.add_argument('--fchunk', type=int, default=1500)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-scmovie')
     out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     if os.path.exists(f'{out}/meta.json'):

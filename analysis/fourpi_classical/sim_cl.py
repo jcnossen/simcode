@@ -2,14 +2,14 @@
 network (the front file of simfront4pi.py: w, cx, cy), patches cut from the movie exactly as simfront4pi does.
 Pattern and 4Pi phase field are estimated from the data (no truth used), then evaluated against GT with
 analysis/fourpi/simeval4pi.py's matching / CRLB. An oracle-Phi0 row isolates the phase-field error.
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/sim_cl.py --dir out/4pi/simmovie/d03 [--tile 6 --tblk 25]
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/sim_cl.py --work <4Pi work folder> --dir <work>/simmovie/d03 [--tile 6 --tblk 25]
+(--dir default <work>/simmovie/d03, --out default <work>/classical/sim/<tag>_<field>)
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.fourpi.spline_table import LUT4Pi
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
@@ -17,7 +17,7 @@ from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
+from simcode.setups.fourpi import DEFAULTS; P = DEFAULTS['patch']   # 4Pi candidate patch (px)
 def patches(d, meta, F, dev):
     H, W = meta['H'], meta['W']; h = P // 2
     raw = np.load(f'{d}/movie.npy', mmap_mode='r')
@@ -44,11 +44,13 @@ def patches(d, meta, F, dev):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default=f'{P4}/simmovie/d03'); ap.add_argument('--model', default='v2')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--dir', default=None, help='simulated movie folder (default <work>/simmovie/d03)'); ap.add_argument('--model', default='v2')
     ap.add_argument('--tile', type=float, default=6.0); ap.add_argument('--tblk', type=int, default=25)
     ap.add_argument('--chunk', type=int, default=1024); ap.add_argument('--out', default='')
     ap.add_argument('--front', default=''); ap.add_argument('--field', default='poly'); ap.add_argument('--order', type=int, default=3); ap.add_argument('--scale', type=float, default=1.0)
     a = ap.parse_args()
+    P4 = a.work; a.dir = a.dir or f'{P4}/simmovie/d03'
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; d = a.dir; tag = os.path.basename(d.rstrip('/'))
     out = a.out or f'{P4}/classical/sim/{tag}_{a.field}'; os.makedirs(out, exist_ok=True)

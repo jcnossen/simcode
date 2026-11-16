@@ -10,7 +10,8 @@ focus, microtubule id); its make_sites() is replaced by these labels (webSMLM de
 z um, unit tangent, microtubule id), as showcase4pi_eval.py expects.
 Default field: seed 1, start view + (0, 3.5) um = flat lamella below the nucleus (labels 0-300 nm above the coverslip),
 focus 150 nm above the coverslip -> labels within about -0.155..+0.15 um of the focus.
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_sim/sweep4pi_movie.py --tag mtc_d03 --dens 0.3 --frames 30000
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_sim/sweep4pi_movie.py --work <4Pi work folder> --tag mtc_d03 --dens 0.3 --frames 30000
+       (--work and the movie options go through to showcase4pi_movie.py)
        (--dry 1: print the structure statistics only)
 """
 import argparse, os, sys

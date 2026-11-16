@@ -1,11 +1,10 @@
-"""Tables of the 4Pi-SIMCODE density sweep (markdown) from $P4/sweep4pi/<tag>/eval.json -> out/fourpi_sim/sweep/tables.md
-Usage: python analysis/fourpi_sim/sweep4pi_table.py
+"""Tables of the 4Pi-SIMCODE density sweep (markdown) from <work>/sweep4pi/<tag>/eval.json -> out/fourpi_sim/sweep/tables.md
+Usage: python analysis/fourpi_sim/sweep4pi_table.py --work <4Pi work folder>
 """
 import json, os, sys
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep')
 XY_T, XZ_T, FR_MAX, GH_MAX, CV_MAX = 25, 35, 0.02, 0.07, 0.2
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
@@ -30,6 +29,9 @@ def ft(d, k):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('--work', required=True, help='4Pi work folder')
+    P4 = ap.parse_args().work
     Es = {t: json.load(open(f'{P4}/sweep4pi/{t}/eval.json')) for t in TAGS if os.path.exists(f'{P4}/sweep4pi/{t}/eval.json')}
     L = ['## Movies', '', '| movie | ON /µm²/frame (FOV) | ON /µm²/frame (eval. region) | other ON emitters in the 15 px patch (same frame) | frames | GT units ≥ 300 e | per µm tube | GT dip in-plane / axial |', '|---|---|---|---|---|---|---|---|']
     for t, E in Es.items():

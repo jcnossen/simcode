@@ -14,9 +14,9 @@
                     when it is matched laterally (simeval4pi.match, 64 nm, per window) to a GT emitter but placed one 4Pi
                     fringe off in z (|dz| > 100 nm). FP fraction = false positives / all kept localizations in the region.
 Methods: the figure's network selection (net_sig1 = sigma_xy < 5 nm, sigma_z < 12 nm, every density) and the classical published-style table (cl_pub).
-Input:  $P4/sweep4pi/<tag>/locs_<method>.npz (eval's selected region rows), $P4/simmovie/<tag>/gt_*.npz
-Output: $P4/sweep4pi/<tag>/ttf_fp.json
-usage: python analysis/fourpi_sim/sweep4pi_ttf_fp.py [--tags mtc_d01 ...]
+Input:  <work>/sweep4pi/<tag>/locs_<method>.npz (eval's selected region rows), <work>/simmovie/<tag>/gt_*.npz
+Output: <work>/sweep4pi/<tag>/ttf_fp.json
+usage: python analysis/fourpi_sim/sweep4pi_ttf_fp.py --work <4Pi work folder> [--tags mtc_d01 ...]
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -49,8 +49,9 @@ def runmin(r):
 
 
 def main():
-    p = argparse.ArgumentParser(); p.add_argument('--tags', nargs='*', default=list(BEST)); a = p.parse_args()
-    P4 = E.P4
+    p = argparse.ArgumentParser(); p.add_argument('--tags', nargs='*', default=list(BEST))
+    p.add_argument('--work', required=True, help='4Pi work folder'); a = p.parse_args()
+    P4 = a.work
     for tag in a.tags:
         t0 = time.time()
         d = f'{P4}/simmovie/{tag}'; out = f'{P4}/sweep4pi/{tag}'

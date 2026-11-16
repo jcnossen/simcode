@@ -1,9 +1,8 @@
 """Step 5, 4Pi diagnostics: bead channel calibration, per-emitter interference phase vs PSF-fit z, fringe period,
-phase-z precision, fringe assignment, per-pattern-angle phase difference. usage: python diag_4pi.py <cell>"""
+phase-z precision, fringe assignment, per-pattern-angle phase difference. usage: python diag_4pi.py <cell> --work <4Pi work folder>"""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 import os, sys, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -14,7 +13,6 @@ from pattern import wrap, cmean
 from diag_pattern import select
 from register import feats
 
-OUT = f'{P4}/smlm'
 
 
 def joint_model(Phi, z, x, y, t, Lams=np.arange(0.18, 0.361, 0.005), order=3, tblk=300, nmax=120000, seed=0):
@@ -45,7 +43,9 @@ def joint_model(Phi, z, x, y, t, Lams=np.arange(0.18, 0.361, 0.005), order=3, tb
                 map_ptp_deg=float(np.rad2deg(np.ptp(np.angle(F @ c))))), np.array(curve), res
 
 
-def run(cell):
+def run(cell, P4):
+    """P4: the 4Pi work folder"""
+    OUT = f'{P4}/smlm'
     zc = json.load(open(f'{OUT}/zcal/zcal_{cell}.json'))
     zst = np.array(zc['zstage']); good = np.array(zc['good'])
     res = dict(cell=cell)
@@ -55,7 +55,7 @@ def run(cell):
     print(cell, 'bead r3:', json.dumps(res['bead_r3']), '\n bead r1 V', res['bead_r1']['V'], 'r6 V', res['bead_r6']['V'], flush=True)
     phc = np.deg2rad([0, 270, 180, 90])
     bead_ph = np.array(res['bead_r3']['phc'])           # measured, relative to ch0
-    L = load_locs(cell)
+    L = load_locs(cell, P4)
     s = select(L, nmin=800)
     A = L['A'][s]; sA = L['sA'][s]
     At = A.sum(1); sAt = np.sqrt((sA ** 2).sum(1))       # [n,4] summed over 6 frames
@@ -147,4 +147,7 @@ def run(cell):
 
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('cell'); ap.add_argument('--work', required=True, help='4Pi work folder')
+    A = ap.parse_args()
+    run(A.cell, A.work)

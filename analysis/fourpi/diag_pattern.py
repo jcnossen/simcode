@@ -1,9 +1,8 @@
-"""Step 5 pattern diagnostics on the refit tables (p2_*.npz). usage: python diag_pattern.py <cell>
-Writes out/4pi/smlm/diag/pattern_<cell>.json and figures fig/pattern_<cell>_*.png."""
+"""Step 5 pattern diagnostics on the refit tables (p2_*.npz). usage: python diag_pattern.py <cell> --work <4Pi work folder>
+Writes <work>/smlm/diag/pattern_<cell>.json and figures fig/pattern_<cell>_*.png."""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 import os, sys, json
 import numpy as np
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
@@ -12,7 +11,6 @@ from render import load_locs
 from pattern import AnglePattern, wrap, cmean, emitter_phase, refine_k, slot_z
 from register import feats
 
-OUT = f'{P4}/smlm'
 K0 = (np.array([3.84, -0.026]), np.array([0.0, 3.852]))
 
 
@@ -36,9 +34,11 @@ def poly_phase_fit(d, X, order=2, nit=6):
     return wrap(d - ph), ph
 
 
-def run(cell):
+def run(cell, P4):
+    """P4: the 4Pi work folder"""
+    OUT = f'{P4}/smlm'
     os.makedirs(f'{OUT}/diag', exist_ok=True)
-    L = load_locs(cell)
+    L = load_locs(cell, P4)
     s = select(L)
     A = L['A'][s]; sA = L['sA'][s]                       # [n,6,4]
     I = A.sum(2); sI = np.sqrt((sA ** 2).sum(2))
@@ -174,4 +174,7 @@ def run(cell):
 
 
 if __name__ == '__main__':
-    run(sys.argv[1])
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('cell'); ap.add_argument('--work', required=True, help='4Pi work folder')
+    A = ap.parse_args()
+    run(A.cell, A.work)

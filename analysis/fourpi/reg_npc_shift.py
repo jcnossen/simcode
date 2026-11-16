@@ -1,18 +1,22 @@
 """NPC: bead polynomial + in-situ translation per channel (robust median of per-emitter residuals), from bright
-isolated emitters in frames 0-7200 of file 10 (per-channel independent Gaussian MLE, see register.insitu_positions)."""
+isolated emitters in frames 0-7200 of file 10 (per-channel independent Gaussian MLE, see register.insitu_positions).
+usage: python reg_npc_shift.py --work <4Pi work folder> --data <raw 4Pi movie folder>"""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import sys, os, json, numpy as np
+import sys, os, json, argparse, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from register import *
 from dc import movie_files, file_index
+ap = argparse.ArgumentParser()
+ap.add_argument('--work', required=True, help='4Pi work folder')
+ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+A = ap.parse_args(); P4 = A.work
 out = f'{P4}/smlm/reg'
 cell, fi = 'NPC', 10
 off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
 pm = PolyMap.load(f'{out}/reg_beads_{cell}.json')
-fn = [f for f in movie_files(cell) if file_index(f) == fi][0]
+fn = [f for f in movie_files(cell, P4, A.data) if file_index(f) == fi][0]
 S6 = load_s6(cell, fn, 0, 7200, off)
 P = insitu_positions(S6, pm, min_sum=500.0, iso=7)
 ok = np.isfinite(P).all((1, 2)) & (P[:, :, 5] < 0.15).all(1) & (P[:, :, 3] < 3.8).all(1) & (P[:, :, 4] < 3.8).all(1)

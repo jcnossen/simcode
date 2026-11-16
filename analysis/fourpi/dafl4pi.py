@@ -3,7 +3,7 @@
 the same file, and the ratio of that empirical precision to the reported sigma (calibration).
 Pairs: window w and w + 1, nearest neighbour within r_link px, both with sigma_xy < 0.15 px; only unambiguous pairs
 (no second candidate within 2 r_link). Bins by the network photon count.
-Usage: python analysis/fourpi/dafl4pi.py --cell MT --file 5 --model v2
+Usage: python analysis/fourpi/dafl4pi.py --work <4Pi work folder> --cell MT --file 5 --model v2
 """
 import argparse, json, os, sys
 import numpy as np
@@ -11,8 +11,7 @@ from scipy.spatial import cKDTree
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 def pairs(w, x, y, r=0.35):
     out_i, out_j = [], []
     order = np.argsort(w, kind='stable'); ws = w[order]
@@ -52,7 +51,8 @@ def analyse(name, w, x, y, sx, sy, N, z=None, sz=None, edges=(1000, 2000, 4000, 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--cell', default='MT'); p.add_argument('--file', type=int, default=5); p.add_argument('--model', default='v2')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     R = []
     D = np.load(f'{P4}/net/locs_{a.cell}_{a.file:03d}_{a.model}.npz')
     for mode, sel in (('net kin', D['on']), ('net free (lateral = prior)', ~D['on'])):

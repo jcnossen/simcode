@@ -10,8 +10,8 @@ checkpoints of the paper's 4Pi results (<4Pi work dir>/models/det4pi/final.pt, h
 head4pi_v3L.pt; read on CPU, layer sizes asserted). The small patch / window / read-out-vs-z images are rendered on the CPU
 from the 4Pi PSF state stored in the emitter-network checkpoint (the PSF of all 4Pi results).
 
-    CUDA_VISIBLE_DEVICES= python analysis/paper/fig_4pi_pipeline.py [--out /home/jc/simcode2/out/paper_figs_v2]
-        [--models4pi /home/jc/simcode2/out/4pi/models] [--models /home/jc/simcode2/models]
+    CUDA_VISIBLE_DEVICES= python analysis/paper/fig_4pi_pipeline.py --work <4Pi work folder> [--out simcode_out/paper_figs_v2]
+        [--models4pi <4Pi work folder>/models] [--models <repo>/models]
 
 -> <out>/si_4pi_pipeline.{pdf,svg,png} + si_4pi_pipeline_caption.txt
 """
@@ -698,8 +698,12 @@ Parameter counts (simcode.detector.model.n_params on the networks built from the
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default='/home/jc/simcode2/out/paper_figs_v2')
-    ap.add_argument('--models4pi', default='/home/jc/simcode2/out/4pi/models')
-    ap.add_argument('--models', default='/home/jc/simcode2/models')
+    sys.path.insert(0, REPO)
+    from simcode.config import MODELS
+    ap.add_argument('--out', default='simcode_out/paper_figs_v2')
+    ap.add_argument('--work', required=True, help='4Pi work folder (checkpoints in <work>/models)')
+    ap.add_argument('--models4pi', default=None, help='4Pi checkpoints (default <work>/models)')
+    ap.add_argument('--models', default=MODELS, help='SIMCODE models folder (default <repo>/models)')
     a = ap.parse_args()
+    a.models4pi = a.models4pi or os.path.join(a.work, 'models')
     print(build(a.out, a.models4pi, a.models))

@@ -1,15 +1,14 @@
-"""hd head experiment: per density x selection, head v10 (sweep eval.json, $P4/sweep4pi/<tag>/) vs the retrained heads
-($P4/models/head4pi_<name>/sweep/<tag>/eval.json, or $P4/models/head4pi_hdref/sweep/<tag>/ for existing reference heads).
+"""hd head experiment: per density x selection, head v10 (sweep eval.json, <work>/sweep4pi/<tag>/) vs the retrained heads
+(<work>/models/head4pi_<name>/sweep/<tag>/eval.json, or <work>/models/head4pi_hdref/sweep/<tag>/ for existing reference heads).
 Same metrics and faithfulness rule as sweep4pi_table.py (T_fid: x-y <= 25 nm AND x-z <= 35 nm, last crossing; faithful = wrong
 fringe <= 2 %, fixed-gate ghosts <= 7 %, coverage excess CV <= 0.2). -> out/fourpi_sim/hd_head/tables.md, best.json
-Usage: python analysis/fourpi_sim/hd_table.py hd1 hd0 [v11b]
+Usage: python analysis/fourpi_sim/hd_table.py hd1 hd0 [v11b] --work <4Pi work folder>
 """
-import json, os, sys
+import argparse, json, os, sys
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, HERE)
-from simcode.config import root; P4 = root('fourpi')
 from sweep4pi_table import XY_T, XZ_T, FR_MAX, GH_MAX, CV_MAX, TAGS, f, ft
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/hd_head')
 SELS = ['net_all', 'net_base', 'net_chi16', 'net_sig0', 'net_sig1', 'net_sig2', 'net_bound_base']
@@ -17,10 +16,10 @@ LAB = {'net_all': 'all', 'net_base': 'chi2 off', 'net_chi16': 'chi2 < 1.6', 'net
        'net_bound_base': 'TRUE pattern + field, chi2 off'}
 
 
-REF = {'v11b': 'hdref'}   # existing heads evaluated into $P4/models/head4pi_hdref/sweep
+REF = {'v11b': 'hdref'}   # existing heads evaluated into <work>/models/head4pi_hdref/sweep
 
 
-def load(head, t):
+def load(head, t, P4):
     if head != 'v10':
         p = f'{P4}/models/head4pi_{REF.get(head, head)}/sweep/{t}/eval.json'
         return json.load(open(p)) if os.path.exists(p) else None
@@ -37,7 +36,10 @@ def row(r):
 
 
 def main():
-    heads = ['v10'] + sys.argv[1:]
+    ap = argparse.ArgumentParser(); ap.add_argument('heads', nargs='*')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    A = ap.parse_args(); P4 = A.work
+    heads = ['v10'] + A.heads
     os.makedirs(OUT, exist_ok=True)
     hdr = ('| ON/µm²/frame | head | selection | recall | precision | GT-FRC x-y / x-z (nm) | frames to x-y 25 / x-z 35 | T_fid | wrong fringe (2-4k e) | '
            'fixed false positives | coverage CV (Poisson) / excess | lateral / axial robust (nm) | dip in-plane / axial | faithful |')
@@ -45,7 +47,7 @@ def main():
     best = {}; summ = {}
     for t in TAGS:
         for h in heads:
-            E = load(h, t)
+            E = load(h, t, P4)
             if E is None: continue
             for nm in SELS:
                 r = E['methods'].get(nm)
@@ -62,7 +64,7 @@ def main():
     for t in TAGS:
         cells = []
         for h in heads:
-            b = best.get((t, h)); cells.append('–' if load(h, t) is None else ('not faithful' if b is None else f'{LAB[b[0]]}: {b[1] / 1000:.1f}k ({b[1] * 5.575e-3:.0f} s)'))
+            b = best.get((t, h)); cells.append('–' if load(h, t, P4) is None else ('not faithful' if b is None else f'{LAB[b[0]]}: {b[1] / 1000:.1f}k ({b[1] * 5.575e-3:.0f} s)'))
         L.append(f'| {t} | ' + ' | '.join(cells) + ' |')
     open(f'{OUT}/tables.md', 'w').write('\n'.join(L) + '\n')
     json.dump(dict(best={f'{t}|{h}': b for (t, h), b in best.items()}, rows=summ), open(f'{OUT}/best.json', 'w'), indent=1, default=float)

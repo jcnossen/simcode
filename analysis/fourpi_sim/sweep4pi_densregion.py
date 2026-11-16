@@ -1,6 +1,6 @@
 """Densest-region emitter density of the real 4Pi-SIMFLUX MT movie, for comparison with the density sweep (si_4pi_sim).
 
-Real data: network v10 per-file tables out/4pi/net/locs_MT_<k>_v10.npz (local disk; no raw frames), base filters as the sweep's
+Real data: network v10 per-file tables <work>/net/locs_MT_<k>_v10.npz (local disk; no raw frames), base filters as the sweep's
 net_base (sigma_z < 25 nm, sigma_x, sigma_y < 0.12 px, N > 300). Per file (3000 six-frame windows):
   * base localizations per window, histogrammed on 2 px (256 nm) bins over the lit field (x 55..305 px, y 0..200 px);
   * sliding square windows (all positions on the 2 px grid, fully inside the field): 20 x 20 um (156 px) and the simulated
@@ -13,7 +13,7 @@ net_base (sigma_z < 25 nm, sigma_x, sigma_y < 0.12 px, N > 300). Per file (3000 
 The window positions: per file its own densest window, and one fixed window (densest on the mean map over all files) evaluated in
 every file (time trend / spread).
 Output: out/fourpi_sim/sweep/densregion.json
-Usage: python analysis/fourpi_sim/sweep4pi_densregion.py [--files 0 10 ... 99]
+Usage: python analysis/fourpi_sim/sweep4pi_densregion.py --work <4Pi work folder> [--files 0 10 ... 99]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -21,7 +21,6 @@ from scipy.ndimage import gaussian_filter, convolve
 from skimage.morphology import skeletonize
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 NM = 128.0
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep')
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
@@ -50,7 +49,8 @@ def box(a, n):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument('--files', type=int, nargs='*', default=list(range(0, 100, 10)) + [99]); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument('--files', type=int, nargs='*', default=list(range(0, 100, 10)) + [99])
+    ap.add_argument('--work', required=True, help='4Pi work folder'); a = ap.parse_args(); P4 = a.work
     RD = json.load(open(f'{OUT}/realdens.json')); kcal = RD['length_calibration']
     # sim: base locs per window per um^2 (region) vs ON per um^2 per frame (region)
     sim = []

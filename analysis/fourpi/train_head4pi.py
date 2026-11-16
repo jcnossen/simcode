@@ -1,22 +1,18 @@
 """Train the 4Pi head (simcode/fourpi/head4pi.py) on on-the-fly simulated candidate windows (simcode/fourpi/sim4pi.py,
 bead-fitted 4Pi PSF). Loss = (T, C) 2x2 Gaussian NLL per (frame, channel) + 3D prior NLL.
 
-Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/train_head4pi.py --tag v1 --steps 30000 [--batch 512]
-Output: out/4pi/models/head4pi_<tag>.pt, log out/4pi/models/head4pi_<tag>.log
+Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/train_head4pi.py --work <4Pi work folder> --tag v1 --steps 30000 [--batch 512]
+Output: <work>/models/head4pi_<tag>.pt, log <work>/models/head4pi_<tag>.log
 """
 import argparse, json, math, os, sys, time
 import torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save   # atomic, disk-guarded
 from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim
 from simcode.emitter.fourpi import FourPiPrior, nll_2x2, nll_prior
-
-OUT = f'{P4}/models'
-
 
 def main():
     p = argparse.ArgumentParser()
@@ -28,7 +24,8 @@ def main():
     p.add_argument('--init', default='', help='checkpoint to continue from (same architecture)')
     p.add_argument('--template', default='gauss', help="'lut': 4Pi PSF template read-out (v7)")
     p.add_argument('--eps_range', type=float, default=0.3, help='pattern phase range at the patch centre (rad); pi = arbitrary (v3)')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work; OUT = f'{P4}/models'
     from simcode.util.proctitle import set_title; set_title('4pi-train')     # recognizable name in nvidia-smi / ps
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)

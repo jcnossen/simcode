@@ -1,7 +1,7 @@
 """SI figure si_4pi_frc_vs_frames: how many frames the real 4Pi movies need (half-split FRC vs number of frames), next to the
 simulation's ground-truth FRC timeline (si_4pi_sim e). CPU only; reads the cached tables of si_4pi.py (cache_si_4pi/mt.npz,
 npc.npz: drift corrected, z drift removed, registered; '4Pi-SIMCODE' = the standard selection (good, N >= 1000, sigma cuts),
-'4Pi-SIMFLUX' = the published-style table) and, for the simulation, the sweep's region rows ($P4/sweep4pi/<tag>/locs_*.npz).
+'4Pi-SIMFLUX' = the published-style table) and, for the simulation, the sweep's region rows (<work>/sweep4pi/<tag>/locs_*.npz).
 
 Estimator (ONE for the real data, the simulation and the FRC values / timeline panels of si_4pi_npc and si_4pi_mt, which read
 their curves from this script's output): half-split FRC of the localizations of N frames, N = 1000 * 2^(k/4) and every T / 20 up to all T;
@@ -28,8 +28,7 @@ their curves from this script's output): half-split FRC of the localizations of 
   simulation      the same half-split FRC on the sweep's region rows (net_sig1 = the si_4pi_sim 4Pi-SIMCODE selection,
                   cl_pub = 4Pi-SIMFLUX), next to the GT-FRC timeline of ttf_fp.json.
 
-usage:  export SIMCODE_CONFIG=~/simcode2/simcode.json
-        python analysis/paper/si_4pi_frc.py compute     # ~20 min, 20 processes -> cache_si_4pi/frc_vs_frames.json
+usage:  python analysis/paper/si_4pi_frc.py compute --work <4Pi work folder>    # ~20 min, 20 processes -> cache_si_4pi/frc_vs_frames.json
         python analysis/paper/si_4pi_frc.py fig         # -> out/paper_figs_v2/si_4pi_frc_vs_frames.{pdf,svg,png}, _caption.txt, _values.json
 """
 import argparse, json, os, sys, time
@@ -38,8 +37,6 @@ import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p in (REPO, f'{REPO}/analysis/fourpi', f'{REPO}/analysis/fourpi_classical', f'{REPO}/analysis/fourpi_sim'):
     if p not in sys.path: sys.path.insert(0, p)
-from simcode.config import root
-P4 = root('fourpi')
 OUT = os.path.expanduser('~/simcode2/out/paper_figs_v2')
 CACHE = f'{OUT}/cache_si_4pi'
 RES = f'{CACHE}/frc_vs_frames.json'
@@ -194,7 +191,7 @@ def load_real():
     return regions, (Z, J, Zn)
 
 
-def load_sim():
+def load_sim(P4):
     out = {}
     for tag in SIMTAGS:
         r = {}
@@ -298,7 +295,8 @@ def structure(regions, raw):
 def compute(a):
     from multiprocessing import get_context
     regions, raw = load_real(); lg('real tables loaded: ' + ', '.join(f"{k} {len(R['net']['x']):,} / {len(R['cl']['x']):,}" for k, R in regions.items()))
-    regions.update(load_sim()); lg('sim rows loaded')
+    P4 = a.work
+    regions.update(load_sim(P4)); lg('sim rows loaded')
     _D.update(regions)
     jobs = []
     for key, R in regions.items():
@@ -341,7 +339,9 @@ def compute(a):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('cmd', choices=['compute', 'fig']); ap.add_argument('--procs', type=int, default=18)
+    ap.add_argument('--work', default=None, help='4Pi work folder (required for compute)')
     a = ap.parse_args()
+    if a.cmd == 'compute' and not a.work: ap.error('compute needs --work <4Pi work folder>')
     if a.cmd == 'compute':
         from simcode.util.proctitle import set_title; set_title('4pi_frc_frames'); compute(a)
     else:

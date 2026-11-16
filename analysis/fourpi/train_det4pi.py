@@ -6,8 +6,8 @@ pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss
 (simulate/targets.detector_targets, focal_w, gt_nn, simulate/targets.nn_weights); the GT position is the emitter position (not the image centroid,
 which sits ~0.25 px away for the 4Pi PSF), so candidates come out centred on the emitter.
 Init from pretrain_detector_pass1 (models/pretrain_detector_pass1.pt). Data come from `--workers` generator processes (the simulator is the bottleneck).
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --out out/4pi/models/det4pi --steps 20000
-Plain 4Pi (--acq <acquisition config of setup fourpi_plain>): the scene simulator of the config's training recipe
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --work <4Pi work folder> --out <4Pi work folder>/models/det4pi --steps 20000
+Plain 4Pi (--acq <acquisition config of setup fourpi_plain> --work <its work folder> --data <its data folder>): the scene simulator of the config's training recipe
 (FourPiPlainSetup.sim_kw: the acquisition's registration map, background, photons, density, z range; no pattern),
 T = fourpi.window frames per window, the PSF of fourpi.psf, init from pretrain_detector_pass1 with the input conv folded to T frames
 (detector.model.init_T); --out / --steps default to fourpi.detector's folder and fourpi_train.det_steps.
@@ -17,21 +17,20 @@ import torch
 import torch.multiprocessing as mp
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save   # atomic, disk-guarded
 
 
-def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None):
+def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None, work=None, data=None):
     import torch
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     if acq:     # plain 4Pi: the training recipe of the acquisition config
-        c = acquisition(acq)
+        c = acquisition(acq, work, data)
         init, smp = setup_of(c).sim_kw(c)
         rs = MultiChannelAcquisitionSim(fourpi_state(c['fourpi']['psf']), H=size, W=size, seed=seed, **init)
     else:
-        st = fourpi_state(psf, P4)
-        rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6); smp = dict(dens=dens)
+        st = fourpi_state(psf, work)
+        rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6, work=work); smp = dict(dens=dens)
     while True:
         S = rs.sample(B=B, ksum=ksums[int(torch.randint(len(ksums), (1,)))], **smp)
         g = S['gt']
@@ -40,11 +39,11 @@ def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None):
         q.put(o)
 
 
-def acquisition(acq):
-    """acq = 'config.py' or 'config.py:name' -> the resolved acquisition config"""
+def acquisition(acq, work, data):
+    """acq = 'config.py' or 'config.py:name' -> the resolved acquisition config (configs(work, data) of the config file)"""
     from simcode.pipeline import acquisition_config as AC
     f, _, name = acq.partition(':')
-    L = [c for c in AC.load_all(f) if not name or c['name'] == name]
+    L = [c for c in AC.load_all(f, dict(work=work, data=data)) if not name or c['name'] == name]
     if len(L) != 1: raise SystemExit(f'{acq}: {len(L)} acquisitions (give config.py:<name>)')
     return L[0]
 
@@ -69,10 +68,13 @@ def main():
     ap.add_argument('--dens', default='0.01,2.0'); ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--ckpt_every', type=int, default=5000)
     ap.add_argument('--ksum', default='1', help='comma list of K (summed windows: K x background, sqrt(K) read noise), one drawn per batch')
+    ap.add_argument('--work', required=True, help='4Pi work folder (PSF names, the 4Pi-SIMFLUX cells); with --acq: the config\'s work folder')
+    ap.add_argument('--data', default='', help='with --acq: the config\'s data folder')
     a = ap.parse_args()
     T = 6
     if a.acq:
-        c = acquisition(a.acq); T = c['fourpi']['window']
+        if not a.data: raise SystemExit('--acq needs --data')
+        c = acquisition(a.acq, a.work, a.data); T = c['fourpi']['window']
         a.out = a.out or os.path.dirname(c['fourpi']['detector']); a.steps = a.steps or c['fourpi_train']['det_steps']
         a.init = a.init if a.init != 'pretrain_detector_pass1.pt' else c['fourpi_train']['det_init']
     if not a.out: raise SystemExit('--out (or --acq) is required')
@@ -100,7 +102,7 @@ def main():
     print('params', n_params(net), flush=True)
     ctx = mp.get_context('spawn'); q = ctx.Queue(maxsize=6)
     dens = tuple(float(v) for v in a.dens.split(','))
-    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens, tuple(int(v) for v in a.ksum.split(',')), a.acq), daemon=True) for i in range(a.workers)]
+    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens, tuple(int(v) for v in a.ksum.split(',')), a.acq, a.work, a.data), daemon=True) for i in range(a.workers)]
     for p in ps: p.start()
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)

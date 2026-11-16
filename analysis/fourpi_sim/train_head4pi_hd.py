@@ -1,7 +1,7 @@
 """COPY of analysis/fourpi/train_head4pi_w.py for the high-density head experiment (hd, 2026-11-15); differences:
   --sim hd: the dense-scene neighbour generator of analysis/fourpi_sim/sim4pi_hd.py (density 0.08-2 ON /um^2 per sample,
   microtubule-like lines, crossings, close pairs with z offsets); --sim v10: the original FourPiPatchSim rule.
-  Outputs in $P4/models/head4pi_<tag>/ (checkpoint head4pi_<tag>.pt, log head4pi_<tag>.log); --log_every.
+  --work <4Pi work folder> (required). Outputs in <work>/models/head4pi_<tag>/ (checkpoint head4pi_<tag>.pt, log head4pi_<tag>.log); --log_every.
   Everything else (head, loss, optimiser, schedule) is the v10 trainer's.
 Original docstring:
 Train the learned-window 4Pi head (simcode/fourpi/head4pi_w.py, v10: frame-symmetric, emitter-orthogonal window changes; frozen v3L prior) with the solve-aware loss
@@ -18,7 +18,6 @@ import torch
 import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save
 from simcode.fourpi.spline_table import LUT4Pi
@@ -48,7 +47,8 @@ def main():
     p.add_argument('--sim', default='hd'); p.add_argument('--p_iso', type=float, default=0.2); p.add_argument('--p_close', type=float, default=0.3)
     p.add_argument('--rho_hi', type=float, default=2.0); p.add_argument('--log_every', type=int, default=250)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
-    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]; P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-train-hd')
     OUT = f'{P4}/models/head4pi_{a.tag}'; os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)

@@ -14,7 +14,8 @@ radial density, and median 25-85 nm), radial width (robust sd of r, 25 < r < 85 
 two-Gaussian separation and common sd (EM with free means: per-ring z spread), histogram peak separation and dip (valley / lower
 peak, as fig_cl), localizations per pore; DAFL x / y / z (adjacent windows of the same file, all pairs and 2-4k e),
 fringe-hop rate (|dz| > 80 nm), FRC (central 10 x 10 um, halves = alternating 500-window blocks).
-Usage: python analysis/fourpi/select_curve_npc.py --net out/4pi/net/net_NPC_v10_all.npz --tag v10
+Usage: python analysis/fourpi/select_curve_npc.py --work <4Pi work folder> --net <work>/net/net_NPC_v10_all.npz --tag v10
+(--cl default <work>/classical/real/cl_NPC_wv_all.npz; writes <work>/fig/NPC_selection_curves_<tag>.*)
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -23,10 +24,9 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
-from simcode.config import root; P4 = root('fourpi')
 from select_curve_mt import pairs, rsd, photon_match
 import showcase_real_mt as SR
-from showcase_real_mt import FC, PX, FPF, OUTD, lg
+from showcase_real_mt import FC, PX, FPF, lg
 import matplotlib.pyplot as plt
 
 FRACS = [1.0, 0.7, 0.5, 0.35, 0.25, 0.15, 0.1]
@@ -175,9 +175,13 @@ def _job(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_NPC_wv_all.npz')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--cl', default=None, help='default <work>/classical/real/cl_NPC_wv_all.npz')
     ap.add_argument('--net', required=True); ap.add_argument('--tag', default='v10')
     a = ap.parse_args()
+    P4 = a.work; a.cl = a.cl or f'{P4}/classical/real/cl_NPC_wv_all.npz'
+    FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
+    OUTD = f'{P4}/fig'
     rng = np.random.default_rng(0)
     M, info = load(a); lg(f"rows: { {k: len(v['x']) for k, v in M.items()} }; registration {info['registration']}")
     # common footprint: classical kept 0.5-99.5 % box

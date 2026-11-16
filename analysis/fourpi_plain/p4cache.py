@@ -1,31 +1,37 @@
 """Cache of the Cell11 channel crops (the raw dcimg files are on a saturated spinning disk: each file is read once) and
 a reader of the cache for the processing driver.
 
-  python analysis/fourpi_plain/p4cache.py [--files 0 1 2 3]
-      -> <out>/plain4pi/p4psf/cache/Cell11_<file>_crops.npy: [n, 4, 168, 192] uint16 camera ADU (the channel crops of the
+  python analysis/fourpi_plain/p4cache.py --work <plain-4Pi work folder> --data <extracted Zenodo folder> [--files 0 1 2 3]
+      -> <work>/p4psf/cache/Cell11_<file>_crops.npy: [n, 4, 168, 192] uint16 camera ADU (the channel crops of the
          fourpi_plain config, exactly what ChannelReader.read returns, as uint16)
 
+  cache_dir(work), cache_path(fi, work): the cache of the plain-4Pi work folder work;  acq(work, data, cfg): the Cell11
+  acquisition of a config file (configs(work, data); data = the folder of the extracted Zenodo data)
   CachedReader(path).read(f0, f1) -> [n, 4, H, W] float32 ADU (a drop-in for ChannelReader: .n, .shape, .read)
 """
 import argparse, os, sys, time
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from simcode import config as K
 
 CFG = os.path.join(os.path.dirname(__file__), '..', '..', 'simcode', 'pipeline', 'configs', 'fourpi_plain.py')
-CACHE = os.path.join(K.out_dir('plain4pi', make=False), 'p4psf', 'cache')
 
 
-def cache_path(fi, cell='Cell11'):
-    return os.path.join(CACHE, f'{cell}_{fi:03d}_crops.npy')
+def cache_dir(work):
+    """the crop cache of the plain-4Pi work folder work"""
+    return os.path.join(work, 'p4psf', 'cache')
 
 
-def acq(cfg=CFG):
-    """(resolved config, setup) of the Cell11 acquisition of a config file (default fourpi_plain.py)"""
+def cache_path(fi, work, cell='Cell11'):
+    return os.path.join(cache_dir(work), f'{cell}_{fi:03d}_crops.npy')
+
+
+def acq(work, data, cfg=CFG):
+    """(resolved config, setup) of the Cell11 acquisition of a config file (default fourpi_plain.py; work = the plain-4Pi
+    work folder, data = the folder of the extracted Zenodo data)"""
     from simcode.pipeline import acquisition_config as AC
     from simcode.setups import get
-    L = AC.load_all(cfg)
+    L = AC.load_all(cfg, dict(work=work, data=data))
     c = [u for u in L if u['name'].endswith('Cell11')][0]
     return c, get(c['setup'])
 
@@ -44,11 +50,13 @@ class CachedReader:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--files', type=int, nargs='+', default=[0, 1, 2, 3])
+    p.add_argument('--work', required=True, help='plain-4Pi work folder')
+    p.add_argument('--data', required=True, help='folder of the extracted Zenodo data (zenodo_4022827/extracted)')
     a = p.parse_args()
-    c, S = acq()
-    os.makedirs(CACHE, exist_ok=True)
+    c, S = acq(a.work, a.data)
+    os.makedirs(cache_dir(a.work), exist_ok=True)
     for fi in a.files:
-        fo = cache_path(fi)
+        fo = cache_path(fi, a.work)
         if os.path.exists(fo):
             print(fo, 'exists'); continue
         rd = S.reader(c, S.movie_file(c, fi))

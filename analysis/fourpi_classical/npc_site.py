@@ -1,12 +1,11 @@
 """Pick good single nuclear-pore sites from the classical 4Pi-SIMFLUX NPC table (pixel-MLE rows) and render them:
 top view (x-y, colour = z), the two rings separately, and side views. Selection is automatic and stated in the figure:
 ring radius, radial scatter, angular coverage of both z rings, isolation.
-usage: python analysis/fourpi_classical/npc_site.py [n_sites]"""
+usage: python analysis/fourpi_classical/npc_site.py [n_sites] --work <4Pi work folder>   (<work>/classical/real -> <work>/classical/sites)"""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import sys, os, json
+import sys, os, json, argparse
 import numpy as np
 import matplotlib; matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -14,9 +13,12 @@ from scipy.ndimage import gaussian_filter, maximum_filter, convolve
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from simcode.util.drift import zdrift_struct
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
-OUT = f'{P4}/classical'
-nshow = int(sys.argv[1]) if len(sys.argv) > 1 else 6
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+ap = argparse.ArgumentParser(); ap.add_argument('n_sites', type=int, nargs='?', default=6)
+ap.add_argument('--work', required=True, help='4Pi work folder')
+A = ap.parse_args()
+OUT = f'{A.work}/classical'
+nshow = A.n_sites
 C = np.load(f'{OUT}/real/cl_NPC_wv_all.npz')
 k = C['keep_pix'] & np.isfinite(C['xpd']) & np.isfinite(C['zp'])
 x = C['xpd'][k] * PX; y = C['ypd'][k] * PX; z = C['zp'][k] * 1000.0; w = (C['frame'][k] // 6)

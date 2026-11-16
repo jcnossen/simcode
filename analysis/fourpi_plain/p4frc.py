@@ -4,7 +4,7 @@ lateral field, FRC over rings, resolution at the 1/7 threshold (first crossing a
 smoothed over 5 rings). A random per-localization split (not fair: the same on-event lands in both halves) is reported
 for reference.
 
-  python analysis/fourpi_plain/p4frc.py --runs name:<run dir> [...] --out <dir> [--blocks 1 10 100 500] [--px 5]
+  python analysis/fourpi_plain/p4frc.py --runs name:<run dir> [...] --out <dir> --data <extracted Zenodo folder> [--blocks 1 10 100 500] [--px 5]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -57,9 +57,10 @@ def main():
     p.add_argument('--chi2_max', type=float, default=1e9, help='ours: chi2/dof cut (the final comparison: none)')
     p.add_argument('--matched', type=int, default=1, help='also the matched subsets (same emitters and frames in both tables)')
     p.add_argument('--files', type=int, nargs='+', default=[0, 1, 2, 3])
+    p.add_argument('--data', required=True, help='folder of the extracted Zenodo data (their published tables)')
     a = p.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    raw, pub = load_theirs()
+    raw, pub = load_theirs(a.data)
     tmax = NF * len(a.files)
     pub = sel(pub, pub['t'] < tmax)
     sets = {'published': pub}

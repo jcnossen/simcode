@@ -20,7 +20,7 @@ for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__fi
 from cl4pi import Classic4Pi, wrap
 from simcode.processing.fourpi_pattern_phase import refine_k, slot_z, phase_field
 
-from simcode.setups.fourpi import acquisition; PX_NM = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX_NM = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 FILTERS = dict(R_max=0.2, MD=(0.6, 1.2), N_min=1000.0, sxy_max_nm=10.0, llr_max=500.0 * 225 / 169, C=(0.4, 1.6), chi2px_max=4.0)
 
 

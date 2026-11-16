@@ -16,15 +16,14 @@ Kinetics: DNA-PAINT, each site has binding events (Poisson in time), exponential
 photon rate log-normal (median 450 e/frame summed over the channels, sd log 0.5), duty cycle set so that the mean
 density of ON emitters is `dens` per um^2 per frame. Background per channel 0.42 / 1.06 / 0.54 / 1.17 e/px/frame
 (MT, measured) with a smooth +-20 % structure.
-Output: out/4pi/simmovie/<tag>/movie.npy, gt_sites.npz, gt_events.npz, gt_frames.npz (per frame and emitter:
+Output: <work>/simmovie/<tag>/movie.npy, gt_sites.npz, gt_events.npz, gt_frames.npz (per frame and emitter:
 x, y px ch0, z um, photons), meta.json
-Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simmovie4pi.py --tag d1 --dens 1.0 --frames 4000
+Usage: CUDA_VISIBLE_DEVICES=2 python analysis/fourpi/simmovie4pi.py --work <4Pi work folder> --tag d1 --dens 1.0 --frames 4000
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.fourpi.spline_table import LUT4Pi
 
@@ -92,7 +91,8 @@ def main():
     p.add_argument('--W', type=int, default=50); p.add_argument('--ton', type=float, default=10.0)
     p.add_argument('--seed', type=int, default=0)
     p.add_argument('--ksum', type=int, default=1, help='K-summed conditions (real dense data by summing K windows): K x background, sqrt(K) read noise; the offset stays one OFF (= the sum with (K - 1) offsets removed)')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-sim')
     out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     rng = np.random.default_rng(a.seed)

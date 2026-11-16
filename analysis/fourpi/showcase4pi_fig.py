@@ -1,10 +1,10 @@
-"""Figures of the 4Pi-SIMFLUX high-density showcase (reads out/4pi/showcase/<tag>/ written by showcase4pi_eval.py).
+"""Figures of the 4Pi-SIMFLUX high-density showcase (reads <work>/showcase/<tag>/ written by showcase4pi_eval.py).
 
 Per density: render_<tag>.png (rows = methods; x-y coloured by z, two zooms at crossings, averaged tube cross-section),
 sections_<tag>.png (x-z and y-z sections through crossings, rows = methods), profiles.png (tube cross-section profiles,
 all densities), summary.png (recall, precision, lateral and axial error vs density, network vs classical).
 Same z colour scale, zoom boxes and section strips for every method and density.
-Usage: python analysis/fourpi/showcase4pi_fig.py
+Usage: python analysis/fourpi/showcase4pi_fig.py --work <4Pi work folder>   (figures in <work>/showcase)
 """
 import json, os, sys
 import numpy as np
@@ -14,8 +14,6 @@ from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-OUT = f'{P4}/showcase'
 PXN = 128.0
 LO, HI = 8.0, 52.0
 TAGS = ['sc_d01', 'sc_d03', 'sc_d1', 'sc_d2', 'sc_d4']
@@ -55,7 +53,7 @@ def dens_img(a, b, a0, a1, b0, b1, sr, blur=0.8):
     return c / max(np.percentile(c[c > 0], 99.7), 1e-9) if (c > 0).any() else c
 
 
-def load(tag, nm):
+def load(tag, nm, OUT):
     L = np.load(f'{OUT}/{tag}/locs_{nm}.npz')
     return L['x'] * PXN, L['y'] * PXN, L['z']                  # nm, nm, um
 
@@ -65,11 +63,11 @@ def scalebar(ax, n_px, label, x=0.05, y=0.06):
     ax.text(x + n_px / 2, y + 0.03, label, transform=ax.transAxes, color='w', ha='center', va='bottom', fontsize=7)
 
 
-def fig_render(tag, E):
+def fig_render(tag, E, OUT):
     fig, axs = plt.subplots(len(METH), 4, figsize=(10.2, 2.55 * len(METH)), gridspec_kw=dict(width_ratios=[1, 1, 1, 0.8]))
     ext = (HI - LO) * PXN
     for i, (nm, lab) in enumerate(METH):
-        x, y, z = load(tag, nm)
+        x, y, z = load(tag, nm, OUT)
         ax = axs[i, 0]; ax.imshow(zrgb(x, y, z, LO * PXN, LO * PXN, ext, 8.0)); ax.set_xticks([]); ax.set_yticks([])
         n_ = E['methods'][nm]['n_locs'] if nm != 'gt' else E['gt_units']
         ax.set_ylabel(f'{lab}\n{n_} locs', fontsize=8)
@@ -105,10 +103,10 @@ def fig_render(tag, E):
     plt.tight_layout(rect=(0, 0.045, 1, 1)); fig.savefig(f'{OUT}/render_{tag}.png', dpi=150); plt.close(fig)
 
 
-def fig_sections(tag, E):
+def fig_sections(tag, E, OUT):
     fig, axs = plt.subplots(len(METH), len(SECT), figsize=(10.2, 1.45 * len(METH) + 0.5), squeeze=False)
     for i, (nm, lab) in enumerate(METH):
-        x, y, z = load(tag, nm)
+        x, y, z = load(tag, nm, OUT)
         for j, (snm, ax_, a0, a1, c0, c1) in enumerate(SECT):
             s_ = y if ax_ == 'y' else x
             sel = (s_ >= a0 * PXN) & (s_ < a1 * PXN)
@@ -125,7 +123,7 @@ def fig_sections(tag, E):
     plt.tight_layout(rect=(0, 0.02, 1, 1)); fig.savefig(f'{OUT}/sections_{tag}.png', dpi=150); plt.close(fig)
 
 
-def fig_profiles(Es):
+def fig_profiles(Es, OUT):
     tags = [t for t in TAGS if t in Es]
     tags = tags + [t for t in Es if t not in tags]
     fig, axs = plt.subplots(2, len(tags), figsize=(2.3 * len(tags), 4.8), sharex=True, squeeze=False)
@@ -145,7 +143,7 @@ def fig_profiles(Es):
     plt.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(f'{OUT}/profiles.png', dpi=150); plt.close(fig)
 
 
-def fig_summary(Es):
+def fig_summary(Es, OUT):
     tags = [t for t in TAGS if t in Es]
     D = np.array([Es[t]['dens'] for t in tags])
     ms = [('net', 'network, in-situ pattern + field', '-', 'o'), ('net_bound', 'network, true pattern + field', '--', 'o'),
@@ -181,13 +179,16 @@ def fig_summary(Es):
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser(); ap.add_argument('--work', required=True, help='4Pi work folder')
+    OUT = f'{ap.parse_args().work}/showcase'
     Es = {}
     for t in TAGS + ['sc_d03_r125']:
         f = f'{OUT}/{t}/eval.json'
         if os.path.exists(f): Es[t] = json.load(open(f))
     for t, E in Es.items():
-        fig_render(t, E); fig_sections(t, E)
-    fig_profiles(Es); fig_summary(Es)
+        fig_render(t, E, OUT); fig_sections(t, E, OUT)
+    fig_profiles(Es, OUT); fig_summary(Es, OUT)
     print('figures ->', OUT, list(Es))
 
 

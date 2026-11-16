@@ -19,7 +19,6 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'fourpi'))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.processing import fourpi_pattern_phase as SR
 from simcode.processing.fourpi_pattern_phase import repattern_xy
@@ -56,7 +55,8 @@ def main():
     p.add_argument('--ksum', type=int, default=1, help='K-summed movie: read variance K x in the read-out covariance')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
     p.add_argument('--name', default=''); p.add_argument('--out', default='')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-simlin')
     global SB; SB = 0.2 * math.sqrt(a.ksum)
     d = f'{P4}/simmovie/{a.tag}'
@@ -75,7 +75,7 @@ def main():
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
         from simcode.emitter.fourpi import load as load_head
-        net, _ = load_head(a.head); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
+        net, _ = load_head(a.head, work=P4); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
         net.vread = a.ksum * 1.14 ** 2 + (0.2 * a.ksum) ** 2
         nbr = None
         if getattr(net, 'nbr_in', False):   # pass 0: the head's prior positions -> map of the other candidates of each window

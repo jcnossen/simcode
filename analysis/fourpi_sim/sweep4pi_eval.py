@@ -25,8 +25,8 @@ Diagnostics:
 Methods: network = head v10 + explicit solve, in-situ pattern + phase field (locs_*_iterv10), under several selections
 (SELECTIONS below); 'net_bound' = true pattern + field (if run); classical published-style ('cl_pub', its published
 rejections) and pixel MLE ('cl_pix'); 'gt_units' = the true positions of every GT unit >= 300 e (the sampling limit).
-Output: $P4/sweep4pi/<tag>/eval.json, locs_<method>.npz (selected, region), curves.npz
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_sim/sweep4pi_eval.py --tag mtc_d03
+Output: <work>/sweep4pi/<tag>/eval.json, locs_<method>.npz (selected, region), curves.npz
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_sim/sweep4pi_eval.py --work <4Pi work folder> --tag mtc_d03
 """
 import argparse, importlib.util, json, os, sys, time
 import numpy as np
@@ -35,7 +35,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simeval4pi import gt_units, match
 
 GTFRC = os.environ.get('GTFRC', os.path.join(REPO, 'analysis', 'papersim', 'gtfrc.py'))
@@ -113,7 +112,8 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--tag', default='mtc_d03'); p.add_argument('--model', default='v3L_det')
     p.add_argument('--no_ttf', type=int, default=0)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     d = f'{P4}/simmovie/{a.tag}'; out = f'{P4}/sweep4pi/{a.tag}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); T = meta['T']
     t0 = time.time()

@@ -1,4 +1,4 @@
-"""Figures of the 4Pi-SIMCODE density sweep (reads $P4/sweep4pi/<tag>/ written by sweep4pi_eval.py), written to
+"""Figures of the 4Pi-SIMCODE density sweep (reads <work>/sweep4pi/<tag>/ written by sweep4pi_eval.py), written to
 ~/simcode2/out/fourpi_sim/sweep/.
 
   render_<tag>.png   rows ground truth (all labelling sites) / network (selection given per density) / classical;
@@ -8,7 +8,7 @@
   ttf.png            time to fidelity: GT-FRC resolution (x-y and x-z sections) vs number of frames, per density, network
                      (best selection) / network (chi2 selection off) / classical / GT units (sampling limit)
   sweep.png          GT-FRC (30000 frames), frames to x-z 35 nm, recall, wrong fringe, fixed-gate ghosts, coverage excess CV vs density
-Usage: python analysis/fourpi_sim/sweep4pi_fig.py [--best mtc_d03=net_sig1 ...]
+Usage: python analysis/fourpi_sim/sweep4pi_fig.py --work <4Pi work folder> [--best mtc_d03=net_sig1 ...]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -18,8 +18,6 @@ from matplotlib.colors import LinearSegmentedColormap
 from scipy.ndimage import gaussian_filter
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-IN = f'{P4}/sweep4pi'
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep'); os.makedirs(OUT, exist_ok=True)
 NM = 128.0; LO, HI = 8 * NM, 52 * NM
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
@@ -57,7 +55,7 @@ def dens_img(a, b, a0, a1, b0, b1, sr, blur=0.8):
     return c / max(np.percentile(c[c > 0], 99.5), 1e-9) if (c > 0).any() else c
 
 
-def gt_sites(tag):
+def gt_sites(tag, P4):
     S = np.load(f'{P4}/simmovie/{tag}/gt_sites.npz')['sites']
     return S[:, 0] * NM, S[:, 1] * NM, S[:, 2] * 1000
 
@@ -67,14 +65,15 @@ def scalebar(ax, frac, label):
     ax.text(0.05 + frac / 2, 0.09, label, transform=ax.transAxes, color='w', ha='center', va='bottom', fontsize=7)
 
 
-def fig_render(tag, E, best):
+def fig_render(tag, E, best, P4):
+    IN = f'{P4}/sweep4pi'
     rows = [('gt', 'ground truth (all labelling sites)'), (best, LAB[best]), ('net_base', LAB['net_base']), ('cl_pub', LAB['cl_pub'])]
     rows = [r for i, r in enumerate(rows) if r[0] not in [q[0] for q in rows[:i]]]
     rows = [r for r in rows if r[0] == 'gt' or r[0] in E['methods']]
     fig, axs = plt.subplots(len(rows), 5, figsize=(13, 2.6 * len(rows)), gridspec_kw=dict(width_ratios=[1, 1, 1, 1.0, 1.0]))
     ext = HI - LO
     for i, (nm, lab) in enumerate(rows):
-        if nm == 'gt': x, y, z = gt_sites(tag); ntxt = f'{len(x)} sites'
+        if nm == 'gt': x, y, z = gt_sites(tag, P4); ntxt = f'{len(x)} sites'
         else:
             L = np.load(f'{IN}/{tag}/locs_{nm}.npz'); x, y, z = L['x'], L['y'], L['z']; r = E['methods'][nm]
             ntxt = f"{len(x)} locs\nGT-FRC xy {r['gtfrc_last_xy']:.0f} / xz {r['gtfrc_last_xz']:.0f} nm"
@@ -167,12 +166,13 @@ def fig_sweep(Es):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--best', nargs='*', default=[])
-    a = ap.parse_args()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    a = ap.parse_args(); P4 = a.work; IN = f'{P4}/sweep4pi'
     Es = {t: json.load(open(f'{IN}/{t}/eval.json')) for t in TAGS if os.path.exists(f'{IN}/{t}/eval.json')}
     best = {t: 'net_base' for t in Es}
     for b in a.best:
         k, v = b.split('='); best[k] = v
-    for t, E in Es.items(): fig_render(t, E, best[t])
+    for t, E in Es.items(): fig_render(t, E, best[t], P4)
     fig_ttf(Es, best); fig_sweep(Es)
     print('figures ->', OUT, list(Es))
 

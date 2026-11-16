@@ -3,15 +3,13 @@ call as the network's post_w4pi.py) on the kept published-style rows, applied to
 Global frame = (file - first file) * 18000 + 6 w, first file MT 000, NPC 002 (as the network tables).
 Axial: as the network: sample z drift moves z_ast and the 4Pi phase together; the per-block term of the phase field
 takes the interferometer drift; no separate z correction.
-Output: out/4pi/classical/real/cl_<cell>_all<tag>.npz (+ _summary.json)
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/post_cl.py --cell NPC [--tag _short]
+Output: <work>/classical/real/cl_<cell>_all<tag>.npz (+ _summary.json)
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/post_cl.py --work <4Pi work folder> --cell NPC [--tag _short]
 """
 import argparse, glob, json, os, subprocess, sys
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-OUT = f'{P4}/classical/real'
 FIRST = {'MT': 0, 'NPC': 2}
 KEYS = ('w', 'x', 'y', 'z', 'sx', 'sy', 'sz', 'N', 'x0', 'y0', 'z_ast', 'sz_ast', 'xp', 'yp', 'zp', 'sxp', 'syp', 'szp', 'keep', 'keep_pix',
         'cx', 'cy', 'C', 'R', 'chi2px', 'nn', 'file_index', 'row', 'box')
@@ -20,7 +18,8 @@ KEYS = ('w', 'x', 'y', 'z', 'sx', 'sy', 'sz', 'N', 'x0', 'y0', 'z_ast', 'sz_ast'
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--cell', default='NPC'); ap.add_argument('--tag', default='')
     ap.add_argument('--files', type=int, nargs='*')
-    a = ap.parse_args()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    a = ap.parse_args(); OUT = f'{a.work}/classical/real'
     if REPO not in sys.path: sys.path.insert(0, REPO)
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
     fs = sorted(glob.glob(f'{OUT}/cl_{a.cell}_[0-9][0-9][0-9]{a.tag}.npz'))

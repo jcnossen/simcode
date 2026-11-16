@@ -4,13 +4,12 @@
      s(z) = s0 sqrt(1 + ((z - c) / d)^2 + A ((z - c) / d)^3 + B ((z - c) / d)^4) curves);
   2. per-channel photometry (r = 3 px aperture and r = 1 px centre) vs z -> channel fractions, interference contrast;
   3. saves the per-channel ROIs (registered, 21 x 21) for the PSF steps.
-usage: python zcal.py  (both stacks)
+usage: python zcal.py [CELL ...] --work <4Pi work folder> --data <raw 4Pi movie folder>  (default: both stacks)
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import os, sys, json
+import os, sys, json, argparse
 import numpy as np
 import torch
 from scipy.optimize import least_squares
@@ -21,8 +20,7 @@ from register import PolyMap
 from quickloc import Warp
 from mle import GaussAstig, lm_fit
 
-OUT = f'{P4}/smlm/zcal'
-from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN   # 4Pi camera gain (the same for MT and NPC)
 def astig_curve(p, z):
     s0, c, d, A, B = p
     u = (z - c) / d
@@ -38,12 +36,14 @@ def fit_curve(z, s, c0):
     return best.x
 
 
-def run(cell, R=21):
+def run(cell, P4, data, R=21):
+    """P4: the 4Pi work folder, data: the folder of the raw 4Pi movies"""
+    OUT = f'{P4}/smlm/zcal'
     os.makedirs(OUT, exist_ok=True)
     cam = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')
     pm = PolyMap.load(f'{P4}/smlm/reg/reg_insitu_{cell}.json')
     warp = Warp(lambda c, xx, yy: pm.inv(c, xx, yy))
-    Z = zstack(cell)                                            # [61,4,H,W] ADU
+    Z = zstack(cell, P4, data)                                            # [61,4,H,W] ADU
     sat = int((Z >= 65535).sum())
     E = (Z - cam['off'][None]) * GAIN
     W = np.stack([[warp(E[k, c], c) for c in range(4)] for k in range(61)])     # registered [61,4,H,W]
@@ -81,5 +81,10 @@ def run(cell, R=21):
 
 
 if __name__ == '__main__':
-    for cell in sys.argv[1:] or ('NPC', 'MT'):
-        run(cell)
+    ap = argparse.ArgumentParser()
+    ap.add_argument('cells', nargs='*')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+    A = ap.parse_args()
+    for cell in A.cells or ('NPC', 'MT'):
+        run(cell, A.work, A.data)

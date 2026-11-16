@@ -13,9 +13,10 @@ Detection (published code: W4PiSMS_sumim_seg.m, called from W4PiSMS_RM_analysisv
 Per window and candidate: 24 sub-images of 15 x 15 px (the network's patch cut: per channel centred on round(mapped
 position), doff = sub-pixel rest), then the classical fits of real_cl.process (summed fit, pattern, SIMFLUX two-step,
 4Pi moment phase, phase field, filters; the 24-image pixel MLE on the kept rows: NPC all, MT only in the dense boxes of
-out/4pi/patches/regions_MT.json, for time).
-Raw patches (uint16 ADU, README format of out/4pi/patches) are saved for NPC (all) and for the MT boxes 0 and 1.
-Usage: CUDA_VISIBLE_DEVICES=<g> python analysis/fourpi_classical/full_cl.py --cells NPC MT
+<work>/patches/regions_MT.json, for time).
+Raw patches (uint16 ADU, README format of <work>/patches) are saved for NPC (all) and for the MT boxes 0 and 1.
+Usage: CUDA_VISIBLE_DEVICES=<g> python analysis/fourpi_classical/full_cl.py --work <4Pi work folder> --data <raw 4Pi movie folder> --cells NPC MT
+(work folder: <work>/classical/real tables, <work>/classical/patches, <work>/classical/tmp)
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
@@ -23,14 +24,16 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.config import root
 from simcode.psf import fourpi_state
 from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
-P4 = root('fourpi'); S4 = FourPiSetup()
-GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
-XLIM = tuple(acquisition('MT')['fourpi']['xlim'])
-movie_file = lambda cell, fi: S4.movie_file(acquisition(cell), fi)
-movie_files = lambda cell: S4.movie_files(acquisition(cell))
+from simcode.setups.fourpi import DEFAULTS
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN
+S4 = FourPiSetup()
+P = DEFAULTS['patch']   # the same for MT and NPC
+XLIM = tuple(DEFAULTS['xlim'])
+# work = the 4Pi work folder, data = the folder of the raw 4Pi movies
+movie_file = lambda cell, fi, work, data: S4.movie_file(acquisition(cell, work, data), fi)
+movie_files = lambda cell, work, data: S4.movie_files(acquisition(cell, work, data))
 from simcode.fourpi.spline_table import LUT4Pi
 from simcode.io.movie import Prefetch
 from simcode.io.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
@@ -38,8 +41,6 @@ from cl4pi import Classic4Pi
 import mov4pi_cl as M
 import real_cl as RC
 
-OUT = f'{P4}/classical/real'
-PSAVE = f'{P4}/classical/patches'
 H_ = P // 2
 DET_THRESH = 4.0
 
@@ -115,23 +116,21 @@ class MemSource:
             yield j, (a - off[:, None]) * GAIN, torch.tensor(self.doff[j], device=self.dev)
 
 
-TMP = f'{P4}/classical/tmp'
-
-
-def read_units(cell):
+def read_units(cell, work):
     """reader-stage units: the temporary patch set of a file is complete when <tmp>/<cell>_<file>_meta.npz exists (the
-    patch array is written before it; both atomically)"""
-    return Units(TMP, 'read', pattern='{cell}_{key:03d}_meta.npz', cell=cell, title=False)
+    patch array is written before it; both atomically); <tmp> = <work>/classical/tmp"""
+    return Units(f'{work}/classical/tmp', 'read', pattern='{cell}_{key:03d}_meta.npz', cell=cell, title=False)
 
 
-def tmp_size_gb():
+def tmp_size_gb(work):
     import glob
-    return sum(os.path.getsize(f) for f in glob.glob(f'{TMP}/*.npy')) / 1e9
+    return sum(os.path.getsize(f) for f in glob.glob(f'{work}/classical/tmp/*.npy')) / 1e9
 
 
 def read_file(cell, fi, fr, a, dev):
     """reader stage: read, detect, cut -> temporary uint16 patches + meta on the SSD (marker .ready when complete)"""
-    d = S4.reader(acquisition(cell), movie_file(cell, fi)); nfr = (a.nframes or d.n) // 6 * 6
+    TMP = f'{a.work}/classical/tmp'
+    d = S4.reader(acquisition(cell, a.work, a.data), movie_file(cell, fi, a.work, a.data)); nfr = (a.nframes or d.n) // 6 * 6
     plan = [(a0, min(a0 + a.chunk_frames, nfr)) for a0 in range(0, nfr, a.chunk_frames)]
     pf = Prefetch(d, plan)
     acc = {k: [] for k in ('w', 'cx', 'cy', 'doff', 'corner', 'adu', 'score', 'thr')}
@@ -159,6 +158,7 @@ def read_file(cell, fi, fr, a, dev):
 
 def fit_file(cell, fi, c4, fr, boxes, a, dev):
     """fitter stage on the temporary patches; saves the table and the kept-ish raw patches, deletes the temp files"""
+    TMP = f'{a.work}/classical/tmp'; PSAVE = f'{a.work}/classical/patches'
     base = f'{TMP}/{cell}_{fi:03d}'
     R = dict(np.load(base + '_meta.npz')); adu = np.load(base + '.npy', mmap_mode='r')
     n = len(R['w'])
@@ -202,15 +202,18 @@ def main():
     ap.add_argument('--tmp_max_gb', type=float, default=60.0)
     ap.add_argument('--min_free_gb', type=float, default=10.0, help='the reader does not start a file with less free space on the temporary directory')
     ap.add_argument('--poll_s', type=float, default=30.0)
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
     a = ap.parse_args()
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
+    P4 = a.work; OUT = f'{P4}/classical/real'; TMP = f'{P4}/classical/tmp'
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True); os.makedirs(TMP, exist_ok=True)
     order = []
     for cell in a.cells:
-        files = sorted(file_index(f) for f in movie_files(cell))
+        files = sorted(file_index(f) for f in movie_files(cell, P4, a.data))
         order += [(cell, f) for f in files if not a.files or f in a.files]
-    UF = {c: RC.units(c, a.tag, claim=True) for c in a.cells}       # fit-stage units = the per-file tables (claimed by a fitter)
-    UR = {c: read_units(c) for c in a.cells}                        # reader-stage units = the temporary patch sets
+    UF = {c: RC.units(c, a.tag, P4, claim=True) for c in a.cells}       # fit-stage units = the per-file tables (claimed by a fitter)
+    UR = {c: read_units(c, P4) for c in a.cells}                        # reader-stage units = the temporary patch sets
     done = lambda c, f: UF[c].done(f)
     if a.stage == 'read':
         frs = {}
@@ -218,9 +221,9 @@ def main():
             if done(cell, fi) or UR[cell].done(fi) or UF[cell].claimed(fi) is not None:
                 continue
             disk_guard(TMP, a.min_free_gb)
-            while tmp_size_gb() > a.tmp_max_gb:
+            while tmp_size_gb(P4) > a.tmp_max_gb:
                 time.sleep(60)
-            if cell not in frs: frs[cell] = RC.front(cell, dev)
+            if cell not in frs: frs[cell] = RC.front(cell, dev, P4, a.data)
             try:
                 read_file(cell, fi, frs[cell], a, dev)
             except Exception as e:
@@ -246,7 +249,7 @@ def main():
             time.sleep(a.poll_s); continue
         cell, fi = claimed
         if cell not in c4s:
-            c4s[cell] = Classic4Pi(lut, delta=(0.0, RC.DELTA[cell]), dev=dev); frs[cell] = RC.front(cell, dev)
+            c4s[cell] = Classic4Pi(lut, delta=(0.0, RC.delta(cell, P4, a.data)), dev=dev); frs[cell] = RC.front(cell, dev, P4, a.data)
         boxes = [dict(b, id=i) for i, b in enumerate(reg['boxes']) if b.get('save')] if cell == 'MT' else []
         try:
             fit_file(cell, fi, c4s[cell], frs[cell], boxes, a, dev)

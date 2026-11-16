@@ -19,8 +19,8 @@ Methods (same det4pi candidates for all):
              bound, converged, sigma_xy < 0.12 px, N > 300)
 Also: crowding (other emitters in the 15 x 15 px patch), localizations per um of tube, FRC (x-y and x-z), tube
 cross-section profiles (localizations relative to the nearest GT tube axis away from crossings).
-Output: out/4pi/showcase/<tag>/eval.json, locs_<method>.npz (filtered, region), profiles.npz, frc.npz
-Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_eval.py --tag sc_d1
+Output: <work>/showcase/<tag>/eval.json, locs_<method>.npz (filtered, region), profiles.npz, frc.npz
+Usage: CUDA_VISIBLE_DEVICES=1 python analysis/fourpi/showcase4pi_eval.py --work <4Pi work folder> --tag sc_d1
 """
 import argparse, json, os, sys, time
 import numpy as np, torch
@@ -28,7 +28,6 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
@@ -87,7 +86,8 @@ def main():
     p.add_argument('--tag', default='sc_d1'); p.add_argument('--model', default='v3L_det')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--chi2_max', type=float, default=4.0)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-sceval')
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     out = f'{P4}/showcase/{a.tag}'; os.makedirs(out, exist_ok=True)

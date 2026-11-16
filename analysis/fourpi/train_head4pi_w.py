@@ -4,9 +4,9 @@
 Loss = NLL of the linearised solve's (x, y, z) error under its reported covariance  + prior NLL  + w_bg x background
 Huber  + w_ro x read-out NLL with the shared covariance scale (keeps the read-outs themselves and chi2 meaningful; small,
 because the per-read-out NLL is what makes a free read-out mix frames).
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_head4pi_w.py --tag v10 --steps 20000 --init_v3 out/4pi/models/head4pi_v3L.pt
-Resume: --init out/4pi/models/head4pi_<tag>.pt --steps <remaining>. Checkpoint every 2500 steps (atomic).
-Plain 4Pi (--acq <acquisition config of setup fourpi_plain>[:name]): candidates from full scenes of the config's training
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_head4pi_w.py --work <4Pi work folder> --tag v10 --steps 20000 --init_v3 <4Pi work folder>/models/head4pi_v3L.pt
+Resume: --init <4Pi work folder>/models/head4pi_<tag>.pt --steps <remaining>. Checkpoint every 2500 steps (atomic).
+Plain 4Pi (--acq <acquisition config of setup fourpi_plain>[:name] --work <its work folder> --data <its data folder>): candidates from full scenes of the config's training
 recipe (MultiChannelAcquisitionSim, patterns=False, FourPiPlainSetup.sim_kw; candidate_patches: the GT emitters with the
 real neighbours, backgrounds and registration error), T = fourpi.window, no pattern in the solve-aware loss, the prior
 trained jointly (no frozen prior of that T exists), read variance from the camera; checkpoint arch 'fourpi_emitter' at
@@ -17,7 +17,6 @@ import torch
 import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save
 from simcode.fourpi.spline_table import LUT4Pi
@@ -27,9 +26,6 @@ from simcode.emitter.fourpi import WINDOWS_K
 from simcode.emitter.fourpi import FourPiEmitterNet
 from simcode.solve.fourpi import FourPiSolve
 from simcode.emitter.fourpi import solve_loss
-
-OUT = f'{P4}/models'
-
 
 def main():
     p = argparse.ArgumentParser()
@@ -46,9 +42,13 @@ def main():
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
     p.add_argument('--log_every', type=int, default=250)
     p.add_argument('--acq', default='', help='plain 4Pi: acquisition config (file.py[:name]) with the training recipe (fourpi_train)')
+    p.add_argument('--work', required=True, help='4Pi work folder (PSF names, output <work>/models); with --acq: the config\'s work folder')
+    p.add_argument('--data', default='', help='with --acq: the config\'s data folder')
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
     if a.acq:
+        if not a.data: raise SystemExit('--acq needs --data')
         return main_plain(a)
+    P4 = a.work; OUT = f'{P4}/models'
     from simcode.util.proctitle import set_title; set_title('4pi-train-w')
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)
@@ -114,7 +114,7 @@ def main_plain(a):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from train_det4pi import acquisition, setup_of
     from simcode.util.proctitle import set_title; set_title('4pi-train-plain')
-    c = acquisition(a.acq); t = c['fourpi_train']; S_ = setup_of(c)
+    c = acquisition(a.acq, a.work, a.data); t = c['fourpi_train']; S_ = setup_of(c)
     T = c['fourpi']['window']; out = c['fourpi']['emitter']; os.makedirs(os.path.dirname(out), exist_ok=True)
     steps = a.steps if a.steps != 20000 else t['emitter_steps']
     vread = c['camera']['readnoise_e'] ** 2 + t['offerr'] ** 2

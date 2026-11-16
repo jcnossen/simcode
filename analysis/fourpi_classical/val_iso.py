@@ -4,28 +4,27 @@ offset Phi0 (the movie tests estimate them). Reports RMS / CRLB per photon bin f
   summed fit (x, y, z_ast), published-style (SIMFLUX two-step x, y; 4Pi moment phase z unwrapped against z_ast),
   pixel MLE (24 images), and the fringe-error rates (|dz| > 100 nm, lateral |dx| > 50 nm).
 CRLB = pixel Fisher of the 24-image on-through model at the truth.
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/val_iso.py [--n 6000]
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/val_iso.py --work <4Pi work folder> [--n 6000]   (-> <work>/classical/val_iso.*)
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 from pixel_lm import fisher_j, crlb
 from cl4pi import Classic4Pi, run_chunk
 
-OUT = f'{P4}/classical'
 EDGES = [300, 1000, 2000, 4000, 8000, 16000]
 
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--n', type=int, default=6000); ap.add_argument('--seed', type=int, default=21)
     ap.add_argument('--chunk', type=int, default=1500)
-    a = ap.parse_args()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    a = ap.parse_args(); P4 = a.work; OUT = f'{P4}/classical'
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'
     st = fourpi_state('NPC_f_dxy15', P4)

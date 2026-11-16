@@ -5,8 +5,8 @@ Per localization with N >= nmin and nearest other candidate of its frame >= nn_m
 centred on round(the channel's mapped position) (the file's registration map, as ChannelFront.patches) and the sub-pixel
 rest of that mapped position (pos [n, 4, 2] px, emitter position relative to the patch centre pixel).
 
-  python analysis/fourpi_plain/p4spots.py [--P 17] [--nmin 800] [--nn 7]
-      -> <out>/plain4pi/p4psf/spots_P<P>.npz: adu [n, 4, P, P] uint16 (camera ADU; e = (adu - offset) gain), pos [n, 4, 2],
+  python analysis/fourpi_plain/p4spots.py --work <plain-4Pi work folder> --data <extracted Zenodo folder> [--P 17] [--nmin 800] [--nn 7]
+      -> <work>/p4psf/spots_P<P>.npz: adu [n, 4, P, P] uint16 (camera ADU; e = (adu - offset) gain), pos [n, 4, 2],
          corner [n, 4, 2], and per spot the table columns (fidx = file, frame, x, y, z, N, bg [4], Phi0, chi2, dof, zprior, sx, sy,
          sz, nn, zref, wrap, good, Tsum), offset, gain, readnoise
 """
@@ -14,9 +14,8 @@ import argparse, os, sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from analysis.fourpi_plain.p4cache import acq, cache_path, CachedReader, CACHE
+from analysis.fourpi_plain.p4cache import acq, cache_path, CachedReader, cache_dir
 
-LOCS = os.path.join(os.path.dirname(CACHE), '..', 'pipeline', 'Cell11', 'process')
 COLS = ('frame', 'x', 'y', 'z', 'N', 'bg', 'Phi0', 'chi2', 'dof', 'zprior', 'sx', 'sy', 'sz', 'nn', 'zref', 'wrap', 'good', 'Tsum')
 
 
@@ -50,14 +49,18 @@ def main():
     p.add_argument('--nmin', type=float, default=800.0)
     p.add_argument('--nn', type=float, default=7.0)
     p.add_argument('--files', type=int, nargs='+', default=[0, 1, 2, 3])
+    p.add_argument('--work', required=True, help='plain-4Pi work folder')
+    p.add_argument('--data', required=True, help='folder of the extracted Zenodo data')
     a = p.parse_args()
-    c, S = acq()
+    CACHE = cache_dir(a.work)
+    LOCS = os.path.join(os.path.dirname(CACHE), '..', 'pipeline', 'Cell11', 'process')
+    c, S = acq(a.work, a.data)
     cam = S.camera(c)
     acc = {k: [] for k in ('adu', 'pos', 'corner', 'fidx') + COLS}
     for fi in a.files:
         d = np.load(os.path.join(LOCS, f'locs_{fi:03d}.npz'))
         sel = np.nonzero((d['N'] >= a.nmin) & (d['nn'] >= a.nn) & np.isfinite(d['z']))[0]
-        rd = CachedReader(cache_path(fi))
+        rd = CachedReader(cache_path(fi, a.work))
         pm = S.regmap(c, fi)
         adu, pos, corner, ok = spots_file(fi, d['x'][sel], d['y'][sel], d['frame'][sel].astype(int), pm, rd, a.P)
         sel = sel[ok]

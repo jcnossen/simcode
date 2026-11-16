@@ -1,20 +1,19 @@
 """Drift correction (DME v2 via analysis/baselines/dme_drift.py, run as a subprocess; DME imported read-only) and
-renders of the localization subsets; NPC ring analysis.
+renders of the localization subsets; NPC ring analysis. work = the 4Pi work folder (inputs <work>/smlm/p1, outputs
+<work>/smlm/drift).
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 import os, sys, glob, subprocess, json
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-P1 = f'{P4}/smlm/p1'
 FIRST = {'MT': 5, 'NPC': 10}   # subset start file: global frame = (file - first) * 18000 + 6 w + 3
-OUT = f'{P4}/smlm'
 
 
-def load_locs(cell, kind='p2', files=None):
+def load_locs(cell, work, kind='p2', files=None):
+    P1 = f'{work}/smlm/p1'
     fs = sorted(glob.glob(f'{P1}/{kind}_{cell}_*.npz'))
     if files: fs = [f for f in fs if int(f[-7:-4]) in files]
     rows = []
@@ -32,7 +31,8 @@ def load_locs(cell, kind='p2', files=None):
     return out
 
 
-def run_dme(x, y, frame, sx, sy, F, tag, gpu='0'):
+def run_dme(x, y, frame, sx, sy, F, tag, work, gpu='0'):
+    OUT = f'{work}/smlm'
     fn = f'{OUT}/drift/{tag}_locs.npz'; os.makedirs(f'{OUT}/drift', exist_ok=True)
     np.savez(fn, frame=frame - 3, x=x, y=y, sx=sx, sy=sy)
     env = dict(os.environ, CUDA_VISIBLE_DEVICES=gpu)

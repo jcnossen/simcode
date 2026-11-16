@@ -9,24 +9,24 @@ Estimators:
   pix    : pixel MLE on all 24 sub-images (x, y, z, F, bg_c x 4) with the true pattern and Phi0, 9 z starts
            (the classical optimum)
 CRLBs: pixel Fisher of the 24-image model (pix) and of the summed image (smlm), at the truth.
-Output: out/4pi/sim/bench_classical.json + table.
+Output: <work>/sim/bench_classical.json + table.  usage: python bench_classical.py --work <4Pi work folder> [--eps_range --suffix --seed]
 """
 import json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
 
-OUT = f'{P4}/sim'
 V = 1.14 ** 2 + 0.2 ** 2
 
 
-def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
+def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
+    """P4: the 4Pi work folder"""
+    OUT = f'{P4}/sim'
     st = fourpi_state('NPC_f_dxy15', P4)
     lut = LUT4Pi(st, P=15, dev=dev)
     sim = FourPiPatchSim(lut, dev=dev, seed=seed)
@@ -186,5 +186,5 @@ def main(n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser(); ap.add_argument('--eps_range', type=float, default=0.3); ap.add_argument('--suffix', default='')
-    ap.add_argument('--seed', type=int, default=11); a_ = ap.parse_args()
-    main(seed=a_.seed, eps_range=a_.eps_range, suffix=a_.suffix)
+    ap.add_argument('--seed', type=int, default=11); ap.add_argument('--work', required=True, help='4Pi work folder'); a_ = ap.parse_args()
+    main(a_.work, seed=a_.seed, eps_range=a_.eps_range, suffix=a_.suffix)

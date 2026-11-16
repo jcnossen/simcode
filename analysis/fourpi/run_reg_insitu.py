@@ -1,20 +1,24 @@
 """in-situ registration: robust order-2 polynomial from bright isolated emitters in frames 0-3600 of the reference
 file (3 iterations: detection / ROI centring with the refined map), then the residual of that map on other files
-(registration drift). usage: python run_reg_insitu.py <cell> <ref_fi>,<fi2>,...
+(registration drift). usage: python run_reg_insitu.py <cell> <ref_fi>,<fi2>,... --work <4Pi work folder> --data <raw 4Pi movie folder>
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import sys, os, json, numpy as np
+import sys, os, json, argparse, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from register import *
 from dc import movie_files, file_index
+ap = argparse.ArgumentParser()
+ap.add_argument('cell'); ap.add_argument('fis', help='<ref_fi>,<fi2>,...')
+ap.add_argument('--work', required=True, help='4Pi work folder')
+ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+A = ap.parse_args(); P4 = A.work
 out = f'{P4}/smlm/reg'
-cell = sys.argv[1]; fis = [int(v) for v in sys.argv[2].split(',')]
+cell = A.cell; fis = [int(v) for v in A.fis.split(',')]
 off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
 pm = PolyMap.load(f'{out}/reg_beads_{cell}.json')
-fn = lambda fi: [f for f in movie_files(cell) if file_index(f) == fi][0]
+fn = lambda fi: [f for f in movie_files(cell, P4, A.data) if file_index(f) == fi][0]
 S6 = load_s6(cell, fn(fis[0]), 0, 3600, off)
 for it in range(3):
     P = clean(insitu_positions(S6, pm))

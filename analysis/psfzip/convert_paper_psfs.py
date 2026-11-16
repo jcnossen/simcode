@@ -5,7 +5,7 @@ json files stay; SIMCODE reads both through simcode.psf.read_calib / PSF.load / 
       torch_psf convert_calibration (lossless: PSF, camera with its offset / read-noise maps, pattern -> patterns,
       tirf_depth_um / emitter_z_* -> acquisition, source / psf_v2 -> provenance, the json in provenance.converted_from;
       calibrated camera scalars, free-form camera keys and extra npz entries kept in the camera block).
-      Report: the InSituEstimator report and settings of the in-situ run (<out>/psf_v2/result_<movie>_v2p.json:
+      Report: the InSituEstimator report and settings of the in-situ run (<results>/result_<movie>_v2p.json, --results:
       spot counts, deviance rule, held-out NLL; no estimator data: the stored PSF is the polished branch of
       out/psf_v2/psf_refit.py, which is not re-run here) -> psf.json report {estimator, results, settings} and the
       report pages; provenance: the final branch values and a note.
@@ -14,7 +14,7 @@ json files stay; SIMCODE reads both through simcode.psf.read_calib / PSF.load / 
   insitu/beads/psf_fit_sign-1_na149_ball_drift.json -> .psf.zip: VectorialPSF of the bead z-stack fit (the earlier
       SIMCODE bead fit, not reproducible here: model pages; z = -focus of the bead stack; bead height, z step, stage
       sign in acquisition, the fit json in provenance.converted_from)
-  <fourpi>/psf4pi/NPC_f_dxy15.json (the 4Pi PSF of the paper: also the state inside head4pi_v10.pt / v3L.pt) ->
+  <work>/psf4pi/NPC_f_dxy15.json (--work = the 4Pi work folder; the 4Pi PSF of the paper: also the state inside head4pi_v10.pt / v3L.pt) ->
       fourpi/NPC_f_dxy15.psf.zip: FourPiPSF (coupled model, 4 source_output channels with their camera crop / mirror;
       the fitted state verbatim plus torch_psf's 'raw' parameters, fourpi_psf below);
       fourpi/NPC_f_dxy15_spline.psf.zip (--spline): its FourPiSplinePSF as the 4Pi heads build it
@@ -24,8 +24,9 @@ json files stay; SIMCODE reads both through simcode.psf.read_calib / PSF.load / 
   model folders: m1809/calib_1809_2_psf_v2.psf.zip, m25/calib_2p5nM_m2_psf_v2.psf.zip, g13/calib_gauss1.3.psf.zip
       (byte copies of the insitu/ files)
 
-  CUDA_VISIBLE_DEVICES= python analysis/psfzip/convert_paper_psfs.py [--only calib,gauss,beads,fourpi,copies] [--spline]
-      [--spline-knots rebuild|float32|float16]
+  CUDA_VISIBLE_DEVICES= python analysis/psfzip/convert_paper_psfs.py --results <psf_v2 results folder> --work <4Pi work folder>
+      [--only calib,gauss,beads,fourpi,copies] [--spline] [--spline-knots rebuild|float32|float16]
+      (--results is needed for calib, --work for fourpi)
 """
 import argparse, json, os, shutil, sys
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -93,8 +94,9 @@ def fourpi_psf(state, device=None, z_range=(-0.6, 0.6), **kw):
     return p
 
 
-def fourpi(dev, spline, knots='rebuild'):
-    P4 = config.root('fourpi')
+def fourpi(dev, spline, work, knots='rebuild'):
+    """work: the 4Pi work folder (<work>/psf4pi/NPC_f_dxy15.json)"""
+    P4 = work
     js = os.path.join(P4, 'psf4pi', 'NPC_f_dxy15.json')
     J = json.load(open(js)); st = J['psf']
     p = fourpi_psf(st, device=dev)
@@ -129,12 +131,15 @@ if __name__ == '__main__':
     ap.add_argument('--spline-knots', default='rebuild', choices=('rebuild', 'float32', 'float16'),
                     help="knots of the spline zip: 'rebuild' (none stored; tabulated on load) or stored (float32: ~120 MB)")
     ap.add_argument('--device', default='cpu')
-    ap.add_argument('--results', default=None, help='folder of the in-situ PSF v2 results (default <out>/psf_v2)')
+    ap.add_argument('--results', default=None, help='folder of the in-situ PSF v2 results (result_<movie>_v2p.json; on qnano1 ~/simcode2/out/psf_v2); required for calib')
+    ap.add_argument('--work', default=None, help='4Pi work folder (psf4pi/NPC_f_dxy15.json); required for fourpi')
     a = ap.parse_args()
     todo = a.only.split(',')
+    if 'calib' in todo and not a.results: ap.error('calib needs --results <folder of the in-situ PSF v2 results>')
+    if 'fourpi' in todo and not a.work: ap.error('fourpi needs --work <4Pi work folder>')
     if 'calib' in todo:
-        for n in V2: calib_v2(n, a.device, a.results or config.out_dir('psf_v2', make=False))
+        for n in V2: calib_v2(n, a.device, a.results)
     if 'gauss' in todo: gauss(a.device)
     if 'beads' in todo: beads(a.device)
-    if 'fourpi' in todo: fourpi(a.device, a.spline, a.spline_knots)
+    if 'fourpi' in todo: fourpi(a.device, a.spline, a.work, a.spline_knots)
     if 'copies' in todo: copies()

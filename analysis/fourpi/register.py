@@ -5,12 +5,12 @@ stored affine maps, polynomial fits of order 1..3 with leave-one-out residuals.
 Stage 2 (in situ): see insitu_register() - bright isolated emitters in 6-frame per-channel sums, independent per-channel
 Gaussian fits, residuals of the bead map vs field position, polynomial refit.
 PolyMap: fwd(c, x, y) -> ch0 coords; inv(c, x0, y0) -> ch c coords (separately fitted inverse polynomial).
+usage (bead stage): python register.py --work <4Pi work folder> --data <raw 4Pi movie folder>
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import os, sys, json
+import os, sys, json, argparse
 import numpy as np
 import torch
 from scipy import ndimage as ndi
@@ -19,7 +19,7 @@ from dc import Dcimg, crops, bead_align_file
 from quickloc import affine_maps
 from mle import GaussAstig, lm_fit
 
-from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN   # 4Pi camera gain (the same for MT and NPC)
 from simcode.channels.registration import PolyMap  # noqa (the registration map class lives in the package)
 
 
@@ -43,8 +43,9 @@ def gauss_fit_rois(rois, v):
     return th.numpy(), crlb.numpy()
 
 
-def bead_positions(cell, off, R=11, thr=150.0):
-    raw = Dcimg(bead_align_file(cell)).raw(0, 10)
+def bead_positions(cell, off, work, data, R=11, thr=150.0):
+    """work: the 4Pi work folder, data: the folder of the raw 4Pi movies"""
+    raw = Dcimg(bead_align_file(cell, work, data)).raw(0, 10)
     C = crops(raw)                                      # [10,4,200,360] ADU
     sat = C >= 65535
     E = (C - off) * GAIN
@@ -76,9 +77,9 @@ def match(ref, Q, maxd=1.5):
     return np.nonzero(m)[0], j[m]
 
 
-def bead_register(cell, off, out_dir, order_use=2):
-    pos = bead_positions(cell, off)
-    _, Tf = affine_maps(cell)
+def bead_register(cell, off, out_dir, work, data, order_use=2):
+    pos = bead_positions(cell, off, work, data)
+    _, Tf = affine_maps(cell, work, data)
     rep = {}
     cf, ci = {}, {}
     for c in (1, 2, 3):
@@ -103,10 +104,14 @@ def bead_register(cell, off, out_dir, order_use=2):
 
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+    A = ap.parse_args(); P4 = A.work
     out = f'{P4}/smlm/reg'; os.makedirs(out, exist_ok=True)
     for cell in ('NPC', 'MT'):
         off = np.load(f'{P4}/smlm/camera/camera_{cell}.npz')['off']
-        pm, rep, pos = bead_register(cell, off, out)
+        pm, rep, pos = bead_register(cell, off, out, P4, A.data)
         print(cell, 'beads per channel', [len(p) for p in pos], 'saturated beads', [int((p[:, 5] > 0).sum()) for p in pos])
         for c in rep:
             print(f'  ch{c}: pairs {rep[c]["npairs"]}, stored affine mean {rep[c]["stored_affine_mean"]} rms {rep[c]["stored_affine_rms"]}, '

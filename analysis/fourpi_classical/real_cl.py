@@ -1,47 +1,45 @@
 """Classical 4Pi-SIMFLUX on the real movies, per file.
 
 Sources (same candidates as the network either way):
-  --src patches : out/4pi/patches/<cell>/patches_<file>.npy + meta_<file>.npz (v3 pass-1 candidates; README there),
-                  camera offset map out/4pi/patches/camera_<cell>.npz; streamed (mmap), read twice (stage A, stage B).
+  --src patches : <work>/patches/<cell>/patches_<file>.npy + meta_<file>.npz (v3 pass-1 candidates; README there),
+                  camera offset map <work>/patches/camera_<cell>.npz; streamed (mmap), read twice (stage A, stage B).
   --src dcimg   : a short direct read (--nframes) through simcode/channels/front.ChannelFront (identical detection and
                   patch cut as the network's pass 1); patches kept in RAM.
 Per file: stage A (summed fit, per-frame counts, moment phase) -> pattern from the data -> SIMFLUX two-step ->
 4Pi phase field (cubic XY polynomial + tile residual + block drift) -> z_4pi -> z_ast scale check (regression of z_ast
 on z_4pi; if off by > 5 %, redo the field with the corrected scale) -> stage B (calibration at z_4pi) -> filters ->
 pixel MLE on the kept rows.
-Output: out/4pi/classical/real/cl_<cell>_<file>.npz (+ _summary.json)
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/real_cl.py --cell NPC --files 10 --src dcimg --nframes 3600
+Output: <work>/classical/real/cl_<cell>_<file>.npz (+ _summary.json)
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi_classical/real_cl.py --work <4Pi work folder> --data <raw 4Pi movie folder> --cell NPC --files 10 --src dcimg --nframes 3600
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
-from simcode.config import root
 from simcode.psf import fourpi_state
 from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
-P4 = root('fourpi'); S4 = FourPiSetup()
-GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
-DELTA = {c: S4.delta(acquisition(c))[1] for c in ('MT', 'NPC')}
-movie_file = lambda cell, fi: S4.movie_file(acquisition(cell), fi)
-movie_files = lambda cell: S4.movie_files(acquisition(cell))
+from simcode.setups.fourpi import DEFAULTS
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN
+S4 = FourPiSetup()
+P = DEFAULTS['patch']   # the same for MT and NPC
+# work = the 4Pi work folder, data = the folder of the raw 4Pi movies
+delta = lambda cell, work, data: S4.delta(acquisition(cell, work, data))[1]
+movie_file = lambda cell, fi, work, data: S4.movie_file(acquisition(cell, work, data), fi)
+movie_files = lambda cell, work, data: S4.movie_files(acquisition(cell, work, data))
 
 
-def front(cell, dev):
-    """the front end of the classical tables: the whole-series map <4Pi work dir>/smlm/reg/reg_insitu_<cell>.json"""
-    return S4.front(acquisition(cell), dev=dev, map_file=f'{P4}/smlm/reg/reg_insitu_{cell}.json')
+def front(cell, dev, work, data):
+    """the front end of the classical tables: the whole-series map <4Pi work folder>/smlm/reg/reg_insitu_<cell>.json"""
+    return S4.front(acquisition(cell, work, data), dev=dev, map_file=f'{work}/smlm/reg/reg_insitu_{cell}.json')
 from simcode.fourpi.spline_table import LUT4Pi
 from simcode.io.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
 
-OUT = f'{P4}/classical/real'
-PDIR = f'{P4}/patches'
-
-
-def units(cell, tag, claim=False, redo=False, min_free_gb=0.0):
-    """the per-file tables cl_<cell>_<file><tag>.npz of a cell as units of the shared work driver"""
-    return Units(OUT, 'cl', pattern='{stage}_{cell}_{key:03d}{tag}.npz', cell=cell, tag=tag, claim=claim, redo=redo, min_free_gb=min_free_gb,
+def units(cell, tag, work, claim=False, redo=False, min_free_gb=0.0):
+    """the per-file tables cl_<cell>_<file><tag>.npz (in <work>/classical/real) of a cell as units of the shared work driver"""
+    return Units(f'{work}/classical/real', 'cl', pattern='{stage}_{cell}_{key:03d}{tag}.npz', cell=cell, tag=tag, claim=claim, redo=redo, min_free_gb=min_free_gb,
                  title=f'4pi-cl {cell}')
 
 
@@ -59,7 +57,8 @@ def nn_dist(w, cx, cy):
 
 
 class PatchSource:
-    def __init__(self, cell, fi, dev):
+    def __init__(self, cell, fi, dev, work):
+        PDIR = f'{work}/patches'
         self.fn = f'{PDIR}/{cell}/patches_{fi:03d}.npy'
         self.meta = dict(np.load(f'{PDIR}/{cell}/meta_{fi:03d}.npz'))
         self.off = torch.tensor(np.load(f'{PDIR}/camera_{cell}.npz')['offset_adu'], device=dev, dtype=torch.float32)
@@ -85,8 +84,8 @@ class PatchSource:
 
 
 class DcimgSource:
-    def __init__(self, cell, fi, nframes, dev, chunk=600):
-        fr = front(cell, dev); d = S4.reader(acquisition(cell), movie_file(cell, fi))
+    def __init__(self, cell, fi, nframes, dev, work, data, chunk=600):
+        fr = front(cell, dev, work, data); d = S4.reader(acquisition(cell, work, data), movie_file(cell, fi, work, data))
         imgs, doffs, ws, cxs, cys = [], [], [], [], []
         for a0 in range(0, nframes, chunk):
             with torch.no_grad():
@@ -112,6 +111,8 @@ class DcimgSource:
 
 
 def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=None):
+    """a: the arguments (a.work = the 4Pi work folder: reference pattern, output <work>/classical/real)"""
+    P4 = a.work; OUT = f'{P4}/classical/real'
     t0 = time.time()
     w, cx, cy, doff = src.info(); n = len(w)
     nn = nn_dist(w, cx, cy)
@@ -202,10 +203,11 @@ def process(c4, src, cell, fi, a, dev, A=None, pix_mask=None, extra=None, tA=Non
     return summ
 
 
-def ready_files(cell, min_age=90):
+def ready_files(cell, work, min_age=90):
     """patch files that are completely written: meta present, npy size = header + n x 6 x 4 x 15 x 15 x 2 bytes, older than
     min_age s"""
     import glob, re
+    PDIR = f'{work}/patches'
     out = []
     for fm in sorted(glob.glob(f'{PDIR}/{cell}/meta_[0-9][0-9][0-9].npz')):
         fi = int(re.findall(r'meta_(\d+)', fm)[0]); fp = f'{PDIR}/{cell}/patches_{fi:03d}.npy'
@@ -231,40 +233,44 @@ def main():
     ap.add_argument('--skip_done', type=int, default=1)
     ap.add_argument('--claim', type=int, default=0, help='1: claim each file (several workers on one output directory)')
     ap.add_argument('--min_free_gb', type=float, default=2.0)
-    ap.add_argument('--follow', type=int, default=0, help='poll out/4pi/patches and process files as they complete')
+    ap.add_argument('--follow', type=int, default=0, help='poll <work>/patches and process files as they complete')
     ap.add_argument('--cells', nargs='*', default=['NPC', 'MT'])
     ap.add_argument('--order_npc', type=int, default=3); ap.add_argument('--order_mt', type=int, default=1); ap.add_argument('--hours', type=float, default=16)
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
     a = ap.parse_args()
     if a.follow: return follow(a)
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
+    P4 = a.work; OUT = f'{P4}/classical/real'
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = fourpi_state(a.psf, P4)
-    c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, DELTA[a.cell]), dev=dev)
-    U = units(a.cell, a.tag, claim=a.claim, redo=not a.skip_done, min_free_gb=a.min_free_gb)
+    c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, delta(a.cell, P4, a.data)), dev=dev)
+    U = units(a.cell, a.tag, P4, claim=a.claim, redo=not a.skip_done, min_free_gb=a.min_free_gb)
     for fi in (a.files or []):
         if U.done(fi): print(f'{a.cell} {fi}: done, skipped')
     for fi in U.todo(a.files or []):
-        src = PatchSource(a.cell, fi, dev) if a.src == 'patches' else DcimgSource(a.cell, fi, a.nframes, dev)
+        src = PatchSource(a.cell, fi, dev, P4) if a.src == 'patches' else DcimgSource(a.cell, fi, a.nframes, dev, P4, a.data)
         process(c4, src, a.cell, fi, a, dev)
         del src; torch.cuda.empty_cache()
 
 
 def follow(a):
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
+    P4 = a.work; OUT = f'{P4}/classical/real'
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=P, dev=dev)
-    US = {c: units(c, a.tag, claim=True) for c in a.cells}
-    c4s = {c: Classic4Pi(lut, delta=(0.0, DELTA[c]), dev=dev) for c in a.cells}
-    expect = {c: sorted(file_index(f) for f in movie_files(c)) for c in a.cells}
+    US = {c: units(c, a.tag, P4, claim=True) for c in a.cells}
+    c4s = {c: Classic4Pi(lut, delta=(0.0, delta(c, P4, a.data)), dev=dev) for c in a.cells}
+    expect = {c: sorted(file_index(f) for f in movie_files(c, P4, a.data)) for c in a.cells}
     t_end = time.time() + 3600 * a.hours
     while time.time() < t_end:
-        todo = [(c, fi) for c in a.cells for fi in ready_files(c) if not US[c].done(fi) and not US[c].failed(fi)]
+        todo = [(c, fi) for c in a.cells for fi in ready_files(c, P4) if not US[c].done(fi) and not US[c].failed(fi)]
         for c, fi in todo:
             if not US[c].claim(fi): continue
             try:
                 a.order = a.order_mt if c == 'MT' else a.order_npc    # MT: only two 6 um boxes -> linear XY + tiles
-                process(c4s[c], PatchSource(c, fi, dev), c, fi, a, dev)
+                process(c4s[c], PatchSource(c, fi, dev, P4), c, fi, a, dev)
             except Exception as e:
                 print(f'{c} {fi}: FAILED {e!r}', flush=True)
                 US[c].fail(fi, e)

@@ -5,15 +5,13 @@ multipliers from adjacent-window pairs (DAFL; precision only), render, summary j
 Global frame = (file - first file) * 18000 + 6 w (as the classical tables).
 Columns of net_<cell>_<head>_all.npz: x, y (px, raw), xd, yd (drift corrected), z (um, raw), zd (um, z drift removed),
 sx, sy, sz (reported), sx_cal, sy_cal, sz_cal, N, good, sel (>= 1000 e and |z| <= 0.3 um), kin, chi2, dof, frame, w, fidx, on (all True), drift [F,2], zdrift.
-Usage: python analysis/fourpi/post_w4pi.py --cell NPC --head v10
+Usage: python analysis/fourpi/post_w4pi.py --work <4Pi work folder> --cell NPC --head v10   (tables in <work>/net)
 """
 import argparse, glob, json, os, re, subprocess, sys
 import numpy as np
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-OUT = f'{P4}/net'
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -24,7 +22,8 @@ def main():
     p.add_argument('--files', type=int, nargs='*')
     p.add_argument('--ksum', type=int, default=1, help='K-summed tables: the global frame of a summed window is the centre of its K source windows (stride --kstride)')
     p.add_argument('--kstride', type=int, default=25)
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); OUT = f'{a.work}/net'
     if REPO not in sys.path: sys.path.insert(0, REPO)
     from simcode.util.proctitle import set_title; set_title('4pi-post-w')
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))

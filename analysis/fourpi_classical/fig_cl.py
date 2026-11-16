@@ -1,12 +1,12 @@
 """Classical 4Pi-SIMFLUX vs the network ("4Pi-SIMCODE") on the real data: same regions, same rendering, same z colour scale.
 
-MT: the dense boxes of out/4pi/patches/regions_MT.json (candidate pixel inside the box, raw per-file coordinates;
+MT: the dense boxes of <work>/patches/regions_MT.json (candidate pixel inside the box, raw per-file coordinates;
 both tables restricted the same way). NPC: whole field overview, zooms on single pores, averaged pore (ring radius,
 two-ring z separation).
 Numbers per region: localizations kept, median reported sigma, DAFL (adjacent-window pairs, analysis/fourpi/dafl4pi.py)
 for each method alone and on the SAME emitters (rows of both tables matched per window within 0.5 px), FRC (two
 halves of 3000-frame blocks).
-Usage: python analysis/fourpi_classical/fig_cl.py --cell MT --net out/4pi/net/net_MT_v2_all.npz [--tag _short --files 5]
+Usage: python analysis/fourpi_classical/fig_cl.py --work <4Pi work folder> --cell MT --net <work>/net/net_MT_v2_all.npz [--tag _short --files 5]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -15,10 +15,9 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
-from simcode.config import root; P4 = root('fourpi')
 from dafl4pi import analyse
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
-OUT = f'{P4}/classical'
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+OUT = None      # output folder of the figure functions: <work>/classical (set by main(); callers that import them set FC.OUT)
 
 
 def frc(xa, ya, xb, yb, px=4.0):
@@ -521,7 +520,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--cell', default='MT'); ap.add_argument('--net', required=True); ap.add_argument('--tag', default='')
     ap.add_argument('--files', type=int, nargs='*'); ap.add_argument('--wmax', type=int, default=None)
+    ap.add_argument('--work', required=True, help='4Pi work folder')
     a = ap.parse_args()
+    global OUT; P4 = a.work; OUT = f'{P4}/classical'
     os.makedirs(f'{OUT}/fig', exist_ok=True)
     D = load(f'{OUT}/real/cl_{a.cell}{a.tag}_all.npz', a.net, a.files, a.wmax, zdrift=(a.cell == 'MT'))
     if a.cell == 'MT':

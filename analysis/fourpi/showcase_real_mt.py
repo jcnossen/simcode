@@ -2,7 +2,7 @@
 showcase4pi_fig.py, without a ground-truth row).
 
 Rows (methods): 4Pi-SIMCODE network (head v10), classical 4Pi-SIMFLUX published-style, classical pixel MLE (exists only in
-the MT boxes 0 and 1 of out/4pi/patches/regions_MT.json), astigmatism-only z (z_ast of the classical table on the
+the MT boxes 0 and 1 of <work>/patches/regions_MT.json), astigmatism-only z (z_ast of the classical table on the
 published-style rows and x, y). Columns: x-y overview coloured by z with the zoom boxes, zoom 1 (crossing with a clear z
 separation), zoom 2 (filaments overlapping in x-y at different heights) + an x-z / y-z section through it, tube
 cross-section (isolated straight segments, pooled, in-plane x axial) and its 1D lateral / axial profiles with FWHM.
@@ -19,9 +19,10 @@ every row (network included). Constant z offsets of network, pixel MLE and z_ast
 the same emitters / rows and removed (z of a 4Pi table has an arbitrary reference).
 
 Usage:
-  python analysis/fourpi/showcase_real_mt.py --net_locs 'out/4pi/net/locs_MT_*_v10*.npz' --tag v10_first [--samefiles]
-  python analysis/fourpi/showcase_real_mt.py --net_all out/4pi/net/net_MT_v10_all.npz --tag v10_full
-Writes out/4pi/fig/MT_showcase_real_<tag>.png and .json.
+  python analysis/fourpi/showcase_real_mt.py --work <4Pi work folder> --net_locs '<work>/net/locs_MT_*_v10*.npz' --tag v10_first [--samefiles]
+  python analysis/fourpi/showcase_real_mt.py --work <4Pi work folder> --net_all <work>/net/net_MT_v10_all.npz --tag v10_full
+Writes <work>/fig/MT_showcase_real_<tag>.png and .json (--cl, --regions default to <work>/classical/real/cl_MT_wv_all.npz,
+<work>/patches/regions_MT.json).
 """
 import argparse, glob, json, os, re, sys, time
 import numpy as np
@@ -34,14 +35,11 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi_classical')
 sys.path.insert(0, f'{REPO}/analysis/figures')
-from simcode.config import root; P4 = root('fourpi')
 import fig_cl as FC                     # read-only: zdrift_struct, em2, fwhm (none of these write files)
 from zoompick import pick_crossings
 from skel import skeletonize
-FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 FPF = 18000                              # frames per file
-OUTD = f'{P4}/fig'
 METH = [('net', '4Pi-SIMCODE (network)'), ('cl', 'classical 4Pi-SIMFLUX,\npublished-style'),
         ('clp', 'classical 4Pi-SIMFLUX,\npixel MLE'), ('ast', 'astigmatism-only z')]
 ZCMAP = LinearSegmentedColormap.from_list('zdiv', ['#3987e5', '#c3c2b7', '#eb6834'])
@@ -315,14 +313,18 @@ def scalebar(ax, frac, lab, x=0.05, y=0.06):
 # ----------------------------------------------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_MT_wv_all.npz')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--cl', default=None, help='classical table (default <work>/classical/real/cl_MT_wv_all.npz)')
     ap.add_argument('--net_locs', nargs='*', default=None, help='glob(s) of per-file network tables (raw x, y)')
     ap.add_argument('--net_all', default=None, help='merged network table with its own xd, yd (post_w4pi.py)')
     ap.add_argument('--head', default='v10'); ap.add_argument('--tag', required=True)
     ap.add_argument('--samefiles', action='store_true', help='also write <tag>_samefiles: classical rows restricted to the network files')
-    ap.add_argument('--regions', default=f'{P4}/patches/regions_MT.json')
+    ap.add_argument('--regions', default=None, help='default <work>/patches/regions_MT.json')
     a = ap.parse_args()
+    P4 = a.work; a.cl = a.cl or f'{P4}/classical/real/cl_MT_wv_all.npz'; a.regions = a.regions or f'{P4}/patches/regions_MT.json'
+    FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
     assert a.net_locs or a.net_all
+    OUTD = f'{P4}/fig'
     os.makedirs(OUTD, exist_ok=True)
     R, G, segs, info, files, src, ncl = prepare(a)
     variants = [(a.tag, None)]
@@ -412,6 +414,7 @@ def prepare(a, cl_extra=(), net_extra=()):
 
 def figure(R, G, segs, tag, a, info, nfiles, files, meth=None, extra_note=''):
     METH_ = METH if meth is None else meth
+    OUTD = f'{a.work}/fig'
     core = G['core']; ext, exty = core[1] - core[0], core[3] - core[2]; ox, oy = core[0], core[2]; zr = G['zr_nm']
     zooms = [(G['zoom1']['c'], G['zoom1']['size']), (G['zoom2']['c'], G['zoom2']['size'])]
     sec = G['section']; zc = 0.5 * (zr[0] + zr[1]); zh = 0.5 * (zr[1] - zr[0])

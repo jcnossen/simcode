@@ -9,14 +9,14 @@ drift shift applied: x_out = 128 x_result). Ours: <run>/process/locs_<file>.npz 
 z um, frame within the file). Their crop of channel 0 starts 15 camera columns right of ours; the remaining offset
 (0 / 1-based, sub-pixel) is estimated from the localizations themselves.
 
-  python analysis/fourpi_plain/compare_published.py <run dir> <out dir> [--files 0 1 2 3]
+  python analysis/fourpi_plain/compare_published.py <run dir> <out dir> --data <extracted Zenodo folder> [--files 0 1 2 3]
+  (data: the folder of the extracted Zenodo 4022827 data, with Cell11_642_tmpresult_20200910.mat and Cell11_DCresult.mat)
 """
 import argparse, json, os
 import numpy as np
 import scipy.io as sio
 from scipy.spatial import cKDTree
 
-D = '/mnt/data/dmdsf/public_4pi_sms/zenodo_4022827/extracted/'
 PX = 128.0
 NF = 3000          # frames per file
 
@@ -36,9 +36,10 @@ def load_ours(run, files):
     return {k: np.concatenate([r[k] for r in rows]) for k in rows[0]}
 
 
-def load_theirs():
-    m = sio.loadmat(D + 'Cell11_642_tmpresult_20200910.mat', squeeze_me=True)
-    d = sio.loadmat(D + 'Cell11_DCresult.mat', squeeze_me=True)
+def load_theirs(data):
+    """data: the folder of the extracted Zenodo data"""
+    m = sio.loadmat(os.path.join(data, 'Cell11_642_tmpresult_20200910.mat'), squeeze_me=True)
+    d = sio.loadmat(os.path.join(data, 'Cell11_DCresult.mat'), squeeze_me=True)
     raw = dict(x=m['xresult'] * PX, y=m['yresult'] * PX, t=m['tresult'].astype(int), N=m['Iresult'], sx=m['CRLBresult'][:, 0] * PX,
                sy=m['CRLBresult'][:, 1] * PX, bg=m['bgresult'], ll=m['llresult'])
     i = d['pr_out'].astype(int) - 1
@@ -142,10 +143,11 @@ def main():
     ap.add_argument('--chi2_max', type=float, default=None); ap.add_argument('--sig_max', type=float, default=25.0, help='ours: max(sx, sy) nm')
     ap.add_argument('--nmin', type=float, default=500.0, help='photon cut of both sets (their published set: I > 500)')
     ap.add_argument('--zref_max', type=float, default=120.0, help='ours: max |z - structure reference z| (nm; 0: no cut)')
+    ap.add_argument('--data', required=True, help='folder of the extracted Zenodo data')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     O = load_ours(a.run, a.files)
-    raw, pub = load_theirs()
+    raw, pub = load_theirs(a.data)
     tmax = NF * len(a.files)
     pub = sel(pub, pub['t'] < tmax); raw = sel(raw, raw['t'] < tmax)
     good = O['good'] if a.chi2_max is None else O['chi2'] < a.chi2_max

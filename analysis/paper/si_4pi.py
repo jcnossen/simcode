@@ -12,20 +12,19 @@
                emitters / um^2 / frame: renders per density (network, one sigma selection; 4Pi-SIMFLUX), x-z sections, GT-FRC vs
                frames (time to fidelity), recall / false positives / wrong-fringe fraction vs density.
 
-Tables (all existing, read-only):
-  NPC  out/4pi/net/net_NPC_v10_all.npz (post_w4pi.py), out/4pi/classical/real/cl_NPC_wv_all.npz
-  MT   out/4pi/net/net_MT_v10_all.npz, out/4pi/classical/real/cl_MT_wv_all.npz, out/4pi/patches/regions_MT.json
-  sim  out/4pi/sweep4pi/<tag>/{eval.json, locs_*.npz}, out/4pi/simmovie/<tag>/gt_sites.npz (sweep4pi_eval.py)
-       panels e / f: out/4pi/sweep4pi/<tag>/ttf_fp.json (analysis/fourpi_sim/sweep4pi_ttf_fp.py: interpolated sustained
+Tables (all existing, read-only; <work> = the 4Pi work folder, --work):
+  NPC  <work>/net/net_NPC_v10_all.npz (post_w4pi.py), <work>/classical/real/cl_NPC_wv_all.npz
+  MT   <work>/net/net_MT_v10_all.npz, <work>/classical/real/cl_MT_wv_all.npz, <work>/patches/regions_MT.json
+  sim  <work>/sweep4pi/<tag>/{eval.json, locs_*.npz}, <work>/simmovie/<tag>/gt_sites.npz (sweep4pi_eval.py)
+       panels e / f: <work>/sweep4pi/<tag>/ttf_fp.json (analysis/fourpi_sim/sweep4pi_ttf_fp.py: interpolated sustained
        GT-FRC crossing vs time, false positives incl. one-fringe-off); time axis 5.575 ms / frame (measured frame interval)
 The loading / registration / z-drift / pore and segment finding code is imported from the analysis scripts that made the
 4Pi status numbers (analysis/fourpi/select_curve_npc.py, showcase_real_mt.py), so the numbers are the same recipe.
 
-Usage (CPU only; SIMCODE_CONFIG must point at the main checkout's simcode.json so that out/4pi resolves):
-  export SIMCODE_CONFIG=~/simcode2/simcode.json
-  python analysis/paper/si_4pi.py prep_npc      # ~10 min, ~20 GB RAM -> out/paper_figs_v2/cache_si_4pi/npc.npz
-  python analysis/paper/si_4pi.py prep_mt       # ~20 min, ~40 GB RAM -> cache_si_4pi/mt.npz, mt_geom.json
-  python analysis/paper/si_4pi.py npc | mt | sim | sim_share   (sim_share: temporary share variant, not for the SI)
+Usage (CPU only):
+  python analysis/paper/si_4pi.py prep_npc --work <4Pi work folder>     # ~10 min, ~20 GB RAM -> out/paper_figs_v2/cache_si_4pi/npc.npz
+  python analysis/paper/si_4pi.py prep_mt --work <4Pi work folder>      # ~20 min, ~40 GB RAM -> cache_si_4pi/mt.npz, mt_geom.json
+  python analysis/paper/si_4pi.py npc | mt | sim | sim_share --work <4Pi work folder>   (sim_share: temporary share variant, not for the SI)
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -39,8 +38,6 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 for p in (REPO, f'{REPO}/analysis/fourpi', f'{REPO}/analysis/fourpi_classical', f'{REPO}/analysis/figures', f'{REPO}/analysis/fourpi_sim'):
     if p not in sys.path: sys.path.insert(0, p)
-from simcode.config import root
-P4 = root('fourpi')
 OUT = os.path.expanduser('~/simcode2/out/paper_figs_v2')
 CACHE = f'{OUT}/cache_si_4pi'
 PX = 128.0                                              # 4Pi pixel (nm), out/4pi/PROCESSING_STATUS.md 'Optics facts'
@@ -186,6 +183,7 @@ def inrect(x, y, r): return (x >= r[0]) & (x < r[1]) & (y >= r[2]) & (y < r[3])
 # =============================================================================================================== NPC
 def prep_npc(a):
     import select_curve_npc as SN
+    P4 = a.work
     ns = argparse.Namespace(cl=f'{P4}/classical/real/cl_NPC_wv_all.npz', net=f'{P4}/net/net_NPC_v10_all.npz')
     M, info = SN.load(ns); lg(f"rows { {k: len(v['x']) for k, v in M.items()} }")
     C = M['cl']; fb = (np.percentile(C['x'], 0.5), np.percentile(C['x'], 99.5), np.percentile(C['y'], 0.5), np.percentile(C['y'], 99.5))
@@ -210,6 +208,7 @@ def prep_npc(a):
 
 def fig_npc(a):
     import select_curve_npc as SN
+    P4 = a.work
     Z = np.load(f'{CACHE}/npc.npz'); info = json.load(open(f'{CACHE}/npc_info.json'))
     T = {k: {q: Z[f'{k}_{q}'].astype(np.float64) if q != 'frame' else Z[f'{k}_{q}'] for q in ('x', 'y', 'z', 'N', 'frame')} for k in ('net', 'cl')}
     T['net_m'] = {q: v[Z['net_matched']] for q, v in T['net'].items()}
@@ -387,6 +386,7 @@ def caption_npc(v):
 # ================================================================================================================ MT
 def prep_mt(a):
     import showcase_real_mt as SR
+    P4 = a.work
     ns = argparse.Namespace(cl=f'{P4}/classical/real/cl_MT_wv_all.npz', net_all=f'{P4}/net/net_MT_v10_all.npz', net_locs=None,
                             head='v10', tag='si4pi', regions=f'{P4}/patches/regions_MT.json')
     R, G, segs, info, files, src, ncl = SR.prepare(ns)
@@ -413,6 +413,7 @@ def prep_mt(a):
 
 def fig_mt(a):
     import showcase_real_mt as SR, fig_cl as FC
+    P4 = a.work
     Z = np.load(f'{CACHE}/mt.npz'); J = json.load(open(f'{CACHE}/mt_geom.json')); G, segs, info = J['G'], J['segs'], J['info']
     T = {k: {q: Z[f'{k}_{q}'].astype(np.float64) for q in ('x', 'y', 'z')} for k in ('net', 'cl')}
     for k in T: T[k]['frame'] = Z[f'{k}_frame']
@@ -587,7 +588,6 @@ def caption_mt(v):
 
 
 # =============================================================================================================== sim
-SW = f'{P4}/sweep4pi'
 NM = 128.0; LO, HI = 8 * NM, 52 * NM
 DENS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
 SHOW = ['mtc_d01', 'mtc_d03', 'mtc_d075', 'mtc_d15']
@@ -613,6 +613,7 @@ ZOOM2 = ((4800.0, 2330.0), 1200.0)                       # 4-5 tubes
 def fig_sim(a):
     """a.share: the temporary share variant si_4pi_sim_share (not for the SI): no x-z row, only the zoom box (labelled 'zoom') in a,
     no strip lines in b, panels re-lettered a-e"""
+    P4 = a.work; SW = f'{P4}/sweep4pi'
     share = bool(getattr(a, 'share', False))
     DR = dense_ref()
     Es = {t: json.load(open(f'{SW}/{t}/eval.json')) for t in DENS}
@@ -847,6 +848,7 @@ def caption_sim(V):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     ap.add_argument('what', choices=['prep_npc', 'prep_mt', 'npc', 'mt', 'sim', 'sim_share'])
+    ap.add_argument('--work', required=True, help='4Pi work folder')
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
     if a.what == 'sim_share': a.share = True

@@ -1,25 +1,22 @@
 """Fit the coherent two-arm 4Pi PSF (simcode/fourpi/coherent_psf.py) to a bead z-stack, per channel (61 slices x 4 channels).
 
-Data: out/4pi/smlm/zcal/zstack_rois_<cell>.npy ([61,4,21,21] e, registered channel ROIs around the bead).
+Data: <work>/smlm/zcal/zstack_rois_<cell>.npy ([61,4,21,21] e, registered channel ROIs around the bead).
 Per slice: x, y (px), N (common to the 4 channels), bg per channel; z_k = z0 + s * zstage_k (s = +-1 tried).
 Global: Zernikes of both arms (bottom initialised at minus the top), channel phases / transmissions, arm ratio,
 coherence, bottom-arm offset (dx, dy, dz), blur; optional per-slice 4Pi phase drift as a smooth polynomial in slice
 index (--drift_order). Loss: Poisson NLL with the sCMOS variance shift v (mu + v ~ Poisson).
 
-Usage: python analysis/fourpi/fit_psf4pi.py --cell NPC [--mirror y] [--s -1] [--iters 1500] [--tag base]
-Output: out/4pi/psf4pi/<cell>_<tag>.json (+ _state.pt) and a figure.
+Usage: python analysis/fourpi/fit_psf4pi.py --work <4Pi work folder> --cell NPC [--mirror y] [--s -1] [--iters 1500] [--tag base]
+Output: <work>/psf4pi/<cell>_<tag>.json (+ _state.pt) and a figure.
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.fourpi.coherent_psf import PSF4Pi, PSF4PiA
 
-OUT = f'{P4}/psf4pi'
-
-
 def run(a):
+    P4 = a.work; OUT = f'{P4}/psf4pi'
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(0)
     dev = a.device
@@ -137,4 +134,5 @@ if __name__ == '__main__':
     p.add_argument('--NA_b', type=float, default=1.35); p.add_argument('--n_imm_b', type=float, default=1.406)
     p.add_argument('--n_med', type=float, default=1.33); p.add_argument('--depth_t', type=float, default=0.05)
     p.add_argument('--depth_b', type=float, default=2.0); p.add_argument('--lr_z', type=float, default=0.002)
+    p.add_argument('--work', required=True, help='4Pi work folder')
     run(p.parse_args())

@@ -1,19 +1,18 @@
 """Real-data comparison of the network pipeline (tables of python -m simcode.fourpi.run) with the classical 4Pi-SIMFLUX tables of the same
-file (out/4pi/classical/real/cl_<cell>_<file>_wv.npz; read only): adjacent-window precision (DAFL) on the SAME emitters.
+file (<work>/classical/real/cl_<cell>_<file>_wv.npz; read only): adjacent-window precision (DAFL) on the SAME emitters.
 
 Same emitter = network 'good' row and classical kept row in the same window within 64 nm. DAFL: the same emitter in two
 consecutive windows (w, w + 1; within 0.35 px, unique), robust sd of the difference / sqrt 2, per photon bin (classical N).
 Also: kept fractions, median offset network - classical, 4Pi fringe agreement, reported sigma vs DAFL.
 DAFL cancels what is common to adjacent windows (phase field, pattern gauge): it measures precision, not accuracy.
-Usage: python analysis/fourpi/cmp_real4pi.py --cell NPC --files 10 --head v10 [--tag _t3600] [--wmax 600]
+Usage: python analysis/fourpi/cmp_real4pi.py --work <4Pi work folder> --cell NPC --files 10 --head v10 [--tag _t3600] [--wmax 600]
 """
 import argparse, json, os, sys
 import numpy as np
 from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-from simcode.setups.fourpi import acquisition; PX = acquisition('MT')['optics']['pixel_um'] * 1000   # 4Pi pixel (nm; the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import PIXEL_UM; PX = PIXEL_UM * 1000   # 4Pi pixel (nm; the same for MT and NPC)
 EDGES = (1000, 2000, 4000, 8000, 20000)
 
 
@@ -55,7 +54,8 @@ def main():
     p.add_argument('--cell', default='NPC'); p.add_argument('--files', type=int, nargs='+', default=[10]); p.add_argument('--head', default='v10')
     p.add_argument('--tag', default=''); p.add_argument('--wmax', type=int, default=0); p.add_argument('--sz_max', type=float, default=0.025)
     p.add_argument('--sxy_max', type=float, default=0.12); p.add_argument('--out', default='')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     res = {}
     for fi in a.files:
         L = dict(np.load(f'{P4}/net/locs_{a.cell}_{fi:03d}_{a.head}{a.tag}.npz'))

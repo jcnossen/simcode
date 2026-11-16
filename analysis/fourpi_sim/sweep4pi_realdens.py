@@ -1,5 +1,5 @@
 """Real-data equivalent of the sweep densities: the ON-emitter rate per um of microtubule in the real 4Pi-SIMFLUX MT data
-(network v10 tables, out/4pi/net/locs_MT_<k>_v10.npz) vs the simulated movies, for the imager-concentration translation.
+(network v10 tables, <work>/net/locs_MT_<k>_v10.npz) vs the simulated movies, for the imager-concentration translation.
 
 Per data set: localizations of the network with the base filters (sigma_z < 25 nm, sigma_xy < 0.12 px, N > 300) per
 6-frame window per um of tube. Tube length: x-y render at 40 nm, Gaussian blur 1 px, threshold at `--thr` x the 99th
@@ -9,7 +9,7 @@ Then: ON emitters per frame per um of tube in the real data = real rate / (sim l
 the matching rate), and the equivalent FOV density of the sweep's structure.
 Output: out/fourpi_sim/sweep/realdens.json
 Local tube density: skeleton length per 2 x 2 um block (blocks with > 0.25 um/um2), calibrated.
-Usage: python analysis/fourpi_sim/sweep4pi_realdens.py [--files 0 1 2]
+Usage: python analysis/fourpi_sim/sweep4pi_realdens.py --work <4Pi work folder> [--files 0 1 2]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -17,7 +17,6 @@ from scipy.ndimage import gaussian_filter, convolve
 from skimage.morphology import skeletonize
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 NM = 128.0
 OUT = os.path.expanduser('~/simcode2/out/fourpi_sim/sweep')
 TAGS = ['mtc_d01', 'mtc_d03', 'mtc_d05', 'mtc_d075', 'mtc_d15']
@@ -44,7 +43,8 @@ def tube_length(x_nm, y_nm, nwin, px=40.0, thr=0.15):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--files', type=int, nargs='*', default=[0, 30, 60, 90]); ap.add_argument('--thr', type=float, default=0.15)
-    a = ap.parse_args()
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    a = ap.parse_args(); P4 = a.work
     R = dict(thr=a.thr, sim={}, real={})
     cal = []
     for t in TAGS:

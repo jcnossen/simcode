@@ -9,11 +9,12 @@ from scipy import ndimage as ndi
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dc import crops, bead_align_file
 
-from simcode.setups.fourpi import acquisition; GAIN = acquisition('MT')['camera']['gain_e_per_adu']   # 4Pi camera gain (the same for MT and NPC)
+from simcode.pipeline.configs.fourpi import GAIN_E_PER_ADU as GAIN   # 4Pi camera gain (the same for MT and NPC)
 
 
-def affine_maps(cell):
-    y = os.path.join(os.path.dirname(bead_align_file(cell)), 'mappings_astig_fit.yaml')
+def affine_maps(cell, work, data):
+    """work: the 4Pi work folder, data: the folder of the raw 4Pi movies"""
+    y = os.path.join(os.path.dirname(bead_align_file(cell, work, data)), 'mappings_astig_fit.yaml')
     mp = yaml.safe_load(open(y))
     return [np.array(mp[f'image_{i}']['T_inv']) for i in range(1, 4)], [np.array(mp[f'image_{i}']['T_fwd']) for i in range(1, 4)]
 
@@ -29,8 +30,8 @@ class Warp:
         return ndi.map_coordinates(img, self.coords[c], order=1, mode='nearest')
 
 
-def affine_warp(cell):
-    Tinv, _ = affine_maps(cell)
+def affine_warp(cell, work, data):
+    Tinv, _ = affine_maps(cell, work, data)
     def inv(c, xx, yy):
         T = Tinv[c - 1]
         return T[0, 0] * xx + T[0, 1] * yy + T[0, 2], T[1, 0] * xx + T[1, 1] * yy + T[1, 2]

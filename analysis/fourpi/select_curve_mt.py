@@ -18,8 +18,8 @@ Operating points (network): all kept rows; count matched to the classical publis
 region; count matched in the two zoom boxes. Brightness control: the matched selection resampled to the classical photon
 histogram, and DAFL inside the fixed 2-4k photon bin. Sampling control: classical rows of all 100 files subsampled at
 random to several counts.
-Usage: python analysis/fourpi/select_curve_mt.py --net_locs 'out/4pi/net/locs_MT_[0-9][0-9][0-9]_v10_box.npz' --tag v10_first20
-Writes out/4pi/fig/MT_selection_curves_<tag>.png / .json and the showcase figure MT_showcase_real_<tag>_matched.png.
+Usage: python analysis/fourpi/select_curve_mt.py --work <4Pi work folder> --net_locs '<work>/net/locs_MT_[0-9][0-9][0-9]_v10_box.npz' --tag v10_first20
+Writes <work>/fig/MT_selection_curves_<tag>.png / .json and the showcase figure MT_showcase_real_<tag>_matched.png.
 """
 import argparse, json, os, sys, time
 import numpy as np
@@ -27,9 +27,8 @@ from scipy.spatial import cKDTree
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, f'{REPO}/analysis/fourpi')
-from simcode.config import root; P4 = root('fourpi')
 import showcase_real_mt as SR
-from showcase_real_mt import FC, PX, FPF, OUTD, inrect, lg
+from showcase_real_mt import FC, PX, FPF, inrect, lg
 import matplotlib.pyplot as plt
 
 FRACS = [1.0, 0.7, 0.5, 0.35, 0.25, 0.15, 0.1]
@@ -120,12 +119,16 @@ _G = {}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--cl', default=f'{P4}/classical/real/cl_MT_wv_all.npz')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--cl', default=None, help='default <work>/classical/real/cl_MT_wv_all.npz')
     ap.add_argument('--net_locs', nargs='*', default=None); ap.add_argument('--net_all', default=None)
     ap.add_argument('--head', default='v10'); ap.add_argument('--tag', required=True)
-    ap.add_argument('--regions', default=f'{P4}/patches/regions_MT.json')
+    ap.add_argument('--regions', default=None, help='default <work>/patches/regions_MT.json')
     ap.add_argument('--rule', default='combined sigma', help='network score used for the operating points and the matched showcase row (the ranking of all scores is reported regardless)')
     a = ap.parse_args()
+    P4 = a.work; a.cl = a.cl or f'{P4}/classical/real/cl_MT_wv_all.npz'; a.regions = a.regions or f'{P4}/patches/regions_MT.json'
+    FC.OUT = f'{P4}/fig/tmp_showcase'       # never write into the classical worker's directory
+    OUTD = f'{P4}/fig'
     rng = np.random.default_rng(0)
     R, G, segs, info, files, src, ncl = SR.prepare(a, SR.CL_EXTRA, SR.NET_EXTRA)
     cores = info['cores_nm']; core0 = cores[G['box']]

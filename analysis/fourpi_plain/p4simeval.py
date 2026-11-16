@@ -1,7 +1,7 @@
 """Accuracy of simulated-movie runs (analysis/fourpi_plain/sim_bench.py outputs) per z bin: bias and robust sd of x, y, z
 on matched isolated interior emitters (> 2000 photons), and the photon ratio; several runs side by side.
 
-  python analysis/fourpi_plain/p4simeval.py name:<bench dir> [...] [--json out.json]
+  python analysis/fourpi_plain/p4simeval.py name:<bench dir> [...] --work <plain-4Pi work folder> --data <extracted Zenodo folder> [--json out.json]
 """
 import argparse, json, os, sys
 import numpy as np
@@ -15,10 +15,12 @@ PX = 128.0
 def main():
     p = argparse.ArgumentParser(); p.add_argument('runs', nargs='+'); p.add_argument('--json', default='')
     p.add_argument('--nmin', type=float, default=2000)
+    p.add_argument('--work', required=True, help='plain-4Pi work folder (configs(work, data) of fourpi_plain.py)')
+    p.add_argument('--data', required=True, help='folder of the extracted Zenodo data')
     a = p.parse_args()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'fourpi'))
     from train_det4pi import acquisition
-    c = acquisition(os.path.join(os.path.dirname(__file__), '..', '..', 'simcode', 'pipeline', 'configs', 'fourpi_plain.py'))
+    c = acquisition(os.path.join(os.path.dirname(__file__), '..', '..', 'simcode', 'pipeline', 'configs', 'fourpi_plain.py'), a.work, a.data)
     R = {}
     for spec in a.runs:
         nm, d = spec.split(':', 1)

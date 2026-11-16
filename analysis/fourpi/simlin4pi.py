@@ -9,14 +9,13 @@ the prior, tile map + time blocks) -> explicit solve with the exact window model
 on-through vs kinetics, kinetics kept if it lowers chi2 by > 9.21 (the main pipeline's rule; no free fallback).
 Output: locs_SIM_000_<front>_<pattern>lin[_phiO].npz in the table format of the real pipeline (+ chi2, dof, good), so simeval4pi.py and
 showcase4pi_eval.py run on it (--model <front> --pattern <pattern>lin[_phiO]).
-Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/simlin4pi.py --tag iso --front v3L_det --pattern oracle --phi oracle
+Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/simlin4pi.py --work <4Pi work folder> --tag iso --front v3L_det --pattern oracle --phi oracle
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.processing import fourpi_pattern_phase as SR
 from simcode.processing.fourpi_pattern_phase import repattern_xy
@@ -52,7 +51,8 @@ def main():
     p.add_argument('--img_cpu', type=int, default=0, help='1: keep the candidate patches in host memory (large movies; batches go to the GPU)')
     p.add_argument('--ksum', type=int, default=1, help='K-summed movie: read variance K x in the read-out covariance')
     p.add_argument('--head', default='', help='learned-window head (v10 ...): its intensities, windows and covariance instead of the fixed read-out')
-    a = p.parse_args()
+    p.add_argument('--work', required=True, help='4Pi work folder')
+    a = p.parse_args(); P4 = a.work
     from simcode.util.proctitle import set_title; set_title('4pi-simlin')
     global SB; SB = 0.2 * math.sqrt(a.ksum)
     d = f'{P4}/simmovie/{a.tag}'
@@ -71,7 +71,7 @@ def main():
     Ys, Ls, Wss, Wl = [], [], [], []
     if a.head:
         from simcode.emitter.fourpi import load as load_head
-        net, _ = load_head(a.head); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
+        net, _ = load_head(a.head, work=P4); bl = []; pri = {k: [] for k in ('dxy', 'z', 'ls')}
         net.vread = a.ksum * 1.14 ** 2 + (0.2 * a.ksum) ** 2
         nbr = None
         if getattr(net, 'nbr_in', False):   # pass 0: the head's prior positions -> map of the other candidates of each window

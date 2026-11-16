@@ -5,7 +5,7 @@ registration error of the recipe), processed by the real driver (simcode.process
 patches, emitter network, phase field, explicit solve), evaluated against the ground truth: recall / false positives
 per photon bin, x / y / z errors against the reported sigma (pull), z bias, and the 4Pi phase-field error.
 
-  python analysis/fourpi_plain/sim_bench.py --acq simcode/pipeline/configs/fourpi_plain.py --out <dir> [--frames 600]
+  python analysis/fourpi_plain/sim_bench.py --acq simcode/pipeline/configs/fourpi_plain.py --work <plain-4Pi work folder> --data <extracted Zenodo folder> --out <dir> [--frames 600]
          [--dens 0.02,0.2] [--seed 11] [--set emitter=<ckpt> ...]
 Output: <dir>/sim_movie.npz (frames ADU, GT; reused), <dir>/locs_sim.npz, <dir>/bench.json
 """
@@ -107,11 +107,13 @@ def main():
     ap.add_argument('--set', nargs='*', default=[], help='overrides of the fourpi section: key=value (json values)')
     ap.add_argument('--sim_set', nargs='*', default=[], help='overrides of the simulation recipe (fourpi_train): key=value, e.g. n_psf=1 reg_shift_sd=0')
     ap.add_argument('--sim_dev', default='cuda', help="device of the movie simulation ('cpu': GPU-free)"); ap.add_argument('--sim_only', type=int, default=0)
+    ap.add_argument('--work', required=True, help='work folder of the config (configs(work, data))')
+    ap.add_argument('--data', required=True, help='data folder of the config (the extracted Zenodo data)')
     a = ap.parse_args()
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'fourpi'))
     from train_det4pi import acquisition, setup_of
     from simcode.processing import fourpi as PF
-    c = acquisition(a.acq)
+    c = acquisition(a.acq, a.work, a.data)
     for kv in a.set:
         k, v = kv.split('=', 1); c['fourpi'][k] = json.loads(v)
     for kv in a.sim_set:

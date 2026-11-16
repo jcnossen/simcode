@@ -19,18 +19,17 @@ coordinates (rows 1-199; row 0 carries embedded header pixels).
   Result (2026-11-15): pooled MT 4.26 / NPC 4.61 ADU/e; per channel (8-80 ADU) 3.4-5.0 ADU/e with the same channel pattern in both
            movies (a channel systematic of the non-shot variance, not camera gain) -> G = 4.3 +- 0.4 ADU/e = 0.23 +- 0.02 e/ADU, i.e.
            the 4Pi-SIMFLUX code constant 4.35 ADU/e is confirmed. Read noise (dark strip) median 4.7 ADU, rms 5.0 ADU; offset 100.5 ADU.
-usage: python camera_ptc.py [out_dir]  -> camera_ptc.json, camera_ptc.png
+usage: python camera_ptc.py [out_dir] --work <4Pi work folder> --data <raw 4Pi movie folder>  -> camera_ptc.json, camera_ptc.png
+       (default out_dir <work>/camera_ptc)
 """
-import os, sys, json
+import os, sys, json, argparse
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 from scipy.ndimage import median_filter
-from simcode.config import root
 from dc import Dcimg, movie_files, X0, CW
 
-P4 = root('fourpi')
 G0 = 4.35                       # ADU/e prior, only used in the stability tolerance
 SETS = (('MT', 5, 600), ('NPC', 10, 600))
 XLIT = (55, 305)                # lit columns within each 360-px crop (processing xlim)
@@ -99,13 +98,14 @@ def fit(mL, mv, se, n, Lmax, quad=False, nmin=200, Lmin=-np.inf):
     return coef, chi2
 
 
-def run(out_dir, K=1200):
+def run(out_dir, work, data, K=1200):
+    """work: the 4Pi work folder, data: the folder of the raw 4Pi movies (the movie file lists)"""
     os.makedirs(out_dir, exist_ok=True)
     res, curves = {}, {}
     cols = lit_columns()
     edges = np.r_[np.arange(-4, 20, 1.0), np.geomspace(20, 600, 30)]
     for cell, fi, f0 in SETS:
-        fn = [f for f in movie_files(cell) if f.endswith(f'_{fi:03d}.dcimg')][0]
+        fn = [f for f in movie_files(cell, work, data) if f.endswith(f'_{fi:03d}.dcimg')][0]
         cache = f'/tmp/camera_ptc_raw_{cell}_{fi:03d}_{f0}_{K}.npy'
         if os.path.exists(cache): a = np.load(cache).astype(np.float32)
         else:
@@ -186,4 +186,9 @@ def run(out_dir, K=1200):
 
 
 if __name__ == '__main__':
-    run(sys.argv[1] if len(sys.argv) > 1 else f'{P4}/camera_ptc')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('out_dir', nargs='?')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+    A = ap.parse_args()
+    run(A.out_dir or f'{A.work}/camera_ptc', A.work, A.data)

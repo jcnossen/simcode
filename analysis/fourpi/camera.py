@@ -8,13 +8,12 @@ V_p = clipped temporal variance.
   Findings (2026-11-11): the mean-variance offset level is NOT usable here (excess temporal variance in ch2/ch3 gives
   offsets of 97-98 ADU, below the 100.5 ADU dark level); per-pixel FPN is stable within a day (r = 0.97, MT files 5 vs 60)
   but not between the MT and NPC days (r = 0.15); the column FPN is stable across days (r = 0.94). See build().
-usage: python camera.py <out_dir>
+usage: python camera.py [out_dir] --work <4Pi work folder> --data <raw 4Pi movie folder>  (default out_dir <work>/smlm/camera)
 """
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.config import root; P4 = root('fourpi')
-import sys, os
+import sys, os, argparse
 import numpy as np
 from scipy.ndimage import median_filter, gaussian_filter
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -44,14 +43,15 @@ def to_crops(img):
     return np.stack(out, -3)
 
 
-def build(out_dir, K=1200):
+def build(out_dir, work, data, K=1200):
     """offset map = global level OFF0 (left dark strip, raw columns 20-200, both movies 100.49-100.51 ADU) + the movie's
     own column FPN (column means over rows 1-199 of L - median_filter(L, 1 x 15)); the per-pixel residual FPN (0.9 ADU sd,
     stable within a day, not across days) is NOT corrected in the lit area, where sample structure leaks into any
-    per-pixel estimate without dark frames. Read noise: dark-strip same-step-difference variance (24.6-24.9 ADU^2)."""
+    per-pixel estimate without dark frames. Read noise: dark-strip same-step-difference variance (24.6-24.9 ADU^2).
+    work: the 4Pi work folder, data: the folder of the raw 4Pi movies (the movie file lists)."""
     os.makedirs(out_dir, exist_ok=True)
     for cell, fi in (('MT', 5), ('NPC', 10)):
-        fn = [f for f in movie_files(cell) if f.endswith(f'_{fi:03d}.dcimg')][0]
+        fn = [f for f in movie_files(cell, work, data) if f.endswith(f'_{fi:03d}.dcimg')][0]
         L, V, frac = clipped_stats(fn, [600, 9000, 16000], K // 3)
         L[0] = L[1]
         OFF0 = float(np.mean(L[1:, 20:200]))
@@ -73,4 +73,9 @@ def build(out_dir, K=1200):
 
 
 if __name__ == '__main__':
-    build(sys.argv[1] if len(sys.argv) > 1 else f'{P4}/smlm/camera')
+    ap = argparse.ArgumentParser()
+    ap.add_argument('out_dir', nargs='?')
+    ap.add_argument('--work', required=True, help='4Pi work folder')
+    ap.add_argument('--data', required=True, help='folder of the raw 4Pi movies')
+    A = ap.parse_args()
+    build(A.out_dir or f'{A.work}/smlm/camera', A.work, A.data)
