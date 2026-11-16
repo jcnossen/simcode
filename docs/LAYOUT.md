@@ -35,8 +35,8 @@ per-acquisition pipeline around it (camera, PSF, model training, processing, rep
 ```
 simcode/
   __init__.py                 package marker, version
-  run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2); all stages, finished ones skipped
-  config.py                   all paths (models, data, outputs, 4Pi work directory and data, external DME) from SIMCODE_* variables / simcode.json / defaults; model_set(name or model folder)
+  run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2 --data-root …); all stages, finished ones skipped
+  config.py                   the models: MODELS = <repo>/models (where model / calibration names are looked up: resolve, model), model_set(name or model folder), production(); no path settings (paths are arguments)
   models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
                               cal_sim_pass2, cal_real_pass2, sig_u, psf), the default model, the paper's datasets (_production)
   dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
@@ -101,7 +101,7 @@ simcode/
     __main__.py               python -m simcode.pipeline <config>
     localization_pipeline.py  LocalizationPipeline: the stages of the acquisition's set-up in order (widefield: order, camera, spots, cammaps, tracks, beads, psf, train, process, report; fourpi: registration, process, report), done markers, checks
     acquisition_config.py     the acquisition config: defaults (+ the set-up's section), setup / channels / registration keys, yaml / json / Python files, validation, frame-order helpers
-    configs/                  acquisitions: 1809_2.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies); fourpi_plain.py (plain 4Pi: Li & Ries Cell11)
+    configs/                  acquisitions: 1809_2.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies), fourpi_plain.py (plain 4Pi: Li & Ries Cell11): configs(work, data), python -m simcode.pipeline <file> --work … --data …
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
@@ -136,7 +136,7 @@ simcode/
     __init__.py               get(name): widefield | fourpi | fourpi_plain
     base.py                   the Setup interface (defaults, validate, stages, st_<stage>, movie_files, reader)
     widefield.py              SIMCODE on DMD-SIMFLUX movies (the pipeline's own stages; registration with several channels)
-    fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name); FourPiPlainSetup (fourpi_plain): no pattern, fourpi.window frames, the training recipe (section fourpi_train, sim_kw)
+    fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name, work, data); FourPiPlainSetup (fourpi_plain): no pattern, fourpi.window frames, the training recipe (section fourpi_train, sim_kw)
   fourpi/                     the 4Pi PSF until torch-psf ships it (torch_psf.FourPiPSF on the torch-psf branch multichannel)
     __init__.py               package doc
     coherent_psf.py           coherent two-arm vectorial 4Pi PSF with four interference channels
@@ -264,8 +264,8 @@ outputs and the seeded simulator batches are bit-identical to the code before).
 
 | before | now |
 |---|---|
-| `fourpi/run.py` (CLI `--cell MT --files 5 --head v10`) | the pipeline: `python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT` (stages registration, process, report); worker `processing/fourpi.py` |
-| `fourpi/setup.py`, `fourpi/datasets.json` (P4, DATA4, LAYOUT, GAIN, PX_NM, P, XLIM, DELTA, file lists) | `pipeline/configs/fourpi.py` (acquisitions fourpi_MT, fourpi_NPC) read through `setups/fourpi.py` (`acquisition(name)`, `FourPiSetup`); P4 = `config.root('fourpi')`; config `data4pi` has no default |
+| `fourpi/run.py` (CLI `--cell MT --files 5 --head v10`) | the pipeline: `python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work <4Pi work folder> --data <raw movies> --only fourpi_MT` (stages registration, process, report); worker `processing/fourpi.py` |
+| `fourpi/setup.py`, `fourpi/datasets.json` (P4, DATA4, LAYOUT, GAIN, PX_NM, P, XLIM, DELTA, file lists) | `pipeline/configs/fourpi.py` (acquisitions fourpi_MT, fourpi_NPC) read through `setups/fourpi.py` (`acquisition(name, work, data)`, `FourPiSetup`); the 4Pi work folder (P4) and the raw-movie folder are arguments (`--work`, `--data`; 2026-11-16, was `config.root('fourpi')` / `data4pi`) |
 | `fourpi/front.py` Front(cell), PolyMap, feats, blur, nn_dist | `channels/front.py` ChannelFront (C channels), `channels/registration.py` PolyMap (+ feats_norm), `FourPiSetup.front(c, fi)` |
 | `DcimgMovie(path, layout=dict)`, `io.movie.crops` | `channels.layout.ChannelReader(DcimgMovie(path), ChannelLayout)`, `ChannelLayout.split` |
 | `fourpi/insitu.py` | `processing/fourpi_pattern_phase.py` |

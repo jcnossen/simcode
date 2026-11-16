@@ -105,6 +105,7 @@ psf:                               # stage d
 train:                             # stage e
   model: null                      # null = 'a<name>'; an existing model name / model folder = skip training and use it
   quick: false                     # few steps per trainer (plumbing test)
+  heldout: null                    # held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>); null = none
   steps: {detector: 40000, emitter: 18000, detector_pass2: 40000, detector_pass2_mix: 40000, detector_pass2_cont: 40000, emitter_pass2: 24000,
           emitter_pass2_long: 50000, emitter_pass2_final: 50000}
   init: {detector: null, emitter: pretrain_emitter_pass1.pt}
@@ -318,7 +319,7 @@ if a calibration fit has no matched targets the template calibrations are copied
 | step | command (all with `--calib <out>/psf/calib_avg.json` + `train.extra`) | steps (full / quick) |
 |---|---|---|
 | detector | `simcode.detector.train --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --seed 0` | 40000 / 30 |
-| emitter | `simcode.emitter.train --init pretrain_emitter_pass1.pt --detector <detector> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
+| emitter | `simcode.emitter.train --init pretrain_emitter_pass1.pt --detector <detector> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <train.heldout>` (only when train.heldout is set) | 18000 / 30 |
 | detector_pass2 | `simcode.detector.train --illum 1 --init <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11` (dedicated: the dataset's own pattern only) | 40000 / 30 |
 | detector_pass2_mix | `simcode.detector.train --init <detector_pass2> --pass1_ref <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61` (50 / 50 own / generic patterns) | 40000 / 30 |
 | detector_pass2_cont | `simcode.detector.train --init <detector_pass2_mix> --pass1_ref <detector> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71` (same mix; the model's pass-2 detector) | 40000 / 30 |
@@ -331,7 +332,7 @@ The share of the dataset's own pattern in the pass-2 training is fixed in the tr
 pass-2 detector continuations and every pass-2 emitter stage). Before that the chain was detector_pass2 (p_std 0.25) ->
 detector_pass2_cont (seed 51, 0.5) and the emitter stages 0.25 / 0.25 / 0.5; the checkpoints store the value they used
 (`args['p_std']`).
-| gates | `simcode.benchmark.gate_scenes` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
+| gates | `simcode.benchmark.gate_scenes` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`--calib`; the dumps also `--gate_dir`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 

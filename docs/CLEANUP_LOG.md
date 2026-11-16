@@ -830,3 +830,21 @@ Choices:
 
 Checks: see the section "Verification" of the branch report (tests/check_model_outputs.py reference from master 674a0c4 (= the former main f8cbdf4) vs the
 branch with the renamed files; one end-to-end simcode.run; pytest).
+
+## 2026-11-16: no path configuration (user decision: "it should just be command line arguments or function arguments")
+
+Removed, with no fallback: the config file (`$SIMCODE_CONFIG`, `<repo>/simcode.json`, `~/.config/simcode.json`,
+`simcode.example.json`), the variables `SIMCODE_MODELS`, `SIMCODE_DATA`, `SIMCODE_OUT`, `SIMCODE_4PI`, `SIMCODE_4PI_DATA`,
+`SIMCODE_MODEL`, `SIMCODE_GATE_CALIB`, `SIMCODE_GATE_DIR`, `DME_PATH`, `SMLMTORCH_MODELS`, and `config.root()`,
+`out_dir()`, `env()`, `models_dir()`, `resolve(p, 'data')`.
+
+| was | now |
+|---|---|
+| `config.root('models')` | `config.MODELS` = `<repo>/models` (names of networks / calibrations; any other file: give its path) |
+| `--dataset` movie under `root('data')` | `simcode.run --dataset <name> --data-root <dir>` (models.json entries stay relative) |
+| `root('out')` in tools | `--out` (default `./simcode_out/...` for pure outputs); input folders are required arguments |
+| `root('fourpi')`, `root('data4pi')` | `--work`, `--data`; the 4Pi configs define `configs(work, data)`: `python -m simcode.pipeline <cfg> --work … --data …` |
+| `SIMCODE_GATE_CALIB`, `SIMCODE_GATE_DIR` | `simcode.benchmark.gate_scenes --calib`, `simcode.processing.gate_dump --calib --gate_dir` |
+| `<out>/emitter_heldout/heldout5.pt` in the training stage | config key `train.heldout` |
+| DME checkout (`DME_PATH`, key `dme`) | the installed `dme` package |
+| tests | `pytest tests --work4pi <dir>`; `check_model_outputs.py --work4pi`, `check_fourpi_*.py --work`, `test_runconfig.py --gpu <data root>` |

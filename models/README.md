@@ -1,10 +1,10 @@
 # models/
 
-This directory is where the code looks for networks and calibrations (`simcode/config.py`: root `models`, default
-`<repo>/models`; env `SIMCODE_MODELS` or the config key `models` to put it elsewhere).
+This directory is where the code looks up the names of networks and calibrations (`simcode/config.py`: `MODELS` =
+`<repo>/models`; there is no setting to move it: give a path, or a model folder with a `model.json`, to use files elsewhere).
 
 **The repository holds source only.** Network weights (`*.pt`) are not in git: they are distributed separately and have to
-be copied into this directory (or the directory `models` points to). Where they are distributed from is not decided yet.
+be copied into this directory. Where they are distributed from is not decided yet.
 The small calibration json files are in git.
 
 ## What is in git
@@ -55,7 +55,7 @@ Other weights the kept code can use:
 | `pretrain_detector_pass1.pt` | the earlier default detector. Needed to retrain the 4Pi detector (`analysis/fourpi/train_det4pi.py --init pretrain_detector_pass1.pt`) and the default `--detector` of a pass-1 emitter training from scratch | 3bfc6c64a75e63d8 |
 | `insitu/beads/psf_fit_sign-1_na149_ball_drift.pt` | state of the bead PSF fit (2.7 kB; its json is in git) | 71e93f3b49a4c0a6 |
 
-4Pi networks live in the 4Pi work directory (`<out>/4pi/models`, config root `fourpi`): `head4pi_v10.pt` (learned-window
+4Pi networks live in the 4Pi work folder (`<4Pi work folder>/models`, on qnano1 `~/simcode2/out/4pi/models`; the `--work` argument of the 4Pi tools): `head4pi_v10.pt` (learned-window
 head, 9.0 MB, a44a951d4d61a1cb; contains its frozen prior), `head4pi_v3L.pt` (the prior alone = the candidate front of the
 simulated movies and the start of a v10 training, 6.9 MB, 08d067f517dff6d0), `det4pi/final.pt` (detector, 7.3 MB,
 5069f76c17b73c92).
@@ -74,7 +74,7 @@ C=models/insitu/calib_1809_2_psf_v2.json         # the PSF + camera of the model
 python -m simcode.detector.train --out runs/S/detector --steps 40000 --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 \
     --seed 0 --calib $C
 python -m simcode.emitter.train --out runs/S/emitter --steps 18000 --batch 16 --lr 1.5e-4 --ch 96 --detector runs/S/detector/final.pt \
-    --tau 15,80 --hold <out>/emitter_heldout/heldout5.pt --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
+    --tau 15,80 --hold <heldout5.pt of python -m simcode.emitter.heldout --set 5> --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 \
     --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --init pretrain_emitter_pass1.pt --pct 0.1 --ckpt_every 6000 --calib $C
 # pass 2: the detector starts DEDICATED (SIMCODE pattern only; --illum 1 from the pass-1 detector), then two fine-tuning stages
 # on the 50 / 50 mix of SIMCODE and generic patterns (the pattern share is fixed in the trainers, see below)
@@ -128,5 +128,5 @@ trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,25
 `--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.
 Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
 Calibrations: `python -m simcode.processing.gate_dump` of the new networks on the gate scenes rendered with the model's PSF
-(`SIMCODE_GATE_CALIB=$C`), then `analysis/psfmatch/fit_cal_set.py` (templates: `calib/template_calib_emitter_pass{1,2}_{sim,real}.json` above), then the
+(`--calib $C --gate_dir <gate npz folder>`), then `analysis/psfmatch/fit_cal_set.py` (templates: `calib/template_calib_emitter_pass{1,2}_{sim,real}.json` above), then the
 sigma rescale `analysis/psf3d_nets/sigcal.py fit` on a simulated movie with ground truth.

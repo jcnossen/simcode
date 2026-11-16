@@ -10,8 +10,12 @@ torch-psf `docs/API.md`) with SIMCODE's loaders and the paper's selection. Field
 
 ```bash
 export CUDA_VISIBLE_DEVICES=1
-python -m simcode.run --movie movie.tif --calib insitu/calib_1809_2_psf3d.json --model m1809 --out out/run1
+python -m simcode.run --movie /path/to/movie.tif --calib insitu/calib_1809_2_psf_v2.psf.zip --model m1809 --out out/run1
+python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out out/run1   # a paper dataset
 ```
+Paths are always arguments (there is no config file and no path environment variable): `--movie` a file, `--out` the
+output folder, `--model` a name of `simcode/models.json` or a model folder; calibration and network names are looked up in
+the repository's `models/` folder.
 
 ```python
 from simcode.dataset import Dataset
@@ -41,7 +45,7 @@ ds.add_fields(cluster=labels)                   # extra fields: kept by indexing
 ## Drift
 
 ```python
-from simcode.util.drift import dme_package; dme_package()     # the configured DME v2 checkout (simcode.json "dme")
+from simcode.util.drift import dme_package; dme_package()     # the installed DME v2 package (pip install -e <drift-estimation>)
 ds.estimate_drift(rows=ds.good & ds.disjoint)   # DME v2 on the good, non-overlapping windows -> ds.drift [frames, 2] px
 sel = ds.select().apply_drift()                 # the drift goes with every object indexed from ds; x - drift[frame + 3]
 sel.undo_drift()

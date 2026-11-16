@@ -54,17 +54,17 @@ Only the baselines need more:
 
 | baseline | needs |
 |---|---|
-| SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`~/smlmtorch/scripts/models`, or env `SMLMTORCH_MODELS`) |
+| SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`--smlmtorch_models`, default `~/smlmtorch/scripts/models`) |
 | DECODE | the `decode` fork (`~/decode2`) |
-| DME v2 drift | the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml` (installed by `pip install -e <repo>`); a local checkout given by env `DME_PATH` / config key `dme` overrides it; used through `simcode/util/drift.py` |
+| DME v2 drift | the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml` (installed by `pip install -e <repo>`, or `pip install -e <drift-estimation checkout>` at that commit); the installed package is the only one used, through `simcode/util/drift.py` |
 
 ## Run
 
 ```bash
 export CUDA_VISIBLE_DEVICES=1           # GPU 1 or 2 on the lab server (keep GPU 0 free)
-python -m simcode.run --movie 1809/cover1/2/simflux_5.5ms_500mW.tif --calib insitu/calib_1809_2_psf3d.json \
-    --model m1809 --out out_1809_2
-python -m simcode.run --dataset 1809_2 --out out_1809_2      # the same: movie, calibration and model of a paper dataset
+python -m simcode.run --movie /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif \
+    --calib insitu/calib_1809_2_psf_v2.psf.zip --model m1809 --crop 5,5,110 --out out_1809_2
+python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out out_1809_2   # the same: a paper dataset
 ```
 
 What every run does (= the paper's settings; the options that switched these were removed on 2026-11-14):
@@ -87,7 +87,8 @@ What every run does (= the paper's settings; the options that switched these wer
   another threshold: `select(14)`); the column `sel` (phase-calibrated detection selection) is the recommended full output
   for renders and drift. (The per-tile rule "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
 
-`--dataset <name>` takes movie, calibration, model and crop of a paper dataset from the `_production` entry of `models.json`.
+`--dataset <name>` takes movie, calibration, model and crop of a paper dataset from the `_production` entry of `models.json`;
+its movie path is relative to `--data-root` (the folder of the DMD-SIMFLUX DNA-PAINT data, `/mnt/data/dmdsf/bn_dnapaint` on qnano1).
 The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`, `--compile`, `--netset`, `--det` ...,
 `--u_max`, `--strict_q`) and on 2026-11-15 (`--format`, `--subset`, `--sigma_max`, `--prefetch` (always on), `--sig_u`
 (always the model's)) no longer exist (`docs/CLEANUP_LOG.md`).
@@ -95,7 +96,8 @@ The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
 ```bash
-python -m simcode.io.launch --gpus 1,2 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --out out_1809_2 --claim 1
+python -m simcode.io.launch --gpus 1,2 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint \
+    --out out_1809_2 --claim 1
 ```
 
 A run can be killed at any time: chunk files are written atomically, a restart continues with the missing chunks, and a
@@ -189,22 +191,27 @@ python -m simcode.util.runconfig verify <dir>     # recorded file hashes / commi
 unlogged table rebuilds). The automatic pipeline writes the same kind of record per acquisition and per stage, and the
 training recipe with file hashes into the model json (`docs/AUTO_PIPELINE.md`, section 2).
 
-## Paths and configuration
+## Paths
 
-No path is hard-coded (`simcode/config.py`). The roots:
+There are no path settings: no config file, no environment variables. Every tool takes its paths on the command line
+and every library function as arguments:
 
-| root | env var | config key | default |
-|---|---|---|---|
-| models | `SIMCODE_MODELS` | `models` | `<repo>/models` |
-| data | `SIMCODE_DATA` | `data` | none: pass full movie paths, or names relative to it |
-| out | `SIMCODE_OUT` | `out` | `./simcode_out`; used by the benchmark / analysis scripts |
-| 4Pi work directory | `SIMCODE_4PI` | `fourpi` | `<out>/4pi` |
-| 4Pi raw data | `SIMCODE_4PI_DATA` | `data4pi` | `root` of `simcode/fourpi/datasets.json` |
+| what | given as | default |
+|---|---|---|
+| movie | `--movie <file>` (or `--dataset <name> --data-root <dir>`) | none |
+| outputs | `--out <dir>` | required for `simcode.run`; `./simcode_out/...` for the benchmark tools |
+| model | `--model <name or model folder>` | none for `simcode.run` / the pipeline |
+| networks / calibrations | a path, or a name in the repository's `models/` folder (also `models/calib/`, `models/insitu/`) | `<repo>/models` |
+| 4Pi work folder, raw 4Pi movies | `--work <dir>`, `--data <dir>` (4Pi pipeline configs, 4Pi analysis scripts) | none |
+| DME | the installed `dme` package | |
 
-The config file is `$SIMCODE_CONFIG`, else `<repo>/simcode.json`, else `~/.config/simcode.json`; see
-`simcode.example.json`. Network and calibration arguments are resolved relative to the models dir (also `calib/` and
-`insitu/`), so `--calib insitu/calib_1809_2_psf3d.json` works from anywhere. (The names from before the package was renamed,
-`SIMCODE2_*` and `simcode2.json`, are no longer read since 2026-11-14.)
+```bash
+python -m simcode.run --movie <movie.tif> --calib <calib or name in models/> --model m1809 --out <dir>
+python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work <4Pi work folder> --data <raw 4Pi movies> --only fourpi_MT
+```
+`--calib insitu/calib_1809_2_psf_v2.psf.zip` works from anywhere (names are looked up in `<repo>/models`). The path
+configuration of earlier versions (`simcode.json`, `~/.config/simcode.json`, `SIMCODE_CONFIG`, `SIMCODE_MODELS`,
+`SIMCODE_DATA`, `SIMCODE_OUT`, `SIMCODE_4PI`, `SIMCODE_4PI_DATA`, `DME_PATH`) was removed on 2026-11-16 and is not read.
 
 ## Models and calibrations (`models/`)
 
@@ -214,14 +221,16 @@ recipe of a model). The models are defined in `simcode/models.json`.
 ## 4Pi
 
 ```bash
-python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT --gpus 1,2   # 4Pi-SIMCODE (network): registration, every file, report
+python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work ~/simcode2/out/4pi --data /mnt/data/4pi-sf \
+    --only fourpi_MT --gpus 1,2                                                         # 4Pi-SIMCODE (network): registration, every file, report
 python -m simcode.processing.fourpi <out>/config_resolved.json --files 10              # one file of an acquisition (the process stage's worker)
-python analysis/fourpi_classical/full_cl.py --stage read --cells NPC                    # classical 4Pi-SIMFLUX: reader ...
-python analysis/fourpi_classical/full_cl.py --stage fit --cells NPC                     # ... and fitter(s)
+python analysis/fourpi_classical/full_cl.py --stage read --cells NPC --work <4Pi work folder> --data <raw 4Pi movies>   # classical 4Pi-SIMFLUX: reader ...
+python analysis/fourpi_classical/full_cl.py --stage fit --cells NPC --work <4Pi work folder> --data <raw 4Pi movies>    # ... and fitter(s)
 ```
 Both read the dcimg files through `simcode/io/movie.py` and run their files through `simcode/io/work.py`
 (skip finished files, atomic outputs, claims). The acquisitions (paths, channel layout, camera, settings):
-`simcode/pipeline/configs/fourpi.py`, read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT')`).
+`simcode/pipeline/configs/fourpi.py` (`configs(work, data)`: the 4Pi work folder and the raw-movie folder are its
+arguments), read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT', work, data)`).
 Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.py`, `showcase_real_mt.py`,
 `select_curve_{mt,npc}.py`; `analysis/fourpi_classical/post_cl.py`, `fig_cl.py`.
 

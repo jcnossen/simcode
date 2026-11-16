@@ -383,7 +383,7 @@ separately; SIMCODE uses all its rows.
       `archive-2026-11-15:analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
       (reproduces the snapshots in `analysis/results/gate/` exactly).
   - m05q / m25q / m05qh / m25qh vs SIMCODE: `archive-2026-11-15:analysis/baselines/compare.py`, CRLB_ref = gate rs05pm / rs25pm
-    (`SIMCODE_GATE_DIR`).
+    (the gate npz folder; then env `SIMCODE_GATE_DIR`, now `simcode.processing.gate_dump --gate_dir`).
   - m25qh / m20qh (§3b †): `archive-2026-11-15:analysis/hd_compare/score.py <spec>`, with ours b22 = `analysis/hd_compare/calib_b22/*`.
     - Paired CIs: `compare_ci_r.py` with rs25pm.
     - Movies: `analysis/simreal/recipes.sh m25qh | m20qh` (`sim_movie.py` / `sim_movie20.py`; m05qh too). Classical inputs:
