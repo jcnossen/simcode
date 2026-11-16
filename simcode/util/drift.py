@@ -1,8 +1,6 @@
 """
-Drift estimation with DME v2: access to the `dme` package (github.com/jcnossen/drift-estimation, version >= 2.0, MIT), which is
-not part of this repository. It is looked up, in order, in
-  1. $DME_PATH or the config key "dme" (simcode.json): a checkout of that repository (the directory that holds dme/),
-  2. the installed package (pip install git+https://github.com/jcnossen/drift-estimation).
+Drift estimation with DME v2: the installed `dme` package (github.com/jcnossen/drift-estimation, version >= 2.0, MIT; a
+dependency in pyproject.toml, pinned to the commit the paper results were made with), which is not part of this repository.
 
     from simcode.util.drift import dme_v2, drift_of_table
     drift = dme_v2(pos, frame, crlb, numframes)          # [F, D], units of pos; corrected = pos - drift[frame]
@@ -14,9 +12,8 @@ drift_of_table is the lateral drift estimate used everywhere (pipeline tables, b
 disjoint windows when the table has those columns (else all rows), time = window start + 3, crlb = the table's sigma (px),
 rows with a sigma >= 1 px, a non-positive sigma or a non-finite value dropped.
 """
-import importlib, os, sys
+import importlib, os
 import numpy as np
-from .. import config
 
 URL = 'github.com/jcnossen/drift-estimation'
 _pkg = None
@@ -27,17 +24,11 @@ def dme_package():
     global _pkg
     if _pkg is not None:
         return _pkg
-    p = config.root('dme')
-    if p:
-        p = os.path.abspath(os.path.expanduser(p))
-        if not os.path.isfile(os.path.join(p, 'dme', '__init__.py')):
-            raise RuntimeError(f'DME_PATH / config "dme" = {p} is not a checkout of {URL} (no dme/__init__.py)')
-        if p not in sys.path: sys.path.insert(0, p)
-    m = sys.modules.get('dme') or importlib.import_module('dme')
+    m = importlib.import_module('dme')
     v = str(getattr(m, '__version__', '1'))
     if int(v.split('.')[0]) < 2:
-        raise RuntimeError(f'the dme package at {getattr(m, "__file__", "?")} is version {v}; DME v2 is needed. Set DME_PATH (or '
-                           f'"dme" in simcode.json) to a checkout of {URL}, or pip install git+https://{URL}')
+        raise RuntimeError(f'the dme package at {getattr(m, "__file__", "?")} is version {v}; DME v2 is needed: '
+                           f'pip install git+https://{URL} (or pip install -e <a checkout of it>)')
     _pkg = m
     return m
 

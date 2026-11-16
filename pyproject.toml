@@ -14,10 +14,8 @@ dependencies = [
     # torch-psf (MIT): PSF models, PSF files (psf.zip, calibration json), bead / in-situ PSF fits, TIFF reader
     "torch-psf @ git+https://github.com/jcnossen/torch-psf.git@0fee3c395847802acc1572602cab929db858365e",
 ]
-# Optional: h5py (hdf5 tables). A local checkout of drift-estimation can still override the installed dme
-# (env DME_PATH or the config key "dme"), see simcode/util/drift.py. On qnano1 the simcode-py311 env keeps the older dme 1.0
-# (~/dme, editable) because smlmtorch imports dme.rcc / native_api from it; there simcode uses the checkout external/drift-estimation
-# via the config key "dme" (same commit as pinned here).
+# Optional: h5py (hdf5 tables). DME is the installed dme package (no checkout setting); an editable install of a checkout at the
+# pinned commit is the same package: pip install -e <drift-estimation checkout>.
 
 [project.scripts]
 simcode-run = "simcode.run:main"
