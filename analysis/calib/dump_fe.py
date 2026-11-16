@@ -4,7 +4,7 @@ variants (Sigma models, per-bin calibration, prior offset) can be re-run offline
 existing gate npz of the same scene / seed after checking that the GT is identical.
 usage: CUDA_VISIBLE_DEVICES=1 python dump_fe.py --scen iso,rs05q,rs05qm --seeds 301,302,303 --gate_dir ~/simcode2/out/gate \
          --out ~/simcode2/out/bright/fe [--calib <scene PSF calibration>] [--ref_tag _hd_sc5nbb15pm]
-  --calib: scene PSF of the gate scenes (simcode.benchmark.gate.gate_calib; '' = the default model's PSF)
+  --calib: scene PSF of the gate scenes (simcode.benchmark.gate_scenes.gate_calib; '' = the default model's PSF)
   --gate_dir: folder of the gate npz (<gate_dir>/<scene>__s<seed><ref_tag>.npz) the CRLB is copied from"""
 import argparse, os, sys, time
 from simcode import config as _cfg
