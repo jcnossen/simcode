@@ -164,8 +164,8 @@ def main():
            "SMLM / SIMFLUX: CRLB; DECODE: its network uncertainty; SIMCODE: its calibrated uncertainty, with its detection probability of "
            "at least 0.63). Titles: GT-FRC resolution and the number of localizations. SIMFLUX uses the pattern estimated from the data, "
            "as SIMCODE does. SMLM and DECODE get the sum of the 6 frames; SMLM and SIMFLUX fit a 2D model of the PSF at the median "
-           f"emitter height ({g0['z_um'] * 1e3:.0f} nm); DECODE was retrained for this PSF, emitter heights of 0-400 nm and these photon, "
-           "background and density ranges. GT-FRC = the FRC between the rendered reconstruction and the rendered ground truth (x-y "
+           f"emitter height ({g0['z_um'] * 1e3:.0f} nm); DECODE was retrained for this PSF following its published training settings (Supplementary "
+           "Note: DECODE training), with emitter heights of 0-400 nm and these photon, background and density ranges. GT-FRC = the FRC between the rendered reconstruction and the rendered ground truth (x-y "
            f"projection, 5 nm pixels, full field, all {nf // 1000} 000 frames); resolution = the frequency after which the curve stays "
            "below 1/7 for 0.01 nm^-1 (the hollow tube's spectrum has zeros near 65, 28 and 18 nm, where a curve can dip below 1/7 and "
            "recover).",
