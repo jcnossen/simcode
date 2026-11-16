@@ -1,7 +1,7 @@
 """Rendered overview of the density simulations: rows = densities, columns = ground truth and the methods, same crop
 (the preprint's Fig 2 zoom) and the same rendering for every panel (fig_density.render: FRC-set rows, 5.4 nm pixels,
 1-pixel blur, 99.5 % clip). Each panel is labelled with its FRC and Jaccard (10 nm, full movie).
-usage: python analysis/papersim/fig_overview.py [--prefix Dexp|D] [--model m1809]
+usage: python analysis/papersim/fig_overview.py [--prefix Dexp|D] [--model m1809] [--v2key v2sig|v2c]
 output: out/papersim/overview_<prefix>_<model>.png
 With <run>/gtfrc_<model>.json (gtfrc_run.py) the panels also give the GT-FRC (reconstruction vs ground truth); a PSF panel
 (psfpanel.py: the PSF the movies were simulated with, xy | xz side by side, log) with a two-line label sits on the right (the style
@@ -17,10 +17,13 @@ import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 ap = argparse.ArgumentParser(); ap.add_argument('--prefix', default='Dexp'); ap.add_argument('--model', default='m1809')
 ap.add_argument('--internal', type=int, default=0, help='1: + the preprint SIMCODE column, version labels (overview_<..>_internal)')
 ap.add_argument('--suffix', default='', help="movie dir suffix, e.g. '_gauss' (D<d>_gauss: the preprint's Gaussian 1.3 px PSF reproduction)")
+ap.add_argument('--v2key', default='v2sig', help="SIMCODE column: v2sig (calibrated sigma <= 12 nm) or v2c (the common rule of every method: "
+                "p >= 0.63, calibrated sigma < 0.15 px; the *_wsm3d sets, as fig_sim_main --v2key v2c)")
 a = ap.parse_args()
 DENS = [0.5, 1, 2, 4]
-COLS = ([('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), ('v2sig', 'SIMCODE v2\n(σ ≤ 12 nm)')]
-        if a.internal else [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v2sig', 'SIMCODE\n(σ ≤ 12 nm)')])
+SCL = {'v2sig': '(σ ≤ 12 nm)', 'v2c': '(σ < 0.15 px)'}[a.v2key]
+COLS = ([('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), ('v1*', 'SIMCODE (preprint)'), (a.v2key, f'SIMCODE v2\n{SCL}')]
+        if a.internal else [('smlm', 'SMLM'), ('sf_gtp', 'SIMFLUX\n(true pattern)'), ('decode*', 'DECODE'), (a.v2key, f'SIMCODE\n{SCL}')])
 (cx, cy), w = crop_of(os.path.join(C.OUT, f'{a.prefix}{DENS[0]:g}{a.suffix}'))
 fig, ax = plt.subplots(len(DENS), len(COLS) + 1, figsize=(2.75 * (len(COLS) + 1) + 3.0, 2.95 * len(DENS)), squeeze=False)
 notes = set()
@@ -63,10 +66,14 @@ if a.suffix.startswith('_v2psf'):        # v2-PSF sets (2026-11-15): conditions 
             ("preprint condition, nominal (500 photons per window, background 2.5 photons/px/frame)" if a.internal else
              f"{g0['intensity_per_6frames']:.0f} detected photons per 6-frame window, background {g0['bg']:g} photons/px/frame"))
     zd = g0['z_dist_um']
-    psfname = (f"in-situ PSF v2 of 1809/2 + v2 camera" if a.internal else "in-situ PSF of 1809/2 + its camera calibration") + f", emitter heights 0-400 nm (median {zd['p50'] * 1e3:.0f} nm)"
+    hts = (f"emitter heights = the labels' own 3D positions on the filaments ({zd['p05'] * 1e3:.0f}-{zd['p95'] * 1e3:.0f} nm, 5th-95th percentile, "
+           f"median {zd['p50'] * 1e3:.0f} nm)" if str(g0.get('gt', '')).startswith('wsm3d') else f"emitter heights 0-400 nm (median {zd['p50'] * 1e3:.0f} nm)")
+    psfname = (f"in-situ PSF v2 of 1809/2 + v2 camera" if a.internal else "in-situ PSF of 1809/2 + its camera calibration") + f", {hts}"
 
 title = (f'Simulated {gt_desc(os.path.join(C.OUT, f"{a.prefix}{DENS[0]:g}{a.suffix}"), paper=not a.internal)}, 60 000 frames, {psfname}; {cond}. Density in emitters/µm²/frame; same crop ({w * C.PX_NM / 1000:.2f} µm) '
-         'and rendering in every panel' + ('; SIMCODE v2 with the PSF-matched networks.' if a.internal else '.'))
+         'and rendering in every panel' + ('; SIMCODE v2 with the PSF-matched networks' if a.internal else '')
+         + ('; every method: disjoint 6-frame windows, its own quality filters and reported precision < 0.15 px (SIMCODE: detection '
+            'probability >= 0.63 and its calibrated precision < 0.15 px, the same cut as every method).' if a.v2key == 'v2c' else '.'))
 if any(os.path.exists(os.path.join(C.OUT, f'{a.prefix}{d:g}{a.suffix}', 'full', f'gtfrc_{a.model}.json')) for d in DENS):
     notes.add('GT-FRC = FRC between the rendered reconstruction and the rendered ground truth (all labelling sites; 5 nm pixels, 1/7); FRC = the fair half-split FRC. '
               + GR.RULE_CAPTION)
@@ -84,7 +91,7 @@ fn = os.path.join(C.OUT, f'overview_{a.prefix}{a.suffix}_{a.model}' + ('_interna
 open(fn + '_caption.txt', 'w').write('\n'.join([title, psfpanel.caption_text(info)] + sorted(notes)) + '\n')
 open(fn + '_notes_internal.txt', 'w').write('\n'.join([
     f"generator: python analysis/papersim/fig_overview.py --prefix {a.prefix} --suffix {a.suffix} --model {a.model} --internal {a.internal}",
-    f"SIMCODE = method key v2sig, networks {a.model}; DECODE = the run's decode table (dec_sim1809v2 for the _v2psf sets)",
+    f"SIMCODE = method key {a.v2key}, networks {a.model}; DECODE = the run's decode table (dec_sim1809v2 for the _v2psf sets)",
     f"crossing rule: gtfrc.RULE = {GR.RULE!r}"]) + '\n')
 plt.savefig(fn + '.png', dpi=130); print(fn + '.png')
 if a.suffix.startswith('_v2psf'):

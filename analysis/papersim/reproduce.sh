@@ -148,7 +148,7 @@ case $what in
     [ $P = Dexp ] && $PY analysis/papersim/fig_sim_common.py --set Dexp1_v2psf_wsm3d
     $PY analysis/papersim/fig_sim_main.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c
     $PY analysis/papersim/fig_sim_main.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c --internal 1
-    $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm3d --model $N
+    $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c
     $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf_wsm3d --model $N ;;
   *) sed -n 2,40p "$0"; exit 1 ;;
 esac
