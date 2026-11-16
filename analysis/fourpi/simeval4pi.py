@@ -219,7 +219,7 @@ def main():
     p.add_argument('--tag', default='d1'); p.add_argument('--model', default='v2'); p.add_argument('--pattern', default='iter')
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--chi2_max', type=float, default=4.0); p.add_argument('--sxy_max', type=float, default=0.12)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-sim')
+    from simcode.util.proctitle import set_title; set_title('4pi-sim')
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     meta = json.load(open(f'{d}/meta.json'))
     st = fourpi_state(meta["psf"], P4)

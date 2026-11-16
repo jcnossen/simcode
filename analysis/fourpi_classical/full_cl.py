@@ -203,7 +203,7 @@ def main():
     ap.add_argument('--min_free_gb', type=float, default=10.0, help='the reader does not start a file with less free space on the temporary directory')
     ap.add_argument('--poll_s', type=float, default=30.0)
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True); os.makedirs(TMP, exist_ok=True)
     order = []
     for cell in a.cells:

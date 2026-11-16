@@ -1,6 +1,6 @@
 """
-Reference implementation of the per-chunk pass 1 and of the pattern solve of its rows (run_uncalibrated stages pass1, pass1_solve; the
-pipeline runs the fast versions in front_fast.py, these are the test oracle). No linear-intensity stage anywhere: no
+Reference implementation of the per-chunk pass 1 (run_uncalibrated stage pass1; the pipeline runs the fast version in front_fast.py,
+this is the test oracle) and z_inputs (the stored pass-1 z outputs as solve inputs, used by the fast pattern solve). No linear-intensity stage anywhere: no
 pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
 
   pass 1 (pattern-free)  per 6-frame window (stride 3, absolute start % 3 == 0, as pass1.py):
@@ -12,7 +12,7 @@ pixel-level per-frame intensity fit, no wing subtraction, no pixel-level positio
                          central half holds the time centroid of the network intensities, inside the crop, own frames),
                          in the pass-1 file format (wstart, x, y, sx, sy, z, p, phot, phot_t, I, sI, bg, out, tc, frame)
                          + L [n,6,6], x_det, y_det. pattern_estimation.py runs on these network intensities unchanged.
-  pass 2                 the explicit intensity-domain pattern solve (simcode/solve/solve.solve_emitters: fringe starts,
+  pattern solve          (stage pass1_solve: front_fast.run_chunk_pattern_solve_fast) the explicit intensity-domain pattern solve (simcode/solve/solve.solve_emitters: fringe starts,
                          kinetic model selection, box 1.5, calibrated sigma, fringe-start posterior mean) with
                          the estimated pattern (pattern_frames of pattern_est.pt) on the stored head outputs; output in
                          the pass-2 format (x_hy0, y_hy0, sig_hy0 (mean calibrated sigma), kin_hy, fringe_hy, pf_hy,
@@ -20,16 +20,15 @@ pixel-level per-frame intensity fit, no wing subtraction, no pixel-level positio
                          = the pass-1 `out` detections.
 Coordinates: movie (camera) pixels.
 """
-import json, time
+import time
 import numpy as np, torch
 from simcode.psf import TiffMovie
-from simcode.processing.common import region, pattern_frames, CAND_PMIN
+from simcode.processing.common import region, CAND_PMIN
 
 T = 6
 from simcode import config as _cfg
 DETECTOR = _cfg.model(_cfg.DETECTOR)
 EMITTER = _cfg.model(_cfg.EMITTER)
-CAL = _cfg.model(_cfg.CAL_REAL)
 THR0 = 0.2
 
 
@@ -112,49 +111,5 @@ class Pass1Front:
 
 
 def z_inputs(R, idx, tt):
-    """the head's z outputs of stored pass-1 rows (columns z, sz, bzx, bzy) -> z, lsz, bz of the solve input; rows of a run made
-    before 2026-11-14 (no sz column: 2D heads): NaN"""
-    if 'sz' not in R:
-        nan = tt(np.full(len(idx), np.nan))
-        return dict(z=nan, lsz=nan, bz=torch.stack([nan, nan], 1))
+    """the head's z outputs of stored pass-1 rows (columns z, sz, bzx, bzy) -> z, lsz, bz of the solve input"""
     return dict(z=tt(R['z'][idx]), lsz=torch.log(tt(R['sz'][idx])), bz=torch.stack([tt(R['bzx'][idx]), tt(R['bzy'][idx])], 1))
-
-
-@torch.no_grad()
-def run_chunk_pattern_solve(R, info, pattern, solve_cal, dev='cuda', chunk=8192, timing=None):
-    """pattern solve on the stored pass-1 head outputs of the `out` rows (identical rows for every pattern)"""
-    from simcode.solve import solve as SV
-    from simcode.solve import z_conditioning as ZC
-    timing = timing if timing is not None else {}
-    t_ = time.time()
-    cal = json.load(open(solve_cal)) if isinstance(solve_cal, str) else dict(solve_cal)
-    keep = R['out'].astype(bool)
-    X0, Y0 = info['X0'], info['Y0']
-    ws = R['wstart'][keep]
-    n = int(keep.sum())
-    tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
-    out = {c: np.full(n, np.nan, np.float32) for c in ('x_hy0', 'y_hy0', 'sig_hy0', 'kin_hy', 'fringe_hy', 'pf_hy', 'chi2_hy', 'B_hy',
-                                                    'Klin_hy', 'sx_cal', 'sy_cal', 'q_dof', 'phot', 'x_prior', 'y_prior', 'dnll',
-                                                    'x_map', 'y_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
-    uw, inv = np.unique(ws, return_inverse=True)
-    PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
-    for c0 in range(0, n, chunk):
-        sl = slice(c0, c0 + chunk)
-        idx = np.nonzero(keep)[0][sl]
-        o = dict(I=tt(R['I'][idx]), L=tt(R['L'][idx]), x=tt(R['x'][idx] - X0), y=tt(R['y'][idx] - Y0),
-                 lsxy=torch.log(tt(np.c_[R['sx'][idx], R['sy'][idx]])), x_det=tt(R['x_det'][idx] - X0), y_det=tt(R['y_det'][idx] - Y0),
-                 **z_inputs(R, idx, tt))
-        b = torch.tensor(inv[sl], device=dev)
-        so = SV.solve_emitters(o, PW, b, cal)
-        for k_, v in ZC.z_columns(o, so).items(): out[k_][sl] = v.cpu().numpy()
-        r = so['r'].cpu().numpy(); sc_ = so['s_cal'].cpu().numpy()
-        out['x_hy0'][sl] = r[:, 0] + X0; out['y_hy0'][sl] = r[:, 1] + Y0
-        out['sx_cal'][sl] = sc_[:, 0]; out['sy_cal'][sl] = sc_[:, 1]; out['sig_hy0'][sl] = sc_.mean(1)
-        out['kin_hy'][sl] = so['kin'].float().cpu().numpy(); out['pf_hy'][sl] = so['p'].float().cpu().numpy()
-        out['q_dof'][sl] = so['q'].cpu().numpy(); out['chi2_hy'][sl] = so['q'].cpu().numpy()
-        out['phot'][sl] = R['phot'][idx]; out['x_prior'][sl] = R['x'][idx]; out['y_prior'][sl] = R['y'][idx]
-        if 'dnll' in so: out['dnll'][sl] = so['dnll'].cpu().numpy()
-        rm = so.get('r_map', so['r']).cpu().numpy(); out['x_map'][sl] = rm[:, 0] + X0; out['y_map'][sl] = rm[:, 1] + Y0
-    torch.cuda.synchronize(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
-    out.update(wstart=ws, frame=R['frame'][keep], p=R['p'][keep], I_net=R['I'][keep])
-    return out

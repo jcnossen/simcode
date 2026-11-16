@@ -77,7 +77,7 @@ def main():
         a.init = a.init if a.init != 'det_n1.pt' else c['fourpi_train']['det_init']
     if not a.out: raise SystemExit('--out (or --acq) is required')
     a.steps = a.steps or 20000
-    from simcode.util.proctitle import auto; auto('4pi-det')
+    from simcode.util.proctitle import set_title; set_title('4pi-det')
     from simcode.detector.model import build
     from simcode.simulate.targets import detector_targets, gt_nn
     from simcode.detector.train import focal_w

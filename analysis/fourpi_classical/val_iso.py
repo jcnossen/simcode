@@ -26,7 +26,7 @@ def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--n', type=int, default=6000); ap.add_argument('--seed', type=int, default=21)
     ap.add_argument('--chunk', type=int, default=1500)
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'
     st = fourpi_state('NPC_f_dxy15', P4)
     lut = LUT4Pi(st, P=15, dev=dev)

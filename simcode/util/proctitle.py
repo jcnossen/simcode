@@ -16,5 +16,7 @@ def set_title(name, detail=''):
 
 
 def auto(name):
-    """Set the title 'simcode:<name>' (kept for the existing call sites; the arguments are no longer appended)."""
+    """= set_title(name). Kept only for the scripts of the open branches decodev3 / wsm3d that call it (analysis/baselines/decode/
+    train_v3.py, analysis/decode_checks/v3/eval_watch.py, analysis/papersim/common_rule.py); remove once they are merged and use
+    set_title. Nothing on main calls it (2026-11-15)."""
     return set_title(name)

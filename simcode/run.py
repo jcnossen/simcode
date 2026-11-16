@@ -52,7 +52,7 @@ def build_parser():
     ap.add_argument('--dataset', default='', help="a paper dataset (models.json '_production': " + ', '.join(PROD['datasets']) + '): '
                     'sets --movie, --calib, --model')
     ap.add_argument('--movie', default='', help='movie .tif (further parts movie_X1.tif ... are found automatically)')
-    ap.add_argument('--calib', default='', help='in-situ PSF / camera calibration json (e.g. insitu/calib_1809_2_psf3d.json)')
+    ap.add_argument('--calib', default='', help='in-situ PSF / camera calibration json (e.g. insitu/calib_1809_2_psf_v2.json)')
     ap.add_argument('--out', required=True)
     ap.add_argument('--model', default='', help='the model (required, or from --dataset / --config): a name of simcode/models.json '
                     '(m1809, m25, g13) or the path of a model folder with a model.json')
@@ -127,17 +127,6 @@ def _from_config(path, rest):
     M = REC.get('model') or {}
     if M.get('name') and M.get('definition') and M['name'] not in config.model_sets():        # e.g. the model of an automatic-pipeline dataset
         config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k not in ('name', 'folder')}
-    if M.get('files_are_the_models') is False and M.get('definition'):
-        # a record made (before 2026-11-14) with single network / calibration files given next to the model: the files it used
-        # become a model of their own, '<name>@record'
-        S = REC['settings']; k = S.get('cal_kind', 'real'); name = f"{M['name']}@record"
-        D = {kk: v for kk, v in M['definition'].items() if kk not in ('name', 'folder')}
-        D.update({r: S[r] for r in ('detector', 'emitter', 'detector_pass2', 'emitter_pass2') if S.get(r)})
-        if S.get('cal'): D[f'cal_{k}'] = S['cal']
-        if S.get('cal_pass2'): D[f'cal_{k}_pass2'] = S['cal_pass2']
-        config.model_sets()[name] = D
-        REC = dict(REC, settings=dict(S, model=name))
-        print(f'simcode.run --config: the record used files other than those of model {M["name"]}: re-run with them as model {name}', flush=True)
     W = REC.get('overrides')
     if W and not os.environ.get('AUTO_WRAP'):
         from simcode.pipeline import run_with_overrides
@@ -157,7 +146,7 @@ def main(argv=None):
         argv, REC, W0 = _from_config(c.config, rest); W = W or W0
     a, N, cal = resolve(ap, argv)
     a.model_name = N['name']
-    from simcode.util.proctitle import auto; auto('run')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('run')     # recognizable name in nvidia-smi / ps
     from simcode.io.work import Units, atomic_json
     os.makedirs(a.out, exist_ok=True)
     # ---- the run record (run_config.json): written now with status 'running', completed at the end

@@ -62,16 +62,16 @@ simcode/
     fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background; T frames, k None = no pattern), kinetics starts
   pattern/
     __init__.py               package doc
-    illumination.py           illumination input maps of a pattern (cos / sin per frame) and perturbed pattern estimates (training error models v1 / real / realw)
+    illumination.py           illumination input maps of a pattern (cos / sin per frame) and perturbed pattern estimates (training error models v1 / real)
   processing/
     __init__.py               package doc
     run_uncalibrated.py       expert entry point with all flags; run.py calls its stages; chunks are the units of io/work.py
     common.py                 read plan of the chunks, pass-1 chunk rows, camera conversion, calibration / PSF loading, pattern_frames, CAND_PMIN
-    front.py                  reference pass 1 (Pass1Front) and the pattern solve of its rows (run_chunk_pattern_solve); test oracle
+    front.py                  reference pass 1 (Pass1Front; test oracle) and z_inputs (stored pass-1 z as solve input)
     pass2_front.py            reference pass 2 with the pattern-aware networks (Pass2Front); test oracle
     front_fast.py             the pipeline's code path: queued fixed-size batches for pass 1 / pass 2 (Pass1FrontFast, Pass2FrontFast) and the chunk-wide pattern solve
     pattern_estimation.py     the illumination pattern from the pass-1 rows (k, per-step phases, depth, relative intensities, per-angle phase drift)
-    pattern_field.py          per-cell phase map and smooth depth field on top of the global pattern (analysis only)
+    pattern_field.py          evaluation of a per-cell phase map and smooth depth field on top of the global pattern (field_at; analysis only)
     gate_dump.py              raw network outputs of pass 1 / pass 2 on the gate scenes (input of a model's calibration fit): python -m simcode.processing.gate_dump
     fourpi.py                 4Pi-SIMCODE per file (the process stage of the fourpi / fourpi_plain set-ups): read, detect, patches, network, pattern (fourpi.pattern), phase field, solve, windows of fourpi.window frames; python -m simcode.processing.fourpi <config>
     fourpi_pattern_phase.py   per-file SIM pattern (slot DFT, per-candidate pattern phases) and 4Pi phase field (tile map + block drift) of the 4Pi pipelines
@@ -101,7 +101,7 @@ simcode/
     __main__.py               python -m simcode.pipeline <config>
     localization_pipeline.py  LocalizationPipeline: the stages of the acquisition's set-up in order (widefield: order, camera, spots, cammaps, tracks, beads, psf, train, process, report; fourpi: registration, process, report), done markers, checks
     acquisition_config.py     the acquisition config: defaults (+ the set-up's section), setup / channels / registration keys, yaml / json / Python files, validation, frame-order helpers
-    configs/                  acquisitions: 1809_2.py / .yaml, nr80.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies); fourpi_plain.py (plain 4Pi: Li & Ries Cell11)
+    configs/                  acquisitions: 1809_2.py / .yaml, example_setup.py; fourpi.py (the 4Pi MT and NPC movies); fourpi_plain.py (plain 4Pi: Li & Ries Cell11)
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
@@ -146,7 +146,7 @@ simcode/
     ckpt.py                   atomic checkpoint save with a disk guard (every trainer)
     compile.py                optional torch.compile support of the fast paths
     drift.py                  lateral drift of a table with the external DME v2 package (drift_of_table)
-    runconfig.py              the run record run_config.json (+ yaml): settings, hashes, code / environment, outcome; re-run, verify, backfill
+    runconfig.py              the run record run_config.json (+ yaml): settings, hashes, code / environment, outcome; re-run, verify
     cfgdict.py                ConfigDict: nested settings with attribute access, deep merge, freeze, yaml / json / Python loading
     proctitle.py              recognizable process names in nvidia-smi / ps
     spatial_hash.py           GPU / CPU neighbour search (pattern estimation, autoc, pass-1 linking)
@@ -201,7 +201,7 @@ column names are unchanged.
 | `hd/gate*.py`, `eff/crlb_nuis.py`, `eff/simcode_gate.py` | `benchmark/gate*.py`, `benchmark/crlb_nuisance.py`, `benchmark/preprint_gate.py` (the last two removed 2026-11-15, `docs/ARCHIVE.md`) |
 | `insitu/`, `evalproto/` (lib.py), `nn/`, `fileio/`, `fastutil.py`, `strict.py` | `calibration/`, `evaluation/` (metrics.py), `layers/`, `io/`, `util/compile.py`, `table.py` |
 | `fourpi/realsim4pi.py` RealSim4Pi | `fourpi/acquisition4pi.py` AcquisitionSim4Pi |
-| Pass1SC, Pass1SCFast, Pass2P2, Pass2P2Fast, run_chunk_pass2 | Pass1Front, Pass1FrontFast, Pass2Front, Pass2FrontFast, run_chunk_pattern_solve |
+| Pass1SC, Pass1SCFast, Pass2P2, Pass2P2Fast, run_chunk_pass2 | Pass1Front, Pass1FrontFast, Pass2Front, Pass2FrontFast, run_chunk_pattern_solve (removed 2026-11-15; front_fast.run_chunk_pattern_solve_fast) |
 | trainer modules `simcode.det.up2 train` / `simcode.p2.det2 train` (`--init_n1`) | `python -m simcode.detector.train` (pass 2: `--illum 1 --init <pass-1 detector>`; continuation: `--init <pass-2> --pass1_ref <pass-1>`) |
 | trainer modules `simcode.hd.sc4 train` / `prep` / `prep5`, `simcode.p2.head2 train` | `python -m simcode.emitter.train` (pass 2 when `--detector` / `--init` is pass 2), `python -m simcode.emitter.heldout [--set 5]` |
 | `simcode-strict` | `simcode-table` |

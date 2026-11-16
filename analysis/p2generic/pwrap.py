@@ -61,7 +61,7 @@ def _spec(sp, P):
 RS.AcquisitionSim.pattern = _pattern
 _title = os.environ.get('P2G_TITLE', 'p2gen'); set_title(_title)
 import simcode.util.proctitle as _PT
-_PT.auto = lambda name: set_title(_title)      # keep the p2gen title when the module sets its own (trainers call auto())
+_PT.set_title = lambda name, detail='': set_title(_title)      # keep the p2gen title when the module sets its own (trainers call set_title())
 mod = sys.argv[1]; sys.argv = [mod] + sys.argv[2:]
 if mod.endswith('.py'): runpy.run_path(mod, run_name='__main__')
 else: runpy.run_module(mod, run_name='__main__', alter_sys=True)

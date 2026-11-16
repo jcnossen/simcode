@@ -29,13 +29,9 @@ usage: python -m simcode.processing.run_uncalibrated --movie <tif> --calib <cali
        [--stages pass1,pattern,pass1_solve,pass2] [--crop x0,y0,size] [--nframes N] [--chunk 6000] [--claim 1]
 Outputs in --out: pass1_<f0>.npz, pattern_est.pt / pattern_est.json, pass2_<tag>_<f0>.npz, runtime.json, log.txt
 """
-import argparse, glob, hashlib, json, os, time
+import argparse, glob, json, os, time
 import numpy as np, torch
 from simcode import config
-
-
-def md5(p):
-    return hashlib.md5(open(p, 'rb').read()).hexdigest()[:10]
 
 
 COMPILE = 'auto'          # torch.compile of the solve's LM step when available (simcode/util/compile.py)
@@ -74,7 +70,7 @@ def build_parser():
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
-    from simcode.util.proctitle import auto; auto('pipeline')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'emitter', 'detector', 'cal', 'detector_pass2', 'emitter_pass2', 'cal_pass2'):
         setattr(a, k, config.resolve(getattr(a, k)))
     a.movie = config.resolve(a.movie, 'data')

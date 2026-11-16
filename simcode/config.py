@@ -64,10 +64,6 @@ def models_dir():
     return root('models')
 
 
-def data_root():
-    return root('data')
-
-
 def out_dir(*sub, make=True):
     p = os.path.join(root('out'), *sub)
     if make: os.makedirs(p, exist_ok=True)

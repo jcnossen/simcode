@@ -49,7 +49,7 @@ def main():
     p.add_argument('--rho_hi', type=float, default=2.0); p.add_argument('--log_every', type=int, default=250)
     p.add_argument('--init_v10', default='', help='v10-type checkpoint to start a neighbour-input head from')
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
-    from simcode.util.proctitle import auto; auto('4pi-train-hd')
+    from simcode.util.proctitle import set_title; set_title('4pi-train-hd')
     OUT = f'{P4}/models/head4pi_{a.tag}'; os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)

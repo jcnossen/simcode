@@ -14,9 +14,6 @@ the 4Pi scripts.
       variant for a rectangular field (nm): square-root Hann window, rings of width 1 / (largest side), half-ring frequency
       centres, crossing only counted above 1/300 nm. Gives different numbers than frc(); it is the estimator of the 4Pi
       showcase evaluation and is kept so that those numbers do not change.
-  frc_fov(x, y, half, x0, x1, px_nm=108.33, pix_nm=5.0)
-      variant on a fixed square field [x0, x1) camera px with 300 radial bins up to Nyquist, crossing counted above
-      1/500 nm (archive-2026-11-15:analysis/hd_compare/score.py); kept for the same reason.
 """
 import numpy as np
 
@@ -83,18 +80,3 @@ def frc_hann(xa, ya, xb, yb, ext_a, ext_b, pix=4.0):
     return f, c, res
 
 
-def frc_fov(x, y, half, x0, x1, px_nm=PX_NM, pix_nm=5.0):
-    """FRC between the rows with half True and False on the fixed field [x0, x1) camera px -> resolution nm"""
-    zoom = px_nm / pix_nm; W = int((x1 - x0) * zoom)
-    yy, xx = np.meshgrid(np.fft.fftfreq(W), np.fft.fftfreq(W), indexing='ij')
-    nbins = 300; rbin = np.minimum((np.sqrt(xx ** 2 + yy ** 2) / 0.5 * nbins).astype(int), nbins)
-    ims = []
-    for m in (half, ~half):
-        h, _, _ = np.histogram2d((y[m] - x0) * zoom, (x[m] - x0) * zoom, bins=(W, W), range=[[0, W], [0, W]])
-        ims.append(np.fft.fft2(h))
-    num = np.bincount(rbin.ravel(), np.real(ims[0] * np.conj(ims[1])).ravel(), nbins + 1)
-    den = np.sqrt(np.bincount(rbin.ravel(), (np.abs(ims[0]) ** 2).ravel(), nbins + 1) * np.bincount(rbin.ravel(), (np.abs(ims[1]) ** 2).ravel(), nbins + 1))
-    c = np.convolve((num / np.maximum(den, 1e-12))[:nbins], np.ones(5) / 5, mode='same')
-    fq = (np.arange(nbins) + 0.5) / nbins * 0.5 / pix_nm
-    below = np.nonzero((c < THRESHOLD) & (fq > 1 / 500))[0]
-    return float(1 / fq[below[0]]) if len(below) else np.nan

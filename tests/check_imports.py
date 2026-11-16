@@ -10,7 +10,7 @@ Used after removals / renames (run it directly; pytest does not collect this fil
 import ast, importlib.util, os, re, subprocess, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKGS = [d for d in ('simcode',) if os.path.isdir(os.path.join(ROOT, d))]     # 'simcode2' = the pre-rename name: always an error
+PKGS = [d for d in ('simcode',) if os.path.isdir(os.path.join(ROOT, d))]
 
 
 def tracked():
@@ -90,7 +90,7 @@ def check():
             elif isinstance(n, ast.ImportFrom) and n.level == 0 and n.module: mods = [(n.module, [a.name for a in n.names])]
             for m, names in mods:
                 top = m.split('.')[0]
-                if top in ('simcode', 'simcode2'):
+                if top == 'simcode':
                     if top not in PKGS: errs.append(f'{f}:{n.lineno}: import of {m}: package {top} does not exist'); continue
                     p = mod_path(m)
                     if p is None: errs.append(f'{f}:{n.lineno}: module {m} does not exist'); continue
@@ -114,10 +114,10 @@ def check():
     for f in files:
         if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS: continue
         for i, line in enumerate(open(os.path.join(ROOT, f), encoding='utf-8', errors='replace'), 1):
-            for mm in re.finditer(r'(?<![\w~/:-])((?:simcode2?|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
+            for mm in re.finditer(r'(?<![\w~/:-])((?:simcode|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
                 s = mm.group(1)
                 if not os.path.exists(os.path.join(ROOT, s)): errs.append(f'{f}:{i}: mentions {s}, which does not exist')
-            for mm in re.finditer(r'python\s+(?:-u\s+)?-m\s+((?:simcode2?)[\w.]*)', line):
+            for mm in re.finditer(r'python\s+(?:-u\s+)?-m\s+(simcode[\w.]*)', line):
                 if mod_path(mm.group(1)) is None: errs.append(f'{f}:{i}: python -m {mm.group(1)}: no such module')
     return errs
 

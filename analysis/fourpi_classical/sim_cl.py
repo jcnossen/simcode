@@ -49,7 +49,7 @@ def main():
     ap.add_argument('--chunk', type=int, default=1024); ap.add_argument('--out', default='')
     ap.add_argument('--front', default=''); ap.add_argument('--field', default='poly'); ap.add_argument('--order', type=int, default=3); ap.add_argument('--scale', type=float, default=1.0)
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; d = a.dir; tag = os.path.basename(d.rstrip('/'))
     out = a.out or f'{P4}/classical/sim/{tag}_{a.field}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']

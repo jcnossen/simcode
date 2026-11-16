@@ -9,8 +9,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
 
   loaders   Dataset.load(path)  a run directory (from_run), .hdf5 (load_table: a table of simcode.run / simcode.table, the
                                 torch-psf format), .npz (load_npz: a table of a run before 2026-11-15, a subset file of
-                                that time, a file of the earlier SIMCODE Dataset.save_npz, or the paper's DECODE table:
-                                from_decode), .npy (load_npy: the preprint code's Dataset / SFDataset file), else
+                                that time, or the paper's DECODE table: from_decode), .npy (load_npy: the preprint code's Dataset / SFDataset file), else
                                 torch_psf's load (.hdf5: this format or Picasso, e.g. the paper's sf.hdf5; .csv: ThunderSTORM)
             from_run(run_dir, pass_=2), load_table, from_columns, load_npz, from_decode, from_smlmtorch(ds), load_npy
             window=<frames>: frames per localization (the n_frames field) for files that do not record it (the paper's
@@ -45,9 +44,8 @@ import torch
 from simcode import table as SP
 from simcode.psf import Dataset as _TorchPSFDataset
 
-META_KEY, DRIFT_KEY, APPLIED_KEY = 'locs_meta', 'locs_drift', 'locs_drift_applied'   # keys of the earlier SIMCODE npz save
 _RENAME = dict(p='score', I='intensities')                     # v2 table column -> field
-_META = dict(px_nm='pixel_nm', imgshape='image_size', nframes='n_frames')   # earlier SIMCODE metadata -> torch_psf names
+_META = dict(px_nm='pixel_nm')                                 # v2 table metadata -> torch_psf names
 
 
 def _read_json(path):
@@ -109,7 +107,7 @@ class Dataset(_TorchPSFDataset):
 
     @classmethod
     def load_npz(cls, path, columns=None, info=True, window=6):
-        """A table file of a run before 2026-11-15 (locs_p1.npz / locs_p2.npz / a subset file of that time / a file of the earlier SIMCODE Dataset.save_npz), or the
+        """A table file of a run before 2026-11-15 (locs_p1.npz / locs_p2.npz / a subset file of that time), or the
         paper's DECODE table (from_decode). columns: load only these (x, y, frame always; a 660 MB production table takes a
         few seconds in full). info: also read <table>_info.json, and summary.json / run_config.json of the directory when
         they exist (crop, model, frame count, image size, the run record)."""
@@ -117,11 +115,7 @@ class Dataset(_TorchPSFDataset):
         if 'phot' in z.files and 'photons' not in z.files: return cls.from_decode(path, window)
         n = len(z['x']); C = {}; meta = dict(source=os.path.abspath(path), format='simcode npz')
         want = None if columns is None else set(columns) | {'x', 'y', 'frame'}
-        drift = None; applied = False
         for k in z.files:
-            if k == META_KEY: meta = {**json.loads(str(z[k])), **meta}; continue
-            if k == DRIFT_KEY: drift = z[k]; continue
-            if k == APPLIED_KEY: applied = bool(z[k]); continue
             if want is not None and k not in want and k not in ('px_nm', 'sigma_max'): continue
             v = z[k]
             if v.ndim == 0:
@@ -129,7 +123,7 @@ class Dataset(_TorchPSFDataset):
             elif len(v) == n:
                 C[k] = v
         if info: cls._run_meta(path, meta)
-        return cls.from_columns(C, meta, meta.get('window', window), drift, applied)
+        return cls.from_columns(C, meta, meta.get('window', window))
 
     @staticmethod
     def _run_meta(path, meta):
@@ -226,8 +220,7 @@ class Dataset(_TorchPSFDataset):
 
     @classmethod
     def load(cls, path, window=None, **kw):
-        """By kind of path: a run directory (from_run), .npz (load_npz: v2 table, earlier SIMCODE save, or the paper's DECODE
-        table), .npy (load_npy: the preprint code's file), else torch_psf.Dataset.load (.hdf5 / .h5: torch-psf format or
+        """By kind of path: a run directory (from_run), .npz (load_npz: v2 table or the paper's DECODE table), .npy (load_npy: the preprint code's file), else torch_psf.Dataset.load (.hdf5 / .h5: torch-psf format or
         Picasso; .csv: ThunderSTORM, needs pixel_nm=). window: frames per localization (the n_frames field) when the file
         does not record it (the paper's SMLM / SIMFLUX tables: 6); keywords go to that reader."""
         path = str(path)

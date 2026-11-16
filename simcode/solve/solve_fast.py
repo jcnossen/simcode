@@ -25,12 +25,6 @@ T = 6
 _CACHE = {}
 
 
-# ------------------------------------------------------------------------------------------------ small algebra
-def _mv(A, v):
-    """[M,a,b] @ [M,b] -> [M,a] without bmm"""
-    return (A * v[:, None, :]).sum(-1)
-
-
 def _mm(A, B):
     """[M,a,b] @ [M,b,c] -> [M,a,c] without bmm"""
     return (A[:, :, :, None] * B[:, None, :, :]).sum(2)

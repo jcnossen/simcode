@@ -11,8 +11,9 @@ Pass 1 (illum 0): TrainingBatches.detector_batch (the acquisition simulator: pre
   0.3-3.0 px). --nnw 0: unit weights.
 Pass 2 (illum 1): the pass-1 detector + illumination inputs, zero-initialised from a pass-1 --init (starts exactly at it) or
   continued from a pass-2 --init; batches alternate TrainingBatches.illumination_batch mix 'paper' (label-unit brightness +
-  bright tail) and 'det' (the pass-1 photon mix), pairs 0.3-3.0 px, perturbed pattern estimates as input, generic patterns in a
-  share 1 - --p_std of the FOVs. Held-out: fixed seeded batches (make_pattern_hold), recall at p >= 0.5 per nn bin and FP per
+  bright tail) and 'det' (the pass-1 photon mix), pairs 0.3-3.0 px, perturbed pattern estimates as input. Pattern draw (fixed
+  recipe, simulate/batches.P_STD_DEDICATED / P_STD): from a pass-1 --init the SIMCODE pattern only (the dedicated pass-2
+  detector), from a pass-2 --init (fine-tuning) generic patterns in half the FOVs. Held-out: fixed seeded batches (make_pattern_hold), recall at p >= 0.5 per nn bin and FP per
   window, with the pass-1 detector --pass1_ref on the same batches as reference (eval_ref.json).
 --illum: default = that of --init (0 without --init). Pass 2 without --init starts from the default model's pass-1 detector.
 Checkpoints {'model', 'args' (arch = model.ARCH, ch, stem_ch, up = 1, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
@@ -129,9 +130,6 @@ def parser():
     # pass 2
     ap.add_argument('--eval_every', type=int, default=2500)
     ap.add_argument('--no_illum', type=int, default=0)     # control: same data / schedule, illumination inputs zeroed
-    # pattern draw: generic (any pitch / orientation / phases / frame order / depth / power; simulate/acquisition.AcquisitionSim._generic)
-    # in a share 1 - p_std of the FOVs, the SIMCODE pattern in the others (models/README.md recipe: 0.25, then 0.5 in the last stage)
-    ap.add_argument('--p_std', type=float, default=0.5)
     ap.add_argument('--check', type=int, default=0, help='1: zero-init check only')
     ap.add_argument('--stats', type=int, default=0, help='n > 0: training-mix statistics of n pass-1 batches only')
     return ap
@@ -146,7 +144,7 @@ def main(argv=None):
         a.illum = int(bool(a.init) and is_pass2(torch.load(config.resolve(a.init), map_location='cpu', weights_only=False)['model']))
     for k, v in DEFAULTS[a.illum].items():
         if getattr(a, k) is None: setattr(a, k, v)
-    from simcode.util.proctitle import auto; auto('train-p2det' if a.illum else 'train-det')     # name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('train-p2det' if a.illum else 'train-det')     # name in nvidia-smi / ps
     (train_pass2 if a.illum else train_pass1)(a)
 
 
@@ -215,11 +213,14 @@ def train_pass1(a):
 
 
 def train_pass2(a):
-    from simcode.simulate.batches import TrainingBatches
+    from simcode.simulate.batches import TrainingBatches, P_STD, P_STD_DEDICATED
     from simcode.detector.model import load as load_det
     init = a.init or config.DETECTOR
+    cont = is_pass2(torch.load(config.resolve(init), map_location='cpu', weights_only=False)['model'])     # fine-tuning a pass-2 detector
     if not a.pass1_ref:
-        a.pass1_ref = config.DETECTOR if is_pass2(torch.load(config.resolve(init), map_location='cpu', weights_only=False)['model']) else init
+        a.pass1_ref = config.DETECTOR if cont else init
+    # share of SIMCODE-pattern FOVs (fixed recipe, models/README.md): dedicated first stage, then the 50 / 50 mix (stored in args)
+    a.p_std = P_STD if cont else P_STD_DEDICATED
     os.makedirs(a.out, exist_ok=True)
     args = vars(a); args.update(arch=ARCH, up=1, ch=[48, 96, 160], stem_ch=16)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
@@ -289,10 +290,10 @@ def stats(n):
 
 def check():
     """zero-init check: a pass-2 detector from the default model's pass-1 detector == that detector on a realistic batch"""
-    from simcode.simulate.batches import TrainingBatches
+    from simcode.simulate.batches import TrainingBatches, P_STD
     from simcode.detector.model import load as load_det
     torch.manual_seed(0)
-    gen = TrainingBatches(64, 64, 6, seed=0, p_std=0.5)
+    gen = TrainingBatches(64, 64, 6, seed=0, p_std=P_STD)
     o = gen.illumination_batch(4)
     n1, _ = load_det(config.DETECTOR); p2 = load_for_training(config.DETECTOR, True).eval()
     with torch.no_grad():

@@ -29,7 +29,7 @@ def main():
     p.add_argument('--template', default='gauss', help="'lut': 4Pi PSF template read-out (v7)")
     p.add_argument('--eps_range', type=float, default=0.3, help='pattern phase range at the patch centre (rad); pi = arbitrary (v3)')
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-train')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('4pi-train')     # recognizable name in nvidia-smi / ps
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)

@@ -123,7 +123,7 @@ def main():
     ap.add_argument('run'); ap.add_argument('--movie', default=None); ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--model', default='m1809')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-hollow')
+    from simcode.util.proctitle import set_title; set_title('psim-hollow')
     run = os.path.abspath(a.run); md = os.path.abspath(a.movie or a.run)
     g = json.load(open(os.path.join(md, 'gen.json'))); nf = a.nframes or g['nframes']
     gt = dict(np.load(os.path.join(md, 'gt.npz')))
