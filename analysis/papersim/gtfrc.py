@@ -6,14 +6,22 @@ papersim); `unit_nm` converts the reported resolutions to nm.
 
   gt_frc(pos, gt, lo, hi, pixel, unit_nm)        FRC between the rendered reconstruction and the rendered ground truth (all
         labelling sites), both as histograms on the same fixed field [lo, hi) with the same pixel; FRC per shell of width
-        1 / (largest field side), 5-shell moving average, resolution = 1 / (first shell, from shell 3 on, below the
-        threshold, default 1/7) -- the estimator of simcode.evaluation.frc.frc on a fixed field (a common Gaussian blur of
+        1 / (largest field side), 5-shell moving average, resolution = 1 / the crossing of the threshold (1/7) by the
+        paper's crossing RULE (below) -- the estimator of simcode.evaluation.frc.frc on a fixed field (a common Gaussian blur of
         both renders would cancel per shell, so none is applied). Missing coverage (correlated power lost at all
         frequencies), false positives / ghosts (uncorrelated power) and imprecision (high-frequency fall-off) all lower it;
-        no matching radius. -> dict(res_nm, freq (1/nm), curve)
+        no matching radius. -> dict(res_nm (RULE), res_nm_first, res_nm_sustained, rule, freq (1/nm), curve)
+  RULE / resolution(freq, curve)                 THE crossing rule of every papersim FRC (GT-FRC, time to fidelity, half-split
+        FRC of the figures / tables): 'sustained' (2026-11-15, paper) = frc_sustained, 1 / the first frequency (from shell 3
+        on) after which the curve stays below 1/7 for SUSTAIN_WIDTH = 0.01 / nm; 'first' = crossing, the first shell below 1/7.
+        The hollow-tube ground truth (labels on a ~25-30 nm shell) has a spectral null at 2.405 / (2 pi R) ~ 1 / (60-65 nm),
+        where every GT-FRC dips and recovers; the first crossing can stop in that dip. RULE_CAPTION = the caption sentence.
+  res(d) / fair_frc_nm(m)                        resolution under RULE from a stored gt_frc dict / a metrics.json method entry
+        (recomputed from the stored curve, so metrics / gtfrc jsons of either rule give the same figure values)
   time_to_fidelity(pos, frame, gt, ..., grid, targets)   gt_frc on the rows with frame < N for every N of the grid ->
         resolution vs frames, and the frames needed to reach each target resolution (log-interpolated between grid points;
-        None = not reached within the grid)
+        None = not reached within the grid); res_nm / frames_to under RULE, plus the _first / _sustained variants
+  ttf(d)                                         the time-to-fidelity dict d, checked to be computed under RULE
   gate_pairs(pos, sigma, ref, k)                 all (row, ref point) pairs with Mahalanobis distance <= k under the row's
         own diagonal sigma (the sigma gate used below)
   sigma_jaccard(pos, sigma, gt, k=3)             Jaccard with a sigma gate instead of a fixed radius: a localization is
@@ -58,34 +66,103 @@ def frc_images(a, b, pixel, smooth=5):
 
 def crossing(freq, curve, threshold=THRESHOLD, start=3):
     """1 / (first frequency from shell `start` on with the curve below threshold); nan if never"""
-    below = np.nonzero(curve[start:] < threshold)[0]
-    return float('nan') if len(below) == 0 else float(1.0 / freq[below[0] + start])
+    below = np.nonzero(np.asarray(curve)[start:] < threshold)[0]
+    return float('nan') if len(below) == 0 else float(1.0 / np.asarray(freq)[below[0] + start])
 
 
-def gt_frc(pos, gt, lo, hi, pixel, unit_nm=1.0, threshold=THRESHOLD, gt_img=None):
-    """FRC(rendered reconstruction, rendered ground truth) -> dict(res_nm, freq (1/nm), curve, n)"""
+# the crossing rule of all papersim FRC values (one setting for Fig 2, the SI tables / figures / overviews)
+RULE = 'sustained'
+SUSTAIN_WIDTH = 0.01         # 1 / nm
+RULES = ('first', 'sustained')
+GT_KEY = {'first': 'gt_first', 'sustained': 'gt_sust'}[RULE]     # the keys of frcopt.Scorer / common_rule.py results
+HS_KEY = {'first': 'hs_first', 'sustained': 'hs_sust'}[RULE]
+RULE_CAPTION = ("Resolution = 1 / the spatial frequency at which the FRC (5-sample moving average) falls below 1/7 and stays below "
+                "it (for at least 0.01 nm⁻¹; sustained crossing): the labels sit on a shell about 25-30 nm from the microtubule axis, "
+                "so the ground-truth spectrum has a null near 1/(60-65 nm) where every curve dips and recovers; that dip is not "
+                "taken as the resolution.")
+
+
+def frc_sustained(freq, curve, width=SUSTAIN_WIDTH, threshold=THRESHOLD, start=3):
+    """resolution (1 / freq unit) at the first frequency (from shell `start` on) after which the FRC stays below threshold
+    for `width` (freq in 1/nm: width 0.01 / nm). = the first crossing for a smooth curve; differs when the structure's
+    spectrum has a null (hollow tubes: J0 zero at f = 2.405 / (2 pi R), 65 nm for R = 25 nm) where the curve dips below
+    the threshold and recovers"""
+    freq = np.asarray(freq); c = np.asarray(curve)
+    if len(c) < 2: return float('nan')
+    w = max(int(width / max(freq[1] - freq[0], 1e-12)), 1)
+    for i in range(start, len(c) - w):
+        if (c[i:i + w] < threshold).all():
+            return float(1 / freq[i])
+    return float('nan')
+
+
+def resolution(freq, curve, rule=None, threshold=THRESHOLD):
+    """resolution under `rule` (default: RULE); freq in 1/nm"""
+    rule = rule or RULE
+    if rule == 'first': return crossing(freq, curve, threshold)
+    if rule == 'sustained': return frc_sustained(freq, curve, threshold=threshold)
+    raise ValueError(rule)
+
+
+def res(d):
+    """GT-FRC resolution (nm) under RULE from a stored gt_frc dict: its res_nm_<RULE> when stored, else recomputed from its curve"""
+    if f'res_nm_{RULE}' in d: return d[f'res_nm_{RULE}']
+    return resolution(d['freq'], d['curve']) if len(d.get('freq', [])) else float('nan')
+
+
+def fair_frc_nm(m):
+    """half-split ('fair') FRC (nm) under RULE from a metrics.json method entry (its stored frc_freq / frc_curve, 1/nm)"""
+    return resolution(m['frc_freq'], m['frc_curve']) if 'frc_curve' in m else None
+
+
+def ttf(d):
+    """a stored time-to-fidelity dict, checked to be under RULE (older jsons: first crossing only -> rerun gtfrc_run.py)"""
+    if d.get('rule') != RULE:
+        raise ValueError(f"time-to-fidelity computed under rule {d.get('rule', 'first (no rule field)')!r}, need {RULE!r}: rerun gtfrc_run.py")
+    return d
+
+
+# --------------------------------------------------------------------------------------------------- rendering / FRC (cont.)
+def gt_frc(pos, gt, lo, hi, pixel, unit_nm=1.0, threshold=THRESHOLD, gt_img=None, rule=None):
+    """FRC(rendered reconstruction, rendered ground truth) -> dict(res_nm (rule, default RULE), res_nm_first, res_nm_sustained,
+    rule, freq (1/nm), curve, n)"""
+    rule = rule or RULE
     g = render(gt, lo, hi, pixel) if gt_img is None else gt_img
-    if len(pos) == 0: return dict(res_nm=float('nan'), freq=[], curve=[], n=0)
+    if len(pos) == 0:
+        return dict(res_nm=float('nan'), res_nm_first=float('nan'), res_nm_sustained=float('nan'), rule=rule, freq=[], curve=[], n=0)
     freq, c = frc_images(render(pos, lo, hi, pixel), g, pixel)
     freq = freq / unit_nm
-    return dict(res_nm=crossing(freq, c, threshold), freq=freq.tolist(), curve=c.tolist(), n=int(len(pos)))
+    rr = {k: resolution(freq, c, k, threshold) for k in RULES}
+    return dict(res_nm=rr[rule], res_nm_first=rr['first'], res_nm_sustained=rr['sustained'], rule=rule, freq=freq.tolist(),
+                curve=c.tolist(), n=int(len(pos)))
 
 
-def time_to_fidelity(pos, frame, gt, lo, hi, pixel, unit_nm=1.0, grid=(1000, 2000, 4000, 8000, 15000, 30000, 60000),
-                     targets=(40, 30), threshold=THRESHOLD):
-    """GT-FRC resolution (nm) on the rows with frame < N for N in grid; frames to reach each target (nm), None = not reached"""
-    g = render(gt, lo, hi, pixel)
-    res = [gt_frc(pos[frame < N], None, lo, hi, pixel, unit_nm, threshold, gt_img=g)['res_nm'] for N in grid]
+def frames_to(res_nm, grid, targets):
+    """frames to reach each target resolution (log-interpolated between the bracketing grid points; None = not reached)"""
     reach = {}
     for t in targets:
-        r = np.array(res); ok = np.isfinite(r) & (r <= t)
+        r = np.array(res_nm, float); ok = np.isfinite(r) & (r <= t)
         if not ok.any(): reach[str(t)] = None; continue
         i = int(np.argmax(ok))
         if i == 0 or not np.isfinite(r[i - 1]): reach[str(t)] = float(grid[i]); continue      # already at the first grid point
         # log-frames interpolation between the bracketing grid points (res decreasing from r[i-1] > t to r[i] <= t)
         u = (r[i - 1] - t) / (r[i - 1] - r[i])
         reach[str(t)] = float(np.exp(np.log(grid[i - 1]) + u * (np.log(grid[i]) - np.log(grid[i - 1]))))
-    return dict(frames=list(map(int, grid)), res_nm=res, frames_to=reach)
+    return reach
+
+
+def time_to_fidelity(pos, frame, gt, lo, hi, pixel, unit_nm=1.0, grid=(1000, 2000, 4000, 8000, 15000, 30000, 60000),
+                     targets=(40, 30), threshold=THRESHOLD, rule=None):
+    """GT-FRC resolution (nm) on the rows with frame < N for N in grid; frames to reach each target (nm), None = not reached.
+    res_nm / frames_to under `rule` (default RULE); res_nm_<r> / frames_to_<r> for both rules"""
+    rule = rule or RULE
+    g = render(gt, lo, hi, pixel)
+    D = [gt_frc(pos[frame < N], None, lo, hi, pixel, unit_nm, threshold, gt_img=g, rule=rule) for N in grid]
+    out = dict(frames=list(map(int, grid)), rule=rule)
+    for k in RULES:
+        out[f'res_nm_{k}'] = [d[f'res_nm_{k}'] for d in D]; out[f'frames_to_{k}'] = frames_to(out[f'res_nm_{k}'], grid, targets)
+    out['res_nm'] = out[f'res_nm_{rule}']; out['frames_to'] = out[f'frames_to_{rule}']
+    return out
 
 
 # --------------------------------------------------------------------------------------------------- sigma gate

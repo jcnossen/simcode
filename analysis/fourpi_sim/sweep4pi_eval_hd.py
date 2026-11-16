@@ -239,7 +239,7 @@ def main():
         b24 = (GN[mm] >= 2000) & (GN[mm] < 4000)
         r['lat_rob_24'] = 0.5 * (rb(ex[b24]) + rb(ey[b24])); r['ax_rob_24'] = rb(ez[b24]); r['wrong_fringe_24'] = float(fringe[b24].mean()) if b24.any() else float('nan')
         # GT-FRC
-        fxy = G.gt_frc(P3[:, :2], None, lo, hi, PIX, 1.0, gt_img=gimg_xy)
+        fxy = G.gt_frc(P3[:, :2], None, lo, hi, PIX, 1.0, gt_img=gimg_xy, rule='first')
         fxz = frc_sections(P3, gimg_xz, lo, hi, SLAB)
         r['gtfrc_xy'] = fxy['res_nm']; r['gtfrc_xz'] = fxz['res_nm']
         r['gtfrc_last_xy'] = last_crossing(fxy['freq'], fxy['curve']) if len(fxy['freq']) else float('nan')
@@ -248,7 +248,7 @@ def main():
         curves['freq_xy'] = np.array(fxy['freq']) if len(fxy['freq']) else curves.get('freq_xy'); curves['freq_xz'] = np.array(fxz['freq']) if len(fxz['freq']) else curves.get('freq_xz')
         if not a.no_ttf:
             frm = 6 * w
-            cxy = [G.gt_frc(P3[frm < N, :2], None, lo, hi, PIX, 1.0, gt_img=gimg_xy) for N in grid]
+            cxy = [G.gt_frc(P3[frm < N, :2], None, lo, hi, PIX, 1.0, gt_img=gimg_xy, rule='first') for N in grid]
             cxz = [frc_sections(P3[frm < N], gimg_xz, lo, hi, SLAB) for N in grid]
             r['ttf_xy'] = [c['res_nm'] for c in cxy]; r['ttf_xz'] = [c['res_nm'] for c in cxz]
             r['ttf_last_xy'] = [last_crossing(c['freq'], c['curve']) if len(c['freq']) else float('nan') for c in cxy]

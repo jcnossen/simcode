@@ -32,6 +32,12 @@
 #                                    webSMLM microtubule field wsm:11:3:3 (wsm_gt.py; picked from out/papersim/websmlm_gt/candidates.png)
 #   wsm "Dexp1 Dexp0.5 ..."          all methods on <item>_v2psf_wsm as v2psf (no old-PSF reference row), metrics, GT-FRC
 #   wsm_figs                         Fig 2 (fig_sim_fig2.py), SI figure + table (fig_sim_main.py), overview, fig_density of the _wsm sets
+#   wsm3d "<densities>"              (2026-11-15) the <P><d>_v2psf_wsm3d sets (P = Dexp default, env P=D for the preprint condition):
+#                                    the wsm:11:3:3 labels at their own webSMLM heights (--gt wsm3d:11:3:3), every method as wsm with the
+#                                    SMLM / SIMFLUX fit plane at the median GT height (run_wsm3d.sh; movies on the SSD, symlinked)
+#   wsm3d_figs "<densities>"         common selection rule (common_rule.py), old-vs-new table (wsm3d_compare.py), Fig 2 with the common
+#                                    rule and a z-coded GT (fig_sim_common.py -> out/paper_figs_v2/fig_sim_Dexp_v2psf_wsm3d.*), SI figure /
+#                                    table, overview, fig_density
 set -u
 REPO=$(cd "$(dirname "$0")/../.." && pwd); cd "$REPO"
 PY=${PY:-python}; O=${SIMCODE_OUT:-out}/papersim; mkdir -p $O/logs
@@ -133,5 +139,16 @@ case $what in
       $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm --model $N
       $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf_wsm --model $N
     done ;;
-  *) sed -n 2,34p "$0"; exit 1 ;;
+  wsm3d)
+    bash analysis/papersim/run_wsm3d.sh "$items" ;;
+  wsm3d_figs)
+    N=${NAME:-m1809v2}; P=${P:-Dexp}
+    for D in $items; do $PY analysis/papersim/common_rule.py --set ${P}${D}_v2psf_wsm3d,${P}${D}_v2psf_wsm --model $N; done
+    $PY analysis/papersim/wsm3d_compare.py --prefix $P --densities $(echo $items | tr ' ' ',')
+    [ $P = Dexp ] && $PY analysis/papersim/fig_sim_common.py --set Dexp1_v2psf_wsm3d
+    $PY analysis/papersim/fig_sim_main.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c
+    $PY analysis/papersim/fig_sim_main.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c --internal 1
+    $PY analysis/papersim/fig_overview.py --prefix $P --suffix _v2psf_wsm3d --model $N --v2key v2c
+    $PY analysis/papersim/fig_density.py --prefix $P --suffix _v2psf_wsm3d --model $N ;;
+  *) sed -n 2,40p "$0"; exit 1 ;;
 esac

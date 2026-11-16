@@ -179,22 +179,26 @@ maximum of {np.mean(fw_psf):.2f} px ({np.mean(fw_psf) * px_nm:.0f} nm) as sample
 Facts:
 - movie {MOVIE}, frame index {a.frame} (0-based); frame index mod 6 = {a.frame % 6} (cycle of 6 frames = 2 pattern orientations x 3 phase steps).
 - display: grey scale, linear, clipped at the 0.5 / 99.8 percentiles of the region ({lo:.1f} / {hi:.1f} e-).
-- inset spot at x, y = {sx:.2f}, {sy:.2f} px (full-frame px), the isolated SIMCODE v2 localization (of a window containing this frame) with the
+- inset spot at x, y = {sx:.2f}, {sy:.2f} px (full-frame px), the isolated SIMCODE localization (of a window containing this frame) with the
   largest signal in this frame (3 x 3 px sum minus background) and no other
   3 x 3 px box of the 9 x 9 px inset above 30 % of it (paper selection: p >= 0.63, calibrated max(sigma) <= 12 nm), no other pass-2 row
   of these windows (any p) at 1.5-8 px; its photons {float(phs[best]) if not a.spot else float('nan'):.0f}
   (network photons per 6-frame window, PSF-model intensity units).
-- PSF FWHM (PSF v2 model as loaded by analysis/baselines/zpsf.py, pixel-integrated, at z = {z_med_um * 1e3:.0f} nm): x {fw_psf[0]:.2f} px, y {fw_psf[1]:.2f} px
+- PSF FWHM (in-situ PSF model as loaded by analysis/baselines/zpsf.py, pixel-integrated, at z = {z_med_um * 1e3:.0f} nm): x {fw_psf[0]:.2f} px, y {fw_psf[1]:.2f} px
   ({fw_psf[0] * px_nm:.0f} / {fw_psf[1] * px_nm:.0f} nm).
 - spot FWHM (1D Gaussian fit to the inset's centre row / column, background = border median): x {fw_spot[0]:.2f} px,
   y {fw_spot[1]:.2f} px (single noisy spot; informative only).
-- the preprint caption's "approximately 1.3 pixels full-width at half-maximum ... 141 nm" was wrong: 1.3 px is the Gaussian sigma
-  of the preprint's simulation PSF (FWHM 2.355 x 1.3 = 3.06 px = 332 nm); replaced by the PSF-model value above.
-- variant si_review-single-frame_locs.*: cyan circles = the {nloc} selected SIMCODE v2 localizations of the 6 windows that contain
+- variant si_review-single-frame_locs.*: cyan circles = the {nloc} selected SIMCODE localizations of the 6 windows that contain
   this frame (window starts every 3 frames, so most emitters appear in two windows).
 - calibration {cp}; run {a.run}.
 """
     open(a.out + '_caption.txt', 'w').write(cap)
+    # working notes (not caption text): corrections relative to earlier caption versions
+    open(a.out + '_notes_internal.txt', 'w').write(
+        'Working notes behind si_review-single-frame (internal: corrections relative to earlier versions; not caption text).\n\n'
+        '- the earlier caption\'s "approximately 1.3 pixels full-width at half-maximum ... 141 nm" was wrong: 1.3 px is the Gaussian\n'
+        '  sigma of the earlier Gaussian simulation PSF (FWHM 2.355 x 1.3 = 3.06 px = 332 nm); replaced by the PSF-model value\n'
+        f'  ({np.mean(fw_psf):.2f} px = {np.mean(fw_psf) * px_nm:.0f} nm, in-situ PSF at z = {z_med_um * 1e3:.0f} nm).\n')
     print(cap)
 
 

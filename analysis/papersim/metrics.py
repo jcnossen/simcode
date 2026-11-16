@@ -9,6 +9,8 @@ Rows per method ('full' = what each method outputs, as the preprint scored it):
           p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.table.SIGMA_MAX_NM
           (simcode.table.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
           (run_simcode.py --gt_diag, gt_pattern/locs_p2.hdf5; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
+          v2c = 'SIMCODE, common rule' (2026-11-15): the same rows with calibrated max(sx, sy) < 0.15 px (16.25 nm), the precision
+          cut of every other method (the Fig 2 rule of the *_wsm3d sets, common_rule.py).
           (Removed 2026-11-14: the strict-subset row v2, the u <= 0.45 row v2q45 and the strict GT diagnostic v2gt.)
   v1      <run>/v1/locs.npz: the preprint's SIMCODE, merged 'sfhd-ndi+smlm' rows (run_simcode_v1.py), its MVU sigma
 Metrics:
@@ -29,7 +31,8 @@ Metrics:
            of their ON emitter + Gaussian noise at its robust sigma (frc_ideal_nm) / plain RMS (frc_ideal_rms_nm) / its own error
            vectors shuffled between rows (frc_ideal_shuffled_nm); frc_floor = all GT events at 1 / 5 / 10 nm (sigma 0 never crosses 1/7).
   frc_nm_sustained: the first frequency after which the curve stays below 1/7 for 0.01 / nm (hollow tubes have a spectral
-           null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm).
+           null at 2.405 / (2 pi R) that the first crossing can stop at; 65 nm for R = 25 nm). frc_nm_rule = the value under
+           the shared papersim rule gtfrc.RULE (frc_rule); figures / tables take gtfrc.fair_frc_nm (the rule on the stored curve).
   Moving (S3): per 1000-frame block Jaccard at 10 / 20 / 40 nm, GT = the trajectory points of the block (as
            smlmtorch fig_moving_tubules.py compute_jaccards; frames strictly inside (i bs, (i + 1) bs) as there).
 usage: python analysis/papersim/metrics.py <run dir> [--movie <movie dir>] [--nframes N] [--model m1809] [--kind density|moving]
@@ -41,6 +44,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE); sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'paper'))
 import common as C
+import gtfrc as G
 
 SIGMA_MAX = 0.15
 BLK = 300
@@ -82,12 +86,12 @@ def load_method(kind, path):
         z = np.load(path); i = z['ndi_idx']
         return dict(x=z['mrg_x'].astype(np.float64), y=z['mrg_y'].astype(np.float64), f=z['frame'][i].astype(np.int64),
                     sx=z['mrg_sx'].astype(np.float64), sy=z['mrg_sy'].astype(np.float64), photons=z['ndi_photons'].astype(np.float64))
-    if kind in ('v2sel', 'v2sig', 'v2siggt'):
+    if kind in ('v2sel', 'v2sig', 'v2siggt', 'v2c'):
         from simcode.dataset import Dataset
         L = Dataset.load_npz(path) if path.endswith('.npz') else Dataset.load_table(path)     # (.npz: runs before 2026-11-15)
         # v2sig: the paper's selection (user decision 2026-11-13: global calibrated-precision threshold, p >= 0.63, inside the
         # field = the run's crop (0, 0, W)); v2sel: the rows sel
-        L = L[L['sel']] if kind == 'v2sel' else L.select()
+        L = L[L['sel']] if kind == 'v2sel' else (L.select(max_precision_nm=SIGMA_MAX * C.PX_NM) if kind == 'v2c' else L.select())
         z = L.columns(); m = np.ones(len(z['x']), bool)
         return dict(x=z['x'][m].astype(np.float64), y=z['y'][m].astype(np.float64), f=z['frame'][m].astype(np.int64),
                     sx=z['sx'][m].astype(np.float64), sy=z['sy'][m].astype(np.float64), photons=z['photons'][m].astype(np.float64))
@@ -113,6 +117,7 @@ def method_paths(run, model='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
              decode=f'{run}/decode/locs.npz')
     P['v2sig'] = f'{run}/v2_{model}/locs_p2.hdf5'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
+    P['v2c'] = P['v2sig']                              # 'SIMCODE, common rule' (2026-11-15): p >= 0.63, calibrated sigma < 0.15 px as every method
     P['v1'] = f'{run}/v1/locs.npz'
     P['decode_sim'] = f'{run}/decode_sim/locs.npz'
     P['decode_pre'] = f'{run}/decode_pre/locs.npz'      # the preprint's own DECODE model (decode-3f-g1.3), Gaussian-PSF reproduction      # DECODE retrained for the simulation ranges (dec_sim1809)
@@ -120,6 +125,10 @@ def method_paths(run, model='m1809'):
     P['v2siggt'] = f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
     from simcode.dataset import decode_table      # DECODE: locs_fixed.npz (frame-label fix, 2026-11-15) when it exists
     for k in ('decode', 'decode_sim', 'decode_pre'): P[k] = decode_table(P[k])
+    # preprint SIMCODE (internal only): only when its step finished (v1_info.json, written last), so a crashed / running v1
+    # step neither blocks nor half-loads
+    for k in ('v1', 'v1gt'):
+        if not os.path.exists(os.path.join(os.path.dirname(P[k]), 'v1_info.json')): P.pop(k)
     return {k: v for k, v in P.items() if os.path.exists(v)}
 
 
@@ -151,15 +160,7 @@ def gt_windows(gt, nframes, starts):
     return out
 
 
-def frc_sustained(freq, curve, width=0.01):
-    """resolution (nm) at the first frequency after which the FRC stays below 1/7 for `width` (1/nm). = the usual first crossing
-    for a smooth curve; differs when the structure's spectrum has a null (hollow tubes: J0 zero at f = 2.405 / (2 pi R), 65 nm
-    for R = 25 nm) where the curve dips below 1/7 and recovers"""
-    freq = np.asarray(freq); c = np.asarray(curve); w = max(int(width / max(freq[1] - freq[0], 1e-12)), 1)
-    for i in range(3, len(c) - w):
-        if (c[i:i + w] < 1 / 7).all():
-            return float(1 / freq[i])
-    return float('nan')
+frc_sustained = G.frc_sustained      # moved to gtfrc.py (the shared crossing rule G.RULE), kept here for the old callers
 
 
 def row_truth(T, m, GW, rmax=150 / C.PX_NM, ph_min=30.0):
@@ -263,6 +264,7 @@ def density_metrics(run, md, nframes, model, timebins=120, only=None):
             r['frc_nm'] = res; r['frc_curve'] = curve.tolist(); r['frc_freq'] = freq.tolist()
             r['frc_nm_nofilter'] = frc_fair.frc_halves(T['x'][disj], T['y'][disj], T['f'][disj])[0]
             r['frc_nm_sustained'] = frc_sustained(freq, curve)
+            r['frc_rule'] = G.RULE; r['frc_nm_rule'] = G.resolution(freq, curve)     # the paper's rule (frc_nm = the first crossing)
         pos = np.c_[T['x'], T['y']]
         fb, jac = jaccard_timeline(pos[full], T['f'][full], pts, nframes, timebins)
         r['jaccard_frames'] = fb.tolist(); r['jaccard'] = jac.tolist(); r['jaccard_end'] = float(jac[-1]); r['jaccard_peak'] = float(np.nanmax(jac))
@@ -307,8 +309,8 @@ def moving_metrics(run, md, nframes, model, bs=1000, thr_nm=(10, 20, 40), only=N
 
 def plot(R, fn):
     import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-    col = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2sel='salmon', v2siggt='purple', v2sig='crimson', v1='tab:brown', v1gt='peru', decode_sim='darkorange', decode_pre='orangered')
-    lab = dict(smlm='SMLM', sf='SIMFLUX', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2sel='SIMCODE v2 all', v2siggt='v2 sigma <= 12 nm, GT pattern (diag.)', v2sig='SIMCODE v2, sigma <= 12 nm', v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model decode-3f-g1.3)')
+    col = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', v2sel='salmon', v2siggt='purple', v2sig='crimson', v2c='darkred', v1='tab:brown', v1gt='peru', decode_sim='darkorange', decode_pre='orangered')
+    lab = dict(smlm='SMLM', sf='SIMFLUX', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE', v2sel='SIMCODE v2 all', v2siggt='v2 sigma <= 12 nm, GT pattern (diag.)', v2sig='SIMCODE v2, sigma <= 12 nm', v2c='SIMCODE, common rule (sigma < 0.15 px)', v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model decode-3f-g1.3)')
     fig, ax = plt.subplots(1, 3, figsize=(17, 4.8))
     for k, r in R['methods'].items():
         if 'frc_curve' in r:

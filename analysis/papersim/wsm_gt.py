@@ -8,9 +8,13 @@ shell ~25-30 nm from the tube axis) except:
   - field of view = the paper sims' 40 x 40 px of 108.33 nm (4.333 um), placed at the seed's webSMLM start view + an offset;
   - label efficiency LABEL_EFF = 500 / 1625: 0.5 labels per nm of microtubule, the line density of the preprint GT
     (common.preprint_tubules: linedensity 0.5 / nm; webSMLM's default is 70 % of the 1625 lattice sites per um);
-  - heights: the label's own z is NOT used for rendering. The movie generators draw one height per label with the
+  - heights (*_wsm sets): the label's own z is NOT used for rendering. The movie generators draw one height per label with the
     experiment-matched v2 calibration rule (common.heights_v2), as for the preprint GT (2D sims); the webSMLM z is kept in
     gt.npz as wsm_z_nm for reference.
+  - heights (*_wsm3d sets, 2026-11-15, generators --gt wsm3d:<seed>:<dx>:<dy>): the label's own webSMLM z (the filaments' 3D
+    geometry, nm above the coverslip) is rendered, clipped to the PSF / training range [0, 0.40] um (heights_um; seed 11 view
+    (3, 3) um: z -26.5 ... 255 nm, 1.6 % of the labels below 0 -> 0 (label shell of tubes lying on the glass), none above 0.40;
+    median 135 nm vs the v2 rule's 116 nm; no shift / scale).
 The zoom box of the figures (16 px, as the preprint's crop) is picked at the densest filament crossing
 (analysis/figures/zoompick.py pick_crossings) and stored in gen.json 'zoom_crop' = [x0, y0, w] px.
 
@@ -118,6 +122,24 @@ def load(spec):
         np.savez_compressed(f, pts=g['pts'], mt=g['mt'], wsm_z_nm=g['wsm_z_nm'], stats=json.dumps(g['stats']), zoom_crop=np.array(g['zoom_crop']), centre=cl)
     z = np.load(f, allow_pickle=True)
     return dict(pts=z['pts'], mt=z['mt'], wsm_z_nm=z['wsm_z_nm'], stats=json.loads(str(z['stats'])), zoom_crop=z['zoom_crop'].tolist(), centre=list(z['centre']))
+
+
+Z_RANGE_UM = (0.0, 0.40)                # the PSF v2 LUT / m1809 training height range
+
+
+def heights_um(g, zr=Z_RANGE_UM):
+    """the *_wsm3d sets: one height per label = its own webSMLM z (um above the coverslip), clipped to the PSF range"""
+    return np.clip(np.asarray(g['wsm_z_nm'], np.float64) / 1000, *zr)
+
+
+def height_stats(z_um, zraw_nm=None):
+    """height distribution summary (um) for gen.json / the report"""
+    q = dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(z_um, [5, 25, 50, 75, 95]).round(4).tolist()))
+    r = dict(z_dist_um=q, z_frac_at_0=float(np.mean(z_um <= 0)), z_frac_at_040=float(np.mean(z_um >= 0.40)))
+    if zraw_nm is not None:
+        r['wsm_z_raw_nm'] = dict(min=float(np.min(zraw_nm)), max=float(np.max(zraw_nm)), frac_below0=float(np.mean(zraw_nm < 0)),
+                                 frac_above400=float(np.mean(zraw_nm > 400)))
+    return r
 
 
 def render_full(pts, px=0.1):

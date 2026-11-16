@@ -7,6 +7,10 @@ pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss
 which sits ~0.25 px away for the 4Pi PSF), so candidates come out centred on the emitter.
 Init from det_n1 (models/det_n1.pt). Data come from `--workers` generator processes (the simulator is the bottleneck).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --out out/4pi/models/det4pi --steps 20000
+Plain 4Pi (--acq <acquisition config of setup fourpi_plain>): the scene simulator of the config's training recipe
+(FourPiPlainSetup.sim_kw: the acquisition's registration map, background, photons, density, z range; no pattern),
+T = fourpi.window frames per window, the PSF of fourpi.psf, init from det_n1 with the input conv folded to T frames
+(detector.model.init_T); --out / --steps default to fourpi.detector's folder and fourpi_train.det_steps.
 """
 import argparse, json, os, sys, time
 import torch
@@ -17,17 +21,36 @@ from simcode.config import root; P4 = root('fourpi')
 from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 
-def worker(q, seed, psf, B, size, dens, ksums=(1,)):
+def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None):
     import torch
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
-    st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
-    rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6)
+    if acq:     # plain 4Pi: the training recipe of the acquisition config
+        c = acquisition(acq)
+        init, smp = setup_of(c).sim_kw(c)
+        rs = MultiChannelAcquisitionSim(json.load(open(c['fourpi']['psf']))['psf'], H=size, W=size, seed=seed, **init)
+    else:
+        st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
+        rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6); smp = dict(dens=dens)
     while True:
-        S = rs.sample(B=B, dens=dens, ksum=ksums[int(torch.randint(len(ksums), (1,)))])
+        S = rs.sample(B=B, ksum=ksums[int(torch.randint(len(ksums), (1,)))], **smp)
         g = S['gt']
         o = dict(frames=S['det_in'].cpu(), gt=dict(x=g['x'].cpu(), y=g['y'].cpu(), fov=g['b'].cpu(), phot=g['Nt'].cpu(),
                                                     onf=g['q'].cpu()), nb=B)
         q.put(o)
+
+
+def acquisition(acq):
+    """acq = 'config.py' or 'config.py:name' -> the resolved acquisition config"""
+    from simcode.pipeline import acquisition_config as AC
+    f, _, name = acq.partition(':')
+    L = [c for c in AC.load_all(f) if not name or c['name'] == name]
+    if len(L) != 1: raise SystemExit(f'{acq}: {len(L)} acquisitions (give config.py:<name>)')
+    return L[0]
+
+
+def setup_of(c):
+    from simcode.setups import get
+    return get(c['setup'])
 
 
 def to_dev(o, dev):
@@ -36,7 +59,8 @@ def to_dev(o, dev):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', required=True); ap.add_argument('--steps', type=int, default=20000)
+    ap.add_argument('--out', default=''); ap.add_argument('--steps', type=int, default=None)
+    ap.add_argument('--acq', default='', help='plain 4Pi: acquisition config (file.py[:name]) with the training recipe (fourpi_train)')
     ap.add_argument('--batch', type=int, default=16); ap.add_argument('--size', type=int, default=64)
     ap.add_argument('--lr', type=float, default=3e-4); ap.add_argument('--pct', type=float, default=0.05)
     ap.add_argument('--w_off', type=float, default=1.0); ap.add_argument('--init', default='det_n1.pt')
@@ -45,6 +69,13 @@ def main():
     ap.add_argument('--ckpt_every', type=int, default=5000)
     ap.add_argument('--ksum', default='1', help='comma list of K (summed windows: K x background, sqrt(K) read noise), one drawn per batch')
     a = ap.parse_args()
+    T = 6
+    if a.acq:
+        c = acquisition(a.acq); T = c['fourpi']['window']
+        a.out = a.out or os.path.dirname(c['fourpi']['detector']); a.steps = a.steps or c['fourpi_train']['det_steps']
+        a.init = a.init if a.init != 'det_n1.pt' else c['fourpi_train']['det_init']
+    if not a.out: raise SystemExit('--out (or --acq) is required')
+    a.steps = a.steps or 20000
     from simcode.util.proctitle import auto; auto('4pi-det')
     from simcode.detector.model import build
     from simcode.simulate.targets import detector_targets, gt_nn
@@ -55,23 +86,30 @@ def main():
     dev = 'cuda'
     os.makedirs(a.out, exist_ok=True)
     args = dict(up=1, ch=[48, 96, 160], stem_ch=16, fch=32, **{k: v for k, v in vars(a).items()})
+    if a.acq: args.update(arch='detector', T=T)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
     net = build(args).to(dev)
     if a.init:
-        net.load_state_dict(torch.load(a.init if os.path.isabs(a.init) else resolve(a.init), map_location=dev, weights_only=False)['model'])
+        sd = torch.load(a.init if os.path.isabs(a.init) else resolve(a.init), map_location=dev, weights_only=False)['model']
+        if net.T == 6: net.load_state_dict(sd)
+        else:
+            from simcode.detector.model import init_T
+            init_T(net, sd)
     print('params', n_params(net), flush=True)
     ctx = mp.get_context('spawn'); q = ctx.Queue(maxsize=6)
     dens = tuple(float(v) for v in a.dens.split(','))
-    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens, tuple(int(v) for v in a.ksum.split(','))), daemon=True) for i in range(a.workers)]
+    ps = [ctx.Process(target=worker, args=(q, a.seed * 100 + i, a.psf, a.batch, a.size, dens, tuple(int(v) for v in a.ksum.split(',')), a.acq), daemon=True) for i in range(a.workers)]
     for p in ps: p.start()
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)
     log = open(a.out + '/log.jsonl', 'a'); t0 = time.time(); S = a.size
+    # plain 4Pi (single frames): a positive needs >= 30 % of the frame on and >= min_photons (the processing's photon cut)
+    tkw = dict(min_on=0.3 * T, min_phot=c['fourpi']['min_photons']) if a.acq else {}
     for step in range(a.steps + 1):
         o = to_dev(q.get(), dev)
         with torch.no_grad():
-            label, ign, tid, off = detector_targets(o, 1, S, S)
+            label, ign, tid, off = detector_targets(o, 1, S, S, **tkw)
             pm = label > 0
             w = torch.ones(int(pm.sum()), device=dev)
             if pm.any():

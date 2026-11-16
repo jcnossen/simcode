@@ -26,6 +26,9 @@ usage: CUDA_VISIBLE_DEVICES=2 python analysis/papersim/gen_hollow.py --radius_nm
 --gt wsm:<seed>:<dx>:<dy> (2026-11-15, the *_wsm sets): the webSMLM microtubule field of wsm_gt.py instead of the preprint
   tubules (labels as webSMLM places them; one v2-rule height per label as above; gen.json 'zoom_crop' = the figures' zoom box);
   --device cpu renders on the CPU (the random stream differs from cuda).
+--gt wsm3d:<seed>:<dx>:<dy> (2026-11-15, the *_wsm3d sets; needs --v2psf 1): as wsm, but every label is rendered at its own
+  webSMLM height (wsm_gt.heights_um: the filaments' 3D geometry, clipped to [0, 0.40] um) instead of a v2-rule height; all other
+  random streams (events, brightness, background, camera noise) are those of the wsm set, so the two differ in the heights only.
 outputs (out/papersim/hollow/<cond>_R<r>_x<s>/): movie.tif, gt.npz (pts = tube points, centre = centreline points, tub = tubule id,
 events with ev_I6), calib_sim.json, camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
 import argparse, hashlib, json, os, sys, time
@@ -121,6 +124,7 @@ def main():
     if a.gt.startswith('wsm'):           # webSMLM field (wsm_gt.py): label positions already carry the tube + binder + linker geometry
         import wsm_gt
         assert a.radius_nm == 0, '--gt wsm takes the webSMLM label geometry as is (--radius_nm 0)'
+        assert a.v2psf or not a.gt.startswith('wsm3d'), '--gt wsm3d renders heights: needs --v2psf 1'
         wsm = wsm_gt.load(a.gt.split(':', 1)[1])
         pts = wsm['pts']; centre = pts; tub = wsm['mt']; knots = np.zeros((0, 2))
     else:
@@ -146,7 +150,8 @@ def main():
     ph = I6[ev] / 6 * C.illum(P, x, y, fr) * onf
     o = np.argsort(fr, kind='stable'); fr, x, y, ph = fr[o], x[o], y[o], ph[o]
     if a.v2psf:
-        zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
+        if a.gt.startswith('wsm3d'): zpt = wsm_gt.heights_um(wsm)                  # the labels' own webSMLM heights (um)
+        else: zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev[o]]]
         R = C.RendererV2(W, W, dev=a.device); R.z = float(np.median(zpt))
         cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
@@ -184,6 +189,9 @@ def main():
                         camera=dict(gain=C.GAIN_V2, offset='v2 map crop %s of %s' % (C.CAM_V2_CROP, os.path.basename(C.CAM_V2)), read_noise='v2 map (median 0.90 e)'),
                         z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
                         z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
+                        z_rule=('webSMLM label heights (wsm_z_nm / 1000) clipped to [0, 0.40] um' if a.gt.startswith('wsm3d') else
+                                'v2 calibration emitter_z_quantiles_um, clipped to emitter_z_range_um, one height per GT point'),
+                        **(dict(wsm_z_raw_nm=wsm_gt.height_stats(zpt, wsm['wsm_z_nm'])['wsm_z_raw_nm']) if a.gt.startswith('wsm3d') else {}),
                         photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected); ev_I6 = detected',
                         collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if a.v2psf else {}),
                 gt=a.gt, **(dict(gt_source='webSMLM microtubules (cells) = inSiliScope CellField (analysis/fourpi_sim/mt_cells.py), wsm_gt.py',

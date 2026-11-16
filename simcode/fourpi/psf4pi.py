@@ -139,7 +139,17 @@ class PSF4Pi(torch.nn.Module):
             p.phi.copy_(torch.tensor(s['phi'])); p.tau_logit.copy_(torch.log(torch.tensor(s['tau'])))
             p.a_log.fill_(math.log(s['a'])); p.gamma_logit.fill_(math.log(s['gamma'] / max(1 - s['gamma'], 1e-6)))
             p.d_bot.copy_(torch.tensor(s['d_bot'])); p.logblur.fill_(math.log(s['blur_px2']))
+            set_arm_terms(p, s)
         return p
+
+
+def set_arm_terms(p, s):
+    """optional per-arm terms of an in-situ state (key 'arms' = {'top' | 'bot': {NA, n_med, apod, saf, pupil_phase,
+    pupil_amp}}; analysis/fourpi_plain/insitu4pi.py) copied into the arms' VectorialPSF; states without it are unchanged"""
+    for nm in ('top', 'bot'):
+        for k, v in (s.get('arms') or {}).get(nm, {}).items():
+            t = getattr(getattr(p, nm), k)
+            t.copy_(torch.as_tensor(v, dtype=t.dtype).reshape(t.shape).to(t.device))
 
 
 class PSF4PiA(PSF4Pi):
@@ -205,6 +215,7 @@ class PSF4PiA(PSF4Pi):
             p.a_log.fill_(math.log(s['a'])); p.gamma_logit.fill_(math.log(s['gamma'] / max(1 - s['gamma'], 1e-6)))
             p.d_bot.copy_(torch.tensor(s['d_bot'])); p.logblur.fill_(math.log(s['blur_px2']))
             p.depth.copy_(torch.tensor(s['depth']))
+            set_arm_terms(p, s)
         return p
 
 

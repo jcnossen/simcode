@@ -29,6 +29,8 @@ def main():
     ap.add_argument('--decode_name', default='dec_1809_2')
     ap.add_argument('--redo', default='')
     ap.add_argument('--psf', default=None, help="baselines' PSF spec (run_baselines --psf), e.g. gauss:1.3 for the preprint reproduction")
+    ap.add_argument('--psf_z', default=None, help="baselines' fixed fit plane (um; run_baselines --psf_z; default = the PSF calibration's "
+                    "emitter_z_median_um) or 'gt' = gen.json z_um, the median ground-truth height (the *_wsm3d sets)")
     ap.add_argument('--gt_diag', type=int, default=1, help='v2: also the GT-pattern pass-2 diagnostic (0 = skip, ~40 %% of the v2 time)')
     ap.add_argument('--tag', default='', help="suffix of the v2 output and of the metrics name, e.g. '_3d': v2 -> <run>/v2_<model>_3d, "
                     'metrics -> <run>/metrics_<model>_3d.json (a rerun of v2 with new networks next to the earlier one)')
@@ -46,12 +48,14 @@ def main():
     run = os.path.abspath(a.run or os.path.join(md, 'full' if nf == g['nframes'] else f'cut{nf}'))
     os.makedirs(os.path.join(run, 'logs'), exist_ok=True)
     nm = a.name or a.model
+    psf_z = (f"{float(g['z_um']):.6f}" if a.psf_z == 'gt' else a.psf_z)
     v2dir = os.path.join(run, f'v2_{nm}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}') + a.tag)
     mname = nm + a.tag                 # name of the metrics / hollow outputs (metrics.py reads <run>/v2_<mname>)
     py = sys.executable; S = os.path.join(HERE, '{}')
     mf = [] if nf == g['nframes'] else ['--maxframes', str(nf)]
     steps = {
-        'base': ([py, S.format('run_baselines.py'), md, '--out', os.path.join(run, 'base')] + mf + (['--psf', a.psf] if a.psf else []), os.path.join(run, 'base', 'run.json')),
+        'base': ([py, S.format('run_baselines.py'), md, '--out', os.path.join(run, 'base')] + mf + (['--psf', a.psf] if a.psf else [])
+                 + (['--psf_z', psf_z] if psf_z else []), os.path.join(run, 'base', 'run.json')),
         'decode': ([py, S.format('run_decode.py'), md, '--name', a.decode_name, '--out', os.path.join(run, 'decode', 'locs.npz')] + mf,
                    os.path.join(run, 'decode', 'locs.npz')),
         'decode_pre': ([py, S.format('run_decode_preprint.py'), md, '--out', os.path.join(run, 'decode_pre', 'locs.npz')] + mf, os.path.join(run, 'decode_pre', 'locs.npz')),

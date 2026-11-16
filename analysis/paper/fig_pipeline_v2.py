@@ -1,484 +1,434 @@
 """
-Main-text schematic of the SIMCODE v2 pipeline (fig_pipeline_v2): pure vector (matplotlib patches / text; the tiny frame and
-illumination glyphs are small rasters), text kept as text in the SVG (svg.fonttype none) and embedded TrueType in the PDF.
+Main-text Fig. 1 of the SIMCODE paper: the pipeline as a row of small icons and real mini-images, in the style of the
+preprint's Fig. 1 (stage/figures/fig_pipeline.pdf), with few words; every explanation is in the caption file.
 
-    python analysis/paper/fig_pipeline_v2.py [--out /home/jc/simcode2/out/paper_figs_v2]
+    PYTHONPATH=. python analysis/paper/fig_pipeline_v2.py [--out /home/jc/simcode2/out/paper_figs_v2]
 
--> <out>/fig_pipeline_v2.{pdf,svg,png} + fig_pipeline_v2_caption.txt (draft caption + the code facts behind each panel).
-Content = the current code (docs/METHOD.md, simcode/{detector,emitter}/model.py, processing/pattern_estimation.py,
-solve/solve.py + solve_fast.py, solve/z_conditioning.py, pattern/illumination.py, table.py, processing/front_fast.py).
-Panel A is a labelled placeholder for the preprint's optical-system panel.
+-> <out>/fig_pipeline_v2.{pdf,svg,png} + fig_pipeline_v2_caption.txt.
+
+Same page size as the preprint figure (644.8 x 474.5 pt + the extra height below), so panel A is the preprint's
+optical-system drawing pasted unchanged (vector, clipped from fig_pipeline.pdf with pypdf) at scale 1, and the fonts have the
+preprint's sizes (Liberation Sans = Arial metrics, mathtext DejaVu as the preprint's symbols).
+
+Data of the mini-images (analysis/paper/fig_pipeline_v2_prep.py -> out/paper_figs_v2/cache_fig1/fig1_data.npz, CPU):
+real 6-frame window of the 1809/2 movie (photo-electrons) and the m1809 pass-1 networks run on it (detection probability
+map, one emitter's patch, intensities +- uncertainties, backgrounds, position); the estimated pattern of the 1809_2 run of
+2026-11-15 (stripes, phase drift) and its clean emitter-windows (normalized intensity vs pattern phase); a simulated training
+scene of the m1809 simulator with generic patterns; the SIMCODE zoom render of Fig. 3 (panel I).
 """
-import argparse, os
+import argparse, os, subprocess, shutil
 import numpy as np
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch, FancyArrowPatch, Rectangle, Ellipse
+from matplotlib.patches import FancyArrowPatch, Rectangle, Ellipse, Polygon, FancyBboxPatch
 
-mpl.rcParams.update({'font.family': 'DejaVu Sans', 'mathtext.fontset': 'dejavusans', 'svg.fonttype': 'none',
-                     'pdf.fonttype': 42, 'ps.fonttype': 42, 'font.size': 6.5})
+mpl.rcParams.update({'font.family': 'Liberation Sans', 'mathtext.fontset': 'dejavusans', 'svg.fonttype': 'none',
+                     'pdf.fonttype': 42, 'ps.fonttype': 42, 'font.size': 8, 'axes.linewidth': 0.6})
 
-W, H = 180.0, 171.0                     # mm
-MM = 1 / 25.4
-# colours: pass 1 blue, pass 2 orange, solve green, pattern estimation purple, training grey
-C = dict(p1='#2f6db5', p1l='#e6eef9', p2='#d0701a', p2l='#fcefe1', sol='#2b8a50', soll='#e3f3e9', pat='#7a4aa3',
-         patl='#f1eaf7', tr='#555555', trl='#f2f2f2', out='#222222', a0='#2f6db5', a1='#c23b3b')
-FS = 6.4          # body text (pt)
-FT = 7.2          # box titles
-FL = 10           # panel letters
+PREPRINT = '/home/jc/paperreview/stage/figures/fig_pipeline.pdf'
+CACHE = '/home/jc/simcode2/out/paper_figs_v2/cache_fig1/fig1_data.npz'
+W, H = 644.83137, 462.0                   # pt (preprint page width; preprint height 474.5)
+TOP = 5.0                                 # top margin (pt): the preprint's headings touch its page edge
+A_BOX = (0.0, 0.0, 308.0, 250.0)          # panel A in the preprint page (x0, y0 from the top, w, h), pasted at the same place
+FH, FL, FS, FX, FXS = 12.0, 17.0, 8.0, 7.5, 7.0      # heading, panel letter, subtitle, label, small label (pt)
+COL = dict(det='#9ec5ef', em='#f2a65a', det2='#3d7fc4', em2='#d9822b', a1='#3b75af', a2='#c44e52', grey='#666666')
+VIR = plt.get_cmap('viridis')
 
 
+# ------------------------------------------------------------------------------------------------ canvas helpers
 class Canvas:
     def __init__(self):
-        self.fig = plt.figure(figsize=(W * MM, H * MM))
-        self.ax = self.fig.add_axes([0, 0, 1, 1])
-        self.ax.set_xlim(0, W); self.ax.set_ylim(H, 0); self.ax.axis('off')
+        self.fig = plt.figure(figsize=(W / 72, H / 72))
+        self.ov = self.fig.add_axes([0, 0, 1, 1], zorder=10)
+        self.ov.set_xlim(0, W); self.ov.set_ylim(H - TOP, -TOP); self.ov.axis('off'); self.ov.patch.set_alpha(0)
 
-    def box(self, x, y, w, h, fc='white', ec='k', lw=0.7, r=1.2, ls='-', z=1):
-        self.ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle=f'round,pad=0,rounding_size={r}', fc=fc, ec=ec, lw=lw,
-                                         ls=ls, zorder=z))
+    def axes(self, x, y, w, h, z=2):
+        a = self.fig.add_axes([x / W, 1 - (y + TOP + h) / H, w / W, h / H], zorder=z)
+        return a
 
-    def text(self, x, y, s, size=FS, ha='left', va='top', color='k', weight='normal', z=5, **kw):
-        return self.ax.text(x, y, s, fontsize=size, ha=ha, va=va, color=color, weight=weight, zorder=z, **kw)
+    def img(self, im, x, y, w, h, cmap='viridis', vmin=None, vmax=None, ec='#888888', lw=0.6, z=2, interp='nearest'):
+        a = self.axes(x, y, w, h, z)
+        a.imshow(im, cmap=cmap, vmin=vmin, vmax=vmax, interpolation=interp, aspect='auto')
+        a.set_xticks([]); a.set_yticks([])
+        for s in a.spines.values():
+            s.set_edgecolor(ec); s.set_linewidth(lw)
+            if ec is None: s.set_visible(False)
+        return a
 
-    def lines(self, x, y, rows, size=FS, dy=None, **kw):
-        """rows of text, top-aligned from y; dy = line pitch (mm)"""
-        dy = dy or size * 0.3528 * 1.38
-        for i, s in enumerate(rows):
-            self.text(x, y + i * dy, s, size=size, **kw)
-        return y + len(rows) * dy
+    def stack(self, ims, x, y, s, dx, dy, **kw):
+        """images drawn back to front: ims[0] at the back (top-left), ims[-1] in front (x + n dx, y + n dy)"""
+        n = len(ims)
+        for k, im in enumerate(ims):
+            self.img(im, x + k * dx, y + k * dy, s, s, z=2 + k * 0.01, **kw)
 
-    def arrow(self, x0, y0, x1, y1, color='k', lw=0.9, ls='-', ms=7, z=4, cs='arc3'):
-        self.ax.add_patch(FancyArrowPatch((x0, y0), (x1, y1), arrowstyle='-|>', mutation_scale=ms, color=color, lw=lw,
-                                          ls=ls, zorder=z, shrinkA=0, shrinkB=0, connectionstyle=cs))
+    def text(self, x, y, s, size=FX, ha='left', va='top', color='k', **kw):
+        return self.ov.text(x, y, s, fontsize=size, ha=ha, va=va, color=color, **kw)
 
-    def seg(self, xs, ys, color='k', lw=0.9, ls='-', z=4):
-        self.ax.plot(xs, ys, color=color, lw=lw, ls=ls, zorder=z, solid_capstyle='butt')
+    def letter(self, x, y, s, title=None, title2=None):
+        self.text(x, y, s, size=FL, va='top')
+        if title:
+            self.text(x + 21, y + 3.5, title, size=FS, va='top')
+        if title2:
+            self.text(x + 21, y + 13.5, title2, size=FS, va='top')
 
-    def letter(self, x, y, s):
-        self.text(x, y, s, size=FL, weight='bold', va='top')
+    def arrow(self, x0, y0, x1, y1, cs='arc3', lw=0.8, color='k', ms=7, ls='-'):
+        self.ov.add_patch(FancyArrowPatch((x0, y0), (x1, y1), arrowstyle='-|>', mutation_scale=ms, lw=lw, color=color,
+                                          connectionstyle=cs, shrinkA=0, shrinkB=0, ls=ls, zorder=20))
 
-    def img(self, a, x, y, w, h, cmap='gray', vmin=None, vmax=None, z=3):
-        self.ax.imshow(a, extent=(x, x + w, y + h, y), cmap=cmap, vmin=vmin, vmax=vmax, zorder=z, interpolation='nearest',
-                       aspect='auto')
-        self.ax.add_patch(Rectangle((x, y), w, h, fc='none', ec='#444444', lw=0.35, zorder=z + 0.1))
-
-
-def spot(n=11, x0=5.3, y0=4.7, s=1.25, A=1.0, bg=0.08, seed=0):
-    yy, xx = np.mgrid[:n, :n]
-    rng = np.random.default_rng(seed)
-    g = A * np.exp(-((xx - x0) ** 2 + (yy - y0) ** 2) / (2 * s * s)) + bg
-    return g + 0.04 * rng.standard_normal((n, n))
-
-
-def illum(n=40, ang=0.0, pitch=7.0, ph=0.0, part='cos'):
-    yy, xx = np.mgrid[:n, :n]
-    k = 2 * np.pi / pitch
-    a = k * (np.cos(ang) * xx + np.sin(ang) * yy) - ph
-    return np.cos(a) if part == 'cos' else np.sin(a)
-
-
-# per-frame modulation of the example emitter (angle a = t // 3, phase step s = t % 3)
-MOD = np.array([1 + 0.85 * np.cos(0.6 - 2 * np.pi * s / 3) for s in range(3)] +
-               [1 + 0.85 * np.cos(2.3 - 2 * np.pi * s / 3) for s in range(3)]) / 2
-
-
-def panel_A(cv):
-    cv.letter(1, 1.5, 'A')
-    cv.box(6, 3, 38, 36.5, fc='white', ec='#999999', lw=0.8, ls=(0, (3, 2)))
-    cv.text(25, 15, 'Optical system', size=FT, ha='center', weight='bold', color='#777777')
-    cv.lines(25, 20, ['(placeholder: the preprint\'s', 'optical-system panel,', 'DMD-SIMFLUX TIRF)'], ha='center',
-             color='#777777')
+    def cube(self, x, y, w, h, d, fc, ec=None, front_img=None):
+        """box drawn as in the preprint (front face, top, right side; depth d to the upper right)"""
+        c = mpl.colors.to_rgb(fc)
+        top = tuple(min(1, v * 1.08 + 0.06) for v in c); side = tuple(v * 0.82 for v in c)
+        ec = ec or tuple(v * 0.65 for v in c)
+        o = self.ov
+        o.add_patch(Polygon([(x, y), (x + d, y - d * 0.6), (x + w + d, y - d * 0.6), (x + w, y)], fc=top, ec=ec, lw=0.5, zorder=12))
+        o.add_patch(Polygon([(x + w, y), (x + w + d, y - d * 0.6), (x + w + d, y + h - d * 0.6), (x + w, y + h)], fc=side, ec=ec,
+                            lw=0.5, zorder=12))
+        o.add_patch(Rectangle((x, y), w, h, fc=c, ec=ec, lw=0.5, zorder=12))
+        if front_img is not None:
+            a = self.axes(x + 2, y + 2, w - 4, h - 4, z=11)
+            a.imshow(front_img, cmap='viridis', interpolation='bilinear', aspect='auto', alpha=0.85)
+            a.axis('off')
+            o.add_patch(Rectangle((x, y), w, h, fc='none', ec=ec, lw=0.5, zorder=13))
 
 
-def panel_B(cv):
-    x0, y0 = 49, 3
-    cv.letter(x0 - 4, 1.5, 'B')
-    cv.text(x0, 2.2, 'Training: simulation only, one PSF-matched model per movie', size=FT, weight='bold', color=C['tr'])
-    bw, bh, gap = 30.0, 30.0, 3.6
-    items = [
-        ('In-situ calibration v2', ['of the target movie:', 'vectorial PSF fitted', 'on the movie\'s spots', '(Zernikes, focus);',
-                                     'sCMOS gain, offset and', 'read-noise maps;', 'fitted emitter heights']),
-        ('Matched simulator', ['this PSF + camera,', 'SIMFLUX pattern with', 'estimation errors,', 'DNA-PAINT kinetics,',
-                               'filaments, close pairs,', 'brightness jitter,', 'structured background']),
-        ('Network training', ['pass 1: detector,', 'then EmitterNet;', 'pass 2: same networks', '+ illumination inputs',
-                              '(zero-initialised),', 'generic patterns in', 'half of the FOVs']),
-        ('PSF-matched model', ['4 networks + solve', 'calibrations (sim', 'gate scenes):', 'm1809 for 1809/2;',
-                               'm25 for 2.5 nM/2', 'and 20 nM/2']),
-    ]
-    for i, (t, rows) in enumerate(items):
-        x = x0 + i * (bw + gap); y = y0 + 6.5
-        cv.box(x, y, bw, bh, fc=C['trl'], ec=C['tr'], lw=0.7)
-        cv.text(x + 1.5, y + 1.6, t, size=FS + 0.3, weight='bold', color=C['tr'])
-        cv.lines(x + 1.5, y + 5.6, rows)
-        if i < 3:
-            cv.arrow(x + bw + 0.3, y + bh / 2, x + bw + gap - 0.3, y + bh / 2, color=C['tr'])
+# ------------------------------------------------------------------------------------------------ data helpers
+def illum_tile(kvec, psi, m, n=40, x0=0.0, y0=0.0, os_=4):
+    """illumination 1 + m cos(k . r - psi) on an n x n px tile, sampled os_ times per pixel (no aliasing of the 2 px pitch)"""
+    yy, xx = (np.mgrid[0:n * os_, 0:n * os_].astype(float) + 0.5) / os_ - 0.5
+    return 1 + m * np.cos(kvec[0] * (xx + x0) + kvec[1] * (yy + y0) - psi)
 
 
-def panel_C(cv, y0):
-    cv.letter(1, y0, 'C')
-    cv.text(6, y0 + 0.7, 'Input', size=FT, weight='bold')
-    # stack of 6 frames (spot brightness modulated by the pattern)
-    fx, fy, fs = 6.0, y0 + 6.0, 9.0
-    for t in range(6):
-        a = spot(A=MOD[t] * 1.2, seed=t)
-        cv.img(a, fx + t * 2.3, fy + t * 2.3, fs, fs, vmin=0, vmax=1.15, z=3 + t * 0.2)
-    cv.text(fx + 2.3 * 5 + fs + 1.0, fy + 2.3 * 5 + fs / 2, r'$t$', size=FS + 1, va='center')
-    cv.lines(6, fy + 2.3 * 5 + fs + 2.0, ['6-frame window =', '2 angles × 3 phase steps'])
-    # timeline: frames, a window every 3 frames
-    ty = fy + 2.3 * 5 + fs + 10.5
-    sq = 2.05
-    for f in range(12):
-        col = C['a0'] if (f % 6) < 3 else C['a1']
-        cv.ax.add_patch(Rectangle((6 + f * sq, ty), sq * 0.86, sq * 0.86, fc=col, ec='none', alpha=0.75, zorder=3))
-    for j, s0 in enumerate((0, 3, 6)):
-        yb = ty + 3.0 + j * 1.5
-        cv.seg([6 + s0 * sq, 6 + (s0 + 6) * sq - 0.3], [yb, yb], color='k', lw=0.8)
-    cv.lines(6, ty + 8.4, ['a window every 3 frames'])
-    cv.text(6 + 1.5 * sq, ty - 0.8, 'angle 1', size=FS - 0.6, color=C['a0'], va='bottom', ha='center')
-    cv.text(6 + 10.5 * sq, ty - 0.8, 'angle 2', size=FS - 0.6, color=C['a1'], va='bottom', ha='center')
+def crop(a, cx, cy, r):
+    cy0, cx0 = int(round(cy)) - r, int(round(cx)) - r
+    cy0 = min(max(cy0, 0), a.shape[-2] - 2 * r); cx0 = min(max(cx0, 0), a.shape[-1] - 2 * r)
+    return a[..., cy0:cy0 + 2 * r, cx0:cx0 + 2 * r], cx0, cy0
 
 
-def bars(cv, x, y, w, h, vals, errs=None, col=None):
-    n = len(vals); bw = w / n
-    cv.seg([x, x + w], [y + h, y + h], color='#444444', lw=0.4)
-    for i, v in enumerate(vals):
-        c = col[i] if col is not None else 'k'
-        cv.ax.add_patch(Rectangle((x + i * bw + bw * 0.15, y + h - v * h), bw * 0.7, v * h, fc=c, ec='none', alpha=0.8, zorder=3))
-        if errs is not None:
-            cv.seg([x + i * bw + bw / 2] * 2, [y + h - (v + errs[i]) * h, y + h - (v - errs[i]) * h], color='k', lw=0.45)
+def drift_at(D, frames, a):
+    kf = float(D['pat_knot']); dphi = D['pat_dphi']
+    tt = frames / kf; i0 = np.clip(np.floor(tt).astype(int), 0, dphi.shape[1] - 2); w = np.clip(tt - i0, 0, 1)
+    return dphi[a, i0] * (1 - w) + dphi[a, i0 + 1] * w
 
 
-def covmat(cv, x, y, s, seed=1):
-    rng = np.random.default_rng(seed)
-    A = rng.standard_normal((6, 6)) * 0.35 + np.eye(6) * 1.2
-    S = A @ A.T; d = np.sqrt(np.diag(S)); R = S / np.outer(d, d)
-    cm = mpl.colormaps['RdBu_r']
-    c = s / 6
-    for i in range(6):
-        for j in range(6):
-            cv.ax.add_patch(Rectangle((x + j * c, y + i * c), c, c, fc=cm(0.5 + 0.5 * R[i, j]), ec='white', lw=0.15, zorder=3))
-
-
-def panel_D(cv, y0):
-    x0, x1 = 41.0, 121.0
-    cv.letter(x0 - 4.5, y0, 'D')
-    cv.box(x0, y0, x1 - x0, 56, fc=C['p1l'], ec=C['p1'], lw=0.9)
-    cv.text(x0 + 1.5, y0 + 1.4, 'Pass 1: pattern-free networks', size=FT, weight='bold', color=C['p1'])
-    # detector
-    dx, dy, dw, dh = x0 + 1.8, y0 + 7.5, 26.0, 22.0
-    cv.box(dx, dy, dw, dh, fc='white', ec=C['p1'], lw=0.7)
-    cv.text(dx + 1.2, dy + 1.2, 'Detector', size=FS + 0.3, weight='bold', color=C['p1'])
-    cv.lines(dx + 1.2, dy + 4.9, ['U-Net on the window', '→ logit + sub-pixel', 'offset per pixel;', 'sub-pixel NMS + top-k;',
-                                  r'keep $p \geq 0.3$'])
-    # candidate patch
-    px_, py_ = dx, dy + dh + 3.2
-    for t in range(3):
-        cv.img(spot(n=11, A=0.6 + MOD[t], seed=10 + t), px_ + t * 1.6, py_ + t * 1.6, 9.0, 9.0, vmin=0, vmax=1.3, z=3 + t * 0.2)
-    cv.lines(px_, py_ + 13.0, ['21×21×6 patch', 'per candidate', '+ neighbour maps'], size=FS - 0.3)
-    cv.arrow(dx + 6, dy + dh, dx + 6, py_ - 0.3, color=C['p1'])
-    # EmitterNet
-    ex, ey, ew, eh = dx + dw + 3.4, dy, 20.8, 44.0
-    cv.box(ex, ey, ew, eh, fc='white', ec=C['p1'], lw=0.7)
-    cv.text(ex + 1.2, ey + 1.2, 'EmitterNet', size=FS + 0.3, weight='bold', color=C['p1'])
-    cv.lines(ex + 1.2, ey + 4.9, ['per-candidate', 'CNN; learned', 'linear read-out', r'$I_t=\mathbf{w}_t\cdot(\mathbf{y}_t-bg_t)$',
-                                  '+ correction'], size=FS - 0.2)
-    cv.text(ex + 1.2, ey + eh - 1.2, 'no pattern\ninput', size=FS - 0.3, va='bottom', color=C['p1'], style='italic')
-    cv.arrow(px_ + 12.6, py_ + 6.5, ex - 0.3, py_ + 6.5, color=C['p1'])
+# ------------------------------------------------------------------------------------------------ panels
+def training(cv, D):
+    x0 = 317.0
+    cv.text(x0, -2 + 1.0, 'Network training', size=FH)
+    # B: simulated ground truth (3 FOVs), generic patterns, in-situ PSF
+    cv.letter(319, 21, 'B', 'Simulate ground truth')
+    gts = []
+    for f in range(3):
+        g = np.ones((40, 40, 3))
+        gts.append(g)
+    yB = 46
+    for f in range(3):
+        a = cv.axes(330 + f * 7, yB + f * 7, 46, 46, z=2 + f * 0.01)
+        a.set_facecolor('white'); a.set_xticks([]); a.set_yticks([])
+        for s in a.spines.values(): s.set_edgecolor('#444444'); s.set_linewidth(0.6)
+        k = D['sim_fov'] == f
+        a.scatter(D['sim_x'][k], D['sim_y'][k], s=1.2, c='k', lw=0)
+        a.set_xlim(0, 40); a.set_ylim(40, 0)
+    # generic patterns (the simulated FOVs' illumination, one frame each)
+    # generic two-orientation patterns of the pass-2 training (ranges of simulate/acquisition.GENERIC: pitch 1.8-4 px,
+    # orientation of angle 1 within +-40 deg of x; drawn analytically, oversampled)
+    rng = np.random.default_rng(4)
+    gen = []
+    for f in range(3):
+        pit = np.exp(rng.uniform(np.log(2.4), np.log(4.0))); th = np.radians(rng.uniform(-40, 40) + 90 * (f % 2))
+        gen.append(illum_tile(2 * np.pi / pit * np.array([np.cos(th), np.sin(th)]), rng.uniform(0, 6.3), rng.uniform(0.5, 1.0), n=30))
+    cv.stack(gen, 398, yB, 46, 7, 7, cmap='viridis', vmin=0, vmax=2, ec='#444444', interp='bilinear')
+    cv.text(355, 113, 'emitters', size=FXS, ha='center', color=COL['grey'])
+    cv.text(421, 113, 'generic patterns', size=FXS, ha='center', color=COL['grey'])
+    cv.text(330, 124, 'Filaments and close emitter pairs', size=FX)
+    cv.text(330, 133.5, 'In-situ PSF and camera of the movie', size=FX)
+    # C: simulated 6-frame windows
+    cv.letter(459, 21, 'C', 'Simulate 6-frame windows')
+    fr = D['sim_frames'][1]
+    cv.stack(list(fr), 488, 42, 54, 6, 6, cmap='viridis', vmin=np.median(fr), vmax=np.percentile(fr, 99.7), ec='#999999', lw=0.9)
+    cv.arrow(452, 70, 484, 74, cs='arc3,rad=-0.25')
+    # D: networks, outputs, loss
+    cv.letter(429, 142, 'D', 'Pass through networks')
+    cx, cy = 572, 172
+    cv.cube(cx, cy, 24, 20, 9, COL['det'])
+    cv.cube(cx, cy + 40, 24, 20, 9, COL['em'])
+    cv.arrow(cx + 12, cy + 21, cx + 12, cy + 33, lw=0.7)
+    # pass-2 inputs: illumination maps
+    pt = illum_tile([1.1, 0.35], 0.0, 0.9, n=20)
+    cv.img(pt, 618, 185, 17, 17, cmap='viridis', ec='#444444', interp='bilinear')
+    cv.text(626.5, 205, 'pass 2', size=FXS, ha='center', color=COL['grey'])
+    cv.arrow(617, 193, cx + 34, cy + 10, lw=0.6, color=COL['grey'], ms=5)
+    cv.arrow(617, 196, cx + 34, cy + 47, lw=0.6, color=COL['grey'], ms=5, cs='arc3,rad=-0.2')
+    # frames -> networks (curved from the stack)
+    cv.arrow(600, 112, cx + 26, cy - 8, cs='arc3,rad=-0.35')
     # outputs
-    ox = ex + ew + 2.5
-    cv.arrow(ex + ew + 0.2, ey + 20, ox + 0.2, ey + 20, color=C['p1'])
-    oy = ey - 0.5
-    cv.text(ox + 1, oy, r'$I_1\ldots I_6$', size=FS)
-    bars(cv, ox + 1, oy + 3.0, 11.5, 7.0, MOD * 0.85, errs=0.09 + 0.05 * MOD, col=[C['a0']] * 3 + [C['a1']] * 3)
-    covmat(cv, ox + 14.0, oy + 3.0, 7.0)
-    cv.text(ox + 1, oy + 11.6, r'full 6×6 covariance', size=FS - 0.3)
-    cv.text(ox + 1, oy + 14.4, r'(Cholesky $L$)', size=FS - 0.3)
-    cv.text(ox + 1, oy + 18.6, r'$bg_1\ldots bg_6$', size=FS)
-    cv.text(ox + 1, oy + 23.2, r'3D prior $(x,y,z)$', size=FS)
-    cv.ax.add_patch(Ellipse((ox + 6.0, oy + 32.0), 8.0, 4.4, angle=-25, fc=C['p1'], alpha=0.25, ec=C['p1'], lw=0.5, zorder=3))
-    cv.ax.add_patch(Ellipse((ox + 6.0, oy + 32.0), 3.0, 1.6, angle=-25, fc=C['p1'], alpha=0.5, ec='none', zorder=3))
-    cv.lines(ox + 12.0, oy + 29.0, ['+ 3×3', 'covariance'], size=FS - 0.3)
-    cv.lines(ox + 1, oy + 37.5, [r'$z$ | $x,y$: $z + \mathbf{b}\cdot\Delta\mathbf{r}$'], size=FS - 0.3)
-    return dict(out_x=ox, ex=ex, ey=ey)
+    ox = 500
+    cv.text(ox, 167, r'$p$', size=9)
+    cv.text(ox, 178, r'$\hat{\theta}_{dl}\pm\sigma_{dl}$', size=9)
+    cv.text(ox, 191, r'$\hat{\mu}_{b}$', size=9)
+    cv.text(ox, 217, r'$\hat{\mu}_{N}\pm\hat{\sigma}_{N}$', size=9)
+    cv.arrow(cx - 4, cy + 10, 556, cy + 10, lw=0.7)
+    cv.arrow(cx - 4, cy + 50, 556, cy + 50, lw=0.7)
+    cv.ov.plot([557, 557], [cy + 10, cy + 10], lw=0)
+    cv.arrow(496, 185, 452, 196, cs='arc3,rad=0.25')
+    cv.arrow(496, 222, 452, 207, cs='arc3,rad=-0.25')
+    cv.text(330, 194, 'Compute loss', size=FS)
+    cv.text(330, 205, 'and backpropagate', size=FS)
+    cv.arrow(375, 190, 375, 142)
 
 
-def panel_E(cv, y0):
-    x0, x1 = 129.0, 179.0
-    cv.letter(x0 - 4.5, y0, 'E')
-    cv.box(x0, y0, x1 - x0, 56, fc=C['patl'], ec=C['pat'], lw=0.9)
-    cv.text(x0 + 1.5, y0 + 1.4, 'Pattern estimation', size=FT, weight='bold', color=C['pat'])
-    # glyph: relative intensity vs pattern phase, cosine fit
-    gx, gy, gw, gh = x0 + 4.5, y0 + 7.0, 22.0, 13.0
-    rng = np.random.default_rng(3)
-    th = rng.uniform(0, 2 * np.pi, 70)
-    yv = np.clip(1 + 0.8 * np.cos(th) + 0.22 * rng.standard_normal(70), -0.25, 2.25)
-    X = gx + th / (2 * np.pi) * gw; Y = gy + gh - (yv + 0.3) / 2.6 * gh
-    cv.ax.scatter(X, Y, s=0.9, color=C['pat'], alpha=0.6, lw=0, zorder=3)
-    tt = np.linspace(0, 2 * np.pi, 100)
-    cv.ax.plot(gx + tt / (2 * np.pi) * gw, gy + gh - (1 + 0.8 * np.cos(tt) + 0.3) / 2.6 * gh, color='k', lw=0.8, zorder=4)
-    cv.seg([gx, gx + gw], [gy + gh, gy + gh], color='#444444', lw=0.4)
-    cv.seg([gx, gx], [gy, gy + gh], color='#444444', lw=0.4)
-    cv.text(gx + gw / 2, gy + gh + 0.6, r'$\mathbf{k}_a\cdot\mathbf{r}-\psi_s-\varepsilon_a(t)$', size=FS - 0.6, ha='center')
-    cv.text(gx - 0.8, gy + gh / 2, r'$I_t/B$', size=FS - 0.6, ha='right', va='center', rotation=90)
-    cv.text(gx + gw + 1.5, gy + 1.0, 'clean,\nisolated\nemitter-\nwindows', size=FS - 0.8, color=C['pat'])
-    yy = cv.lines(x0 + 1.5, gy + gh + 5.0, [
-        r'$I_t = B\,\mathrm{rel}_s\,[1+m_a\cos(\mathbf{k}_a\cdot\mathbf{r}-\psi_s-\varepsilon_a(t))]$'], size=FS - 0.5)
-    cv.lines(x0 + 1.5, yy + 0.6, [
-        'from the pass-1 network intensities',
-        'and prior positions only:',
-        r'$\mathbf{k}_a$: FFT, then DFT refinement',
-        r'per-step phases $\psi_s$, rel. intensities',
-        r'modulation depth $m_a$',
-        r'phase drift $\varepsilon_a(t)$ per angle (shared)'], size=FS - 0.2)
+def inference(cv, D):
+    y0 = 254.0
+    cv.text(-1, y0, 'Inference', size=FH)
+    yl, yc = 276.0, 306.0                      # letters, top of the content
+    k = int(D['pick']); ex, ey = float(D['c_x'][k]), float(D['c_y'][k])
+    win = D['win']
+    # E: input window (real frames, photons)
+    cv.letter(0, yl, 'E', 'Input: 6-frame', 'window (photons)')
+    wc, cx0, cy0 = crop(win, ex, ey, 12)
+    lo, hi = np.median(wc), 0.8 * wc.max()          # background dark, spots bright
+    cv.stack(list(wc), 2, yc - 2, 57, 4.6, 4.6, cmap='viridis', vmin=lo, vmax=hi, ec='#999999', lw=0.9)
+    # angle / step labels under the stack
+    for t in range(6):
+        cv.ov.add_patch(Rectangle((5 + t * 9.5, 391), 8, 4, fc=COL['a1'] if t < 3 else COL['a2'], ec='none', zorder=12))
+    cv.text(5, 398, r'angle $i$ = 1, 2', size=FXS, color=COL['grey'])
+    cv.text(5, 406, r'step $j$ = 1, 2, 3', size=FXS, color=COL['grey'])
+    cv.arrow(86, 340, 102, 340)
+    # F: pass-1 networks
+    cv.letter(98, yl, 'F', 'Pass 1:', 'no pattern')
+    fx = 112
+    cv.cube(fx, 318, 28, 24, 10, COL['det'])
+    cv.text(fx + 14, 346, 'detect', size=FXS, ha='center', color=COL['grey'])
+    patch = D['patch']
+    cv.stack([patch[t] for t in range(0, 6, 2)], fx + 2, 357, 18, 3, 3, cmap='viridis', vmin=np.median(patch), vmax=0.8 * patch.max(),
+             ec='#999999', lw=0.5)
+    cv.arrow(fx + 14, 354, fx + 14, 356.5, lw=0.6, ms=4)
+    cv.cube(fx, 390, 28, 24, 10, COL['em'])
+    cv.text(fx + 14, 418, 'estimate', size=FXS, ha='center', color=COL['grey'])
+    cv.arrow(fx + 14, 382, fx + 14, 388, lw=0.6, ms=4)
+    # G: network outputs (box)
+    gx0, gx1 = 168, 330
+    cv.ov.add_patch(Rectangle((gx0, yc - 6), gx1 - gx0, 125, fc='none', ec='#9a9a9a', lw=1.2, zorder=1))
+    cv.letter(gx0 - 4, yl, 'G', 'Network outputs')
+    cv.arrow(fx + 40, 332, gx0 - 2, 332)
+    cv.arrow(fx + 40, 402, gx0 - 2, 402)
+    pm, _, _ = crop(D['pmap'], ex, ey, 12)
+    cv.text(gx0 + 6, yc + 2, r'$p$', size=10)
+    cv.img(pm, gx0 + 18, yc, 46, 46, cmap='viridis', vmin=0, vmax=1, ec='#666666')
+    # the emitter's six intensities with uncertainties
+    I, sI, bg = D['c_I'][k], D['c_sI'][k], D['c_bg'][k]
+    a = cv.axes(gx0 + 82, yc + 10, 70, 38)
+    xs = np.arange(6)
+    a.bar(xs, I, width=0.7, color=[COL['a1']] * 3 + [COL['a2']] * 3)
+    a.errorbar(xs, I, yerr=sI, fmt='none', ecolor='k', elinewidth=0.6, capsize=1.2, capthick=0.6)
+    a.set_xlim(-0.6, 5.6); a.set_ylim(0, max(I + sI) * 1.08)
+    a.set_xticks([]); a.set_yticks([]); [a.spines[s].set_visible(False) for s in ('top', 'right', 'left')]
+    cv.text(gx0 + 117, yc - 2, r'$\hat{\mu}_{N}\pm\hat{\sigma}_{N}$', size=9, ha='center')
+    # backgrounds
+    a = cv.axes(gx0 + 82, yc + 72, 70, 20)
+    a.bar(xs, bg, width=0.7, color='#9a9a9a')
+    a.set_xlim(-0.6, 5.6); a.set_ylim(0, bg.max() * 1.15)
+    a.set_xticks([]); a.set_yticks([]); [a.spines[s].set_visible(False) for s in ('top', 'right', 'left')]
+    cv.text(gx0 + 117, yc + 58, r'$\hat{\mu}_{b}$', size=9, ha='center')
+    # position (x, y) +- sigma and z +- sigma_z glyph
+    cv.text(gx0 + 6, yc + 58, r'$\hat{\theta}_{dl}$', size=9)
+    gxc, gyc = gx0 + 40, yc + 85
+    cv.ov.add_patch(Ellipse((gxc, gyc), 26, 20, fc='#cfe0f3', ec='#3d7fc4', lw=0.6, zorder=12))
+    cv.ov.add_patch(Ellipse((gxc, gyc), 2.6, 2.6, fc='#1f4e8c', ec='none', zorder=13))
+    cv.ov.plot([gxc + 22, gxc + 22], [gyc - 12, gyc + 12], color='#3d7fc4', lw=0.9, zorder=12)
+    cv.ov.plot([gxc + 19.5, gxc + 24.5], [gyc - 12, gyc - 12], color='#3d7fc4', lw=0.9, zorder=12)
+    cv.ov.plot([gxc + 19.5, gxc + 24.5], [gyc + 12, gyc + 12], color='#3d7fc4', lw=0.9, zorder=12)
+    cv.ov.plot([gxc + 22], [gyc], 'o', color='#1f4e8c', ms=2.2, zorder=13)
+    cv.text(gxc, gyc + 14, r'$x, y$', size=FXS, ha='center', color=COL['grey'])
+    cv.text(gxc + 26, gyc - 3, r'$z$', size=FXS, color=COL['grey'])
+    # H: pattern estimation
+    hx = 340
+    cv.letter(hx - 2, yl, 'H', 'Estimate the', 'pattern')
+    cv.arrow(gx1 + 1, 345, hx + 4, 345)
+    kv, psi, m = D['pat_k'], D['pat_phi'], D['pat_m']
+    tiles = [illum_tile(kv[s // 3], psi[s], m[s], n=14, os_=12) for s in range(6)]
+    cv.stack(tiles, hx + 4, yc - 2, 44, 4.2, 4.2, cmap='viridis', vmin=0, vmax=2, ec='#555555', interp='bilinear')
+    # normalized intensity vs pattern phase (clean emitter-windows of the run, angle 1)
+    a = cv.axes(hx + 2, yc + 70, 76, 34)
+    w, x, y, I6 = D['cl_w'], D['cl_x'], D['cl_y'], D['cl_I']
+    ph, val = [], []
+    for t in range(6):
+        f = w + t; s = f % 6
+        sel = s // 3 == 0
+        eps = drift_at(D, f[sel].astype(float), 0)
+        arg = kv[0, 0] * x[sel] + kv[0, 1] * y[sel] - psi[s[sel]] - eps + np.pi / 2      # sin convention
+        ph.append(np.mod(arg, 2 * np.pi)); val.append(6 * I6[sel, t] / I6[sel].sum(1))
+    ph, val = np.concatenate(ph), np.concatenate(val)
+    rng = np.random.default_rng(1); sub = rng.choice(len(ph), min(700, len(ph)), replace=False)
+    a.scatter(ph[sub], val[sub], s=0.6, c=COL['a1'], lw=0, alpha=0.55, rasterized=True)
+    g = np.linspace(0, 2 * np.pi, 200)
+    rel = np.exp(D['pat_logrel'] - D['pat_logrel'].mean())[:3].mean()
+    a.plot(g, rel * (1 + m[:3].mean() * np.sin(g)), color='k', lw=0.9)
+    a.set_xlim(0, 2 * np.pi); a.set_ylim(-0.1, 2.3)
+    a.set_xticks([]); a.set_yticks([]); [a.spines[s].set_visible(False) for s in ('top', 'right')]
+    # phase drift eps_i(t) over the movie
+    a = cv.axes(hx + 2, yc + 109, 66, 18)
+    dphi = D['pat_dphi']; tk = np.arange(dphi.shape[1]) * float(D['pat_knot'])
+    for ai, c in ((0, COL['a1']), (1, COL['a2'])):
+        a.plot(tk, np.degrees(dphi[ai]) - 40 * ai, color=c, lw=0.6)
+    a.set_xlim(0, tk[-1]); a.axis('off')
+    cv.text(hx + 70, yc + 113, r'$\varepsilon_i(t)$', size=FXS + 0.6, ha='left', color=COL['grey'])
+    # I: pass 2 with the pattern
+    ix = 440
+    cv.letter(ix - 2, yl, 'I', 'Pass 2:', '+ pattern')
+    cv.arrow(hx + 76, 345, ix + 6, 345)
+    st = illum_tile(kv[0], psi[0], m[0], n=12, os_=12)
+    st2 = illum_tile(kv[1], psi[3], m[3], n=12, os_=12)
+    cv.cube(ix + 8, 318, 28, 24, 10, COL['det2'], front_img=st)
+    cv.cube(ix + 8, 390, 28, 24, 10, COL['em2'], front_img=st2)
+    cv.arrow(ix + 22, 346, ix + 22, 386, lw=0.6, ms=4)
+    cv.text(ix + 22, 418, 'same outputs', size=FXS, ha='center', color=COL['grey'])
+    # J: pattern fit with the network prior
+    jx = 512
+    cv.letter(jx - 2, yl, 'J', 'Pattern fit,', 'network prior')
+    cv.arrow(ix + 48, 380, jx + 4, 360)
+    a = cv.axes(jx + 4, yc + 6, 74, 54)
+    g = np.linspace(-1.3 * np.pi, 1.3 * np.pi, 300)
+    cols = ['#5ab4ac', '#d8b365', '#8c6bb1']
+    x_e = 1.2
+    for j in range(3):
+        a.plot(g, 1 + 0.85 * np.sin(g - j * 2 * np.pi / 3), color=cols[j], lw=1.0)
+        a.plot([x_e], [1 + 0.85 * np.sin(x_e - j * 2 * np.pi / 3) + (-0.06, 0.07, 0.05)[j]], 'o', color='k', ms=2.6, zorder=5)
+    a.axvline(x_e, color='k', lw=0.6, ls='--')
+    # prior on the position (the network's) under the curves
+    pr = np.exp(-0.5 * ((g - (x_e - 0.3)) / 0.9) ** 2)
+    a.fill_between(g, -0.95, -0.95 + 0.75 * pr, color='#cfe0f3', lw=0)
+    a.plot(g, -0.95 + 0.75 * pr, color='#3d7fc4', lw=0.7)
+    a.set_xlim(g[0], g[-1]); a.set_ylim(-1.0, 2.05); a.axis('off')
+    cv.text(jx + 41, yc + 63, r'$\theta = (x, y, N)$', size=FX, ha='center')
+    cv.text(jx + 4, yc + 47, 'prior', size=FXS, color='#3d7fc4', ha='left')
+    # K: select and render (Fig. 3 SIMCODE zoom)
+    kx = 594
+    cv.letter(kx - 2, yl, 'K', 'Select', '& render')
+    cv.arrow(jx + 79, 345, kx, 345)
+    r = D['render_I']
+    cv.img(r, kx + 1, yc + 10, 50, 50, cmap=None, ec='#444444', interp='bilinear')
+    cv.text(kx - 1, yc + 66, r'$z$ from pass 1', size=FXS, color=COL['grey'])
+    cv.text(kx - 1, yc + 76, r'$p$, $\sigma$ cut', size=FXS, color=COL['grey'])
+    # pass-1 z -> output (long curve under the row, as the preprint's G -> K line)
+    cv.ov.plot([gx0 + 80, gx0 + 80], [yc + 119, yc + 132], color=COL['grey'], lw=0.7, zorder=20)
+    cv.ov.plot([gx0 + 80, kx + 14], [yc + 132, yc + 132], color=COL['grey'], lw=0.7, zorder=20)
+    cv.arrow(kx + 14, yc + 132, kx + 14, yc + 88, lw=0.7, color=COL['grey'], ms=5)
+    cv.text(gx0 + 84, yc + 133.5, r'$z$', size=FXS, color=COL['grey'])
 
 
-def panel_F(cv, y0):
-    x0, x1 = 5.0, 63.0
-    cv.letter(1, y0, 'F')
-    cv.box(x0, y0, x1 - x0, 54, fc=C['p2l'], ec=C['p2'], lw=0.9)
-    cv.text(x0 + 1.5, y0 + 1.4, 'Pass 2: pattern-aware networks', size=FT, weight='bold', color=C['p2'])
-    gx, gy, gs = x0 + 2.0, y0 + 7.0, 9.0
-    for i, (ang, part) in enumerate([(0.15, 'cos'), (0.15, 'sin'), (1.72, 'cos'), (1.72, 'sin')]):
-        cv.img(illum(ang=ang, ph=0.4 * i, part=part), gx + i * (gs + 1.3), gy, gs, gs, cmap='RdBu_r', vmin=-1.2, vmax=1.2)
-    cv.text(gx, gy + gs + 0.8, r'illumination maps of the ESTIMATED pattern:', size=FS - 0.3)
-    cv.text(gx, gy + gs + 3.6, 'cos and sin part per frame (12 channels)', size=FS - 0.3)
-    cv.lines(gx, gy + gs + 8.3, [
-        'same Detector + EmitterNet, with extra',
-        'illumination inputs (zero-initialised from',
-        'the pass-1 networks, then fine-tuned);',
-        'trained on GENERIC patterns (pitch 1.8–4 px,',
-        'any orientation / phases / frame order) in',
-        'half of the training FOVs, SIMCODE pattern',
-        'in the others; outputs as in D'], size=FS - 0.1)
-
-
-def panel_G(cv, y0):
-    x0, x1 = 71.0, 131.0
-    cv.letter(x0 - 4.5, y0, 'G')
-    cv.box(x0, y0, x1 - x0, 54, fc=C['soll'], ec=C['sol'], lw=0.9)
-    cv.text(x0 + 1.5, y0 + 1.4, 'Explicit pattern solve (per row)', size=FT, weight='bold', color=C['sol'])
-    # glyph: NLL along one pattern direction with fringe minima; prior centre + fringe-shifted starts
-    gx, gy, gw, gh = x0 + 4.0, y0 + 6.5, 30.0, 12.0
-    u = np.linspace(-1.6, 1.6, 300)
-    nll = 1 - 0.9 * np.cos(2 * np.pi * u) ** 1 * 0.5 - 0.5 * np.cos(2 * np.pi * u) + 0.55 * u ** 2
-    nll = (nll - nll.min()) / (nll.max() - nll.min())
-    cv.ax.plot(gx + (u + 1.6) / 3.2 * gw, gy + 1 + nll * (gh - 2), color=C['sol'], lw=0.9, zorder=4)
-    cv.seg([gx, gx + gw], [gy + gh, gy + gh], color='#444444', lw=0.4)
-    for k, uu in enumerate((-1, 0, 1)):
-        xx = gx + (uu + 1.6) / 3.2 * gw
-        cv.ax.plot([xx], [gy + gh + 1.4], marker='^', ms=2.6, color='k' if uu == 0 else '#777777', zorder=5, clip_on=False)
-    cv.text(gx + gw / 2, gy + gh + 2.6, 'starts: prior centre + 8 fringe shifts', size=FS - 0.6, ha='center')
-    cv.text(gx + gw / 2, gy + gh + 5.2, r'($\pm1$ period per angle)', size=FS - 0.6, ha='center')
-    cv.text(gx + gw + 1.5, gy + 0.5, 'NLL along\n' + r'$\mathbf{k}_a$', size=FS - 0.6)
-    cv.lines(x0 + 1.5, gy + gh + 9.3, [
-        r'LM fit of $(x, y, B\,[, t_\mathrm{on}, t_\mathrm{off}])$ to $I_t$, with',
-        r'$\Sigma(\mu)=s\,\Sigma_\mathrm{net}+c^2\,\mathrm{diag}(\mu^2)+c_a^2\,\mu\mu^\mathsf{T}$',
-        r'(fixed $c$, $c_a$ of the model calibration)',
-        r'+ Gaussian prior term on $(x, y)$',
-        r'on/off kinetics kept if $\Delta(-2\log L)>9.21$',
-        r'output: fringe posterior mean, calibrated $\sigma$',
-        r'(pass-1 rows and pass-2 rows alike)'], size=FS - 0.1)
-
-
-def panel_H(cv, y0):
-    x0, x1 = 139.0, 179.0
-    cv.letter(x0 - 4.5, y0, 'H')
-    # z from pass 1
-    cv.box(x0, y0, x1 - x0, 21.5, fc=C['p1l'], ec=C['p1'], lw=0.9)
-    cv.text(x0 + 1.5, y0 + 1.4, r'$z$ from pass 1', size=FT, weight='bold', color=C['p1'])
-    cv.lines(x0 + 1.5, y0 + 5.4, [
-        'each pass-2 row is linked to its',
-        'pass-1 candidate (≤ 1 px); that',
-        'candidate\'s 3D prior (D) is',
-        r'conditioned on the final $x, y$:',
-        r'$z=z_\mathrm{p}+\mathbf{b}\cdot(\mathbf{r}-\mathbf{r}_\mathrm{p})$'], size=FS - 0.3)
-    # selection
-    sy = y0 + 25.5
-    cv.box(x0, sy, x1 - x0, 11.5, fc='white', ec=C['out'], lw=0.8)
-    cv.text(x0 + 1.5, sy + 1.4, 'Selection', size=FT, weight='bold')
-    cv.lines(x0 + 1.5, sy + 5.0, [r'$p \geq 0.63$ and calibrated', r'$\max(\sigma_x,\sigma_y)\leq 12$ nm'], size=FS - 0.2)
-    cv.arrow((x0 + x1) / 2, y0 + 21.5, (x0 + x1) / 2, sy - 0.2, color=C['out'])
-    # table
-    ty = sy + 15.0
-    cv.box(x0, ty, x1 - x0, 14.0, fc=C['out'], ec=C['out'], lw=0.8)
-    cv.text((x0 + x1) / 2, ty + 2.3, 'Localization table', size=FT, weight='bold', ha='center', color='white')
-    cv.text((x0 + x1) / 2, ty + 6.6, r'$x, y, z$, $\sigma_x, \sigma_y, \sigma_z$, photons,', size=FS - 0.3, ha='center',
-            color='white')
-    cv.text((x0 + x1) / 2, ty + 9.6, 'one row per emitter-window', size=FS - 0.3, ha='center', color='white')
-    cv.arrow((x0 + x1) / 2, sy + 11.5, (x0 + x1) / 2, ty - 0.2, color=C['out'])
+def paste_panel_A(pdf_in, pdf_out):
+    import pypdf
+    from pypdf.generic import RectangleObject
+    src = pypdf.PdfReader(PREPRINT).pages[0]
+    Hs = float(src.mediabox.height)
+    x0, yt, w, h = A_BOX
+    box = RectangleObject((x0, Hs - yt - h, x0 + w, Hs - yt + TOP))
+    src.mediabox = box; src.cropbox = box; src.trimbox = box
+    wr = pypdf.PdfWriter(clone_from=pdf_in); page = wr.pages[0]
+    # same distance from the top of our page as from the top of the preprint's page
+    page.merge_transformed_page(src, pypdf.Transformation().translate(0, H - Hs - TOP), over=True)
+    wr.write(pdf_out)
 
 
 def build(out):
+    D = dict(np.load(CACHE, allow_pickle=True))
     cv = Canvas()
-    panel_A(cv); panel_B(cv)
-    # inference header
-    yi = 45.0
-    cv.seg([1, W - 1], [yi - 1.6, yi - 1.6], color='#bbbbbb', lw=0.5)
-    cv.text(W - 1, yi - 1.0, 'Inference on the measured movie', size=FS, color='#777777', ha='right')
-    r2 = yi + 4.5
-    panel_C(cv, r2)
-    d = panel_D(cv, r2)
-    panel_E(cv, r2)
-    r3 = r2 + 63.5
-    panel_F(cv, r3); panel_G(cv, r3); panel_H(cv, r3)
-    # flow arrows
-    cv.arrow(36.5, r2 + 16, 41.0, r2 + 16, color='k')                         # C -> D
-    cv.arrow(121.2, r2 + 28, 129.0, r2 + 28, color=C['p1'], lw=1.1)          # D -> E (I_t + prior)
-    cv.text(125.1, r2 + 26.6, r'$I_t$, $\mathbf{r}$', size=FS - 1.0, ha='center', va='bottom', color=C['p1'])
-    # estimated pattern bus: E -> F (illumination inputs) and E -> G (solve)
-    by = r3 - 4.6
-    cv.seg([154.0, 154.0], [r2 + 56, by], color=C['pat'], lw=1.1)
-    cv.seg([34.0, 154.0], [by, by], color=C['pat'], lw=1.1)
-    cv.arrow(34.0, by, 34.0, r3 - 0.2, color=C['pat'], lw=1.1)
-    cv.arrow(101.0, by, 101.0, r3 - 0.2, color=C['pat'], lw=1.1)
-    cv.text(60.0, by + 0.4, 'estimated pattern', size=FS - 0.3, color=C['pat'], va='top', style='italic')
-    # pass-1 rows -> solve (pass-1 table); pass-2 rows -> solve; solve -> z / selection
-    cv.arrow(63.0, r3 + 27, 71.0, r3 + 27, color=C['p2'], lw=1.1)
-    cv.text(67.0, r3 + 25.6, 'rows', size=FS - 1.0, ha='center', va='bottom', color=C['p2'])
-    cv.arrow(131.0, r3 + 10.5, 139.0, r3 + 10.5, color=C['sol'], lw=1.1)
-    cv.arrow(131.0, r3 + 31.0, 139.0, r3 + 31.0, color=C['sol'], lw=1.1)
+    training(cv, D)
+    inference(cv, D)
     os.makedirs(out, exist_ok=True)
     base = f'{out}/fig_pipeline_v2'
-    for ext in ('pdf', 'svg'):
-        cv.fig.savefig(f'{base}.{ext}')
-    cv.fig.savefig(f'{base}.png', dpi=300)
+    tmp = f'{base}_noA.pdf'
+    cv.fig.savefig(tmp, dpi=600)
     plt.close(cv.fig)
+    paste_panel_A(tmp, f'{base}.pdf')
+    os.remove(tmp)
+    subprocess.run(['pdftocairo', '-svg', f'{base}.pdf', f'{base}.svg'], check=True)
+    subprocess.run(['pdftoppm', '-r', '300', '-png', '-singlefile', f'{base}.pdf', base], check=True)
+    k = int(D['pick']); f0 = int(D['win_f0'])
+    fmt = lambda v: ', '.join(f'{x:.0f}' for x in v)
+    head = (CAPTION_HEAD.replace('__F0__', str(f0)).replace('__F1__', str(f0 + 5)).replace('__GAIN__', f"{float(D['gain']):.4f}")
+            .replace('__EX__', f"{float(D['c_x'][k]):.1f}").replace('__EY__', f"{float(D['c_y'][k]):.1f}")
+            .replace('__P__', f"{float(D['c_p'][k]):.2f}").replace('__I__', fmt(D['c_I'][k])).replace('__SI__', fmt(D['c_sI'][k]))
+            .replace('__BG__', ', '.join(f'{x:.1f}' for x in D['c_bg'][k])).replace('__M__', ', '.join(f'{x:.2f}' for x in D['pat_m'][::3])))
+    old = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fig_pipeline_v2_textheavy.py')).read()
+    facts = old[old.index('FACTS BEHIND EACH PANEL'):old.rindex('"""')]
     with open(f'{base}_caption.txt', 'w') as f:
-        f.write(CAPTION)
+        f.write(head + 'CODE FACTS (from the text-heavy version fig_pipeline_v2_textheavy; its panel letters -> this figure: '
+                'B -> B-D, C -> E, D -> F-G, E -> H, F -> I, G -> J, H -> K; A was a placeholder, now the drawing)\n' + facts)
     return base
 
 
-CAPTION = r"""fig_pipeline_v2: caption material (generated by analysis/paper/fig_pipeline_v2.py)
+CAPTION_HEAD = r"""fig_pipeline_v2: caption material (generated by analysis/paper/fig_pipeline_v2.py)
 
-DRAFT CAPTION
-Figure 1. SIMCODE v2 pipeline. (A) Optical system (DMD-SIMFLUX TIRF microscope; panel from the preprint). (B) Training.
-All networks are trained only on simulated data from an experiment-matched simulator that uses the in-situ calibration of
-the target movie (vectorial PSF fitted on the movie's own spots, sCMOS camera maps, fitted emitter heights). The result is
-one PSF-matched model per movie: a detector and an emitter network for each of the two passes, plus their solve
-calibrations. (C) Input. The movie is processed in 6-frame windows (2 pattern orientations x 3 phase steps), with a new
-window every 3 frames. (D) Pass 1. A pattern-free detector proposes candidates. For each candidate, an emitter network
-(EmitterNet) outputs the 6 per-frame intensities I_t with a full 6x6 covariance (Cholesky factor), the per-frame
-background and a 3D position prior (x, y, z) with a 3x3 covariance. The intensities come from a learned linear read-out of
-the pixels plus a learned correction. The networks never see the illumination pattern in pass 1. (E) Pattern estimation.
-The pattern is estimated from the pass-1 intensities and prior positions of clean, isolated emitter-windows: wave vectors
-k_a, per-step phases psi_s and relative intensities, modulation depth m_a, and a shared per-angle phase drift eps_a(t).
-(F) Pass 2. The same detector and emitter network, with extra input channels for the illumination maps (cos and sin
-parts per frame) of the estimated pattern. They are trained on generic two-orientation patterns, so they accept any
-measured pattern. (G) Explicit pattern solve, the same for both passes. For each row, a Levenberg-Marquardt fit of
-(x, y, B [, t_on, t_off]) to the network intensities under the covariance Sigma(mu) = s Sigma_net + c^2 diag(mu^2) +
-c_a^2 mu mu^T, with a Gaussian prior from the network position. The fit starts from the prior centre and from 8
-fringe-shifted starts (+-1 period per angle). The on/off kinetics model is kept only if it lowers -2 log L by more than 9.21.
-The output is the fringe posterior mean with a calibrated uncertainty. (H) z is taken from pass 1: each pass-2 row is
-linked to its pass-1 candidate, and that candidate's 3D prior is conditioned on the solved x, y. The final table keeps the
-rows with detection probability p >= 0.63 and calibrated max(sigma_x, sigma_y) <= 12 nm.
+DRAFT CAPTION (plain language; symbols only where the main text defines them, see out/paper_figs_v2/NOTATION.md)
+Figure 1. SIMCODE pipeline.
+(A) Optical system: DMD-based SIMFLUX TIRF microscope (as in the preprint). A digital micromirror device (DMD) projects a
+sinusoidal illumination pattern into the sample; the pattern is shifted in three phase steps for each of two orientations.
+Network training (B-D) uses simulated data only.
+(B) Ground truth: emitters on filaments and as close pairs, with the DNA-PAINT blinking statistics of the experiment. The
+simulator uses the movie's own in-situ calibration: the vectorial PSF fitted on the movie's spots, the camera gain, offset and
+read-noise maps, and the fitted emitter heights. The illumination is the setup's two-orientation pattern (with realistic
+estimation errors) or, for the pass-2 networks in half of the fields of view, a generic random pattern (pitch 1.8-4 pixels,
+any orientation, phases and frame order), so that pass 2 accepts any measured pattern.
+(C) Simulated 6-frame windows (photon counts).
+(D) Two networks: a detector (blue) and an emitter network (orange). Their outputs (detection probability p, network
+position theta_dl with uncertainty sigma_dl, backgrounds mu_b and the six intensities mu_N with uncertainties sigma_N) are
+compared with the ground truth in the loss, and the networks are updated by backpropagation. The pass-2 versions get the
+illumination pattern as extra input. One model is trained per PSF (here: the 1809/2 movie).
+Inference (E-K) on the measured movie.
+(E) The movie is processed in 6-frame windows (one frame per angle i = 1, 2 and phase step j = 1, 2, 3), a new window every
+3 frames. Shown: one window of the 1809/2 movie (Fig. 3) in photons.
+(F) Pass 1, without pattern information: the detector finds the emitters; for each candidate, the emitter network reads a
+21 x 21 pixel x 6 frame patch (shown: frames 1, 3, 5 of one emitter).
+(G) Network outputs of this window: detection probability p per pixel; for the marked emitter, the six intensities mu_N with
+their uncertainties sigma_N (blue: angle 1, red: angle 2), the six backgrounds mu_b and the position theta_dl = (x, y, z)
+with its uncertainty sigma_dl.
+(H) The illumination pattern (six stripe images: 2 angles x 3 steps) is estimated from the pass-1 intensities and positions
+of clean, isolated emitters, without any pixel fit. Shown: the normalized intensities of the 1809/2 run against the pattern
+phase at their position, with the estimated modulation (black), and the slow phase drift eps_i(t) of both angles over the
+movie (range about -18 to +13 degrees).
+(I) Pass 2: detector and emitter network again, now with the estimated pattern as input (illumination maps per frame);
+the outputs are the same as in G.
+(J) Pattern fit for every localization: the expected intensities e_ij(theta) of the pattern model (curves: the three phase
+steps of one angle) are fitted to the network intensities (dots), theta = (x, y, N), with the network position as a prior
+(blue). Several starts one pattern period apart are tried and the posterior mean is kept, so the result does not lock on a
+wrong fringe.
+(K) The emitter height z is taken from pass 1. Localizations are kept if p >= 0.63 and the calibrated max(sigma_x, sigma_y) <=
+12 nm, and rendered (shown: the SIMCODE zoom of Fig. 3I).
 
-FACTS BEHIND EACH PANEL (code = /home/jc/simcode2-paperfigs2, branch paperfigs2, from the main commit 4c3af7f)
+DATA OF THE MINI-IMAGES (analysis/paper/fig_pipeline_v2_prep.py -> out/paper_figs_v2/cache_fig1/fig1_data.npz; CPU)
+   A  the preprint's drawing, pasted unchanged as vector graphics (stage/figures/fig_pipeline.pdf, clipped to x 0-308 pt,
+      top 0-250 pt; same position and scale as in the preprint's figure, whose page is also 644.8 pt wide).
+   B  emitters: ground truth of one simulated scene of the m1809 simulator (simulate/acquisition.AcquisitionSim, preset 0.5nM
+      with the m1809 in-situ PSF v2, 3 fields of 40 x 40 px, struct_frac 0.7, pair_frac 0.3); generic patterns: drawn
+      analytically in the ranges of acquisition.GENERIC (pitch 2.4-4 px shown for legibility, orientation +-40 deg
+      around x / y, depth 0.5-1).
+   C  the 6 frames of field 2 of that scene (photons; generic pattern draw, p_std 0).
+   E  frames __F0__-__F1__ (0-based; window start % 6 == 0, so frame order = angle 1 steps 1-3, angle 2 steps 1-3) of the 1809/2 movie (cached first 12012 frames, out/archive/optclean/m1809_first12012.tif), (ADU -
+      offset map) x gain __GAIN__ e/ADU of models/insitu/calib_1809_2_psf_v2.json, 24 x 24 px around the shown emitter.
+   F, G  the m1809 pass-1 detector and emitter network (models.json: det_m1809.pt, hd_m1809.pt) run on this window on the CPU
+      (fp32): detection probability map p (same 24 x 24 px), and for the emitter at (x, y) = (__EX__, __EY__) px (p = __P__,
+      chosen as the brightest emitter with p >= 0.63 that is on in all 6 frames and has no other candidate within 8 px):
+      intensities __I__ photons, uncertainties __SI__, backgrounds __BG__ photons/px.
+      The position glyph is schematic (ellipse = sigma_x, sigma_y; bar = sigma_z).
+   H  stripes: 1 + m_i cos(q_i . r - phi_ij) of the estimated pattern of the 1809_2 run of 2026-11-15
+      (runs/simcode_v2_psfv2_20261115/pattern_est.pt; pitch 2.07 px, depth m = __M__), on 14 x 14 px. Scatter: 700 random
+      points of 4000 clean emitter-windows of that run (si_phase_decouple_cleanrows.npz: pass-1 intensities, positions;
+      angle 1, all 3 steps), 6 mu_N_ij / sum mu_N vs the pattern phase q_1 . (x, y) - phi_1j - eps_1(t) (sin convention);
+      black: mean relative intensity x (1 + m_1 sin). Drift: eps_i(t) of pattern_est.pt (150-frame knots), both angles.
+   I  cube faces: the estimated stripes (schematic for the illumination-map inputs).
+   J  schematic (three phase-shifted sines, three measured intensities, prior on the position).
+   K  the SIMCODE zoom render of Fig. 3 (panel I; embedded image of 1809_2_fig3_psfv2.pdf, 757 x 757 px).
 
-A  Placeholder (dashed box) for the preprint's optical-system panel (stage/figures/fig_pipeline.pdf panel A). Kept so the
-   main figure stays self-contained; if the optical system is shown elsewhere (e.g. the preprint is cited), drop A and
-   widen B. The user pastes the panel.
+SYMBOLS IN THE PANELS (all defined in the main text; NOTATION.md)
+   p (detection probability, R), mu-hat_N +- sigma-hat_N (network intensities and uncertainties, P p.6), mu-hat_b (backgrounds,
+   P p.2), theta-hat_dl +- sigma_dl (network position, P p.7; here with z, see NOTATION.md 6.5), i, j (angle, step), eps_i(t)
+   (phase drift, R), theta = (x, y, N) (fit parameters, R), z, sigma. The figure does not show e_ij, q_i, phi_ij, m_i as
+   symbols; the caption names them.
 
-B  Training (docs/METHOD.md "Training", models/README.md "How a model is made", simcode/models.json).
-   - In-situ calibration v2 = models/insitu/calib_<movie>_psf_v2.json (2026-11-15; out/psf_v2): vectorial PSF (torch_psf
-     InSituEstimator, Zernike Noll 5-21, focus 0.20 um), corrected camera (gain 0.4256 e/ADU, offset 103.9 ADU, offset /
-     read-noise maps), fitted spot heights (emitter_z_quantiles_um, clipped to [0, 0.40] um) = training height distribution
-     (simulate/acquisition.height_quantiles).
-   - One PSF for both pattern angles: the v2 PSF is a single in-situ fit on spots of both angles (json 'psf_v2' note: the
-     per-pattern-angle photoselection of the psf3d calibration is not carried over; it replaces calib_1809_2_psf3d.json
-     (+ _avg)). Per-axis PSFs are not used for training (no per-axis claim in the figure).
-   - The shipped checkpoints' args (torch.load(...)['args']['calib']) point to calib_1809_2_psf_v2.json (m1809),
-     calib_2p5nM_m2_psf_v2.json (m25), calib_gauss1.3.json (g13, preprint-condition simulations only, not shown).
-   - Simulator (simulate/acquisition.py; METHOD.md): calibrated PSF with LUT / Zernike / focus jitter and a halo, the
-     SIMFLUX pattern with estimation errors (pattern/illumination.perturb, error model 'real'), DNA-PAINT kinetics,
-     filaments, close pairs, per-frame / per-step / per-angle brightness variation, structured and fluctuating background,
-     sCMOS camera maps, paper-matched photon distributions.
-   - Training order (models/README.md recipe): detector 40k steps -> EmitterNet fine-tuned 18k from hd_sc5nb ->
-     pass-2 detector (illumination inputs zero-initialised from the pass-1 detector) -> pass-2 EmitterNet (3 stages,
-     zero-initialised from the pass-1 EmitterNet). m25's pass-2 detector: dedicated (SIMCODE pattern only) 40k, then
-     40k + 40k on the 50/50 generic mix.
-   - Generic patterns (simulate/acquisition.AcquisitionSim._generic; --p_std 0.5 = the share of FOVs that keep the SIMCODE
-     pattern in the final stages): pitch log-uniform 1.8-4.0 px, orientations -40..40 / 50..130 deg (separation 60-120
-     deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, depth 0.5-1.0,
-     power 0.8-1.25.
-   - Model per movie: m1809 -> 1809/2; m25 -> 2.5 nM/2 and 20 nM/2 (models.json; 20 nM/2 uses m25 with the 20 nM camera
-     calibration). Solve calibrations (calib/calib_sc_hd_<set>_real.json, calib_p2L_<set>_real.json) fitted on the gate
-     scenes rendered with the model's PSF (analysis/psfmatch/fit_cal_set.py); selection-aware sigma rescale
-     sigu_p{1,2}_<set>.json.
-
-C  Input (simcode/run.py: window_frames=6, window_step=3; processing/front.py: stride 3, absolute start % 3 == 0). Frame
-   t of a window: angle a = t // 3, phase step s = t % 3. The glyph frames show the per-frame brightness of one emitter
-   modulated by the pattern (schematic).
-
-D  Pass 1 (simcode/detector/model.py, simcode/detector/select.py, simcode/emitter/model.py, processing/front_fast.py).
-   - Detector: U-Net, per-pixel logit, sub-pixel offset (dx, dy in +-1.5 px) and its log-sigma; select_subpixel = greedy
-     NMS on the sub-pixel points (radius 0.7 px), top-k = 640 per 64x64 px (front_fast: k_cand = 640 S^2 / 64^2);
-     stored candidates p >= 0.3 (processing/common.CAND_PMIN). p = sigmoid(detector logit).
-   - EmitterNet on a 21x21x6 patch per candidate; neighbour channels = splat of the other candidates (p >= 0.2) and the
-     detector-probability map (Fig. SI network structure).
-   - Read-out (EmitterNet.forward): w_t = w0 exp(m) / (w . g) + D_t (D_t: per-frame signed maps with the PSF-template
-     component projected out, so w_t . g = 1), I_lin,t = sum_q w_tq (y_tq - bg_t), I_t = I_lin,t + c dI_t (learned
-     correction); full 6x6 Cholesky L of the intensity covariance; bg_t; x, y = detector point + 0.5 tanh(.) px with
-     sigma_x, sigma_y; z (px of the lateral pixel, relative to the calibration's focal plane), s_z|xy and b = dz/dx, dz/dy
-     -> 3x3 covariance L_p = [[sx,0,0],[0,sy,0],[b_x sx, b_y sy, s_z|xy]] (x, y uncorrelated).
-
-E  Pattern estimation (simcode/processing/pattern_estimation.py, estimate_pattern):
-   model I_t = B rel_s (1 + m_a cos(k_a.r - psi_s - eps_a(t))); s = t % 6, a = s // 3.
-   - clean emitter-windows: same emitter (< 1 px) also detected in windows w-6 and w+6 (on through the window), all I_j > 0,
-     isolated (no other detection within 3 px), photons >= 300; positions averaged over the linked windows.
-   - k_a: FFT of an 8x super-resolved render inside the pitch annulus, then L-BFGS refinement of the direct DFT power
-     (incoherent over 3000-frame blocks).
-   - psi_s, rel_s: weighted regression per step; eps_a(t): per 150-frame block, linear interpolation between knots, 3-block
-     running mean, mean removed (into psi); m_a: cross-cycle estimator on photon-disjoint window pairs (w, w+6);
-     steps iterated n_iter = 3 times. The prior bias prior_off is removed first (METHOD.md).
-   - The in-situ calibration's pattern entry is never used (METHOD.md).
-
-F  Pass 2 (detector/model.py illum=True, emitter/model.py illum=True, pattern/illumination.illum_maps,
-   processing/pass2_front.py / front_fast.py).
-   - Illumination maps per frame: cos part relint (1 + m cos(.)) - 1 and quadrature relint m sin(.) -> [2T = 12, H, W];
-     detector: stem gets (frame_t, cos_t, sin_t) per frame + a fusion conv on the 12 maps; EmitterNet: a conv on the 12
-     cropped illumination patches added to the input conv. Weights zero-initialised -> starts exactly at pass 1.
-   - Trained with a realistic pattern-error model ('real': phase ~0.17 rad rms, angle 0.04 deg, pitch 1.5e-3, depth
-     U(-0.10, +0.04), relint 2 % per frame + 3 % per angle) and generic patterns in half the FOVs (p_std 0.5).
-   - Outputs as pass 1 (I_t + 6x6 Cholesky, bg_t, prior); the pass-2 z is NOT used (biased upward at low photons).
-
-G  Explicit pattern solve (simcode/solve/solve.py: solve_emitters, fringe_posterior, pattern_solve_all, solve_inputs;
-   simcode/solve/solve_fast.py = the pipeline's exact fast version; simcode/solve/pattern.py fringe_shifts).
-   - Model mu_t = B a_t(t_on, t_off) illum_t(x, y); free (x, y, B), + (t_on, t_off) for the kinetic model; LM 30 iters,
-     per-start box +-1.5 px (cal 'box').
-   - Sigma(mu) = s Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (the last term within each angle's frames; mask A2);
-     Sigma_net = L L^T, s = kap_I2 per photon bin (~0.79-0.85) + 1e-3 I; c = c_a = 0.10 (cmult, cmult_ang of
-     calib_sc_hd_<set>_real.json / calib_p2L_<set>_real.json for m1809 and m25). The exact Gaussian NLL incl. log det
-     Sigma(mu) is the cost. c is fixed from the model calibration (the automatic-c stage is analysis only since 2026-11-14,
-     solve/autoc.py).
-   - Prior term: (r - r0) / s_p, r0 = network x, y minus the calibrated constant bias prior_off, s_p = sigma_prior x kap_p.
-   - Starts: fringe_shifts(nf=1) = (2 nf + 1)^2 = 9 starts = the prior centre + 8 fringe-shifted starts with k_a.dr =
-     2 pi n_a, n_a in {-1, 0, 1}.
-   - Kinetics: kept if q0 - q1 > thr = 9.21, where q = the solve cost = chi^2 incl. the prior and log det = -2 log L
-     (fringe_posterior docstring). So the threshold is on -2 log L (= the 99 % point of chi^2 with 2 dof), i.e. an NLL
-     decrease of 4.6. The figure writes Delta(-2 log L) > 9.21, as the code (docs/METHOD.md corrected to match, branch
-     figfix).
-   - Posterior over the deduplicated starts (dedup 0.15 px), weights exp(-(cost - cost_min) / 2); output r = posterior mean
-     r_pm; sigma_cal = sqrt(f s_pm^2 + spread_pm^2) x sig_ph(photons), f = sig_a max(q/dof, 1)^sig_g; then the table's
-     selection-aware sigma rescale (sigu_p{1,2}_<set>.json).
-   - Pass-1 rows are solved too (pass-1 table locs_p1); the main output is the pass-2 table.
-
-H  z and selection (simcode/solve/z_conditioning.py: link_pass1, z_given_xy, pass1_z_columns; simcode/table.py: select).
-   - link_pass1: one-to-one, same window, detector points within LINK_R = 1.0 px, iterated mutual nearest neighbours.
-   - z = z_prior + b.(r - r_prior), var = s_z|xy^2 + sum_i b_i^2 sigma_i^2 (pass-1 3x3 covariance). Rows without a partner:
-     z = NaN (METHOD.md: 2 % / 0.7 % of the paper's selection on real 2.5 nM / 0.5 nM chunks).
-   - The pattern carries no z information; z is mostly the prior for dim emitters (METHOD.md).
-   - select(): p >= P_GOOD = 0.63, max(sx, sy) * px_nm <= SIGMA_MAX_NM = 12 nm on the calibrated (rescaled) sigma, inside
-     the crop. One row per emitter-window (6-frame window).
-
-Possible caption decisions for the user
-   - Keep or drop placeholder A (see A).
-   - Docs vs code (resolved): models/README.md (5404c3e) and docs/METHOD.md (figfix) now name the in-situ PSF v2
-     (calib_1809_2_psf_v2.json / calib_2p5nM_m2_psf_v2.json; models/m1809/model.json 'psf'), as the checkpoints; METHOD.md
-     no longer lists the PSF template as an EmitterNet input channel (it only shapes the read-out weights).
 """
-
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()

@@ -8,8 +8,9 @@
       `bg_px_frame` background photons / px / frame (Poisson, 16 x 16 px ROI, mean over 256 sub-pixel positions and pattern
       phases; numerical derivatives):
         SMLM     the 6-frame sum, parameters (x, y, [z,] I, bg)
-        SIMFLUX  the 6 frames with the known pattern (2 angles x 3 steps, I / 6 (1 + depth cos(k . r - phi)) per frame, one
-                 bg), parameters (x, y, [z,] I, bg)
+        SIMFLUX  the 6 frames with the known pattern (2 angles x 3 steps, I / 6 r_s (1 + depth_a cos(k_a . r - phi)) per frame,
+                 one bg), parameters (x, y, [z,] I, bg); pattern keys pitch_nm_per_angle / depth_per_angle / relint (a run's
+                 estimated pattern, analysis/paper/psfdata.run_pattern) override the scalar pitch / depth (r_s = 1)
       z is a free parameter for a 3D PSF (calib / z-stack): x, y, z CRLBs with z free (and x, y with z known, 'xy_zfixed');
       2D for a Gaussian PSF.
   draw(ax_xy, ax_xz, info, cmap='inferno')   log-scale images (3 decades), 500 nm scale bars; xz over z 0 - 0.8 um with
@@ -84,8 +85,12 @@ def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, 
     rng = np.random.default_rng(seed); n = N_SAMPLES; P = P_ROI
     off = torch.as_tensor(rng.uniform(-0.5, 0.5, (n, 2)), device=dev, dtype=torch.float32)
     ph0 = torch.as_tensor(rng.uniform(0, 2 * np.pi, (n, len(pattern['angles_deg']))), device=dev, dtype=torch.float32)
-    kmag = 2 * np.pi / (pattern['pitch_nm'] / px_nm)
-    K = torch.tensor([[kmag * math.cos(math.radians(a)), kmag * math.sin(math.radians(a))] for a in pattern['angles_deg']], device=dev)
+    na = len(pattern['angles_deg'])
+    pitches = list(pattern.get('pitch_nm_per_angle') or [pattern['pitch_nm']] * na)      # per orientation when given (a run's
+    depths = list(pattern.get('depth_per_angle') or [pattern['depth']] * na)            # estimated pattern, psfdata.run_pattern)
+    relint = np.asarray(pattern.get('relint') or [1.0] * (3 * na), float); relint = relint / relint.mean()
+    K = torch.tensor([[2 * np.pi / (p_ / px_nm) * math.cos(math.radians(a)), 2 * np.pi / (p_ / px_nm) * math.sin(math.radians(a))]
+                      for a, p_ in zip(pattern['angles_deg'], pitches)], device=dev)
     I = float(photons); B = float(bg_px_frame); coll = None
     if detected and is3d:
         coll = float(_g(psf, zero, zero, 41, torch.full((1,), z0, device=dev))[0].sum()); I = I / coll
@@ -104,7 +109,7 @@ def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, 
         for a in range(len(pattern['angles_deg'])):
             for s in range(3):
                 ph = (K[a, 0] * x + K[a, 1] * y) - ph0[:, a] - 2 * np.pi * s / 3
-                e = (1 + pattern['depth'] * torch.cos(ph)) / (3 * len(pattern['angles_deg']))
+                e = relint[3 * a + s] * (1 + depths[a] * torch.cos(ph)) / (3 * na)
                 out.append(I_[:, None, None] * e[:, None, None] * g + b[:, None, None])
         return torch.stack(out, 1).flatten(1)
     zc = torch.full((n,), z0, device=dev)
@@ -139,14 +144,14 @@ def draw(ax_xy, ax_xz, info, cmap='inferno', decades=3, fontsize=6):
         ax.set_xticks([]); ax.set_yticks([]); ax.set_title(ttl, fontsize=fontsize + 1, pad=2)
         x0 = -0.85 * h
         if ax is ax_xy:        # scale bar bottom-left; in the xz section at the top (clear of the height / focus lines)
-            y0 = ext[2] + 0.1 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=2)
+            y0 = ext[2] + 0.1 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=1.2, solid_capstyle='butt')
             ax.text(x0, y0 + 0.04 * (ext[3] - ext[2]), '500 nm', color='w', fontsize=fontsize, va='bottom')
         else:
-            y0 = ext[2] + 0.9 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=2)
+            y0 = ext[2] + 0.9 * (ext[3] - ext[2]); ax.plot([x0, x0 + 500], [y0, y0], 'w-', lw=1.2, solid_capstyle='butt')
             ax.text(x0, y0 - 0.04 * (ext[3] - ext[2]), '500 nm', color='w', fontsize=fontsize, va='top')
-    if ax_xz is not None:
-        ax_xz.axhline(info['z_um'] * 1e3, color='c', lw=0.6, ls=':')
-        if info.get('focus_um') is not None: ax_xz.axhline(info['focus_um'] * 1e3, color='w', lw=0.6, ls='--')
+    if ax_xz is not None:      # (2026-11-15 late) thicker lines: the median-height line must stay visible at print size
+        ax_xz.axhline(info['z_um'] * 1e3, color='c', lw=1.1, ls=(0, (1.2, 1.2)))
+        if info.get('focus_um') is not None: ax_xz.axhline(info['focus_um'] * 1e3, color='w', lw=0.9, ls=(0, (3, 2)))
         ax_xz.set_ylabel('z (nm)', fontsize=fontsize); ax_xz.set_yticks([0, 400, 800]); ax_xz.tick_params(labelsize=fontsize)
 
 
@@ -186,14 +191,15 @@ def sim_psf_info(md, dexp):
     else: ph, bg = g0['intensity_per_6frames'], g0['bg']
     pat = g0.get('pattern') or {}
     kw = {}
-    if md.rstrip('/').endswith(('_v2psf', '_v2psf_wsm')):
+    if '_v2psf' in os.path.basename(md.rstrip('/')):     # every v2-PSF set (_v2psf, _v2psf_wsm, _v2psf_wsmaxis, ...)
         rn = np.load(os.path.join(md, 'camera_sim.npz'))['readnoise_e']
         kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
+    if str(g0.get('gt', '')).startswith('wsm3d'): kw['z_um'] = float(g0['z_um'])     # webSMLM heights: the median GT height (= the fit plane)
     return psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)
 
 
 def panel_label(info):
-    return f"Gaussian PSF, σ {info['spec'][6:]} px" if not info['is3d'] else f"In-situ vectorial PSF fit\nrms aberration {info['rms_mwaves']:.0f} mλ"
+    return f"Gaussian PSF, σ {info['spec'][6:]} px" if not info['is3d'] else f"In-situ vectorial PSF fit\n{info['rms_mwaves']:.0f} mλ rms\n(Zernike modes 5-21)"
 
 
 def caption_text(info, what='PSF panel'):
@@ -201,7 +207,7 @@ def caption_text(info, what='PSF panel'):
     c = info['crlb']; p = info['pattern']
     if info['is3d']:
         psfcap = (f"{what}: the in-situ vectorial PSF fit the movies were simulated with (Zernike Noll 5-21), xy section at the emitters' median "
-                  f"height ({info['z_um'] * 1e3:.0f} nm) and xz section, log scale (3 decades); rms aberration over Noll >= 5 {info['rms_mwaves']:.0f} mλ. "
+                  f"height ({info['z_um'] * 1e3:.0f} nm) and xz section, log scale (3 decades); {info['rms_mwaves']:.0f} mλ rms aberration (Zernike modes 5-21). "
                   "xz section: white dashed line = focal plane, cyan dotted line = median emitter height.")
         xyz = lambda r: f"x/y/z {r['x']:.1f}/{r['y']:.1f}/{r['z']:.0f} nm"
     else:

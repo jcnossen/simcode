@@ -3,8 +3,10 @@
 Rows per method = its rendered reconstruction = the FRC set of metrics.py (disjoint 6-frame windows, max(sx, sy) < 0.15 px,
 inside the field [0, W)), with the method's own reported sigma. Ground truth = all labelling sites of the structure (gt.npz
 pts). Field [0, W) px, 5 nm pixels.
-  gt_frc          FRC(reconstruction, ground truth), 1/7 crossing, curve (60 000 frames)
-  ttf             GT-FRC on the first N frames, N = 250 ... 60k; frames to reach 40 / 30 / 20 nm
+  gt_frc          FRC(reconstruction, ground truth), 1/7 crossing under the shared rule gtfrc.RULE (res_nm; + res_nm_first /
+                  res_nm_sustained), curve (60 000 frames)
+  ttf             GT-FRC on the first N frames, N = 250 ... 60k; frames to reach 40 / 30 / 20 nm (res_nm / frames_to under
+                  gtfrc.RULE, + the _first / _sustained variants)
   sigma_jaccard   Jaccard with the 3-sigma Mahalanobis gate against the structure points
   ghost           share of rows with no emitter ON in their own window within 3 of their own sigma
   coverage        per 250 nm filament segment: recovered (sigma-gated, nearest structure point) / expected (the segment's
@@ -55,7 +57,7 @@ def main():
     if a.ref:
         rp = f'{run}/v2_{a.ref}/locs_p2.hdf5'
         if os.path.exists(rp): P['v2sig_ref'] = rp
-    R = dict(run=run, movie=md, nframes=nf, model=a.model, ref=a.ref, pixel_nm=PIXEL_NM, segment_nm=SEG_NM, k_sigma=K,
+    R = dict(run=run, movie=md, nframes=nf, model=a.model, ref=a.ref, rule=G.RULE, pixel_nm=PIXEL_NM, segment_nm=SEG_NM, k_sigma=K,
              rows='FRC set of metrics.py (disjoint windows, max sigma < 0.15 px, inside [0, W))', methods={},
              n_gt_points=int(len(pts)), n_segments=int(len(seg_len)))
     gimg = G.render(pts, lo, hi, pix)
