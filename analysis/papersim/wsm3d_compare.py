@@ -5,6 +5,7 @@ output: out/papersim/common_rule/compare_<prefix>_wsm_vs_wsm3d.{json,md}"""
 import os, sys, json, argparse
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common_rule as CR
+import gtfrc as G
 
 KEYS = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v2', 'SIMCODE'), ('v2_12nm', 'SIMCODE 12 nm (prev. cut)'),
         ('sf_gtp', 'SIMFLUX GT pattern (internal)'), ('v1', 'SIMCODE preprint (internal)')]
@@ -25,10 +26,10 @@ def main():
         for k, lk in KEYS:
             if k not in O or k not in N: continue
             o, n = O[k], N[k]
-            r = dict(density=float(d), method=k, n_old=o['n'], n_new=n['n'], gt_old=o.get('gt_sust'), gt_new=n.get('gt_sust'),
+            r = dict(density=float(d), method=k, n_old=o['n'], n_new=n['n'], gt_old=o.get(G.GT_KEY), gt_new=n.get(G.GT_KEY),
                      gt_first_old=o.get('gt_first'), gt_first_new=n.get('gt_first'), rms_old=o.get('rms_tp_nm'), rms_new=n.get('rms_tp_nm'),
                      fp_old=o.get('fp'), fp_new=n.get('fp'), f30_old=o['ttf']['frames_to'].get('30'), f30_new=n['ttf']['frames_to'].get('30'),
-                     hs_old=o.get('hs_first'), hs_new=n.get('hs_first'))
+                     hs_old=o.get(G.HS_KEY), hs_new=n.get(G.HS_KEY), rule=G.RULE)
             out['rows'].append(r)
             dl = None if r['gt_old'] is None or r['gt_new'] is None else r['gt_new'] - r['gt_old']
             md.append(f"| {d} | {lk} | {r['n_old']} | {r['n_new']} | {f(r['gt_old'])} | {f(r['gt_new'])} | {'-' if dl is None else f'{dl:+.1f}'} | "

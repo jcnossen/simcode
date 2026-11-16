@@ -11,7 +11,7 @@ output: out/paper_figs_v2/fig_sim_<set, density 1 dropped>.{pdf,svg,png}, _capti
 import os, sys, json, argparse
 import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
-import common as C
+import common as C, gtfrc as GR
 from fig_density import render, crop_of
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), 'paper'))
 import figstyle as FS
@@ -68,7 +68,7 @@ def draw(a, md, gt, zpt, W, cx, cy, w, B, R, psfpanel):
     for k, lk in METH:
         r = R['methods'][k]; yt, c, Lt = slots[k]; A = add(colx(c), yt, cw, cw); noframe(A)
         A.imshow(render(B[k]['x'], B[k]['y'], (cx, cy), w, zoom=ZOOM, clip_pct=FS.CLIP_PCT), cmap='inferno', interpolation='none')
-        A.set_title(f"{lk}\nGT-FRC {r['gt_sust']:.1f} nm, {r['n'] / 1e3:.0f}k loc.")
+        A.set_title(f"{lk}\nGT-FRC {r[GR.GT_KEY]:.1f} nm, {r['n'] / 1e3:.0f}k loc.")
         let(colx(c), yt, Lt); FS.scalebar(A, 0.06 * n, 0.93 * n, zbar, 500)
     # g: localization error classes (+ true-positive rms above the bars), columns 2-3 of row 1
     xe = colx(2) + 0.30; we = 2 * cw + g - 0.30 - 1.25; E = add(xe, y1, we, cw)
@@ -92,7 +92,7 @@ def draw(a, md, gt, zpt, W, cx, cy, w, B, R, psfpanel):
     for k, lk in METH:
         r = R['methods'][k]; gc = r['gt_curve']; lw = 1.4 if k == 'v2' else FS.LW
         f_ = np.asarray(gc['freq'][2:]); c_ = np.asarray(gc['curve'][2:]); sel = f_ <= FS.FRC_XMAX
-        I.plot(f_[sel], c_[sel], color=COLM[k], lw=lw, label=f"{lk}: {r['gt_sust']:.1f} nm")
+        I.plot(f_[sel], c_[sel], color=COLM[k], lw=lw, label=f"{lk}: {r[GR.GT_KEY]:.1f} nm")
         t = r['ttf']; J.plot(np.array(t['frames']) / 1e3, t['res_nm'], '-o', color=COLM[k], lw=lw, ms=2.6 if k == 'v2' else 2.2, label=lk)
     FS.frc_axes(I, ylabel='GT-FRC')
     I.set_title('FRC against the ground truth'); I.legend(loc='upper right', title='GT-FRC resolution', handlelength=1.2)
@@ -185,20 +185,21 @@ def main():
            f"{info['rms_mwaves']:.0f} mλ rms aberration): xy section at the median emitter height ({info['z_um'] * 1e3:.0f} nm) and xz "
            "section, log scale over 3 decades; in the xz section the white dashed line marks the focal plane and the cyan dotted line "
            "the median emitter height. Scale bars 500 nm. " + psfpanel.caption_text(info).split('\n', 1)[1]]
+    assert GR.RULE == 'sustained', 'the caption text states the sustained crossing (gtfrc.RULE)'
     open(out + '_caption.txt', 'w').write('\n'.join(cap) + '\n')
     v12 = Mt.get('v2_12nm', {})
     notes = [f"Internal notes to {name} (not for the caption).",
              f"Set {a.set}: GT {g0.get('gt')}, heights {g0.get('z_rule')}; raw webSMLM z {wz}; height quantiles {zd}.",
              f"Selection: common_rule.py (out/papersim/common_rule/{a.set}.json): disjoint windows, own filters, max(sx, sy) < 0.15 px; "
              "SIMCODE p >= 0.63 + calibrated sigma (no GT-tuned threshold, frcopt not used).",
-             f"SIMCODE at the previous 12 nm cut: n {v12.get('n')} GT-FRC {v12.get('gt_sust', float('nan')):.2f} nm (common rule: n "
-             f"{Mt['v2']['n']} GT-FRC {Mt['v2']['gt_sust']:.2f} nm).",
+             f"SIMCODE at the previous 12 nm cut: n {v12.get('n')} GT-FRC {v12.get(GR.GT_KEY, float('nan')):.2f} nm (common rule: n "
+             f"{Mt['v2']['n']} GT-FRC {Mt['v2'][GR.GT_KEY]:.2f} nm).",
              f"SMLM / SIMFLUX fit plane {g0['z_um']:.4f} um (median GT height); zoom box (x0, y0, w) = ({cx}, {cy}, {w}) px; z colour range {a.zr} nm.",
              f"Style: figstyle.py (font {FS.FONT}, 180 mm wide, render clip {FS.CLIP_PCT:g} %)."]
     open(out + '_notes_internal.txt', 'w').write('\n'.join(notes) + '\n')
     vals = dict(set=a.set, rule=R['rule'], sig_max_nm=R['sig_max_nm'], r_prec_nm=a.r_prec, r_fp_nm=a.r_fp, z_dist_um=zd, fit_plane_um=g0['z_um'],
-                methods={k: dict(label=lab.get(k, k), n=Mt[k]['n'], gt_frc_nm=Mt[k]['gt_sust'], gt_frc_first_nm=Mt[k]['gt_first'],
-                                 half_split_frc_nm=Mt[k]['hs_first'], half_split_frc_sust_nm=Mt[k]['hs_sust'], fp_3sigma=Mt[k]['fp'],
+                methods={k: dict(label=lab.get(k, k), n=Mt[k]['n'], gt_frc_nm=Mt[k][GR.GT_KEY], gt_frc_first_nm=Mt[k]['gt_first'],
+                                 half_split_frc_nm=Mt[k][GR.HS_KEY], half_split_frc_first_nm=Mt[k]['hs_first'], half_split_frc_sust_nm=Mt[k]['hs_sust'], crossing_rule=GR.RULE, fp_3sigma=Mt[k]['fp'],
                                  rms_tp_nm=Mt[k]['rms_tp_nm'], classes=dict(zip(('precise', 'imprecise', 'false_positive'), Mt[k]['classes'])),
                                  ttf=Mt[k]['ttf']) for k in list(lab) + [k for k in ('v2_12nm', 'sf_gtp', 'v1') if k in Mt]})
     json.dump(vals, open(out + '_values.json', 'w'), indent=1, default=float)

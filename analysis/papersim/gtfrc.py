@@ -74,6 +74,8 @@ def crossing(freq, curve, threshold=THRESHOLD, start=3):
 RULE = 'sustained'
 SUSTAIN_WIDTH = 0.01         # 1 / nm
 RULES = ('first', 'sustained')
+GT_KEY = {'first': 'gt_first', 'sustained': 'gt_sust'}[RULE]     # the keys of frcopt.Scorer / common_rule.py results
+HS_KEY = {'first': 'hs_first', 'sustained': 'hs_sust'}[RULE]
 RULE_CAPTION = ("Resolution = 1 / the spatial frequency at which the FRC (5-sample moving average) falls below 1/7 and stays below "
                 "it (for at least 0.01 nm⁻¹; sustained crossing): the labels sit on a shell about 25-30 nm from the microtubule axis, "
                 "so the ground-truth spectrum has a null near 1/(60-65 nm) where every curve dips and recovers; that dip is not "

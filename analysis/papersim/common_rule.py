@@ -8,7 +8,8 @@ real data's base set.
 Per method (smlm, sf, decode, v2; internal extra rows: sf_gtp = SIMFLUX with the GT pattern, v1 = the preprint SIMCODE when run):
   n, gt_first / gt_sust (GT-FRC first / sustained 1/7 crossing, frcopt.Scorer: 5 nm renders, full field, 5-shell smoothing),
   hs_first / hs_sust (half-split FRC), fp (no emitter ON within 3 own sigma), rms_tp_nm, classes (2D error <= 20 nm / 20-50 nm /
-  > 50 nm = false positive), ttf (GT-FRC sustained on the first N frames; frames to 40 / 30 / 20 nm), curves.
+  > 50 nm = false positive), ttf (GT-FRC under the shared rule gtfrc.RULE (sustained) on the first N frames; frames to
+  40 / 30 / 20 nm), curves.
 SIMCODE also at its previous 12 nm cut ('v2_12nm', the production SIGMA_MAX_NM) for the cost of the common rule.
 usage: python analysis/papersim/common_rule.py --set Dexp1_v2psf_wsm3d[,Dexp1_v2psf_wsm,...] [--model m1809v2]
 output: out/papersim/common_rule/<set>.json (+ <set>_rows.npz: the selected rows per method with GT error / false-positive flag)"""
@@ -37,7 +38,7 @@ def ttf(S, B, m, nf, targets=(40, 30, 20)):
     for N in grid:
         mm = m & (B['f'] < N)
         g = G.gt_frc(np.c_[B['x'][mm], B['y'][mm]], None, S.lo, S.hi, S.pix, C.PX_NM, gt_img=S.gimg)
-        res.append(M.frc_sustained(g['freq'], g['curve']) if len(g['freq']) else float('nan'))
+        res.append(G.resolution(g['freq'], g['curve']) if len(g['freq']) else float('nan'))     # the shared rule G.RULE
     reach = {}
     for t in targets:
         r = np.array(res); ok = np.isfinite(r) & (r <= t)
@@ -46,7 +47,7 @@ def ttf(S, B, m, nf, targets=(40, 30, 20)):
         if i == 0 or not np.isfinite(r[i - 1]): reach[str(t)] = float(grid[i]); continue
         u = (r[i - 1] - t) / (r[i - 1] - r[i])
         reach[str(t)] = float(np.exp(np.log(grid[i - 1]) + u * (np.log(grid[i]) - np.log(grid[i - 1]))))
-    return dict(frames=grid, res_nm=res, frames_to=reach)
+    return dict(frames=grid, res_nm=res, frames_to=reach, rule=G.RULE)
 
 
 def base_sets(name, model):
