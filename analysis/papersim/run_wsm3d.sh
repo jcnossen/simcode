@@ -14,10 +14,19 @@ O=/home/jc/simcode2/out/papersim; MOVROOT=${MOVROOT:-/home/jc/simcode2/out/paper
 GPUS=${GPUS:-0 1}; SPEC=wsm3d:11:3:3
 MV2=/home/jc/simcode2/out/psf_v2/eval/m1809v2/model_m1809      # = models.json m1809 (identical weights), as the _wsm runs
 mkdir -p $MOVROOT $O/logs
+gmm_running() {   # 2026-11-16 (coordinator): a GMM-loss experiment has GPU priority on GPUs 0 / 1: no new GPU step while a GPU process
+                  # with 'gmm' in its name / command line runs (GMM_GATE=0 switches this off)
+  [ "${GMM_GATE:-1}" = 1 ] || return 1
+  for p in $(nvidia-smi --query-compute-apps=pid --format=csv,noheader 2>/dev/null); do
+    ps -o args= -p $p 2>/dev/null | grep -qi gmm && return 0
+  done
+  return 1
+}
 pick() {   # PICK_MODE=wait (default before 2026-11-16): a GPU of GPUS with < 50 % utilisation and >= 8 GB free; PICK_MODE=share (coordinator,
            # 2026-11-16: paper work has priority): the GPU of GPUS with the most free memory, if it leaves >= 2 GB headroom over NEED_MB
   while true; do
     exec 9>/tmp/wsm3d_gpu.lock; flock 9
+    if gmm_running; then flock -u 9; sleep 60; continue; fi
     if [ "${PICK_MODE:-share}" = share ]; then
       best=; bf=0
       for g in $GPUS; do f=$(nvidia-smi -i $g --query-gpu=memory.free --format=csv,noheader,nounits); [ $f -gt $bf ] && { bf=$f; best=$g; }; done
@@ -39,6 +48,7 @@ step() {   # step <movie> <run_all args...>
   CUDA_VISIBLE_DEVICES=$g python analysis/papersim/run_all.py $O/${M} "$@" >> $O/logs/full_${M}.log 2>&1; local rc=$?
   echo "$(date) ${M} $1 $2 rc $rc GPU $g$( [ $rc -ne 0 ] && echo "  FAILED, see $O/${M}/full/logs/$2.log" )"
 }
+for p in ${WAIT_PIDS:-}; do while kill -0 $p 2>/dev/null; do sleep 30; done; done     # steps of an earlier chain still running
 for D in $1; do
   M=${P}${D}_v2psf_wsm3d
   [ -e $O/$M ] || { mkdir -p $MOVROOT/$M; ln -s $MOVROOT/$M $O/$M; }
