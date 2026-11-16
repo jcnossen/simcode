@@ -29,13 +29,13 @@ def _settings(argv):
 def test_settings_roundtrip():
     S = _settings(['--dataset', '1809_2', '--out', 'x', '--nframes', '12000'])
     assert not set(S) & {'sigma_max', 'subset', 'format', 'prefetch', 'u_max', 'strict_q'} and os.path.isabs(S['detector']) and os.path.isabs(S['cal'])
-    assert S['crop'] == '5,5,110' and 'sigu_p2_m1809' in S['sig_u']                   # the dataset's crop; the model's sigma rescale
+    assert S['crop'] == '5,5,110' and 'm1809/calib/sigma_rescale_pass2' in S['sig_u']                   # the dataset's crop; the model's sigma rescale
     assert _settings(['--movie', 'm.tif', '--calib', 'c.json', '--model', 'm1809', '--out', 'x'])['crop'] == ''   # the whole frame
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
     S = _settings(['--dataset', '2.5nM_2', '--out', 'x'])                 # defaults: the model's sig_u, both passes
-    assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'sigu_p2_m25' in S['sig_u']
+    assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'm25/calib/sigma_rescale_pass2' in S['sig_u']
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
     # --model is required; a record's settings that are no longer options are not passed on (rerun_argv takes RERUN_KEYS only)
@@ -80,7 +80,7 @@ def test_steps_and_start():
         SP.main([d, '--tag', 'est2'])
         R = RC.load(d); st = R['steps'][-1]
         assert st['step'] == 'table' and st['settings']['tag'] == 'est2' and st['settings']['crop'] == [5.0, 5.0, 110.0]
-        assert 'sigu_p2_m1809' in st['settings']['sig_u']                          # the model's own sigma rescale (the record's model)
+        assert 'm1809/calib/sigma_rescale_pass2' in st['settings']['sig_u']                          # the model's own sigma rescale (the record's model)
         assert R['outputs']['locs_p2.hdf5']['written_by'] == 'steps[0]' and not [k for k in R['outputs'] if 'sig' in k]
         assert R['selection']['locs_p2']['main']['n'] == st['result']['n_main']
         assert R['outputs']['locs_p2.hdf5']['arrays_sha256'] == RC.arrays_sha256(f'{d}/locs_p2.hdf5')

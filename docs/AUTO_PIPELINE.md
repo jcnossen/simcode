@@ -107,7 +107,7 @@ train:                             # stage e
   quick: false                     # few steps per trainer (plumbing test)
   steps: {detector: 40000, emitter: 18000, detector_pass2: 40000, detector_pass2_mix: 40000, detector_pass2_cont: 40000, emitter_pass2: 24000,
           emitter_pass2_long: 50000, emitter_pass2_final: 50000}
-  init: {detector: null, emitter: hd_sc5nb.pt}
+  init: {detector: null, emitter: pretrain_emitter_pass1.pt}
   extra: {detector: '', emitter: '', pass2: ''}   # extra trainer flags (e.g. g13: --dens 0.0005,0.06 --tau 3,80)
   gates: {sigma_zcal: [0.9, 1.15], rms_ratio_max: 1.05}
 process:                           # stage f
@@ -125,11 +125,11 @@ gpus: [1, 2]
 ### 1.1 Config in Python (`ConfigDict`)
 
 A config can also be written as Python code, so that several acquisitions share one description of the setup and values
-are derived instead of copied. `simcode/util/cfgdict.py` has the class (the v2 counterpart of the preprint code's
+are derived instead of copied. `simcode/util/config_dict.py` has the class (the v2 counterpart of the preprint code's
 `config_dict`):
 
 ```python
-from simcode.util.cfgdict import ConfigDict            # also: from simcode.pipeline import ConfigDict
+from simcode.util.config_dict import ConfigDict            # also: from simcode.pipeline import ConfigDict
 DATA = '/mnt/data/dmdsf/bn_dnapaint'
 base = ConfigDict(camera=dict(gain_e_per_adu=0.56, offset_adu=99.3),
                   optics=dict(pixel_um=0.10833, NA=1.49),
@@ -172,7 +172,7 @@ Every form goes through the same schema (`simcode/pipeline/acquisition_config.py
 must be unique within a file), and `<out>/config_resolved.json` is written as before. The Python file runs as ordinary
 code with `__file__` set (it is not imported as a module). Examples in `simcode/pipeline/configs/`: `example_setup.py` (base
 config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py` = `1809_2.yaml` in this style
-(`tests/test_cfgdict.py` checks that they resolve to the same config). The nanoruler config nr80 was removed on 2026-11-15
+(`tests/test_config_dict.py` checks that they resolve to the same config). The nanoruler config nr80 was removed on 2026-11-15
 (its paths and model were archived with out/archive/nanoruler; see git history).
 
 ### 1.2 Set-ups and channels (2026-11-15)
@@ -311,14 +311,14 @@ Trainers (unchanged entry points, run through `simcode/pipeline/run_with_overrid
 memory with the dataset's pattern k, step spacing, camera maps, background and brightness, as `archive-2026-11-15:analysis/nanoruler/nrwrap.py`):
 
 Quick mode (`--quick`): `train.quick_steps` (30) steps per trainer, the detector starts from the template set's detector
-(det_m1809; from scratch it detects nothing after 30 steps), gate scenes iso + rs05qm with seeds 202 / 301 and 400 targets;
+(m1809/detector_pass1.pt; from scratch it detects nothing after 30 steps), gate scenes iso + rs05qm with seeds 202 / 301 and 400 targets;
 if a calibration fit has no matched targets the template calibrations are copied (flagged `calib_fallback`); the set is named
 `q<name>` and is a plumbing artefact only.
 
 | step | command (all with `--calib <out>/psf/calib_avg.json` + `train.extra`) | steps (full / quick) |
 |---|---|---|
 | detector | `simcode.detector.train --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --seed 0` | 40000 / 30 |
-| emitter | `simcode.emitter.train --init hd_sc5nb.pt --detector <detector> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
+| emitter | `simcode.emitter.train --init pretrain_emitter_pass1.pt --detector <detector> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
 | detector_pass2 | `simcode.detector.train --illum 1 --init <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11` (dedicated: the dataset's own pattern only) | 40000 / 30 |
 | detector_pass2_mix | `simcode.detector.train --init <detector_pass2> --pass1_ref <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61` (50 / 50 own / generic patterns) | 40000 / 30 |
 | detector_pass2_cont | `simcode.detector.train --init <detector_pass2_mix> --pass1_ref <detector> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71` (same mix; the model's pass-2 detector) | 40000 / 30 |
@@ -331,7 +331,7 @@ The share of the dataset's own pattern in the pass-2 training is fixed in the tr
 pass-2 detector continuations and every pass-2 emitter stage). Before that the chain was detector_pass2 (p_std 0.25) ->
 detector_pass2_cont (seed 51, 0.5) and the emitter stages 0.25 / 0.25 / 0.5; the checkpoints store the value they used
 (`args['p_std']`).
-| gates | `simcode.benchmark.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
+| gates | `simcode.benchmark.gate_scenes` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
 
@@ -340,8 +340,9 @@ stage f reads it through an in-memory addition to `config.model_sets()` (no edit
 fitted on a simulated movie with ground truth, `analysis/psf3d_nets/sigcal.py`) is not in the quick path; without it stage f
 runs without it (the model's `sig_u` is empty).
 
-Cost of a full stage e on an idle RTX 3090 (measured on the m1809 / m25 / g13 chains): det 0.65 + hd 0.65 + p2det 1.1 +
-p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c ~1.1 and p2headL2 ~2.5 (same step counts)
+Cost of a full stage e on an idle RTX 3090 (measured on the m1809 / m25 / g13 chains): detector 0.65 + emitter 0.65 +
+detector_pass2 1.1 + emitter_pass2 1.9 + emitter_pass2_long 2.5 = 6.8 GPU-h, + the generic pass-2 continuations
+detector_pass2_cont ~1.1 and emitter_pass2_final ~2.5 (same step counts)
 = ~10.4 GPU-h; gates + dumps + calibs ~1.5 GPU-h, sigma-rescale sim movie ~0.5 GPU-h.
 
 ## 7. Instrument assumptions that block a new setup, and how the config resolves them
@@ -355,7 +356,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
 | 5 | detector batch 64 windows (`run_uncalibrated --det_batch`, not exposed by `run.py`); 400 x 400 px needs > 12 GB | `process.det_batch` is set as the argparse default in memory |
 | 6 | optics / camera constants in `archive-2026-11-15:simcode/calibration/fit_psf_tracks.py` (wavelength 0.70, pixel 0.10833, offset 99.3, rn 1.9), `archive-2026-11-15:simcode/calibration/camera_gain.py` level bins 101-139 ADU | stage d uses `simcode/pipeline/psf_fit.py` (same algorithm, constants from the config); stage a its own generalised gain fit |
 | 7 | `simulate/acquisition.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in the acquisition simulator / plib / sigcal | stage e: in-memory preset patch (`simcode/pipeline/run_with_overrides.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
-| 8 | gate photon settings hard-coded in `benchmark/gate.py` (rs05qm median 1260 ph) | reported; P7 |
+| 8 | gate photon settings hard-coded in `benchmark/gate_scenes.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
 | 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `simulate/acquisition.AcquisitionSim._generic`) in a share 1 - p_std of the FOVs and the dataset's own pattern (preset patch) in the others (p_std fixed in the trainers since 2026-11-15, see section 6) |
 
@@ -373,7 +374,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
   Zernike jitter on top of it.
 - P6 (`simulate/acquisition.py`, `analysis/calib/plib.py`, `analysis/psf3d_nets/sigcal.py`): pixel size and preset values from the
   calib json / a preset json argument (`--preset`), instead of `PRESETS` / `PX_NM`.
-- P7 (`benchmark/gate.py`): scene photon / background settings from the preset.
+- P7 (`benchmark/gate_scenes.py`): scene photon / background settings from the preset.
 - P8 (`run.py`): expose `--det_batch`; accept a model given as a json file (`--model path.json`).
 - P9 (`pyproject.toml`): `[project.scripts] simcode-auto = "simcode.pipeline.localization_pipeline:main"`.
 

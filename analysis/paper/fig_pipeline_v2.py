@@ -408,7 +408,7 @@ DATA OF THE MINI-IMAGES (analysis/paper/fig_pipeline_v2_prep.py -> out/paper_fig
    C  the 6 frames of field 2 of that scene (photons; generic pattern draw, p_std 0).
    E  frames __F0__-__F1__ (0-based; window start % 6 == 0, so frame order = angle 1 steps 1-3, angle 2 steps 1-3) of the 1809/2 movie (cached first 12012 frames, out/archive/optclean/m1809_first12012.tif), (ADU -
       offset map) x gain __GAIN__ e/ADU of models/insitu/calib_1809_2_psf_v2.json, 24 x 24 px around the shown emitter.
-   F, G  the m1809 pass-1 detector and emitter network (models.json: det_m1809.pt, hd_m1809.pt) run on this window on the CPU
+   F, G  the m1809 pass-1 detector and emitter network (models.json: m1809/detector_pass1.pt, m1809/emitter_pass1.pt) run on this window on the CPU
       (fp32): detection probability map p (same 24 x 24 px), and for the emitter at (x, y) = (__EX__, __EY__) px (p = __P__,
       chosen as the brightest emitter with p >= 0.63 that is on in all 6 frames and has no other candidate within 8 px):
       intensities __I__ photons, uncertainties __SI__, backgrounds __BG__ photons/px.

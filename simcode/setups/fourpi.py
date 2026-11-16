@@ -30,7 +30,7 @@ camera.offset_map, optics.pixel_um, channels, registration):
   det_batch     windows per detector batch
   zstack, bead_align   file globs of the bead z-stack / bead-align recordings of the acquisition (PSF / registration
                 calibration samples; not used by the processing)
-  psf           the 4Pi PSF model json (key 'psf': a psf4pi state);  pattern_ref  reference SIM pattern json (k start)
+  psf           the 4Pi PSF model json (key 'psf': a coherent_psf state);  pattern_ref  reference SIM pattern json (k start)
   lut_psf       '' (default): the processing uses the PSF table of the emitter checkpoint; a PSF json: the network's
                 PSF table (windows, solve) is built from that PSF instead (e.g. an in-situ PSF with a network
                 trained on another PSF)
@@ -208,7 +208,7 @@ class FourPiSetup(Setup):
 # of n_psf variants of the fitted state (simulate/multichannel.perturbed_states)
 TRAIN_DEFAULTS = dict(bg=None, dens=[0.005, 0.5], zr=[-0.9, 0.6], zlut=[-1.0, 1.0], zmax=1.0, F_med=2500.0, F_sd=0.75,
                       F_rng=[150.0, 30000.0], p_through=0.5, offerr=0.2, bg_rng=[0.4, 2.0], reg_shift_sd=0.08, reg_lin_sd=0.05,
-                      n_psf=6, det_steps=30000, det_init='det_n1.pt', emitter_steps=25000, emitter_scenes=48, emitter_size=64)
+                      n_psf=6, det_steps=30000, det_init='pretrain_detector_pass1.pt', emitter_steps=25000, emitter_scenes=48, emitter_size=64)
 
 
 class FourPiPlainSetup(FourPiSetup):

@@ -75,7 +75,7 @@ def test_channel_front_identity_map():
 def test_pipeline_stages():
     from simcode.setups.fourpi import acquisition
     from simcode.pipeline.localization_pipeline import LocalizationPipeline
-    from simcode.util.cfgdict import ConfigDict
+    from simcode.util.config_dict import ConfigDict
     with tempfile.TemporaryDirectory() as t:
         c = ConfigDict(acquisition('MT')).updated(out=t, name='test_fourpi_stages')
         p = LocalizationPipeline(c, log=lambda *a: None)

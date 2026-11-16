@@ -1,9 +1,9 @@
 """CRLB comparison (2026-11-13), stage 1: per scene x seed x pass, join the p2.dump front-end dumps of the m1809 set
-(out/psfmatch/fe_m1809a/<scen>__s<seed>_s1.npz = pass 1 det_m1809 + hd_m1809, _s2 = pass 2 p2det_m1809 + p2headL_m1809)
+(out/psfmatch/fe_m1809a/<scen>__s<seed>_s1.npz = pass 1, _s2 = pass 2 of the 2D m1809 = archive_2d/m1809)
 with the full CRLB table of the same GT (out/psfmatch/gate_m1809a/<scen>__s<seed>_hd_cur.npz: sm_m, sm_i, sf_m, sf_i, fr_m;
 GT checked identical), run the explicit pattern solve offline (production sim calibration of the set; variant c0 = cmult = cmult_ang = 0),
 and match every GT target to the candidates (score >= 0.5) on the DETECTOR point in three ways:
-  h1  Hungarian one-to-one within 1 px (the gate_report_detector_matched rule)
+  h1  Hungarian one-to-one within 1 px (the gate_scenes_report_detector_matched rule)
   h3  Hungarian one-to-one within 3 px
   n3  nearest candidate within 3 px (not one-to-one)
 (all GT emitters incl. don't-care take part in the assignment; target rows kept).
@@ -21,7 +21,7 @@ from simcode import config
 FE = os.path.join(REPO, 'out', 'psfmatch', 'fe_m1809a')
 GD = os.path.join(REPO, 'out', 'psfmatch', 'gate_m1809a')
 OUT = os.path.join(REPO, 'out', 'crlbcmp', 'cache')
-CAL = {1: 'calib/calib_sc_hd_m1809.json', 2: 'calib/calib_p2L_m1809.json'}
+CAL = {1: 'archive_2d/m1809/calib/calib_emitter_pass1_sim.json', 2: 'archive_2d/m1809/calib/calib_emitter_pass2_sim.json'}
 FRONT = {1: 's1', 2: 's2'}
 
 

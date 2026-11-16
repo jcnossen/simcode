@@ -12,7 +12,7 @@ Stages (each skipped if its outputs exist, unless --redo):
                  the pass-1 network intensities
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
                  with the model's fixed-c solve calibration
-  4  pass 2      pattern-aware pass-2 detector + head (p2L) fed the estimated pattern, then the same solve
+  4  pass 2      pattern-aware pass-2 detector + emitter network fed the estimated pattern, then the same solve
   5  table       localization tables locs_p1.hdf5 and locs_p2.hdf5 (simcode/table.py; the torch_psf Dataset format) with
                  the model's selection-aware sigma rescale; summary.json. The paper's selection (max(sx, sy) <= 12 nm on the
                  rows with p >= 0.63 inside the crop) is applied when a table is loaded: simcode.dataset.Dataset.select.
@@ -108,7 +108,7 @@ def fixed_values():
     from simcode import table as SP
     d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
     return dict(stages='pass 1, pattern estimation, pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
-                window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, autoc=0,
+                window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, brightness_noise_fit=0,
                 solve_c='fixed c: cmult / cmult_ang of the solve calibrations (model.files.cal / cal_pass2, params)',
                 code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_emitter='off',
                 margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], emitter_batch=d['emitter_batch'],

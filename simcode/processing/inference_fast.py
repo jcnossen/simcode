@@ -1,7 +1,7 @@
 """
 Fast versions of the per-chunk fronts (2026-11-10, throughput; the pipeline's code path). Same networks, same
-candidate rules, same outputs and file formats as the reference implementations simcode/processing/front.py (pass 1,
-pattern solve) and simcode/processing/pass2_front.py (pattern-aware pass 2), which are kept as the test oracle (tests/test_fast_paths.py).
+candidate rules, same outputs and file formats as the reference implementations simcode/processing/pass1_inference.py (pass 1,
+pattern solve) and simcode/processing/pass2_inference.py (pattern-aware pass 2), which are kept as the test oracle (tests/test_fast_paths.py).
 
 Queued fixed-size batching (shared by pass 1 and pass 2):
   detector  on `det_batch` windows at a time (default 64) -> padded top-k -> neighbour maps from the padded list (no
@@ -202,7 +202,7 @@ class QueuedFront:
 
 
 def _flags(I, ws, gx, gy, l0, last_start, crop, own0, own1, dev):
-    """time centroid + the `out` rule of front.Pass1Front.run_chunk (central half, first / last loaded window ends, crop, own frames)"""
+    """time centroid + the `out` rule of pass1_inference.Pass1Front.run_chunk (central half, first / last loaded window ends, crop, own frames)"""
     Ip = I.clamp(min=0)
     tc = (Ip * torch.arange(T, device=dev).float()[None]).sum(1) / Ip.sum(1).clamp(min=1e-3)
     central = (tc >= T / 4 - 0.5) & (tc < 3 * T / 4 - 0.5)
@@ -220,7 +220,7 @@ def _np(r):
 
 # ------------------------------------------------------------------------------------------------ pass 1
 class Pass1FrontFast:
-    """= front.Pass1Front (same constructor arguments) with the queued front-end"""
+    """= pass1_inference.Pass1Front (same constructor arguments) with the queued front-end"""
 
     def __init__(self, calib_path, emitter=EMITTER, detector=DETECTOR, dev='cuda'):
         from simcode.emitter import model as EM
@@ -290,7 +290,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
     uw, inv = np.unique(ws, return_inverse=True)
     PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
     G = {k: tt(R[k][idx_all]) for k in ('I', 'L', 'x', 'y', 'sx', 'sy', 'x_det', 'y_det')}
-    from simcode.processing.front import z_inputs
+    from simcode.processing.pass1_inference import z_inputs
     from simcode.solve import z_conditioning as ZC
     G.update(z_inputs(R, idx_all, tt))
     binv = torch.tensor(inv, device=dev)
@@ -326,7 +326,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
 
 # ------------------------------------------------------------------------------------------------ pattern-aware pass 2
 class Pass2FrontFast:
-    """= pass2_front.Pass2Front (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
+    """= pass2_inference.Pass2Front (same constructor arguments) with the queued front-end and one chunk-wide pattern solve"""
 
     def __init__(self, calib_path, emitter=None, detector=None, dev='cuda', compile='auto'):
         from simcode.emitter import model as EM
@@ -346,7 +346,7 @@ class Pass2FrontFast:
     def run_chunk(self, movie: TiffMovie, cal, f0, f1, pattern, solve_cal, p1, p1_cal, crop=(5, 5, 110), margin=5, pad=12, det_batch=64,
                   emitter_batch=1024, streams=True, solve_batch=16384, timing=None, return_head=False):
         """p1 = the chunk's stored pass-1 rows (pass1_<f0>.npz), p1_cal = the pass-1 solve calibration: z from pass 1
-        (= pass2_front.Pass2Front.run_chunk; solve/z_conditioning.pass1_z_columns)"""
+        (= pass2_inference.Pass2Front.run_chunk; solve/z_conditioning.pass1_z_columns)"""
         from simcode.solve import solve_fast as MF
         dev = self.dev
         timing = timing if timing is not None else {}

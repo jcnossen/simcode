@@ -1,24 +1,24 @@
 """
-Gate-scene dumps for the pass-2 benchmark (as <out>/bright/dump_fe.py; simcode/benchmark/gate.gen, identical seeds
-and iteration loop as gate.main). Per scene x seed x front-end: GT table, per-FOV patterns (estimate fed to the networks /
+Gate-scene dumps for the pass-2 benchmark (as <out>/bright/dump_fe.py; simcode/benchmark/gate_scenes.gen, identical seeds
+and iteration loop as gate_scenes.main). Per scene x seed x front-end: GT table, per-FOV patterns (estimate fed to the networks /
 the solve, and the truth), and the raw head outputs (I_t, Cholesky L, prior x, y, log sigma, bg, detector point, score; z,
 log s_z|xy, b of a 3D head),
 so the explicit pattern solve, the calibration and all reports run offline. CRLB gt_sf_m copied from an existing gate npz
 of the same scene / seed after checking that the GT is identical.
 Fronts:
-  p1   pass-1 detector + emitter network of the default model (config.DETECTOR / HEAD; pattern-free)
-  p2L  pass-2 detector + emitter network of the default model (config.DETECTOR_PASS2 / P2_HEAD)
+  pass1  pass-1 detector + emitter network of the default model (config.DETECTOR / EMITTER; pattern-free)
+  pass2  pass-2 detector + emitter network of the default model (config.DETECTOR_PASS2 / EMITTER_PASS2)
   (other detector / network pairs: --fronts name=det.pt:head.pt)
 Pattern fed (both passes, networks and solve): the scene's patt_est (gate default; exact for iso / pairs, the acquisition simulator errors for
 *qm), or with --pert 1 a perturbed estimate of the truth (pattern/illumination.perturb, the training error model, own seed) with the
 GT moved into its gauge (shift = K^-1 e_angle, as the acquisition simulator shift_est).
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.processing.gate_dump --scen iso,pair1 --fronts p1,p2 --seeds 301,302,303
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.processing.gate_dump --scen iso,pair1 --fronts pass1,pass2 --seeds 301,302,303
 """
 import argparse, glob, os, sys, time
 import numpy as np, torch
 from simcode.simulate import gate_layouts as ST
 from simcode.simulate.gate_layouts import CD, dev, S
-from simcode.benchmark import gate as GA
+from simcode.benchmark import gate_scenes as GA
 from simcode.pattern import illumination as IL
 from simcode.emitter import model as EM
 from simcode.detector import model as DM
@@ -27,8 +27,8 @@ from simcode import config as _cfg
 
 OUT = os.path.join(_cfg.root('out'), 'gate_dumps')
 GATE = _cfg.env('GATE_DIR') or os.path.join(_cfg.root('out'), 'gate')   # env: opt-in (2026-11-11)
-FRONTS = dict(p1=(_cfg.model(_cfg.DETECTOR), _cfg.model(_cfg.EMITTER)),         # pass 1 of the default model
-              p2L=(_cfg.model(_cfg.DETECTOR_PASS2), _cfg.model(_cfg.EMITTER_PASS2)))  # pass 2 of the default model
+FRONTS = dict(pass1=(_cfg.model(_cfg.DETECTOR), _cfg.model(_cfg.EMITTER)),            # pass 1 of the default model
+              pass2=(_cfg.model(_cfg.DETECTOR_PASS2), _cfg.model(_cfg.EMITTER_PASS2)))  # pass 2 of the default model
 
 
 @torch.no_grad()
@@ -80,10 +80,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--scen', default='iso')
     ap.add_argument('--seeds', default='301,302,303')
-    ap.add_argument('--fronts', default='p1,p2L')     # names in FRONTS, or name=det.pt:head.pt
+    ap.add_argument('--fronts', default='pass1,pass2')     # names in FRONTS, or name=det.pt:head.pt
     ap.add_argument('--ntarget', type=int, default=3500)
     ap.add_argument('--pert', type=int, default=0)
-    ap.add_argument('--pert_model', default='v1')  # illumination.MODELS ('real' = the p2_head_long training error model)
+    ap.add_argument('--pert_model', default='v1')  # illumination.MODELS ('real' = the training error model of the earlier default pass-2 network)
     ap.add_argument('--tag', default='')
     ap.add_argument('--p2', default='')           # override 'det,head' of the p2 front
     ap.add_argument('--out', default=OUT)

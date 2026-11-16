@@ -10,8 +10,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
-from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.util.checkpoint import save as safe_save   # atomic, disk-guarded
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim
 from simcode.emitter.fourpi import FourPiPrior, nll_2x2, nll_prior
 

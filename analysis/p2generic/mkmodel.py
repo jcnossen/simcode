@@ -7,13 +7,13 @@ import json, os, sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from simcode import config
 
-out, name, det, head, cal, p2_det, p2_head, p2_cal = sys.argv[1:9]
+out, name, det, emitter, cal, det2, emitter2, cal2 = sys.argv[1:9]
 sig_u = sys.argv[9] if len(sys.argv) > 9 else ''
 r = lambda p: os.path.abspath(config.resolve(p))
-for f in (det, head, cal, p2_det, p2_head, p2_cal):
+for f in (det, emitter, cal, det2, emitter2, cal2):
     if not os.path.exists(r(f)): raise SystemExit(f'mkmodel: {f} not found')
-M = dict(detector=r(det), emitter=r(head), cal_sim=r(cal), cal_real=r(cal), detector_pass2=r(p2_det), emitter_pass2=r(p2_head),
-         cal_sim_pass2=r(p2_cal), cal_real_pass2=r(p2_cal), sig_u=','.join(r(s) if s else '' for s in sig_u.split(',')) if sig_u else '')
+M = dict(detector=r(det), emitter=r(emitter), cal_sim=r(cal), cal_real=r(cal), detector_pass2=r(det2), emitter_pass2=r(emitter2),
+         cal_sim_pass2=r(cal2), cal_real_pass2=r(cal2), sig_u=','.join(r(s) if s else '' for s in sig_u.split(',')) if sig_u else '')
 os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 json.dump({name: M, '_doc': 'written by analysis/nanoruler/mkmodel.py from single files'}, open(out, 'w'), indent=1)
 print(out)

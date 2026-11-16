@@ -73,12 +73,12 @@ def z_from_pass1(p1, j, r, s):
 
 
 def pass1_z_columns(P1, cal1, ws, xd, yd, r, s):
-    """the z columns of the pipeline's pass-2 rows (processing/pass2_front.Pass2Front / processing/front_fast.Pass2FrontFast): P1 = the chunk's stored pass-1 rows
+    """the z columns of the pipeline's pass-2 rows (processing/pass2_inference.Pass2Front / processing/inference_fast.Pass2FrontFast): P1 = the chunk's stored pass-1 rows
     (pass1_<f0>.npz: wstart, x_det, y_det, x, y, z, sz, bzx, bzy; global px), cal1 = the pass-1 solve calibration (path or
     dict; its prior_off); ws [n2] window starts, xd, yd [n2] detector points, r [n2,2] solved x, y, s [n2,2] calibrated sd
     of the pass-2 rows (global px, tensors). -> dict of Z_COLS + p1_row (index into P1; -1 = no partner, z NaN)"""
     import json, numpy as np
-    from simcode.processing.front import z_inputs
+    from simcode.processing.pass1_inference import z_inputs
     cal1 = json.load(open(cal1)) if isinstance(cal1, str) else cal1
     j = link_pass1(P1['wstart'], P1['x_det'], P1['y_det'], ws, xd, yd)
     tt = lambda v: torch.as_tensor(np.asarray(v), device=r.device, dtype=torch.float32)

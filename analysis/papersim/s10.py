@@ -170,7 +170,7 @@ class Nets:
 
     @torch.no_grad()
     def run(self, frames, patt):
-        from simcode.benchmark import gate as GA
+        from simcode.benchmark import gate_scenes as GA
         from simcode.pattern import illumination as IL
         o = dict(frames=frames, patt_est=patt)
         r1 = GA.out_sc(self.p1, o, 0.2)

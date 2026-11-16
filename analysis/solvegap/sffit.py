@@ -12,7 +12,7 @@ usage: SIMCODE_GATE_CALIB=models/insitu/calib_1809_2_psf3d_avg.json CUDA_VISIBLE
 import os, sys, time
 import numpy as np, torch
 from simcode.simulate.gate_layouts import CD, S
-from simcode.benchmark import gate as GA
+from simcode.benchmark import gate_scenes as GA
 from simcode.solve import pattern as C
 from simcode.simulate import simulator as _SIMM
 

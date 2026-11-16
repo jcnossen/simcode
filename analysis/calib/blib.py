@@ -1,10 +1,10 @@
 """Offline pattern-solve evaluation on the dumped gate head outputs (dump_fe.py): re-run simcode.solve.solve.solve_emitters with a
-calibration dict, match targets as gate_report_detector_matched (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
+calibration dict, match targets as gate_scenes_report_detector_matched (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
 RMS / CRLB_SF_multi, zcal, the oracle convex mix with the prior (per-bin optimal alpha), paired FOV-bootstrap CIs."""
 import glob, json, os
 from simcode import config as _cfg
 import numpy as np, torch
-from simcode.benchmark.gate_report import match
+from simcode.benchmark.gate_scenes_report import match
 
 PX = 108.33
 FE = os.path.join(_cfg.root('out'), 'bright', 'fe')

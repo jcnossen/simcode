@@ -1,5 +1,5 @@
 """
-Gate metrics for simcode/benchmark/gate.py outputs (all seeds of a scene pooled; bootstrap over FOVs).
+Gate metrics for simcode/benchmark/gate_scenes.py outputs (all seeds of a scene pooled; bootstrap over FOVs).
 Detection (per score threshold): Hungarian matching of the front-end's FINAL positions to all active GT within
 0.5 px per FOV; TP = matched to a visible interior target, matches to dim / edge GT are ignored, unmatched interior
 outputs = FP. precision, recall, JI = TP / (TP + FP + FN), FP per FOV.
@@ -8,7 +8,7 @@ multi) over resolvable targets (CRLB < 25 nm), trimmed (errors <= 50 nm) ratio, 
 z calibration (robust e / sigma), per nearest-neighbour bin; 95 % bootstrap CIs (200 FOV resamples).
 Operating points: 'thr0.5' (each front-end's own p > 0.5) and 'matchedFP' (each front-end at the lowest threshold whose
 FP / FOV <= the det front-end's FP / FOV at p > 0.5).
-usage: python -m simcode.benchmark.gate_report --dir <out>/gate --scen iso,pair1.5,... --out <out>/gate_report.json
+usage: python -m simcode.benchmark.gate_scenes_report --dir <out>/gate --scen iso,pair1.5,... --out <out>/gate_report.json
 """
 import argparse, glob, json, os
 from simcode import config

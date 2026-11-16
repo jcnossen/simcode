@@ -1,15 +1,15 @@
 {
  "m1809": {
   "psf": "calib_1809_2_psf3d_avg.json",
-  "detector": "det_m1809.pt",
-  "emitter": "hd_m1809.pt",
-  "cal_sim": "calib/calib_sc_hd_m1809.json",
-  "cal_real": "calib/calib_sc_hd_m1809_real.json",
-  "detector_pass2": "p2det_m1809.pt",
-  "emitter_pass2": "p2headL_m1809.pt",
-  "cal_sim_pass2": "calib/calib_p2L_m1809.json",
-  "cal_real_pass2": "calib/calib_p2L_m1809_real.json",
-  "sig_u": "calib/sigu_p1_m1809.json,calib/sigu_p2_m1809.json"
+  "detector": "detector_pass1.pt",
+  "emitter": "emitter_pass1.pt",
+  "cal_sim": "calib/calib_emitter_pass1_sim.json",
+  "cal_real": "calib/calib_emitter_pass1_real.json",
+  "detector_pass2": "detector_pass2.pt",
+  "emitter_pass2": "emitter_pass2.pt",
+  "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
+  "cal_real_pass2": "calib/calib_emitter_pass2_real.json",
+  "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
  },
  "_recipe": {
   "pass1": {
@@ -51,7 +51,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_1809_2_psf3d_avg.json"
   },
   "detector": {
-   "path": "det_m1809.pt",
+   "path": "detector_pass1.pt",
    "size": 7266957,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "8da168c18b993a54f34dde3d82084cb2026969bd3bbfa4d5b061c08b9cc019c7",
@@ -88,7 +88,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/det_m1809.pt"
   },
   "emitter": {
-   "path": "hd_m1809.pt",
+   "path": "emitter_pass1.pt",
    "size": 5519185,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "75d26a156dcde604fd6efd5c7745eb5d9f1ed850fff66cc876a8d6459cc018bf",
@@ -130,7 +130,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/hd_m1809.pt"
   },
   "cal_sim": {
-   "path": "calib/calib_sc_hd_m1809.json",
+   "path": "calib/calib_emitter_pass1_sim.json",
    "size": 1952,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "0c4d85cf10b7019235996d6423786663abf3231d7f640094e9679fbb1e5ae21d",
@@ -160,7 +160,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_sc_hd_m1809.json"
   },
   "cal_real": {
-   "path": "calib/calib_sc_hd_m1809_real.json",
+   "path": "calib/calib_emitter_pass1_real.json",
    "size": 3231,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "8bdd54d6b85331f3f815bc873385538d336570338a5d909672869bc0231473e2",
@@ -190,7 +190,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_sc_hd_m1809_real.json"
   },
   "detector_pass2": {
-   "path": "p2det_m1809.pt",
+   "path": "detector_pass2.pt",
    "size": 7293667,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "b2610b51ccd07436cb62ee7c62f58285b892b3c18d4baa21650de9a3f3ec2fe1",
@@ -223,7 +223,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/p2det_m1809.pt"
   },
   "emitter_pass2": {
-   "path": "p2headL_m1809.pt",
+   "path": "emitter_pass2.pt",
    "size": 5560847,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "ccfab3f89eec40ba9c6481c00f7b4e0ad1db33a87ddbff062f0859af571d22fe",
@@ -254,7 +254,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/p2headL_m1809.pt"
   },
   "cal_sim_pass2": {
-   "path": "calib/calib_p2L_m1809.json",
+   "path": "calib/calib_emitter_pass2_sim.json",
    "size": 1943,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "47e95ae6b1d2588856dac52c81a405303661f91edad9735ce0194296344d01dd",
@@ -284,7 +284,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/m1809g/model_files_m1809/calib_p2L_m1809.json"
   },
   "cal_real_pass2": {
-   "path": "calib/calib_p2L_m1809_real.json",
+   "path": "calib/calib_emitter_pass2_real.json",
    "size": 3096,
    "mtime": "2026-11-14T23:49:03+0100",
    "sha256": "1dff2a4b6ac0b0ea8018fbbfbfdd723a60e121c27ba0ea44bc0924897606c267",

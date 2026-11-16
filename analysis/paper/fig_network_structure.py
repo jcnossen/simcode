@@ -45,8 +45,8 @@ def checkpoint_facts(models):
     from simcode.emitter.model import EmitterNet
     F = {}
     for s in ('m1809', 'm25', 'g13'):
-        for f, kind in (('det', 'd'), ('hd', 'e'), ('p2det', 'd'), ('p2headL', 'e')):
-            p = f'{models}/{s}/{f}_{s}.pt'
+        for f, kind, fn in (('det', 'd', 'detector_pass1'), ('hd', 'e', 'emitter_pass1'), ('p2det', 'd', 'detector_pass2'), ('p2headL', 'e', 'emitter_pass2')):
+            p = f'{models}/{s}/{fn}.pt'
             if not os.path.exists(p): continue
             c = torch.load(p, map_location='cpu', weights_only=False)
             a, sd = c.get('args') or {}, c['model']
@@ -496,7 +496,7 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
                   EmitterNet +{dh:,} = cin_il 96x12x3x3 (no bias).
 
 (a) Detector (simcode/detector/model.py: Detector, build; simcode/layers/blocks.py: ResBlock, norm_photons;
-    simcode/detector/select.py: select_subpixel; simcode/emitter/model.py: detect_candidates; processing/front_fast.py)
+    simcode/detector/select.py: select_subpixel; simcode/emitter/model.py: detect_candidates; processing/inference_fast.py)
    - args of the checkpoints: ch = [48, 96, 160], stem_ch = 16, up = 1 (native output grid), arch 'detector'.
    - norm_photons: sign(y) log1p(|y| / 30) on the photons; the window mean uses the same scale.
    - stem: Conv2d(1, 16, 3) GELU Conv2d(16, 16, 3) GELU per frame (shared weights); pass 2: Conv2d(3, 16, 3) on
@@ -510,7 +510,7 @@ dict; the script asserts that m25 and g13 have the same counts as m1809):
    - ResBlock(c, d): x + c2(GELU(GroupNorm(8, c)(c1(GELU(x))))), c1 = 3x3 dilation d, c2 = 3x3.
    - outputs: logit; dxy = 1.5 tanh (px relative to the pixel centre); log_sig = -5 + 6 sigmoid.
    - selection: select_subpixel (greedy NMS on the points pixel + offset, radius 0.7 px, 7x7 neighbourhood, iters = 4:
-     up to 4 suppression rounds, stopping early at the fixed point; top-k per image); front_fast: k = 640 S^2 / 64^2,
+     up to 4 suppression rounds, stopping early at the fixed point; top-k per image); inference_fast: k = 640 S^2 / 64^2,
      detect p_min 0.2 (THR0 / NBR_PMIN, the neighbour map), stored candidates p >= CAND_PMIN = 0.3
      (processing/common.py). Detector inference under bf16 autocast.
 

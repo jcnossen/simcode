@@ -1,15 +1,15 @@
 """
-CPU tests of ConfigDict (simcode/util/cfgdict.py) and of the config forms of the automatic pipeline (simcode/pipeline/acquisition_config.py):
+CPU tests of ConfigDict (simcode/util/config_dict.py) and of the config forms of the automatic pipeline (simcode/pipeline/acquisition_config.py):
 access, missing keys, merge / updated, freeze, to_dict conversions, yaml / json round trip, the Python-file loader, schema
 validation of derived configs, the example configs in simcode/pipeline/configs. No GPU, no data files.
-Run: python tests/test_cfgdict.py (or pytest tests/test_cfgdict.py).
+Run: python tests/test_config_dict.py (or pytest tests/test_config_dict.py).
 """
 import copy, json, os, pickle, sys, tempfile
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from simcode.util.cfgdict import ConfigDict, load_python
+from simcode.util.config_dict import ConfigDict, load_python
 from simcode.pipeline import acquisition_config as AC
 
 CFG = os.path.join(ROOT, 'simcode', 'pipeline', 'configs')
@@ -114,7 +114,7 @@ def test_round_trip():
 
 PYFILE = '''
 import os
-from simcode.util.cfgdict import ConfigDict
+from simcode.util.config_dict import ConfigDict
 HERE = os.path.dirname(os.path.abspath(__file__))
 base = ConfigDict(optics=dict(pixel_um=0.065), spots=dict(thr=5.0), gpus=[0]).freeze()
 configs = [base.updated(name=n, movie=f'{HERE}/{n}.tif', out=f'{HERE}/out/{n}', process=dict(model=m), spots=dict(maxframe=1000 * (i + 1)))

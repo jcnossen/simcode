@@ -83,8 +83,8 @@ def same_cands(Ra, Rb, tol):
 
 
 def _pass1(fp32, **kw):
-    from simcode.processing.front import Pass1Front
-    from simcode.processing.front_fast import Pass1FrontFast
+    from simcode.processing.pass1_inference import Pass1Front
+    from simcode.processing.inference_fast import Pass1FrontFast
     mov, cal = sim_movie()
     if 'p1' not in _C:
         A = Pass1Front(CALIB, emitter=EMITTER, detector=DETECTOR)
@@ -166,14 +166,14 @@ def test_pattern_solve():
 
 
 def test_pass2_p2_fp32():
-    from simcode.processing.pass2_front import Pass2Front
-    from simcode.processing.front_fast import Pass2FrontFast
+    from simcode.processing.pass2_inference import Pass2Front
+    from simcode.processing.inference_fast import Pass2FrontFast
     mov, cal = sim_movie()
     pat = torch.load(PATT, weights_only=False)
     A = Pass2Front(CALIB, emitter=EMITTER_PASS2, detector=DETECTOR_PASS2)
     B = Pass2FrontFast(CALIB, emitter=EMITTER_PASS2, detector=DETECTOR_PASS2, compile='off')        # eager solve (the compiled LM step: test_pattern_solve)
     B.detector = A.detector; B.emitter = A.emitter
-    from simcode.processing.front_fast import Pass1FrontFast
+    from simcode.processing.inference_fast import Pass1FrontFast
     P1, _ = Pass1FrontFast(CALIB, emitter=EMITTER, detector=DETECTOR).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
     A.emitter.bf16 = False
     with fp32_mode():

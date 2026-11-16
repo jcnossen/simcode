@@ -17,7 +17,7 @@ The planned archive of the "research variants" did not apply as planned: four of
 | `fourpi/linread4pi.py` | merged into `emitter/fourpi.py` (linear_readout, border_bg) | border_bg is used by simlin4pi(_hd) on every run (also the running hd experiment); linear_readout = the fixed-window teacher of v10 |
 | `fourpi/head4pi.py` plain head | `emitter/fourpi.py` FourPiPrior | v10's frozen prior (v3L) and the candidate front of the simulated movies |
 | `fourpi/lm.py` | `analysis/fourpi_classical/pixel_lm.py` | classical baselines only; torch_psf.fit.lm_poisson is not numerically identical (damping start / floor, double step, data clamp) |
-| `fourpi/psf4pi.py`, `fourpi/lut4pi.py` | kept until SIMCODE pins torch-psf `multichannel` | torch_psf.FourPiPSF / FourPiSplinePSF reproduce them bit-identically (all 33 stored states) |
+| `fourpi/coherent_psf.py`, `fourpi/spline_table.py` | kept until SIMCODE pins torch-psf `multichannel` | torch_psf.FourPiPSF / FourPiSplinePSF reproduce them bit-identically (all 33 stored states) |
 
 ## analysis/fourpi (42 files)
 

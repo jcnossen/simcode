@@ -20,7 +20,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 
 # (p0, control, p2) in um, (z at p0, z at p2) in um (z linear along the curve parameter)
 FILS = [((0.0, 2.0), (3.8, 1.6), (7.68, 2.6), (-0.15, -0.15)),     # A: low, nearly horizontal

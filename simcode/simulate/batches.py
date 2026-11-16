@@ -113,7 +113,7 @@ class TrainingBatches:
         # bright_tail (iteration 31, critic 30 #5): (frac, lo, hi) -> that fraction of the emitters gets log-uniform lo-hi
         # fully-on window photons (x the TIRF factor) after the paper draw
         # med_photons: per-FOV median range (default = photons); em_photons: per-emitter draw range (default = photons)
-        # (iteration 30 sc4 mix; defaults reproduce the sc2 / sc2L batches exactly)
+        # (the defaults reproduce the earlier fixed-range batches exactly)
         pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
         rs = self.pick(pre)
         g = lambda *s: torch.rand(*s, device=dev)

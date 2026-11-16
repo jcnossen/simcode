@@ -1,7 +1,7 @@
-"""SIMCODE's own 4Pi PSF (simcode/fourpi/psf4pi.py) and spline table (simcode/fourpi/lut4pi.LUT4Pi) vs torch-psf's
+"""SIMCODE's own 4Pi PSF (simcode/fourpi/coherent_psf.py) and spline table (simcode/fourpi/spline_table.LUT4Pi) vs torch-psf's
 FourPiPSF / FourPiSplinePSF (MultiChannelPSF subclasses) for the PSF states of the 4Pi paper heads: the pre-check of the
 switch to torch-psf (out/COMPAT_AUDIT.md, plan A1). Bit-identity (torch.equal) of
-  - FourPiPSF.from_state(state).forward(pos, phi_extra=Phi) vs psf4pi.psf_from_state(state).forward
+  - FourPiPSF.from_state(state).forward(pos, phi_extra=Phi) vs coherent_psf.psf_from_state(state).forward
   - the knots of FourPiPSF.to_spline vs LUT4Pi for every grid SIMCODE builds: the heads (P 15, 4 x oversampled, z of the
     checkpoint's zlut or -0.6 .. 0.6), the prior template (P 15, sub 1), the scene simulator (P 17, sub 2)
   - FourPiSplinePSF.evaluate (value and the 4 derivatives), .components and luts[k][c].render(pos, grad) vs LUT4Pi
@@ -38,8 +38,8 @@ def main():
     import torch_psf
     from simcode import config
     from simcode.psf import FourPiPSF
-    from simcode.fourpi.psf4pi import psf_from_state
-    from simcode.fourpi.lut4pi import LUT4Pi
+    from simcode.fourpi.coherent_psf import psf_from_state
+    from simcode.fourpi.spline_table import LUT4Pi
     print('torch_psf', torch_psf.__file__, '| device', dev, flush=True)
     bad = []
 

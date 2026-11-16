@@ -1,4 +1,4 @@
-"""Excess intensity variance (the c terms), 2026-11-12. The automatic estimate theta = (s, c, c_a) of simcode/solve/autoc.py (unchanged code) on
+"""Excess intensity variance (the c terms), 2026-11-12. The automatic estimate theta = (s, c, c_a) of simcode/solve/brightness_noise_fit.py (unchanged code) on
   real   the saved pass-1 outputs of the production runs: 1809_2 (m1809 set), 2.5nM_2 (m25 set), 20nM_2 (psf3dmix set, the existing run):
          3 repeats on disjoint chunk subsets (5 chunks each, <= 120000 rows, spread over the movie) -> mean +- sd
   sim    (a) papersim D1 through the whole pipeline (constant emitter brightness, matched PSF, pattern estimated from the data): control
@@ -15,15 +15,15 @@ import glob, json, os, sys
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO); sys.path.insert(0, os.path.join(REPO, 'analysis', 'calib'))
-from simcode.solve import autoc as AC
+from simcode.solve import brightness_noise_fit as AC
 from simcode import config
 from simcode.util import proctitle
 from scipy.optimize import minimize_scalar
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); dev = 'cuda'
-REAL = {'1809_2': ('out/paper2/1809_2/v2_matched', 'calib/calib_sc_hd_m1809.json'), '2.5nM_2': ('out/paper2/2.5nM_2/v2_matched', 'calib/calib_sc_hd_m25.json'),
+REAL = {'1809_2': ('out/paper2/1809_2/v2_matched', 'archive_2d/m1809/calib/calib_emitter_pass1_sim.json'), '2.5nM_2': ('out/paper2/2.5nM_2/v2_matched', 'archive_2d/m25/calib/calib_emitter_pass1_sim.json'),
         '20nM_2': ('out/paper2/20nM_2/v2', 'calib/calib_sc_hd_psf3dmix.json')}
-SIMP = {'D1 (pipeline, constant brightness)': ('out/papersim/D1/full/v2_m1809', 'calib/calib_sc_hd_m1809.json')}
+SIMP = {'D1 (pipeline, constant brightness)': ('out/papersim/D1/full/v2_m1809', 'archive_2d/m1809/calib/calib_emitter_pass1_sim.json')}
 GATE = [('ctl', 'exact model, no fluctuation', (0, 0)), ('f10', 'per-frame sd 0.10', (0.10, 0)), ('f20', 'per-frame sd 0.20', (0.20, 0)), ('a10', 'per-angle sd 0.10', (0, 0.10)),
         ('f10a10', 'per-frame 0.10 + per-angle 0.10', (0.10, 0.10)), ('mis', 'PSF / camera / pattern error only, no fluctuation', (0, 0)),
         ('full', 'full mismatch (frame 0.10, step 0.07, angle 0.14)', (float(np.hypot(0.10, 0.07)), 0.14))]
@@ -108,7 +108,7 @@ def main():
             print(f'== {name}: s {T[:, 0].mean():.3f}+-{T[:, 0].std(ddof=1):.3f}  c {T[:, 1].mean():.3f}+-{T[:, 1].std(ddof=1):.3f}  c_a {T[:, 2].mean():.3f}+-{T[:, 2].std(ddof=1):.3f} | s-only fit s0 {pic["s_only"]:.2f}', flush=True)
             save()
     if 'sim' in what:
-        cal0 = json.load(open(config.resolve('calib/calib_sc_hd_m1809.json')))
+        cal0 = json.load(open(config.resolve('archive_2d/m1809/calib/calib_emitter_pass1_sim.json')))
         for tag, desc, truth in GATE:
             if (only and tag not in only) or 'gate:' + tag in R: continue
             th, n, S = est(gate_rows(tag), cal0); pic = picture(S, th); pic['theta'] = th

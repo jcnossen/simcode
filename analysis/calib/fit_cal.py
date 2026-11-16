@@ -1,4 +1,4 @@
-"""per-photon-bin calibration of the sc5nb pattern solve on the TUNING seed (202) of the experiment-matched gate scenes
+"""per-photon-bin calibration of the pattern solve of pretrain_emitter_pass1 on the TUNING seed (202) of the experiment-matched gate scenes
 (disjoint from the eval seeds 301-303):
   1. kap_p(bin)  = robust sd of the prior z (x_prior - truth) / s_prior          (bins of network window photons)
   2. kap_I2(bin) = robust z^2 of the full-covariance whitened I_t errors vs the realized GT I_t
@@ -13,7 +13,7 @@ import blib as B
 EDG = [100, 300, 500, 800, 1200, 2000, 3000, 5000, 1e9]
 rob = lambda v: float(1.4826 * np.median(np.abs(v[np.isfinite(v)])))
 out, scen, extra = sys.argv[1], sys.argv[2].split(','), json.loads(sys.argv[3])
-base = json.load(open(sys.argv[4] if len(sys.argv) > 4 else _cfg.model('calib/calib_sc_hd_sc5nbb15_pm.json')))
+base = json.load(open(sys.argv[4] if len(sys.argv) > 4 else _cfg.model('calib/template_calib_emitter_pass1_base.json')))
 cal = dict(base); cal.update(extra)
 Rs = [B.load(sc, (202,)) for sc in scen]
 TI = [B.targets(R) for R in Rs]

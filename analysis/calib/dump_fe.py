@@ -8,7 +8,7 @@ from simcode import config as _cfg
 import numpy as np, torch
 from simcode.simulate import gate_layouts as ST
 from simcode.simulate.gate_layouts import CD, dev, S
-from simcode.benchmark import gate as GA
+from simcode.benchmark import gate_scenes as GA
 from simcode.emitter import model as SCM
 from simcode.detector import model as DM
 from simcode.detector.select import select_subpixel
@@ -41,7 +41,7 @@ def main():
     ap.add_argument('--scen', default='iso,rs05q,rs05qm')
     ap.add_argument('--seeds', default='301,302,303')
     ap.add_argument('--ntarget', type=int, default=3500)
-    ap.add_argument('--head', default='hd_sc5nb.pt')
+    ap.add_argument('--head', default='pretrain_emitter_pass1.pt')
     ap.add_argument('--name', default='sc5nb')
     ap.add_argument('--ref_tag', default='_hd_sc5nbb15pm')
     a = ap.parse_args()

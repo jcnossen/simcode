@@ -20,7 +20,7 @@ from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
 from simcode.processing import fourpi_pattern_phase as SR
 from simcode.processing.fourpi_pattern_phase import repattern_xy
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.solve.fourpi import kin_starts, best_of
 from simcode.solve.fourpi import FourPiSolve
 from simcode.emitter.fourpi import linear_readout, border_bg

@@ -16,7 +16,7 @@ from simcode.config import root; P4 = root('fourpi')
 from simcode.channels.front import blur
 from simmovie4pi import reg_map, GAIN, OFF
 from simcode.emitter.fourpi import FourPiPrior
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 
 from simcode.setups.fourpi import acquisition; P = acquisition('MT')['fourpi']['patch']   # 4Pi candidate patch (px)
 def detect(E, grid, border, noise='mad', k=8.0, nms=7, s1=1.5):

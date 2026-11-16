@@ -1,6 +1,6 @@
 """
 Pipeline pass 2 with the pattern-aware networks (run_uncalibrated stage pass2). Pass 1 (pattern-free detector + emitter
-network) and the pattern estimation are unchanged (simcode/processing/front.py, pattern_estimation.py on the network
+network) and the pattern estimation are unchanged (simcode/processing/pass1_inference.py, pattern_estimation.py on the network
 intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   illumination maps of the ESTIMATED pattern (pattern_est.pt -> processing.common.pattern_frames, loaded-region coordinates)
   -> pass-2 Detector (frames + illumination) -> sub-pixel NMS, p >= 0.2 neighbour map, p >= 0.3 (CAND_PMIN) candidates
@@ -14,7 +14,7 @@ intensities). Then per 6-frame window (stride 3, the pass-1 grid):
   to a pass-1 candidate of the same window (solve/z_conditioning.link_pass1: detector points, one-to-one, 1 px; p1_row = its index in
   pass1_<f0>.npz, -1 = none -> z NaN) and that candidate's 3D prior is conditioned on the pass-2 solved x, y
   (z_conditioning.pass1_z_columns).
-Reference implementation (test oracle of simcode/processing/front_fast.Pass2FrontFast, which the pipeline uses).
+Reference implementation (test oracle of simcode/processing/inference_fast.Pass2FrontFast, which the pipeline uses).
 """
 import json, time
 import numpy as np, torch

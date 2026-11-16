@@ -17,19 +17,19 @@ bf16 autocast for the CNN trunk, fp32 for the output layers, the readout and the
 The final position is always the explicit intensity-domain pattern solve (solve/solve.solve_emitters) on these outputs.
 
 Checkpoints ({'model': state dict, 'args', 'step'}): load() reads every emitter-network checkpoint: the architecture tag
-args['arch'] = ARCH (checkpoints trained since 2026-11-15; the earlier pass-1 checkpoints store the tag 'sc4n' of the same
-network, ARCH_TAGS maps it, the earlier pass-2 ones store none), pass 1 or pass 2 from the state dict (cin_il), a 2D checkpoint
+args['arch'] = ARCH (checkpoints trained since 2026-11-15; the earlier pass-1 checkpoints store an earlier tag of the same
+network, read through util/legacy_names.EMITTER_ARCH_TAGS; the earlier pass-2 ones store none), pass 1 or pass 2 from the state dict (cin_il), a 2D checkpoint
 (before 2026-11-14, no z rows) with zero z rows (pad_out; net.z3d False).
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode.layers.blocks import ResBlock, extract_patches, norm_photons
+from simcode.util.legacy_names import EMITTER_ARCH_TAGS
 
 dev = 'cuda'
 PP = 21                 # patch size (px)
 ARCH = 'emitter_net'    # architecture tag of the checkpoints of this network (training args 'arch')
-ARCH_TAGS = {'sc4n': ARCH}   # tags stored in earlier checkpoints of this network -> ARCH
 NBR_PMIN = 0.2          # candidates in the neighbour splat (= the gate detection threshold THR0)
 SIG_SPLAT = 0.5
 OFFS = torch.arange(-3, 4)
@@ -293,7 +293,7 @@ def load(ck):
     if 'state' in c and 'psf' in c:            # a 4Pi emitter network (simcode/emitter/fourpi.py, by its arch tag)
         from simcode.emitter import fourpi
         return fourpi.load(resolve(ck))[0]
-    if ARCH_TAGS.get(a.get('arch', ARCH), a.get('arch', ARCH)) != ARCH:
+    if EMITTER_ARCH_TAGS.get(a.get('arch', ARCH), a.get('arch', ARCH)) != ARCH:
         raise ValueError(f"{ck}: emitter network arch {a.get('arch')!r} is not supported (only the neighbour-aware {ARCH!r} network)")
     net = EmitterNet(6, a.get('ch', 96), P=PP, bf16=bool(a.get('bf16', 1)), illum=is_pass2(c['model'])).to(dev)
     net.z3d = is_3d(c['model'])

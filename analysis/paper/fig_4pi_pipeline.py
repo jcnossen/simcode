@@ -61,9 +61,9 @@ def checkpoint_facts(m4, m2):
     same = max(float((c['state']['prior.' + k].float() - v.float()).abs().max()) for k, v in c3['state'].items())
     F['prior'] = dict(n=n_params(pr), args=c3['args'], it=c3.get('it'), same_as_in_emit=same)
     # 2D SIMCODE (m1809) for the comparison numbers
-    c = torch.load(f'{m2}/m1809/det_m1809.pt', map_location='cpu', weights_only=False)
+    c = torch.load(f'{m2}/m1809/detector_pass1.pt', map_location='cpu', weights_only=False)
     d2 = build(c['args']); d2.load_state_dict(c['model']); F['det2d'] = dict(n=n_params(d2))
-    c = torch.load(f'{m2}/m1809/hd_m1809.pt', map_location='cpu', weights_only=False)
+    c = torch.load(f'{m2}/m1809/emitter_pass1.pt', map_location='cpu', weights_only=False)
     e2 = EmitterNet(6, c['args'].get('ch', 96), illum=False, bf16=False); e2.load_state_dict(c['model'])
     F['emit2d'] = dict(n=n_params(e2))
     return F
@@ -95,7 +95,7 @@ class PSFImages:
     """components inc, cr, ci of the 4Pi PSF (the checkpoint's state) at (x, y, z): g(Phi) = inc + cos(Phi) cr - sin(Phi) ci"""
     def __init__(self, state, R=15):
         import torch
-        from simcode.fourpi.psf4pi import psf_from_state
+        from simcode.fourpi.coherent_psf import psf_from_state
         st = dict(state); st['meta'] = dict(st['meta']); st['meta']['R'] = R
         self.p = psf_from_state(st, device='cpu').eval(); self.torch = torch
         self.phi_c = np.degrees(np.asarray(st['phi']) - st['phi'][0]) % 360
@@ -617,7 +617,7 @@ Parameter counts (simcode.detector.model.n_params on the networks built from the
      network {prior:,} (identical to head4pi_v3L.pt, {prior_it} steps; max weight difference 0)
    SIMCODE EmitterNet (m1809 pass 1): {emit2d:,} parameters
 
-(a) Channel mapping (simcode/channels/layout.py, registration.py PolyMap, front.py ChannelFront.patches;
+(a) Channel mapping (simcode/channels/layout.py, registration.py PolyMap, pass1_inference.py ChannelFront.patches;
     simcode/pipeline/configs/fourpi.py)
    - crops 360 x 200 px at raw columns 217, 652, 1420, 1855 of the 2304-px frame; channels c2 and c3 (0-based) mirrored
      left-right (layout mirror 'lr': flipped when cut, so all channels overlay c0 up to the registration map).
@@ -635,7 +635,7 @@ Parameter counts (simcode.detector.model.n_params on the networks built from the
    - registered_sum: c0 + channels 1..3 resampled into c0 coordinates (grid_sample, bilinear), weights 1. So the detector
      input IS resampled (only the emitter-network patches are not).
    - per window: the 6 summed planes (photo-electrons) -> Detector (simcode/detector/model.py, ch 48/96/160, stem 16,
-     up = 1: the SIMCODE detector class) initialised from det_n1, 20k steps on full-scene 4Pi simulations (0.01-2 /um^2).
+     up = 1: the SIMCODE detector class) initialised from pretrain_detector_pass1, 20k steps on full-scene 4Pi simulations (0.01-2 /um^2).
    - select_points(k = 2048 per 20-window batch, p_min = 0.5), candidates inside the illuminated columns [55, 305) and the
      patch border; candidates with < 300 e matched-filter read-out per window (summed over frames and channels) dropped.
    - The detector's sub-pixel offset is not used by the 4Pi pipeline (patches at the integer NMS pixel; position from the prior).

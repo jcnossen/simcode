@@ -6,7 +6,7 @@ illumination glyphs are small rasters), text kept as text in the SVG (svg.fontty
 
 -> <out>/fig_pipeline_v2_textheavy.{pdf,svg,png} + fig_pipeline_v2_textheavy_caption.txt (the text-heavy first version of Fig. 1, kept for reference; the main figure is fig_pipeline_v2.py) (draft caption + the code facts behind each panel).
 Content = the current code (docs/METHOD.md, simcode/{detector,emitter}/model.py, processing/pattern_estimation.py,
-solve/solve.py + solve_fast.py, solve/z_conditioning.py, pattern/illumination.py, table.py, processing/front_fast.py).
+solve/solve.py + solve_fast.py, solve/z_conditioning.py, pattern/illumination.py, table.py, processing/inference_fast.py).
 Panel A is a labelled placeholder for the preprint's optical-system panel.
 """
 import argparse, os
@@ -393,7 +393,7 @@ B  Training (docs/METHOD.md "Training", models/README.md "How a model is made", 
      SIMFLUX pattern with estimation errors (pattern/illumination.perturb, error model 'real'), DNA-PAINT kinetics,
      filaments, close pairs, per-frame / per-step / per-angle brightness variation, structured and fluctuating background,
      sCMOS camera maps, paper-matched photon distributions.
-   - Training order (models/README.md recipe): detector 40k steps -> EmitterNet fine-tuned 18k from hd_sc5nb ->
+   - Training order (models/README.md recipe): detector 40k steps -> EmitterNet fine-tuned 18k from pretrain_emitter_pass1 ->
      pass-2 detector (illumination inputs zero-initialised from the pass-1 detector) -> pass-2 EmitterNet (3 stages,
      zero-initialised from the pass-1 EmitterNet). m25's pass-2 detector: dedicated (SIMCODE pattern only) 40k, then
      40k + 40k on the 50/50 generic mix.
@@ -402,17 +402,17 @@ B  Training (docs/METHOD.md "Training", models/README.md "How a model is made", 
      deg), random k sign, independent per-frame phases, frame order cycle / permutation / interleaved, depth 0.5-1.0,
      power 0.8-1.25.
    - Model per movie: m1809 -> 1809/2; m25 -> 2.5 nM/2 and 20 nM/2 (models.json; 20 nM/2 uses m25 with the 20 nM camera
-     calibration). Solve calibrations (calib/calib_sc_hd_<set>_real.json, calib_p2L_<set>_real.json) fitted on the gate
+     calibration). Solve calibrations (<set>/calib/calib_emitter_pass1_real.json, calib_emitter_pass2_real.json) fitted on the gate
      scenes rendered with the model's PSF (analysis/psfmatch/fit_cal_set.py); selection-aware sigma rescale
-     sigu_p{1,2}_<set>.json.
+     <set>/calib/sigma_rescale_pass{1,2}.json.
 
-C  Input (simcode/run.py: window_frames=6, window_step=3; processing/front.py: stride 3, absolute start % 3 == 0). Frame
+C  Input (simcode/run.py: window_frames=6, window_step=3; processing/pass1_inference.py: stride 3, absolute start % 3 == 0). Frame
    t of a window: angle a = t // 3, phase step s = t % 3. The glyph frames show the per-frame brightness of one emitter
    modulated by the pattern (schematic).
 
-D  Pass 1 (simcode/detector/model.py, simcode/detector/select.py, simcode/emitter/model.py, processing/front_fast.py).
+D  Pass 1 (simcode/detector/model.py, simcode/detector/select.py, simcode/emitter/model.py, processing/inference_fast.py).
    - Detector: U-Net, per-pixel logit, sub-pixel offset (dx, dy in +-1.5 px) and its log-sigma; select_subpixel = greedy
-     NMS on the sub-pixel points (radius 0.7 px), top-k = 640 per 64x64 px (front_fast: k_cand = 640 S^2 / 64^2);
+     NMS on the sub-pixel points (radius 0.7 px), top-k = 640 per 64x64 px (inference_fast: k_cand = 640 S^2 / 64^2);
      stored candidates p >= 0.3 (processing/common.CAND_PMIN). p = sigmoid(detector logit).
    - EmitterNet on a 21x21x6 patch per candidate; neighbour channels = splat of the other candidates (p >= 0.2) and the
      detector-probability map (Fig. SI network structure).
@@ -434,7 +434,7 @@ E  Pattern estimation (simcode/processing/pattern_estimation.py, estimate_patter
    - The in-situ calibration's pattern entry is never used (METHOD.md).
 
 F  Pass 2 (detector/model.py illum=True, emitter/model.py illum=True, pattern/illumination.illum_maps,
-   processing/pass2_front.py / front_fast.py).
+   processing/pass2_inference.py / inference_fast.py).
    - Illumination maps per frame: cos part relint (1 + m cos(.)) - 1 and quadrature relint m sin(.) -> [2T = 12, H, W];
      detector: stem gets (frame_t, cos_t, sin_t) per frame + a fusion conv on the 12 maps; EmitterNet: a conv on the 12
      cropped illumination patches added to the input conv. Weights zero-initialised -> starts exactly at pass 1.
@@ -448,9 +448,9 @@ G  Explicit pattern solve (simcode/solve/solve.py: solve_emitters, fringe_poster
      per-start box +-1.5 px (cal 'box').
    - Sigma(mu) = s Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (the last term within each angle's frames; mask A2);
      Sigma_net = L L^T, s = kap_I2 per photon bin (~0.79-0.85) + 1e-3 I; c = c_a = 0.10 (cmult, cmult_ang of
-     calib_sc_hd_<set>_real.json / calib_p2L_<set>_real.json for m1809 and m25). The exact Gaussian NLL incl. log det
+     calib_emitter_pass1_real.json / calib_emitter_pass2_real.json of m1809 and m25). The exact Gaussian NLL incl. log det
      Sigma(mu) is the cost. c is fixed from the model calibration (the automatic-c stage is analysis only since 2026-11-14,
-     solve/autoc.py).
+     solve/brightness_noise_fit.py).
    - Prior term: (r - r0) / s_p, r0 = network x, y minus the calibrated constant bias prior_off, s_p = sigma_prior x kap_p.
    - Starts: fringe_shifts(nf=1) = (2 nf + 1)^2 = 9 starts = the prior centre + 8 fringe-shifted starts with k_a.dr =
      2 pi n_a, n_a in {-1, 0, 1}.
@@ -460,7 +460,7 @@ G  Explicit pattern solve (simcode/solve/solve.py: solve_emitters, fringe_poster
      figfix).
    - Posterior over the deduplicated starts (dedup 0.15 px), weights exp(-(cost - cost_min) / 2); output r = posterior mean
      r_pm; sigma_cal = sqrt(f s_pm^2 + spread_pm^2) x sig_ph(photons), f = sig_a max(q/dof, 1)^sig_g; then the table's
-     selection-aware sigma rescale (sigu_p{1,2}_<set>.json).
+     selection-aware sigma rescale (sigma_rescale_pass{1,2}.json).
    - Pass-1 rows are solved too (pass-1 table locs_p1); the main output is the pass-2 table.
 
 H  z and selection (simcode/solve/z_conditioning.py: link_pass1, z_given_xy, pass1_z_columns; simcode/table.py: select).

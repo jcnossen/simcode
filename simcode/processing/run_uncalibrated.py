@@ -3,7 +3,7 @@ Expert entry point of the SIMCODE v2 pipeline (same flags and file layout as the
 is `python -m simcode.run`, which calls this module's stages with the production defaults).
 
   pass1    detector + per-candidate head: network per-frame intensities with covariance, per-frame bg,
-           pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/front[_fast].py)
+           pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/pass1_inference.py, inference_fast.py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
            network intensities alone                                                (simcode/processing/pattern_estimation.py)
   pass1_solve  the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz, table tag est)
@@ -15,9 +15,9 @@ Only the camera maps and the PSF are taken from --calib (in-situ calibration jso
 Output region --crop x0,y0,size (px): default the region of the run's pass-1 files if they exist, else the whole frame
 (square sensors; otherwise the largest top-left square).
 
-Code path: the fast front-ends (simcode/processing/front_fast.py: queued detector -> head batching, 2 CUDA streams) and the
+Code path: the fast front-ends (simcode/processing/inference_fast.py: queued detector -> head batching, 2 CUDA streams) and the
 fast solve (simcode/solve/solve_fast.py, torch.compile of its LM step when available); the reference implementations
-(front.py, processing/pass2_front.py, solve/solve.solve_emitters) are the test oracle only (tests/test_fast_paths.py).
+(pass1_inference.py, processing/pass2_inference.py, solve/solve.solve_emitters) are the test oracle only (tests/test_fast_paths.py).
 
 Chunks are the units of the shared work driver (simcode/io/work.py): a finished chunk is skipped (--redo 1 repeats it),
 every output is written atomically (a killed run leaves no truncated chunk file), the free disk space is checked before a
@@ -55,7 +55,7 @@ def build_parser():
     ap.add_argument('--emitter', default=config.EMITTER)         # pass-1 networks and their solve calibration
     ap.add_argument('--detector', default=config.DETECTOR)
     ap.add_argument('--cal', default=config.CAL_REAL)
-    # stage pass2 (simcode/processing/pass2_front.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter network
+    # stage pass2 (simcode/processing/pass2_inference.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter network
     # fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve) and pass2_est2b_<f0>.npz (variant b: the
     # pass-2 network prior)
     ap.add_argument('--detector_pass2', default=config.DETECTOR_PASS2)
@@ -108,7 +108,7 @@ def main(argv=None):
 
     if 'pass1' in stages:
         t0 = time.time()
-        from simcode.processing.front_fast import Pass1FrontFast
+        from simcode.processing.inference_fast import Pass1FrontFast
         p1 = Pass1FrontFast(a.calib, emitter=a.emitter, detector=a.detector)
         RT['networks_pass1'] = dict(emitter=a.emitter, detector=a.detector, cal=a.cal)
         RT['fast'] = dict(compile=COMPILE, det_batch=a.det_batch, emitter_batch=a.emitter_batch, solve_batch=a.solve_batch)
@@ -162,15 +162,15 @@ def main(argv=None):
                 L = dict(np.load(f'{a.out}/pass1_{f0}.npz'))
                 info = dict(X0=int(L['X0']), Y0=int(L['Y0']), S=int(L['S']), loaded=tuple(int(v) for v in L['loaded']))
                 tm = {}; t0 = time.time()
-                from simcode.processing.front_fast import run_chunk_pattern_solve_fast
+                from simcode.processing.inference_fast import run_chunk_pattern_solve_fast
                 O = run_chunk_pattern_solve_fast(L, info, Pt, a.cal, timing=tm, solve_batch=a.solve_batch, compile=COMPILE)
                 tm['total'] = time.time() - t0
                 U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
     if 'pass2' in stages:
-        from simcode.processing.pass2_front import direct_view
-        from simcode.processing.front_fast import Pass2FrontFast
+        from simcode.processing.pass2_inference import direct_view
+        from simcode.processing.inference_fast import Pass2FrontFast
         t0 = time.time()
         p2 = Pass2FrontFast(a.calib, emitter=a.emitter_pass2, detector=a.detector_pass2, compile=COMPILE)
         torch.cuda.synchronize(); RT['setup_p2_s'] = time.time() - t0

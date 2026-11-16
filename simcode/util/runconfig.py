@@ -32,12 +32,10 @@ Re-run with exactly the settings of a record: python -m simcode.run --config <ru
 import contextlib, hashlib, json, os, platform, shlex, socket, subprocess, sys, time
 import numpy as np
 from simcode import config
+from simcode.util.legacy_names import RUN_RECORD_FORMAT1_KEYS, RUN_RECORD_FORMAT1_FIXED
 
 FORMAT = 'simcode.run_config/2'
-# format 1 (records written before 2026-11-15) named the files of a model det / head / p2_det / p2_head / p2_cal (+ sig_u_p1 /
-# sig_u_p2; fixed head_batch / compile_head): load / update read it and convert the names (upgrade)
-KEYS_FORMAT1 = dict(det='detector', head='emitter', p2_det='detector_pass2', p2_head='emitter_pass2', p2_cal='cal_pass2',
-                    p2_cal_sim='cal_sim_pass2', p2_cal_real='cal_real_pass2', sig_u_p1='sig_u_pass1', sig_u_p2='sig_u_pass2')
+# format 1 (records written before 2026-11-15; key names in util/legacy_names.py): load / update read it and convert the names (upgrade)
 NAME = 'run_config.json'
 REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
@@ -344,13 +342,13 @@ def locked(out):
 
 
 def upgrade(R):
-    """a record of format 1 -> the present format (file keys renamed, KEYS_FORMAT1); other records unchanged"""
+    """a record of format 1 -> the present format (file keys renamed, legacy_names.RUN_RECORD_FORMAT1_*); other records unchanged"""
     if not R or R.get('format') != 'simcode.run_config/1': return R
-    ren = lambda d: {KEYS_FORMAT1.get(k, k): v for k, v in d.items()} if isinstance(d, dict) else d
+    ren = lambda d: {RUN_RECORD_FORMAT1_KEYS.get(k, k): v for k, v in d.items()} if isinstance(d, dict) else d
     R = dict(R, format=FORMAT, converted_from='simcode.run_config/1')
     if 'settings' in R: R['settings'] = ren(R['settings'])
     if isinstance(R.get('fixed'), dict):
-        R['fixed'] = {dict(head_batch='emitter_batch', compile_head='compile_emitter').get(k, k): v for k, v in R['fixed'].items()}
+        R['fixed'] = {RUN_RECORD_FORMAT1_FIXED.get(k, k): v for k, v in R['fixed'].items()}
         if isinstance(R['fixed'].get('solve_c'), str): R['fixed']['solve_c'] = R['fixed']['solve_c'].replace('/ p2_cal,', '/ cal_pass2,')
     if isinstance(R.get('model'), dict):
         R['model'] = dict(R['model'], definition=ren(R['model'].get('definition')), files=ren(R['model'].get('files') or {}))

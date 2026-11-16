@@ -1,6 +1,6 @@
 #!/bin/bash
 # NOTE (2026-11-15): the trainers no longer have --p_std (the pass-2 pattern share is fixed, models/README.md); this study
-# script runs only from a checkout before that cleanup (main 710d34b).
+# script runs only from a checkout before that cleanup (master f48ab14, the former main 710d34b).
 # Generic pass 2, v2 test (2026-11-13): continue the generic pass-2 DETECTOR (40k steps, lr 1e-4, pct 0.05, seed 51) from
 # runs/p2generic/g1809/p2det/final.pt with p_std $2 (the detector carries about half of the g1809 loss, eval_mix.txt).
 # usage: GPU=<g> setsid nohup bash analysis/p2generic/cont_det.sh <name> <p_std> >> runs/p2generic/contdet_<name>.log 2>&1 &

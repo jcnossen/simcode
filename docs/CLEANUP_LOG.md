@@ -793,3 +793,40 @@ sizes: `out/cleanup_2026-11-15.tsv` (184 actions); sizes = apparent size (du).
 Symlinked entries (size = the link, e.g. `sc3` 32 -> /mnt/data/dmdsf/simcode2_out/sc3): only the link was removed or
 moved; the data under /mnt/data/dmdsf/simcode2_out stay (the data disk is read-only for this work; `--targets 1` would
 delete them and was not used). So 3.30 GB in the out/ delete line is what was removed from ~/simcode2/out.
+
+## 2026-11-16: names from the development iterations (branch `names`)
+
+The model / calibration files and the modules that still carried development names (det_n1, hd_sc5nb, p2L, sc_hd, sigu,
+hd_/det_/p2det_/p2headL_<set>, front, autoc, psf4pi, lut4pi, cfgdict, ckpt, gate) got descriptive names; the full old -> new
+table is in docs/LAYOUT.md "Renamed (2026-11-16)". No aliases: the only old names the code still knows are the ones stored
+in data it reads (the architecture tags of earlier checkpoints, the key names of format-1 run records), now in one module,
+`simcode/util/legacy_names.py`, used only by the checkpoint / run-record readers.
+
+Choices:
+- **Checkpoint arch tags: load-time map, not a rewrite.** Every shipped pass-1 emitter network (and the archives, and every
+  pass-1 checkpoint under out/) stores the development tag of the network; rewriting the checkpoints would change their
+  sha256, which model.json `_files`, models/README.md and every run record carry (verify would report them as changed). So
+  `legacy_names.EMITTER_ARCH_TAGS` maps it at load time; the 4Pi tags of the checkpoints before 2026-11-15 and the format-1
+  run-record keys moved into the same module.
+- **Run records: rewritten, no map.** The records under out/ that name a renamed file of the models directory (absolute
+  paths in settings, model.files, model.definition) are rewritten once at merge time (`out/names/rewrite_records.py` of the
+  branch worktree; dry run on the out/ of ~/simcode2 (master), 2026-11-16: 8825 json files scanned, 323 to rewrite: 46 run_config.json (+ their
+  yaml), 86 runtime.json, 67 summary.json, 96 locs_*_info.json, 11 model.json, 8 papersim_run.json, 5 wsm_eval.json, 4 args.json).
+  Re-running a record uses the model name (models.json), which already resolves to the new names; the rewrite keeps
+  `runconfig verify` working (same sha256 at the new path). Not rewritten: the trainer arguments stored in checkpoints and
+  their copies in records, calibration notes, `copied_from`, and paths into out/ (out/ files keep their names).
+- **Weights: renamed by a merge-time script.** The tracked json files moved with `git mv`; the untracked weights and
+  archive folders are renamed by `out/names/rename_models.sh [--apply]` (os.rename after a sha256 check of each file;
+  `models_sha256.txt` = sha256 of all 171 renamed files at their new paths). The models/calib copies of the 2D models'
+  calibrations (byte-identical to archive_2d/<set>/calib/) were removed; their users (ablation_cov, crlbcmp, solvegap,
+  p2generic/eval_gen.sh) point at archive_2d now.
+- Not renamed: class names (Pass1Front, LUT4Pi, PSF4Pi, ChannelFront), `channels/front.py` (the multi-channel front end),
+  run-output and gate-scene file names (`pass1_<f0>.npz`, `<scene>__s<seed>_hd_<tag>.npz`), directories under out/ and the
+  analysis/results snapshots (records with the names of the runs they come from), the DECODE folders `decode/hd_frame`,
+  `decode/hd_sum6`, experiment ids used as folder names (g1809, g2ss, gnr80, psf3dmix, ...), the analysis scripts whose
+  outputs on disk carry their name (`ablation_cov/autoc_est.py`, `run_autoc.sh`; `calib/dump_fe.py` / `blib.py` dump labels),
+  the provenance notes inside calibration json files, and the one-off / old-checkout scripts listed in
+  docs/CLEANUP_CANDIDATES.md "Scripts that work on the file names before 2026-11-16".
+
+Checks: see the section "Verification" of the branch report (tests/check_model_outputs.py reference from master 674a0c4 (= the former main f8cbdf4) vs the
+branch with the renamed files; one end-to-end simcode.run; pytest).

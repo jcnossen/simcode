@@ -2,7 +2,7 @@
 ConfigDict: a nested settings dictionary with attribute access, for defining runs in Python code (the v1 config_dict,
 with errors instead of silent None).
 
-  from simcode.util.cfgdict import ConfigDict
+  from simcode.util.config_dict import ConfigDict
   base = ConfigDict(optics=dict(pixel_um=0.10833, NA=1.49), camera=dict(offset_adu=99.3), gpus=[1, 2])
   base.optics.NA, base['optics']['NA'], base['optics.NA']     attribute, item and dotted-path access (all the same value)
   base.optics.na                                               AttributeError naming the key and the close matches

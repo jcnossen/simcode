@@ -1,6 +1,6 @@
 #!/bin/bash
 # NOTE (2026-11-15): the trainers no longer have --p_std (the pass-2 pattern share is fixed, models/README.md); this study
-# script runs only from a checkout before that cleanup (main 710d34b).
+# script runs only from a checkout before that cleanup (master f48ab14, the former main 710d34b).
 # Generic pass-2 set (2026-11-13): the PSF-matched pass-2 recipe of runs/psfmatch/chain2.sh (p2det 40k, p2head 24k, p2headL 50k;
 # same lr / seeds / init) with the generic pattern draw (share P_STD of SIMCODE patterns, default 0.25). Resumable (final.pt skips).
 # usage: setsid nohup bash analysis/p2generic/chain_gen.sh <set g1809> "<gpu pref>" >> runs/p2generic/chain_<set>.log 2>&1 &

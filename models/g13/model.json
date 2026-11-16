@@ -1,15 +1,15 @@
 {
  "g13": {
   "psf": "calib_gauss1.3.psf.zip",
-  "detector": "det_g13.pt",
-  "emitter": "hd_g13.pt",
-  "cal_sim": "calib/calib_sc_hd_g13.json",
-  "cal_real": "calib/calib_sc_hd_g13_real.json",
-  "detector_pass2": "p2det_g13.pt",
-  "emitter_pass2": "p2headL_g13.pt",
-  "cal_sim_pass2": "calib/calib_p2L_g13.json",
-  "cal_real_pass2": "calib/calib_p2L_g13_real.json",
-  "sig_u": "calib/sigu_p1_g13.json,calib/sigu_p2_g13.json"
+  "detector": "detector_pass1.pt",
+  "emitter": "emitter_pass1.pt",
+  "cal_sim": "calib/calib_emitter_pass1_sim.json",
+  "cal_real": "calib/calib_emitter_pass1_real.json",
+  "detector_pass2": "detector_pass2.pt",
+  "emitter_pass2": "emitter_pass2.pt",
+  "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
+  "cal_real_pass2": "calib/calib_emitter_pass2_real.json",
+  "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
  },
  "_recipe": {
   "pass1": {
@@ -47,7 +47,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_gauss1.3.json"
   },
   "detector": {
-   "path": "det_g13.pt",
+   "path": "detector_pass1.pt",
    "size": 7266957,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "7a6130f3d34ca111bd8d79b0be3e7caaf75f4ce41203ac249b43762f5884d30c",
@@ -85,7 +85,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/det_g13.pt"
   },
   "emitter": {
-   "path": "hd_g13.pt",
+   "path": "emitter_pass1.pt",
    "size": 5519185,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "cbd17c8b098ccb3e0c324e6e3d1ac52b2e3556f2ea638ec3d43c077e984987ff",
@@ -127,7 +127,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/hd_g13.pt"
   },
   "cal_sim": {
-   "path": "calib/calib_sc_hd_g13.json",
+   "path": "calib/calib_emitter_pass1_sim.json",
    "size": 2059,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "cdcf1c456097aa0acb62c03d7f873cb30261e000ec8c9c8aa55bd05f4ed51726",
@@ -157,7 +157,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_sc_hd_g13.json"
   },
   "cal_real": {
-   "path": "calib/calib_sc_hd_g13_real.json",
+   "path": "calib/calib_emitter_pass1_real.json",
    "size": 3385,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "542082057919d39c5fe86497d1c504b9d8c78825926a9a1986344bdacddd9005",
@@ -187,7 +187,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_sc_hd_g13_real.json"
   },
   "detector_pass2": {
-   "path": "p2det_g13.pt",
+   "path": "detector_pass2.pt",
    "size": 7293667,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "d1037970932898d304ed7ffbd6867b42928f08e047a96ade0c13d5d52de3e2ea",
@@ -216,7 +216,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/p2det_g13.pt"
   },
   "emitter_pass2": {
-   "path": "p2headL_g13.pt",
+   "path": "emitter_pass2.pt",
    "size": 5560847,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "7e23fbd57c05e2f24b571facd155c66509ad1e5850d4baea95b5c6e7b353652e",
@@ -247,7 +247,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/p2headL_g13.pt"
   },
   "cal_sim_pass2": {
-   "path": "calib/calib_p2L_g13.json",
+   "path": "calib/calib_emitter_pass2_sim.json",
    "size": 2049,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "0ddbcc27fae3d9ee10e72d3a64d5c86196076cb1cf4eedd8db275cd4a4126a59",
@@ -277,7 +277,7 @@
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_p2L_g13.json"
   },
   "cal_real_pass2": {
-   "path": "calib/calib_p2L_g13_real.json",
+   "path": "calib/calib_emitter_pass2_real.json",
    "size": 3244,
    "mtime": "2026-11-15T05:38:40+0100",
    "sha256": "ebaaffab5b3953fc521c0c4478cf79f77f2f3e2d95260f83f2cc150b01042ae3",

@@ -1,20 +1,20 @@
 """Offline evaluation of the pass-2 benchmark dumps (simcode/processing/gate_dump.py -> <out>/gate_dumps):
   load(scene, front)            seeds pooled, FOV ids made unique
-  targets(R)                    gate_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
+  targets(R)                    gate_scenes_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
   solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe posterior / cmult per cal) on
-                                the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free sc5nb prior on
+                                the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free prior of pretrain_emitter_pass1 on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
                                 sigma = s_prior * kap_p(bin) * f(bin)
   fit_cal(...)                  per-network-photon-bin kap_p / kap_I2 / sigma factor on the tuning seed (<out>/
                                 bright/fit_cal.py logic), + prior_off from iso (700-2000 ph)
   prec(...)                     RMS / CRLB_SF_multi, trimmed, zcal, gross, per photon / nn bin; paired diff with FOV bootstrap
-  detect(...)                   recall / FP / JI on the final positions (0.5 px, gate_report.detection rule), matched-FP sweep
+  detect(...)                   recall / FP / JI on the final positions (0.5 px, gate_scenes_report.detection rule), matched-FP sweep
 """
 import glob, json, os
 from simcode import config as _cfg
 import numpy as np, torch
-from simcode.benchmark.gate_report import match
+from simcode.benchmark.gate_scenes_report import match
 
 PX = 108.33
 S = 64

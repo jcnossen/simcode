@@ -37,7 +37,7 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
                                  json or the camera arrays (+ camera.extra_arrays) of a psf.zip.
   camera_maps_path(path, c)   -> the file that holds the maps (the npz; the zip itself for a psf.zip), or None.
   write_calib_zip(json, out)  -> psf.zip of a calib json (torch_psf convert_calibration; report= passed to save_zip).
-  fourpi_state(path)          -> the psf4pi state dict of a 4Pi PSF file: json {'psf': state} or a psf.zip (FourPiPSF /
+  fourpi_state(path)          -> the coherent_psf state dict of a 4Pi PSF file: json {'psf': state} or a psf.zip (FourPiPSF /
                                  FourPiSplinePSF with its source).
 """
 import json, os
@@ -188,7 +188,7 @@ def write_calib_zip(json_path, out=None, **kw):
 
 # ============================================================================================ 4Pi PSF files
 def fourpi_state(path, root=None):
-    """psf4pi state dict of a 4Pi PSF file: a json with key 'psf' (out/4pi/psf4pi/*.json), or a psf.zip of a FourPiPSF
+    """coherent_psf state dict of a 4Pi PSF file: a json with key 'psf' (out/4pi/psf4pi/*.json), or a psf.zip of a FourPiPSF
     (top-level source) / FourPiSplinePSF (its source block; without torch_psf's 'raw' parameter block). path: a file, or a name looked up as
     <root>/psf4pi/<name>.json, then <models>/fourpi/<name>.psf.zip (root = the 4Pi work directory)"""
     path = str(path)

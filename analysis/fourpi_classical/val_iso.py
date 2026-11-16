@@ -13,7 +13,7 @@ for p_ in (REPO, os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 from pixel_lm import fisher_j, crlb
 from cl4pi import Classic4Pi, run_chunk

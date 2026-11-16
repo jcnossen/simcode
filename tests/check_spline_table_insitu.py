@@ -1,8 +1,8 @@
 """SIMCODE's LUT4Pi from an in-situ state (arms / reg / beta) and from a refined spline file vs the torch-psf models of
 analysis/fourpi_plain/insitu4pi.py (two processes: torch-psf master for A, the pinned torch_psf of SIMCODE for B).
 
-  python tests/check_lut4pi_insitu.py A <Model4Pi state json> <out.npz> [<refined knots .pt>]
-  python tests/check_lut4pi_insitu.py B <out.npz>
+  python tests/check_spline_table_insitu.py A <Model4Pi state json> <out.npz> [<refined knots .pt>]
+  python tests/check_spline_table_insitu.py B <out.npz>
 """
 import json, sys, os
 import numpy as np, torch
@@ -29,7 +29,7 @@ if mode == 'A':
         out['ref_file'] = sys.argv[4]
     np.savez(sys.argv[3], **out)
 else:
-    from simcode.fourpi.lut4pi import LUT4Pi
+    from simcode.fourpi.spline_table import LUT4Pi
     d = np.load(sys.argv[2])
     st = json.loads(str(d['state']))
     L = LUT4Pi(st, P=15, zmin=-1.0, zmax=1.0, dev='cuda')

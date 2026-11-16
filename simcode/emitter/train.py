@@ -20,8 +20,8 @@ Pass 2 (illum 1): illumination_batch ('paper' mix, pair curriculum, the pattern-
   and photon bin, with the default model's pass-1 network on its pass-1 detector as reference (eval_ref.json).
 --illum: default = 1 if --detector is a pass-2 detector, else 1 if --init is a pass-2 network, else 0. Checkpoints:
   {'model', 'args' (arch tag model.ARCH, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/hd --detector runs/det/final.pt --calib <psf.json> ...
-       CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/p2head --detector runs/p2det/final.pt --init runs/hd/final.pt ...
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/emitter --detector runs/detector/final.pt --calib <psf.json> ...
+       CUDA_VISIBLE_DEVICES=1 python -m simcode.emitter.train --out runs/emitter_pass2 --detector runs/detector_pass2/final.pt --init runs/emitter/final.pt ...
        python -m simcode.emitter.train --check 1        (zero-init check: a pass-2 network from a pass-1 one == that network)
 (models/README.md: the recipe of a model.)
 """
@@ -29,7 +29,7 @@ import argparse, json, os, time
 import numpy as np, torch
 import torch.nn as nn
 import torch.nn.functional as F
-from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
+from simcode.util.checkpoint import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode import config
 from simcode.layers.blocks import extract_patches
 from simcode.emitter.model import (EmitterNet, ARCH, PP, PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, nll_z, pad_out,
@@ -38,7 +38,7 @@ from simcode.simulate.targets import nn_weights, match_gt, emitter_targets
 
 dev = 'cuda'
 # defaults that differ between the passes (None in the parser)
-DEFAULTS = {0: dict(detector='det_n1.pt', init='', steps=100000, lr=5e-4, pct=0.05, seed=0, eval_every=2000, ckpt_every=10000,
+DEFAULTS = {0: dict(detector=config.PRETRAIN_DETECTOR, init='', steps=100000, lr=5e-4, pct=0.05, seed=0, eval_every=2000, ckpt_every=10000,
                     tau='15,80', dens='0.0005,0.04'),
             1: dict(detector=None, init=config.model(config.EMITTER), steps=40000, lr=1.5e-4, pct=0.1, seed=21, eval_every=4000,
                     ckpt_every=10000, tau='', dens='')}
@@ -147,7 +147,7 @@ def parser():
     ap = argparse.ArgumentParser(description='trainer of the emitter network (pass 1 and pass 2)')
     ap.add_argument('--out', default='')
     ap.add_argument('--illum', type=int, default=None, help='1: pass-2 network (illumination inputs); default: from --detector / --init')
-    ap.add_argument('--detector', default=None, help="detector of the candidates (pass 1 default 'det_n1.pt'; required for pass 2)")
+    ap.add_argument('--detector', default=None, help="detector of the candidates (pass 1 default 'pretrain_detector_pass1.pt'; required for pass 2)")
     ap.add_argument('--init', default=None, help='start checkpoint (pass 1 default: none; pass 2 default: the default model\'s pass-1 network)')
     ap.add_argument('--steps', type=int, default=None)
     ap.add_argument('--batch', type=int, default=16)
@@ -214,7 +214,7 @@ def train_pass1(a):
     args.update(heights=gen.heights())
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     head = EmitterNet(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
-    if a.init:      # a 2D init (e.g. hd_sc5nb.pt) gets the zero z rows (pad_out): it starts at exactly its 2D outputs
+    if a.init:      # a 2D init (e.g. pretrain_emitter_pass1.pt) gets the zero z rows (pad_out): it starts at exactly its 2D outputs
         head.load_state_dict(pad_out(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'], head))
     col = PSFCol(gen.rs['0.5nM'].sim)
     cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
@@ -316,10 +316,10 @@ def train_pass2(a):
     ilon = not a.no_illum
     # references: the default model's pass-1 network on its pass-1 detector's candidates (config.EMITTER / config.DETECTOR; evaluation
     # only), and the initial network on this detector
-    n1, _ = load_det(config.model(config.DETECTOR))
-    ref = dict(p1_ref=eval_pattern_hold(n1, load_net(config.model(config.EMITTER)), col, Hd), init=eval_pattern_hold(det, head, col, Hd, ilon))
+    det1, _ = load_det(config.model(config.DETECTOR))
+    ref = dict(p1_ref=eval_pattern_hold(det1, load_net(config.model(config.EMITTER)), col, Hd), init=eval_pattern_hold(det, head, col, Hd, ilon))
     if Hv1: ref['init_v1'] = eval_pattern_hold(det, head, col, Hv1, ilon)
-    del n1
+    del det1
     json.dump(ref, open(a.out + '/eval_ref.json', 'w'), indent=1)
     opt = torch.optim.AdamW(head.parameters(), lr=a.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps + 1, pct_start=a.pct)

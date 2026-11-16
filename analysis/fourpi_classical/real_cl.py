@@ -30,7 +30,7 @@ movie_files = lambda cell: S4.movie_files(acquisition(cell))
 def front(cell, dev):
     """the front end of the classical tables: the whole-series map <4Pi work dir>/smlm/reg/reg_insitu_<cell>.json"""
     return S4.front(acquisition(cell), dev=dev, map_file=f'{P4}/smlm/reg/reg_insitu_{cell}.json')
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.io.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M

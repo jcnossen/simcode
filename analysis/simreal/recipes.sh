@@ -1,7 +1,7 @@
 #!/bin/bash
 # Benchmark movies of the SIMCODE v2 evaluation (analysis/simreal/sim_movie_r.py, realistic AcquisitionSim knobs via env).
 # 120 x 120 px uint16 TIFF + sim_gt.npz + gt_pattern.pt.
-#   m05r / m25rc   realistic 0.5 / 2.5 nM-like (4800 frames; c-matched, the headline sims of "sim realism + p2L")
+#   m05r / m25rc   realistic 0.5 / 2.5 nM-like (4800 frames; c-matched, the headline sims of "sim realism + pass 2")
 #   m05pd / m25pd  punctate repeated-site benchmarks (30k frames; evaluation protocol; frozen in the paper analysis)
 #   m05pe / m25pe  m*pd + the measured illumination envelope (critic 37 #2)
 #   (the older m05qh / m25qh / m20qh movies of docs/RESULTS.md section 3b used sim_movie.py / sim_movie20.py, archived

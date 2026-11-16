@@ -1,4 +1,4 @@
-"""Fit the coherent two-arm 4Pi PSF (simcode/fourpi/psf4pi.py) to a bead z-stack, per channel (61 slices x 4 channels).
+"""Fit the coherent two-arm 4Pi PSF (simcode/fourpi/coherent_psf.py) to a bead z-stack, per channel (61 slices x 4 channels).
 
 Data: out/4pi/smlm/zcal/zstack_rois_<cell>.npy ([61,4,21,21] e, registered channel ROIs around the bead).
 Per slice: x, y (px), N (common to the 4 channels), bg per channel; z_k = z0 + s * zstage_k (s = +-1 tried).
@@ -14,7 +14,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
-from simcode.fourpi.psf4pi import PSF4Pi, PSF4PiA
+from simcode.fourpi.coherent_psf import PSF4Pi, PSF4PiA
 
 OUT = f'{P4}/psf4pi'
 

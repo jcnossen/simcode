@@ -1,5 +1,5 @@
 """
-Emitter layouts for the gate scenes (simcode/benchmark/gate.py) on top of simcode.simulate.crlb (scene generator, multi-emitter CRLB,
+Emitter layouts for the gate scenes (simcode/benchmark/gate_scenes.py) on top of simcode.simulate.crlb (scene generator, multi-emitter CRLB,
 one-to-one matching): isolated grids, close pairs, Poisson scenes, wide brightness, nearest-neighbour distances, and the
 pattern-estimate error model (common per-angle phase error U(0, 0.05) rad sd, per-step 0.03 rad, depth +-10 % per FOV) so
 the estimators see an imperfect pattern while the CRLB uses the true one.

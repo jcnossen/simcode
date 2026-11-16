@@ -1,5 +1,8 @@
 # Cleanup candidates (2026-11-15)
 
+The model files and modules of this list were renamed on 2026-11-16 (docs/LAYOUT.md "Renamed (2026-11-16)"); the entries
+below use the new names. Names of out/ directories and of the analysis/results snapshots are the names on disk.
+
 **Decided and done (user, 2026-11-15).** Code, docs and git-tracked files: done on branch `rename` (archived files are in
 the git tag `archive-2026-11-15`, index `docs/ARCHIVE.md`; log `docs/CLEANUP_LOG.md`, section "2026-11-15: processing options
 and clean-up"). out/ and the models directory: `python analysis/maintenance/cleanup_outputs.py` (dry run; `--apply` after the
@@ -105,7 +108,7 @@ the 4Pi refactor.
 - keep | analysis/figures/zoompick.py | 20 nM zoom boxes for fig_exp_new; also 4Pi fig_cl / showcase_real_mt
 - keep | analysis/figures/skel.py | skeletonize imported by zoompick and 4Pi fig_cl
 - keep | analysis/figures/README.md | documents zoompick/skel (needs trimming to the kept scripts)
-- archive | analysis/figures/crlb_all_v2.py | dev CRLB figure of sc5nb/sc6n networks (sc6n not shipped); superseded by crlbcmp / si_crlb
+- archive | analysis/figures/crlb_all_v2.py | dev CRLB figure of the earlier development emitter networks (pretrain_emitter_pass1 and an unshipped variant); superseded by crlbcmp / si_crlb
 - archive | analysis/figures/icrlb.py | per-frame I/bg vs CRLB of dev networks; input of crlb_all_v2
 - archive | analysis/figures/icrlb_report.py | text report of icrlb npz (dev)
 - archive | analysis/figures/lm_gate.py | LM reference lines for crlb_all_v2 (dev)
@@ -117,7 +120,7 @@ the 4Pi refactor.
 - archive | analysis/figures/run_crlb_refs.sh | GPU driver for the crlb_all_v2 references (dev)
 - archive | analysis/figures/crlb_vs_simcode.py | gate RMSD of dev sc front-ends vs preprint SIMCODE
 - delete | analysis/figures/crlb_gate.py | early figure of dev hybrid front-ends pf/det/hd; superseded by crlb_all_v2
-- archive | analysis/figures/recon_full_dme_cross.py | 0.5 nM dev-run render (sc5nb); superseded by fig_exp_new
+- archive | analysis/figures/recon_full_dme_cross.py | 0.5 nM dev-run render (pretrain_emitter_pass1); superseded by fig_exp_new
 - archive | analysis/figures/dme_full05.py | DME drifts for recon_full_dme_cross (dev 0.5 nM)
 - delete | analysis/figures/recon_full.py | first 0.5 nM render version; superseded by recon_full_dme_cross
 - delete | analysis/figures/recon_full_dc.py | RCC-drift version of the 0.5 nM render; superseded by DME version
@@ -128,7 +131,7 @@ the 4Pi refactor.
 - archive | analysis/figures/render_matched20.py | 20 nM dev matched render; cited in RESULTS.md
 - archive | analysis/figures/render_strict20.py | 20 nM dev strict render; cited in RESULTS.md
 - archive | analysis/figures/fig_gap.py | realgap summary with hard-coded dev numbers; RESULTS.md
-- archive | analysis/figures/scorecard.py | sim-realism scorecard of dev sc5nb front-end; cited by acquisition.py docstring
+- archive | analysis/figures/scorecard.py | sim-realism scorecard of the dev front-end (pretrain_emitter_pass1); cited by acquisition.py docstring
 - archive | analysis/figures/frc_common.py | critic-34 FRC sets (dev runs)
 - archive | analysis/figures/frc_commonN.py | critic-34 FRC vs N json
 - archive | analysis/figures/frc_plot.py | frc_vs_N.png (critic 34); RESULTS.md
@@ -170,7 +173,7 @@ the 4Pi refactor.
 - `analysis/papersim/s10_figure.py`: superseded as a figure by si_crlb_figure.py, but it also writes `s10_table_<model>.md`, which papersim STATUS cites. Archive, or delete if the table is not needed.
 - p_valid / selection (`pvalid.py`, `add_pvalid.py`, `pvalid_real.py`, `selection.py`): archive, as long as the paper does not discuss p_valid or the selection-strictness analysis. selection.py may back an SI argument for the 12 nm rule; the selection_global sweep is the stated evidence.
 - `analysis/papersim/compare_v2.py`: archive as a one-off. If the 3D-model reprocessing is to be compared again, keep it.
-- figures/ CRLB group (`crlb_all_v2` and refs): judged dev-era (sc5nb/sc6n networks, sc6n not shipped). The paper's CRLB analysis is si_crlb_figure plus analysis/crlbcmp. Keep it if the SI still uses crlb_all_v2.png.
+- figures/ CRLB group (`crlb_all_v2` and refs): judged dev-era (earlier development emitter networks, one of them not shipped). The paper's CRLB analysis is si_crlb_figure plus analysis/crlbcmp. Keep it if the SI still uses crlb_all_v2.png.
 - `recon_full.py`, `recon_full_dc.py`, `rcc_drift.py`, `crlb_gate.py`: deleted as superseded versions. RESULTS.md cites `recon_full*` and README lists their PNGs, so archive is the safer choice.
 - `analysis/dme/dme_splithalf.py`: archive. If the revised SI gets a DME drift-validation figure (PAPER_HANDOFF: "probably new drift figures"), it is keep.
 - `analysis/figures/README.md`: kept for zoompick/skel, but most of its content describes archived scripts and needs trimming.
@@ -204,7 +207,7 @@ out/solvegap/STATUS.md). It is not part of this repository and is not classified
 ### ablation_cov (paper covariance / excess-variance ablation; out/ablation_cov/REPORT.md)
 - keep | analysis/ablation_cov/variants.py | solve-variant definitions; imported by gate_abl, sigma_check, tables, nanoruler abl_*
 - keep | analysis/ablation_cov/capture.py | captures pass-2 head outputs with Cholesky factor for offline variants
-- keep | analysis/ablation_cov/gate_dump.py | extra gate dumps (mismatch overrides) for the ablation; simcode.benchmark.gate POVER/SOVER hook
+- keep | analysis/ablation_cov/gate_dump.py | extra gate dumps (mismatch overrides) for the ablation; simcode.benchmark.gate_scenes POVER/SOVER hook
 - keep | analysis/ablation_cov/run_dumps.sh | driver of gate_dump.py (control / recovery / dense scenes)
 - keep | analysis/ablation_cov/cov_desc.py | part 1: covariance structure, gate + real 1809_2
 - keep | analysis/ablation_cov/cov_fig.py | part 1 figure fig_covariance.png
@@ -214,8 +217,8 @@ out/solvegap/STATUS.md). It is not part of this repository and is not classified
 - keep | analysis/ablation_cov/sigma_check.py | part 4: c term vs reported uncertainty
 - keep | analysis/ablation_cov/tables.py | REPORT.md tables; tests/test_tables.py and nanoruler scripts use it
 
-### gate (development gate / SIMCODE-vs-ours comparisons on the old hd_sc5nb head; RESULTS.md §2, analysis/results/gate)
-- archive | analysis/gate/run_gate.sh | gate driver tied to old hd_sc5nb head; iso 1.17 recorded in RESULTS.md
+### gate (development gate / SIMCODE-vs-ours comparisons on the old pretrain_emitter_pass1 head; RESULTS.md §2, analysis/results/gate)
+- archive | analysis/gate/run_gate.sh | gate driver tied to old pretrain_emitter_pass1 head; iso 1.17 recorded in RESULTS.md
 - archive | analysis/gate/gate_paired.py | paired preprint-vs-ours gate (critic 32); numbers in RESULTS.md / analysis/results
 - archive | analysis/gate/merged_d1.py | critic-34 merged sub-pixel quantification; snapshot analysis/results/gate/merged_d1_vs_simcode.txt
 - archive | analysis/gate/vs_simcode_p2.py | critic-34 repaired SIMCODE on pass-2 gates; recorded in RESULTS.md
@@ -223,9 +226,9 @@ out/solvegap/STATUS.md). It is not part of this repository and is not classified
 
 ### calib (solve-calibration library and the template-calibration fit)
 - keep | analysis/calib/plib.py | pass-2 dump eval + fit_cal; used by fit_cal_set, acceptance docs, z3d, crlbcmp, ablation
-- keep | analysis/calib/dump_fe.py | produced the hd_sc5nb template σ tables (METHOD.md); templates of every model calibration
+- keep | analysis/calib/dump_fe.py | produced the pretrain_emitter_pass1 template σ tables (METHOD.md); templates of every model calibration
 - keep | analysis/calib/blib.py | library of fit_cal.py (pass-1 template fit)
-- keep | analysis/calib/fit_cal.py | fitted calib_sc_hd_sc5nbb15_pm_* templates (cited in their json provenance, METHOD.md)
+- keep | analysis/calib/fit_cal.py | fitted the calib/template_calib_emitter_pass1_* templates (cited in their json provenance, METHOD.md)
 
 ### psfmatch
 - keep | analysis/psfmatch/fit_cal_set.py | model-calibration step of models/README.md recipe and simcode/pipeline/training.py
@@ -260,12 +263,12 @@ out/solvegap/STATUS.md). It is not part of this repository and is not classified
 - delete | analysis/p2generic/fit_cal_gen.py | copy of fit_cal_set.py; fit_cal_set now takes a dump dir (9ff618a); eval_gen.sh call to switch
 - delete | analysis/p2generic/fitcal_wrap.py | sig_ph shim superseded by plib.fit_cal fix af74ef4; eval_gen.sh call to switch
 - archive | analysis/p2generic/chain_gen2.sh | gnr80 nanoruler generic set (not adopted for real runs); recorded in STATUS
-- archive | analysis/p2generic/cont_gen2.sh | v2-test head continuation; not the shipped m1809 p2headL chain (out/z3d/runs)
+- archive | analysis/p2generic/cont_gen2.sh | v2-test head continuation; not the shipped m1809 pass-2 emitter chain (out/z3d/runs)
 - archive | analysis/p2generic/eval_nr.sh | gnr80 evaluation; verdict recorded in out/p2generic/STATUS.md
 
 ### tput (throughput; RESULTS.md §4, analysis/results/tput)
 - archive | analysis/tput/bench_tput.py | original-vs-fast per-stage benchmark on dev 0.5/2.5 nM data; numbers in RESULTS §4
-- archive | analysis/tput/datasets.json | bench_tput inputs (dev movies, old hd_sc5nb calibrations)
+- archive | analysis/tput/datasets.json | bench_tput inputs (dev movies, old pretrain_emitter_pass1 calibrations)
 - archive | analysis/tput/gpu_sampler.sh | GPU-occupancy logger for bench validity; companion of bench_tput
 - archive | analysis/tput/summarize.py | tables from the tput outputs; companion of bench_tput
 
@@ -312,14 +315,14 @@ out/solvegap/STATUS.md). It is not part of this repository and is not classified
 - delete | analysis/zimflux/kvec_refine.py | refinement of kvec6ms with placeholder code; one-off, recorded
 
 ### Uncertain cases
-- **calib/dump_fe.py, blib.py, fit_cal.py:** I kept these as the provenance of the hd_sc5nb template calibrations that every model calibration copies from (METHOD.md). The templates are fixed files, so archive would also be defensible if re-fitting the templates is never needed.
+- **calib/dump_fe.py, blib.py, fit_cal.py:** I kept these as the provenance of the pretrain_emitter_pass1 template calibrations that every model calibration copies from (METHOD.md). The templates are fixed files, so archive would also be defensible if re-fitting the templates is never needed.
 - **psfmatch/prod_m20_m25.sh:** this is the only tracked 20nM_2 production driver. It is really one `python -m simcode.run --model m25` command, and the planned 3D reprocessing may use a different driver, so archive is possible.
 - **psf3d/summary.py:** kept only to regenerate the PSF_POLARIZATION.md tables. It becomes archive if that doc is frozen.
 - **psf3d/export_zstack.py:** delete assumes no baseline needs plain z-stacks. If the DECODE or spline baselines want the in-situ PSF as a stack, keep it.
 - **p2generic fit_cal_gen.py / fitcal_wrap.py:** delete only after eval_gen.sh (and eval_nr.sh, if kept) call analysis/psfmatch/fit_cal_set.py directly. Until then eval_gen.sh part (a) depends on them.
 - **p2generic chain_gen.sh / cont_det.sh:** the recipe is now written out in models/README.md, so these are provenance (cited by models/m1809/model.json) rather than needed code. Archive is acceptable if that provenance pointer is updated.
 - **tput/*:** I archived these. If the revised paper reports a v2 runtime (the preprint has "SIMCODE 23.19 min vs DECODE 3:07"), bench_tput.py would be the tool to re-measure it on the paper data.
-- **gate/*, hd_compare/*, simreal compare/eval scripts, psfshape:** I archived these because they back the development headline in docs/RESULTS.md (old hd_sc5nb head), not the paper figures (analysis/papersim, paper2). Archiving them breaks RESULTS.md §7 "Reproduce" paths, so that doc needs a note.
+- **gate/*, hd_compare/*, simreal compare/eval scripts, psfshape:** I archived these because they back the development headline in docs/RESULTS.md (old pretrain_emitter_pass1 head), not the paper figures (analysis/papersim, paper2). Archiving them breaks RESULTS.md §7 "Reproduce" paths, so that doc needs a note.
 - **simreal/recipes.sh (keep) calls sim_movie.py / sim_movie20.py (archive)** for its qh branches, so those branches break if the scripts move.
 - **auto/cmp_calib.py:** kept for validating the auto / torch-psf in-situ calibration. It becomes archive if out/torchpsf_validation has superseded it.
 - **z3d eval_head.py:** archived, but it may still be wanted for the pending m25 / g13 3D retrains.
@@ -709,9 +712,9 @@ Every module not listed is keep (used by `simcode.run`, the trainers, the automa
 - delete | simcode/processing/compare_pattern.py | nothing imports or runs it (pattern comparison of the development runs)
 - archive | simcode/processing/pattern_field.py | analysis only (2 evalproto / simreal scripts, both archive candidates); the pipeline option was removed on 2026-11-14
 - archive | simcode/processing/dedup.py | one analysis user (archive candidate); output modes for overlapping windows not used by simcode.run
-- archive | simcode/solve/autoc.py | analysis only (ablation_cov / nanoruler); keep if the ablation SI table on the automatic c estimate is regenerated (ablation_cov is keep)
+- archive | simcode/solve/brightness_noise_fit.py | analysis only (ablation_cov / nanoruler); keep if the ablation SI table on the automatic c estimate is regenerated (ablation_cov is keep)
 - archive | simcode/benchmark/preprint_gate.py | the preprint model on the gate scenes (development comparison; analysis/gate, figures)
-- keep | simcode/benchmark/gate.py, gate_report.py, gate_report_detector_matched.py | gate scenes of a model's calibration (pipeline/training.py, gate_dump)
+- keep | simcode/benchmark/gate_scenes.py, gate_scenes_report.py, gate_scenes_report_detector_matched.py | gate scenes of a model's calibration (pipeline/training.py, gate_dump)
 - delete | simcode/util/neighbours.py | only fit_psf_sums.py (delete candidate) uses it
 - delete | simcode/detector/model.conv_flops | function; unused (FLOP count of the detector ablation)
 - keep | simcode/evaluation/metrics.py | 21 analysis users, among them papersim / paper scripts (check with the analysis list before removing)
@@ -733,22 +736,29 @@ Every module not listed is keep (used by `simcode.run`, the trainers, the automa
 
 ## Model weights (`/home/jc/simcode2/models`, not in git)
 
-- keep | m1809/, m25/, g13/ (det, hd, p2det, p2headL) | the models of models.json (3D pass 1, generic pass 2 for m1809)
-- keep | hd_sc5nb.pt | init of every model's emitter network (recipe)
-- keep | det_n1.pt | init of the 4Pi detector (analysis/fourpi/train_det4pi.py)
+- keep | m1809/, m25/, g13/ (detector_pass1, emitter_pass1, detector_pass2, emitter_pass2) | the models of models.json (3D pass 1, generic pass 2 for m1809)
+- keep | pretrain_emitter_pass1.pt | init of every model's emitter network (recipe)
+- keep | pretrain_detector_pass1.pt | init of the 4Pi detector (analysis/fourpi/train_det4pi.py)
 - keep | decode/hd_frame, decode/hd_sum6 | DECODE baseline models
 - keep | insitu/beads/psf_fit_*.pt | bead PSF fit state (start of the in-situ fit)
 - archive | archive_2d/{m1809,m25,g13}/ | the 2D models before 2026-11-14 (production of the earlier paper tables; not referenced)
-- archive | archive_p2dedicated/m1809/ | dedicated (non-generic) pass 2 of m1809 (not referenced)
-- delete | det_m1809.pt, det_m25.pt, det_g13.pt, p2det_m25.pt, p2det_g13.pt | byte-identical copies of files in the model folders / archive_2d
-- delete | hd_m1809.pt, hd_m25.pt, hd_g13.pt, p2det_m1809.pt, p2headL_m1809.pt, p2headL_m25.pt, p2headL_g13.pt | byte-identical copies of archive_2d / archive_p2dedicated files
-- delete | p2det_g2ss.pt | byte-identical to m1809/p2det_m1809.pt (the adopted generic pass-2 detector)
-- archive | p2det_g1809.pt, p2det_g2c.pt, p2det_g2s.pt, p2det_g2w.pt, p2det_g2cc.pt, p2headL_g1809.pt, p2headL_g2c.pt, p2headL_g2cc.pt, p2headL_g2s.pt, p2headL_g2ss.pt, p2headL_g2w.pt | generic pass-2 study variants (out/p2generic/STATUS.md); g2ss pair adopted into m1809; keep only if the generic-pass-2 SI table is regenerated
-- delete | p2det_gnr80.pt, p2headL_gnr80.pt | nanoruler generic pass 2 (not adopted)
-- delete | det_psf3dmix.pt, hd_psf3dmix.pt, p2det_psf3dmix.pt, p2headL_psf3dmix.pt, p2det_psf3dmix_pair.pt, p2headL_psf3dmix_pair.pt | superseded mixture set (models/README.md: not needed by anything)
-- delete | hd_abl1809_avg.pt, hd_abl1809_ax.pt | ablation heads of the PSF-matching study (results recorded)
-- delete | hd_sc7bg.pt | earlier head architecture, not loadable by the package
-- delete | p2_det.pt, p2_head_long.pt | earlier default pass 2 (superseded by the models' own pass 2)
+- archive | archive_pass2_dedicated/m1809/ | dedicated (non-generic) pass 2 of m1809 (not referenced)
+- delete | the top-level copies of the networks of m1809, m25, g13 (the flat layout before the model folders) | byte-identical copies of files in the model folders / archive_2d / archive_pass2_dedicated (deleted 2026-11-15)
+- delete | the top-level copy of the g2ss pass-2 detector | byte-identical to m1809/detector_pass2.pt (the adopted generic pass-2 detector; deleted 2026-11-15)
+- archive | archive_pass2_generic/{g1809,g2c,g2cc,g2s,g2ss,g2w}/ (detector_pass2, emitter_pass2, calib/) | generic pass-2 study variants (out/p2generic/STATUS.md); g2ss pair adopted into m1809; keep only if the generic-pass-2 SI table is regenerated
+- delete | archive_superseded/gnr80/ | nanoruler generic pass 2 (not adopted)
+- delete | archive_superseded/psf3dmix/, psf3dmix_pair/ | superseded mixture set (models/README.md: not needed by anything)
+- delete | archive_superseded/ablation_1809_avg/, ablation_1809_ax/ | ablation emitter networks of the PSF-matching study (results recorded)
+- delete | archive_superseded/earlier_architecture/emitter_pass1.pt | earlier emitter-network architecture, not loadable by the package
+- delete | archive_superseded/previous_default/ (detector_pass2, emitter_pass2, calib/) | earlier default pass 2 (superseded by the models' own pass 2)
+
+## Scripts that work on the file names before 2026-11-16 (added 2026-11-16)
+
+One-off or old-checkout scripts that were not rewritten by the 2026-11-16 rename (their inputs carry the earlier names):
+
+- archive | analysis/maintenance/cleanup_outputs.py | the executed 2026-11-15 out/ + models/ clean-up (its file lists are the names of that day)
+- archive | analysis/z3d/swap_model.py | the executed 2026-11-14 model swaps (reads the staged out/z3d model folders with the earlier names)
+- archive | analysis/p2generic/chain_gen.sh, cont_det.sh | run only from a checkout before 2026-11-15 (master f48ab14 = the former main 710d34b; --p_std)
 
 ## Output directories (`/home/jc/simcode2/out`; size with --apparent-size, symlink target)
 
@@ -767,7 +777,7 @@ Many entries are symlinks into /mnt/data/dmdsf/simcode2_out (or /mnt/data/4pi-sf
 - archive | out/bench (5,2M -> /mnt/data/dmdsf/simcode2_out/bench) | benchmarks
 - delete | out/bench_hd_a_quick.log (6,5K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - archive | out/bright (161M -> /mnt/data/dmdsf/simcode2_out/bright) | bright-emitter study
-- archive | out/calib_inputs (2,3G -> /mnt/data/dmdsf/simcode2_out/calib_inputs) | inputs of the hd_sc5nb template calibrations
+- archive | out/calib_inputs (2,3G -> /mnt/data/dmdsf/simcode2_out/calib_inputs) | inputs of the pretrain_emitter_pass1 template calibrations
 - delete | out/calib_sc_hd_sc1.json (284) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc1.json.p1 (189) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc2b15.json (322) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
@@ -787,10 +797,10 @@ Many entries are symlinks into /mnt/data/dmdsf/simcode2_out (or /mnt/data/4pi-sf
 - delete | out/calib_sc_hd_sc5nb15_pm.json (299) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc5nbb15.json (323) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc5nbb15.json.p1 (230) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
-- delete | out/calib_sc_hd_sc5nbb15_pm_autoc1.json (2,4K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
+- delete | out/template_calib_emitter_pass1_brightness_noise_fit.json (2,4K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc5nbb15_pm_autoc.json (2,4K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
-- delete | out/calib_sc_hd_sc5nbb15_pm_bright.json (2,0K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
-- delete | out/calib_sc_hd_sc5nbb15_pm_bright_real.json (2,8K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
+- delete | out/template_calib_emitter_pass1_sim.json (2,0K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
+- delete | out/template_calib_emitter_pass1_real.json (2,8K) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc5nbb15_pm.json (548) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc6nb15.json (322) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)
 - delete | out/calib_sc_hd_sc6nb15.json.p1 (230) | development output of earlier networks / one-off logs and scripts (numbers in docs/RESULTS.md or superseded)

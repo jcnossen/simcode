@@ -8,7 +8,7 @@ camera offset maps, the reference SIM pattern, the 4Pi PSF model and the network
   from simcode.setups.fourpi import acquisition; c = acquisition('MT')
 """
 from simcode import config as K
-from simcode.util.cfgdict import ConfigDict
+from simcode.util.config_dict import ConfigDict
 
 P4 = K.root('fourpi')
 DATA = K.root('data4pi') or '/mnt/data/4pi-sf'

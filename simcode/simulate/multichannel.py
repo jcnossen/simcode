@@ -38,7 +38,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.nn.functional as F
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 
 from simcode.config import root
 P4 = root('fourpi')

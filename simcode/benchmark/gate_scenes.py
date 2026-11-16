@@ -13,13 +13,13 @@ Scenes (64 x 64 FOVs, T = 6):
 Each scene x eval seed (301, 302, 303; tuning used 202 / 5202) stores the GT table (all active emitters: visible
 targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / isolated CRLBs; dim emitters are
 'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
-a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_report.py).
+a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_scenes_report.py).
 Front-end: sc = detector (--detector) + emitter network (--emitter) + the explicit pattern solve with the calibration --cal (defaults: the default
 model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
 SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
 Other front-ends (SIMCODE: archive-2026-11-15:simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
-Reports: python -m simcode.benchmark.gate_report_detector_matched --dir <out> --tag <tag> --scen iso,...
-usage: python -m simcode.benchmark.gate --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _sc5nb]
+Reports: python -m simcode.benchmark.gate_scenes_report_detector_matched --dir <out> --tag <tag> --scen iso,...
+usage: python -m simcode.benchmark.gate_scenes --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _pretrain]
 """
 import argparse, json, math, os, time
 import numpy as np, torch

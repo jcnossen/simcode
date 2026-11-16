@@ -11,7 +11,7 @@ The file is ordinary Python; the pipeline reads `configs` (a list) or `config` (
 schema of simcode/pipeline/acquisition_config.py (unknown keys are errors, defaults are filled in), exactly as a yaml file is.
 """
 import os
-from simcode.util.cfgdict import ConfigDict
+from simcode.util.config_dict import ConfigDict
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DATA = '/mnt/data/dmdsf/bn_dnapaint'

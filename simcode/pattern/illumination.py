@@ -27,7 +27,7 @@ PH_SD = 0.10
 PHF_SD = 0.04
 DEP_LO, DEP_HI = -0.08, 0.03
 REL_SD = 0.02
-# 'real' error model (2026-11-09/10, runs/p2_head_long; critic 33 #5 + M7 of the full real runs): phase total ~0.17 rad rms
+# 'real' error model (2026-11-09/10, training of the earlier default pass-2 network archive_superseded/previous_default/emitter_pass2.pt; critic 33 #5 + M7 of the full real runs): phase total ~0.17 rad rms
 # (drift eps(t) scale: per angle 0.16 + per frame 0.06), angle 0.04 deg (M7 2.5 nM: ours - SIMCODE 0.025 deg, - calib up to
 # 0.07 deg), pitch 1.5e-3 (M7 <= 0.0024 px = 1.2e-3), depth U(-0.10, +0.04) + 0.02 per angle (M7 ours - calib -0.065..-0.025,
 # - SIMCODE -0.04..+0.02), relint 2 % per frame + 3 % per angle (M7 per-angle ours vs SIMCODE 0.5-2 %)

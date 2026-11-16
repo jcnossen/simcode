@@ -30,10 +30,10 @@ their covariance, a background per channel and a pattern-free, Phi-free 3D prior
       linearised at the truth, Gaussian NLL of its error under its reported covariance)
   load(tag_or_path) -> (net in eval mode on cuda, checkpoint dict); tags: <4Pi work dir>/models/head4pi_<tag>.pt.
       Checkpoint format {'state', 'args', 'psf'}, architecture by args['arch'] (ARCH_TAGS):
-        'w'               FourPiEmitterNet with T = 6 (v10, v11; 4Pi-SIMFLUX)
-        none              FourPiPrior with T = 6 (v2 .. v8, v3L)
         'fourpi_emitter'  FourPiEmitterNet, T / zmax / vread from the args (since 2026-11-15; plain 4Pi T = 1)
         'fourpi_prior'    FourPiPrior, T / zmax from the args (since 2026-11-15)
+      the checkpoints trained before (v10, v11: FourPiEmitterNet; v2 .. v8, v3L: FourPiPrior; T = 6) carry the earlier tags of
+      util/legacy_names.FOURPI_ARCH_TAGS.
       net.lut = the 4Pi PSF spline table of the checkpoint's PSF state (z range args['zlut'], default +-0.6 um).
 """
 import math, os
@@ -41,9 +41,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from simcode.layers.blocks import ResBlock, norm_photons
+from simcode.util.legacy_names import FOURPI_ARCH_TAGS
 
 VREAD = 1.14 ** 2 + 0.2 ** 2     # read variance per pixel (e^2) of the 4Pi-SIMFLUX camera (1.14 e read noise + 0.2 e offset error)
-ARCH_TAGS = {'w': 'FourPiEmitterNet', None: 'FourPiPrior', 'fourpi_emitter': 'FourPiEmitterNet', 'fourpi_prior': 'FourPiPrior'}
+ARCH_TAGS = {'fourpi_emitter': 'FourPiEmitterNet', 'fourpi_prior': 'FourPiPrior'}
 
 
 # -------------------------------------------------------------------------------------------------------------- read-out windows
@@ -403,15 +404,16 @@ def checkpoint_path(tag_or_path):
 def load(tag_or_path, dev='cuda'):
     """4Pi emitter-network checkpoint (path, or a tag of <4Pi work dir>/models/head4pi_<tag>.pt) -> (net in eval mode,
     checkpoint dict), by the architecture tag args['arch']"""
-    from simcode.fourpi.lut4pi import LUT4Pi
+    from simcode.fourpi.spline_table import LUT4Pi
     f = checkpoint_path(tag_or_path)
     ck = torch.load(f, weights_only=False)
     a = ck['args']
-    if a.get('arch') not in ARCH_TAGS:
-        raise ValueError(f"{f}: 4Pi emitter network arch {a.get('arch')!r} is not supported ({ARCH_TAGS})")
+    cls = ARCH_TAGS.get(a.get('arch')) or FOURPI_ARCH_TAGS.get(a.get('arch'))
+    if cls is None:
+        raise ValueError(f"{f}: 4Pi emitter network arch {a.get('arch')!r} is not supported ({list(ARCH_TAGS)})")
     tg = dict(T=a.get('T', 6), zmax=a.get('zmax', 0.6)) if a.get('arch') in ('fourpi_emitter', 'fourpi_prior') else {}   # T = 6 tags: the defaults
     zl = dict(zip(('zmin', 'zmax'), a['zlut'])) if a.get('zlut') else {}
-    if ARCH_TAGS[a.get('arch')] == 'FourPiEmitterNet':
+    if cls == 'FourPiEmitterNet':
         if a.get('arch') == 'fourpi_emitter': tg.update(vread=a['vread'], excess=a.get('excess', True))
         net = FourPiEmitterNet(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins']), bound=a.get('bound', 1.0), nbr_in=a.get('nbr_in', False), **tg).to(dev).eval()
         net.load_state_dict(ck['state']); net.lut = LUT4Pi(ck['psf'], P=15, dev=dev, **zl)

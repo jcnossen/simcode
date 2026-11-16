@@ -10,7 +10,7 @@ import numpy as np, torch
 from simcode.simulate import gate_layouts as ST
 from simcode.simulate.gate_layouts import CD, S
 from simcode.simulate import crlb as CR
-from simcode.benchmark import gate as GA
+from simcode.benchmark import gate_scenes as GA
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(REPO, 'out', 'crlbcmp', 'crlbfree')

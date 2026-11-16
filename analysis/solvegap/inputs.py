@@ -30,11 +30,11 @@ def gls_I(eI, Ig, pt, X, Y, Sig):
     return np.linalg.solve(A, b[..., None])[..., 0][:, :2]
 
 
-CALF = {1: 'calib_sc_hd_m1809.json', 2: 'calib_p2L_m1809.json'}
+CALF = {1: 'archive_2d/m1809/calib/calib_emitter_pass1_sim.json', 2: 'archive_2d/m1809/calib/calib_emitter_pass2_sim.json'}
 
 
 def main(ps):
-    cal = json.load(open(os.path.join(REPO, 'models', 'calib', CALF[ps])))
+    cal = json.load(open(os.path.join(REPO, 'models', CALF[ps])))
     rng = np.random.default_rng(1)
     rows = {k: [] for k in ('ph', 'sf', 'I', 'Ig', 'L', 'pt', 'gt', 'CI', 'es0', 'kap', 'ep')}
     for sd in (301, 302, 303):

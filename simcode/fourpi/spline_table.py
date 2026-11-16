@@ -1,7 +1,7 @@
-"""Spline LUT of the coherent 4Pi PSF (simcode/fourpi/psf4pi.py), with the 4Pi phase offset as an exact analytic
+"""Spline LUT of the coherent 4Pi PSF (simcode/fourpi/coherent_psf.py), with the 4Pi phase offset as an exact analytic
 dependence.
 
-For a global interferometer phase offset Phi (psf4pi phi_extra) every channel image is exactly
+For a global interferometer phase offset Phi (coherent_psf phi_extra) every channel image is exactly
     g_c(x, y, z; Phi) = inc_c(x, y, z) + cos(Phi) cr_c(x, y, z) - sin(Phi) ci_c(x, y, z)
 (inc = incoherent part, cr + i ci = coherent cross term). The three components per channel are tabulated from
 g(0), g(pi), g(pi/2) as 12 Catmull-Rom spline z-stacks: torch_psf.CubicSplinePSF instances created with their knots set
@@ -10,7 +10,7 @@ directly (the convolutional 3D spline of torch-spline-3d).
 LUT4Pi(psf, zmin, zmax).evaluate(pos [N,3], Phi [N], grad=False) -> [N,4,P,P] (and d/dx, d/dy, d/dz, d/dPhi).
 
 Optional keys of the state (in-situ PSF, analysis/fourpi_plain/insitu4pi.py; states without them are unchanged):
-  'arms'    per-arm NA, n_med, apod, saf, pupil maps (simcode/fourpi/psf4pi.py set_arm_terms)
+  'arms'    per-arm NA, n_med, apod, saf, pupil maps (simcode/fourpi/coherent_psf.py set_arm_terms)
   'reg'     per-channel image offsets [C][2] px: channel c is tabulated at (x, y) + reg[c]
   'beta'    extra 4Pi phase beta z (rad / um): cr + i ci rotated by beta z in every plane
   'spline'  path of a refined knot table (analysis/fourpi_plain/p4spline_refine.py: K [3, C, nz, n, n] = the table
@@ -22,7 +22,7 @@ Optional keys of the state (in-situ PSF, analysis/fourpi_plain/insitu4pi.py; sta
 import math
 import torch
 from simcode.psf import CubicSplinePSF
-from simcode.fourpi.psf4pi import PSF4Pi, psf_from_state
+from simcode.fourpi.coherent_psf import PSF4Pi, psf_from_state
 
 
 def _lut_from_stack(G, P, S, zmin, zmax, hz, zpad, dev):

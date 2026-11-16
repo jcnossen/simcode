@@ -3,7 +3,7 @@ dense scene rs25qm in out/ablation_cov/fe_m1809a), fronts s1 (pass 1) and s2 (pa
 Per variant the calibration is re-fitted exactly as the production one (analysis/psfmatch/fit_cal_set.py = plib.fit_cal: tuning seed 202 of
 rs05qm + rs05pm, prior_off from iso; kap_p / kap_I2 per network-photon bin from the head's z-scores computed with the variant's own
 covariance, then the sigma factor per photon bin from the solved z-scores); sig_a / sig_g (the chi2 inflation) are inherited from the base
-calibration as in production. Check: variant A's refit must reproduce models/calib/calib_{sc_hd,p2L}_m1809.json.
+calibration as in production. Check: variant A's refit must reproduce models/archive_2d/m1809/calib/calib_emitter_pass{1,2}_sim.json.
 Evaluation seeds 301-303 (302 max for rs25qm): detector-matched targets, resolvable (multi-emitter CRLB < 25 nm), per GT-photon bin:
 RMS / CRLB (+ FOV-bootstrap 95 % CI), paired difference vs A on common targets (FOV bootstrap), trimmed, gross (|e| > 5 CRLB), bias (nm),
 zcal (robust sd of e / sigma), sd of the clipped z, fraction |z| > 3, and the ranking use of sigma: RMS (nm) of the 45 % of rows with the
@@ -20,7 +20,7 @@ from simcode.util import proctitle
 from scipy.stats import spearmanr
 proctitle.set_title('covabl')
 OUT = os.path.join(REPO, 'out', 'ablation_cov'); FE = os.path.join(REPO, 'out', 'psfmatch', 'fe_m1809a'); FE2 = f'{OUT}/fe_m1809a'
-PROD = dict(s1='calib/calib_sc_hd_m1809.json', s2='calib/calib_p2L_m1809.json')
+PROD = dict(s1='archive_2d/m1809/calib/calib_emitter_pass1_sim.json', s2='archive_2d/m1809/calib/calib_emitter_pass2_sim.json')
 SCN = ['iso', 'pair2', 'pair1', 'rs05qm', 'rs05pm', 'rs25qm']
 BINS = [(200, 2000), (200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 4000), (4000, 1e9)]
 

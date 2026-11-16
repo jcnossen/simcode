@@ -5,7 +5,7 @@ For one run directory (simcode.run output with pass1_<f0>.npz, pass2_est_<f0>.np
           and a FRINGE-ONLY solve: same intensities, covariance, pattern and calibration, but the position prior made flat
           (sigma 1e3 px) and a single start at the production solution (nf = 0, box 0.5 px), i.e. the local optimum of the
           intensity likelihood alone (no pull of the network position prior); its Fisher sigma s_fringe.
-  pass 2  the pass-2 networks are re-run on the movie (front_fast.Pass2FrontFast.run_chunk(return_head=True), same model / pattern /
+  pass 2  the pass-2 networks are re-run on the movie (inference_fast.Pass2FrontFast.run_chunk(return_head=True), same model / pattern /
           calibration as the run) -> production solve (checked against pass2_est2) and the same fringe-only solve.
 Also stored: the prior sigma the solve uses (exp(lsxy) kap_p) and the production Fisher sigma, for the prior-weight decomposition.
 Model files are read from the run's run_config.json; nothing in the run directory is written.
@@ -40,7 +40,7 @@ def fringe_only(o, PW, bw, cal, r_start):
 
 
 class PAggRecorder:
-    """wraps simcode.detector.select.select_subpixel (read at call time by front_fast.QueuedFront.run) and records, per kept
+    """wraps simcode.detector.select.select_subpixel (read at call time by inference_fast.QueuedFront.run) and records, per kept
     candidate, the AGGREGATED detection probability p_agg = p + the p of the pixels it suppresses in the sub-pixel NMS (same
     emitter: their point within the NMS radius, lower score), clipped to 1. The detector is trained on one target cell per
     emitter, so an emitter on a pixel edge splits its probability between two cells; p_agg puts it back together (the
@@ -113,7 +113,7 @@ def main():
     if a.emitter_pass2: RC['emitter_pass2'] = a.emitter_pass2
     print('settings', {k: RC[k] for k in ('detector_pass2', 'emitter_pass2', 'cal_pass2', 'cal')}, flush=True)
     from simcode.processing.common import load_calib, pattern_frames, region
-    from simcode.processing.front_fast import Pass2FrontFast
+    from simcode.processing.inference_fast import Pass2FrontFast
     from simcode.io.movie import open_movie
     dev = 'cuda'
     Pt = torch.load(f'{d}/pattern_est.pt')

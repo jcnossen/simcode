@@ -18,7 +18,7 @@ Pass 2 (illum 1): the pass-1 detector + illumination inputs, zero-initialised fr
 --illum: default = that of --init (0 without --init). Pass 2 without --init starts from the default model's pass-1 detector.
 Checkpoints {'model', 'args' (arch = model.ARCH, ch, stem_ch, up = 1, illum), 'step'} -> <out>/ckpt_<step>.pt, <out>/final.pt.
 usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/det --calib <psf.json> ...
-       CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/p2det --illum 1 --init runs/det/final.pt --calib <psf.json> ...
+       CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/detector_pass2 --illum 1 --init runs/det/final.pt --calib <psf.json> ...
        python -m simcode.detector.train --check 1          (zero-init check: a pass-2 detector from a pass-1 one == that detector)
        python -m simcode.detector.train --stats 40         (pass-1 training-mix statistics: target photons, nn bins)
 (models/README.md: the recipe of a model.)
@@ -26,7 +26,7 @@ usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.detector.train --out runs/det --
 import argparse, json, os, time
 import numpy as np, torch
 import torch.nn.functional as F
-from simcode.util.ckpt import save as ckpt_save     # atomic checkpoint write with a disk guard
+from simcode.util.checkpoint import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode import config
 from simcode.detector.model import ARCH, Detector, build, is_pass2, n_params
 from simcode.detector.select import select_points
@@ -74,7 +74,7 @@ def make_pattern_hold(gen, n=24, nb=16, seed=777):
 @torch.no_grad()
 def eval_pattern_hold(net, H, thr=0.5):
     """recall (1 px, one-to-one, targets >= 1 on-frame, >= 200 window photons, interior) per nn bin x photon bin, FP / window"""
-    from simcode.benchmark.gate_report import match
+    from simcode.benchmark.gate_scenes_report import match
     was = net.training; net.eval()
     rec = {}; nfp = 0; nw = 0
     for h in H:
@@ -144,7 +144,7 @@ def main(argv=None):
         a.illum = int(bool(a.init) and is_pass2(torch.load(config.resolve(a.init), map_location='cpu', weights_only=False)['model']))
     for k, v in DEFAULTS[a.illum].items():
         if getattr(a, k) is None: setattr(a, k, v)
-    from simcode.util.proctitle import set_title; set_title('train-p2det' if a.illum else 'train-det')     # name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('train-detector-pass2' if a.illum else 'train-detector')     # name in nvidia-smi / ps
     (train_pass2 if a.illum else train_pass1)(a)
 
 
@@ -234,8 +234,8 @@ def train_pass2(a):
     Hd = make_pattern_hold(gen)
     if a.no_illum:
         for h in Hd: h['illum'] = torch.zeros_like(h['illum'])
-    n1, _ = load_det(a.pass1_ref)
-    ref = eval_pattern_hold(n1, Hd); del n1
+    det1, _ = load_det(a.pass1_ref)
+    ref = eval_pattern_hold(det1, Hd); del det1
     ev0 = eval_pattern_hold(net, Hd)
     json.dump(dict(pass1_ref=ref, pass2_init=ev0), open(a.out + '/eval_ref.json', 'w'), indent=1)
     print('REF pass-1 detector', json.dumps(ref), '\nINIT pass 2', json.dumps(ev0), flush=True)
@@ -295,9 +295,9 @@ def check():
     torch.manual_seed(0)
     gen = TrainingBatches(64, 64, 6, seed=0, p_std=P_STD)
     o = gen.illumination_batch(4)
-    n1, _ = load_det(config.DETECTOR); p2 = load_for_training(config.DETECTOR, True).eval()
+    det1, _ = load_det(config.DETECTOR); p2 = load_for_training(config.DETECTOR, True).eval()
     with torch.no_grad():
-        a = n1(o['frames']); b = p2(o['frames'], o['illum_input'])
+        a = det1(o['frames']); b = p2(o['frames'], o['illum_input'])
     print('max |dlogit|', float((a['logit'] - b['logit']).abs().max()), 'max |ddxy|', float((a['dxy'] - b['dxy']).abs().max()))
     print('illum maps', o['illum_input'].shape, float(o['illum_input'][:, :6].std()), float(o['illum_input'][:, 6:].std()))
     print('patt err phase', float((o['patt_input'][..., 2] - o['patt'][..., 2]).std()), 'depth', float((o['patt_input'][..., 3] - o['patt'][..., 3]).mean()))

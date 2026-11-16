@@ -50,7 +50,7 @@ def sel12(R, sa):
     m = (R['sc_score'] >= 0.63) & (np.maximum(sa['sx'], sa['sy']) * P.PX <= 12.0)
     r = P.detect(R, sa['x'], sa['y'], m)
     idx = np.nonzero(m)[0]
-    from simcode.benchmark.gate_report import match
+    from simcode.benchmark.gate_scenes_report import match
     og = match(R['gt_fov'], R['gt_x'], R['gt_y'], R['sc_b'][idx], sa['x'][idx], sa['y'][idx], 0.5)
     ok = og >= 0
     e = np.c_[sa['x'][idx][ok] - R['gt_x'][og[ok]], sa['y'][idx][ok] - R['gt_y'][og[ok]]]

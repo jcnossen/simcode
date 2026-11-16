@@ -1,15 +1,15 @@
 {
  "m1809": {
   "psf": "calib_1809_2_psf_v2.psf.zip",
-  "detector": "det_m1809.pt",
-  "emitter": "hd_m1809.pt",
-  "cal_sim": "calib/calib_sc_hd_m1809.json",
-  "cal_real": "calib/calib_sc_hd_m1809_real.json",
-  "detector_pass2": "p2det_m1809.pt",
-  "emitter_pass2": "p2headL_m1809.pt",
-  "cal_sim_pass2": "calib/calib_p2L_m1809.json",
-  "cal_real_pass2": "calib/calib_p2L_m1809_real.json",
-  "sig_u": "calib/sigu_p1_m1809.json,calib/sigu_p2_m1809.json"
+  "detector": "detector_pass1.pt",
+  "emitter": "emitter_pass1.pt",
+  "cal_sim": "calib/calib_emitter_pass1_sim.json",
+  "cal_real": "calib/calib_emitter_pass1_real.json",
+  "detector_pass2": "detector_pass2.pt",
+  "emitter_pass2": "emitter_pass2.pt",
+  "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
+  "cal_real_pass2": "calib/calib_emitter_pass2_real.json",
+  "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
  },
  "_recipe": {
   "trainer_chain": "/home/jc/simcode2/out/psf_v2/train/chain.sh m1809v2 (logs out/psf_v2/train/m1809v2/; frozen source src_da9fe7d, branch rename)",

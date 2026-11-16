@@ -42,13 +42,15 @@ def fixed_batch():
 
 def checkpoints(md):
     """(detector checkpoints, emitter-network checkpoints) under the models directory (by state dict content)"""
+    from simcode.emitter.model import ARCH
+    from simcode.util.legacy_names import EMITTER_ARCH_TAGS
     dets, nets = [], []
     for f in sorted(glob.glob(f'{md}/**/*.pt', recursive=True)):
         c = torch.load(f, map_location='cpu', weights_only=False)
         if not isinstance(c, dict) or 'model' not in c: continue
         sd = c['model']; a = c.get('args') or {}
         if 'cin.weight' in sd and 'e0.0.c1.weight' in sd: dets.append(f)
-        elif 'wmap.0.weight' in sd and (a.get('arch') in ('sc4n', 'emitter_net') or 'no_illum' in a): nets.append(f)
+        elif 'wmap.0.weight' in sd and (EMITTER_ARCH_TAGS.get(a.get('arch'), a.get('arch')) == ARCH or 'no_illum' in a): nets.append(f)
     return dets, nets
 
 
@@ -73,7 +75,7 @@ def outputs():
         with torch.no_grad(), torch.autocast('cuda', dtype=torch.bfloat16):
             o = net(fr, il) if net.illum else net(fr)
         for k, v in o.items(): R[f'det|{rel(f)}|{k}'] = v.float().cpu()
-    det, _ = load_det(f'{md}/m1809/det_m1809.pt')
+    det, _ = load_det(f'{md}/m1809/detector_pass1.pt')
     with torch.no_grad():
         with torch.autocast('cuda', dtype=torch.bfloat16):
             dd = det(fr)

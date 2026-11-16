@@ -31,7 +31,7 @@ GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fou
 XLIM = tuple(acquisition('MT')['fourpi']['xlim'])
 movie_file = lambda cell, fi: S4.movie_file(acquisition(cell), fi)
 movie_files = lambda cell: S4.movie_files(acquisition(cell))
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.io.movie import Prefetch
 from simcode.io.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
 from cl4pi import Classic4Pi

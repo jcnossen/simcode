@@ -16,7 +16,7 @@ dev = 'cpu'
 
 def run():
     from simcode.config import root
-    from simcode.fourpi.lut4pi import LUT4Pi
+    from simcode.fourpi.spline_table import LUT4Pi
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.emitter.fourpi import FourPiPrior, FourPiEmitterNet, WINDOWS_K, solve_loss, linear_readout, border_bg

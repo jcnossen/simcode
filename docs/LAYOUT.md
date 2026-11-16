@@ -58,7 +58,7 @@ simcode/
     solve_fast.py             the same solve, fast (production; solve_emitters_fast, optional compiled LM step)
     pattern.py                pattern geometry of the solve (illumination at a position, angle index, fringe shifts, kinetics starts, chi2 p-value)
     z_conditioning.py         z after the solve: the network's 3D prior conditioned on the solved x, y; pass-2 rows linked to pass-1 candidates for their z
-    autoc.py                  opt-in automatic noise scale (s, c, c_a) of the network intensities from the solve's own residuals (analysis only)
+    brightness_noise_fit.py   opt-in automatic noise scale (s, c, c_a) of the network intensities from the solve's own residuals (analysis only)
     fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background; T frames, k None = no pattern), kinetics starts
   pattern/
     __init__.py               package doc
@@ -67,9 +67,9 @@ simcode/
     __init__.py               package doc
     run_uncalibrated.py       expert entry point with all flags; run.py calls its stages; chunks are the units of io/work.py
     common.py                 read plan of the chunks, pass-1 chunk rows, camera conversion, calibration / PSF loading, pattern_frames, CAND_PMIN
-    front.py                  reference pass 1 (Pass1Front; test oracle) and z_inputs (stored pass-1 z as solve input)
-    pass2_front.py            reference pass 2 with the pattern-aware networks (Pass2Front); test oracle
-    front_fast.py             the pipeline's code path: queued fixed-size batches for pass 1 / pass 2 (Pass1FrontFast, Pass2FrontFast) and the chunk-wide pattern solve
+    pass1_inference.py        reference pass 1 (Pass1Front; test oracle) and z_inputs (stored pass-1 z as solve input)
+    pass2_inference.py        reference pass 2 with the pattern-aware networks (Pass2Front); test oracle
+    inference_fast.py         the pipeline's code path: queued fixed-size batches for pass 1 / pass 2 (Pass1FrontFast, Pass2FrontFast) and the chunk-wide pattern solve
     pattern_estimation.py     the illumination pattern from the pass-1 rows (k, per-step phases, depth, relative intensities, per-angle phase drift)
     pattern_field.py          evaluation of a per-cell phase map and smooth depth field on top of the global pattern (field_at; analysis only)
     gate_dump.py              raw network outputs of pass 1 / pass 2 on the gate scenes (input of a model's calibration fit): python -m simcode.processing.gate_dump
@@ -88,9 +88,9 @@ simcode/
     multichannel.py           MultiChannelAcquisitionSim: full multi-channel scenes through the registration maps of CellSpec acquisitions (4Pi detector training, simulated movies; patterns=False: plain 4Pi with T frames; random registration error), candidate_patches (plain-4Pi emitter-network training)
   benchmark/
     __init__.py               package doc
-    gate.py                   the gate suite: fixed simulated scenes (isolated, pairs, realistic) through a front end: python -m simcode.benchmark.gate
-    gate_report.py            detection, precision and intensity metrics of gate outputs
-    gate_report_detector_matched.py  gate report with the precision targets matched on the detector position
+    gate_scenes.py            the gate suite: fixed simulated scenes (isolated, pairs, realistic) through a front end: python -m simcode.benchmark.gate_scenes
+    gate_scenes_report.py     detection, precision and intensity metrics of gate outputs
+    gate_scenes_report_detector_matched.py  gate report with the precision targets matched on the detector position
   calibration/
     __init__.py               default input / output locations of the in-situ calibration
     extract_tracks.py         isolated emitter tracks (raw regions over consecutive frames)
@@ -139,17 +139,18 @@ simcode/
     fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name); FourPiPlainSetup (fourpi_plain): no pattern, fourpi.window frames, the training recipe (section fourpi_train, sim_kw)
   fourpi/                     the 4Pi PSF until torch-psf ships it (torch_psf.FourPiPSF on the torch-psf branch multichannel)
     __init__.py               package doc
-    psf4pi.py                 coherent two-arm vectorial 4Pi PSF with four interference channels
-    lut4pi.py                 spline lookup table of that PSF, 4Pi phase analytic
+    coherent_psf.py           coherent two-arm vectorial 4Pi PSF with four interference channels
+    spline_table.py           spline lookup table of that PSF, 4Pi phase analytic
   util/
     __init__.py               package marker
-    ckpt.py                   atomic checkpoint save with a disk guard (every trainer)
+    checkpoint.py             atomic checkpoint save with a disk guard (every trainer)
     compile.py                optional torch.compile support of the fast paths
     drift.py                  lateral drift of a table with the external DME v2 package (drift_of_table)
     runconfig.py              the run record run_config.json (+ yaml): settings, hashes, code / environment, outcome; re-run, verify
-    cfgdict.py                ConfigDict: nested settings with attribute access, deep merge, freeze, yaml / json / Python loading
+    config_dict.py            ConfigDict: nested settings with attribute access, deep merge, freeze, yaml / json / Python loading
+    legacy_names.py           the one map of names that exist only in stored data (earlier checkpoint arch tags, format-1 run-record keys), used by the readers
     proctitle.py              recognizable process names in nvidia-smi / ps
-    spatial_hash.py           GPU / CPU neighbour search (pattern estimation, autoc, pass-1 linking)
+    spatial_hash.py           GPU / CPU neighbour search (pattern estimation, brightness_noise_fit, pass-1 linking)
 ```
 
 ## Checkpoints
@@ -159,11 +160,24 @@ Network checkpoints are plain state dicts with the training arguments (`{'model'
 - `detector.model.load`: pass 1 or pass 2 from the state dict (illumination weights `cin_il`), channel widths from the args
   (new checkpoints also carry `args['arch'] = 'detector'`).
 - `emitter.model.load`: the architecture tag `args['arch'] = 'emitter_net'` (new checkpoints; the earlier pass-1 checkpoints store
-  the tag `'sc4n'` of the same network, mapped by `ARCH_TAGS`; the earlier pass-2 ones carry none), pass 1 or
-  pass 2 from the state dict (`cin_il`), 2D checkpoints (before 2026-11-14) with zero z rows (`net.z3d` False).
+  an earlier tag of the same network, read through `util/legacy_names.EMITTER_ARCH_TAGS`; the earlier pass-2 ones carry none),
+  pass 1 or pass 2 from the state dict (`cin_il`), 2D checkpoints (before 2026-11-14) with zero z rows (`net.z3d` False).
+- `emitter.fourpi.load`: `'fourpi_emitter'` / `'fourpi_prior'`; the 4Pi checkpoints trained before 2026-11-15 through
+  `util/legacy_names.FOURPI_ARCH_TAGS`.
+The stored tags are not rewritten: every shipped pass-1 checkpoint has the earlier tag, and rewriting would change the sha256
+recorded in model.json files and run records.
 Every checkpoint of `models/` (models.json models, model folders, `archive_*`, the other weights) and the 4Pi detector /
-heads give bit-identical outputs with the code before and after the 2026-11-15 reorganisation
+heads give bit-identical outputs with the code before and after the 2026-11-15 reorganisation and the 2026-11-16 rename
 (`tests/check_model_outputs.py`).
+
+## Model files
+
+A model folder (`models/<name>/`, written by `simcode.pipeline.training`; names in `config.MODEL_FILES`):
+`detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt`, `calib/calib_emitter_pass1_sim.json`,
+`calib/calib_emitter_pass1_real.json`, `calib/calib_emitter_pass2_sim.json`, `calib/calib_emitter_pass2_real.json`,
+`calib/sigma_rescale_pass1.json`, `calib/sigma_rescale_pass2.json`, the PSF it was trained on, `model.json`. The networks
+a new model starts from: `models/pretrain_detector_pass1.pt`, `models/pretrain_emitter_pass1.pt`; the calibration templates
+of a new model: `models/calib/template_calib_emitter_pass{1,2}_{sim,real}.json` (`models/README.md`).
 
 ## Outside the package
 
@@ -180,16 +194,42 @@ heads give bit-identical outputs with the code before and after the 2026-11-15 r
   - `maintenance/`: `rename_model_keys.py` (model.json key names), `cleanup_outputs.py` (out/ + models/ clean-up, dry run by default)
   - archived on 2026-11-15 (git tag `archive-2026-11-15`, `docs/ARCHIVE.md`): nanoruler, tput, hd_compare, evalproto, gate, dme, psfshape, most of figures, the development parts of baselines / papersim / simreal / psf3d / z3d / fourpi; deleted: zimflux.
 - `models/`: calibrations (`calib/`, `insitu/`), model folders (`model.json`, calibrations, README); network weights are not in git (`models/README.md`).
-- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_cfgdict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
+- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_config_dict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
 - `docs/`: this file, method, evaluation, results (development phase), usage, dataset format, automatic pipeline, PSF polarization note, the cleanup log, the cleanup candidate list and the archive index (`ARCHIVE.md`).
+
+## Renamed (2026-11-16)
+
+File names of the models directory and module names from the development iterations. No aliases: the only old names left
+in the code are the tags stored in earlier checkpoints / run records (`util/legacy_names.py`). Run-output file names
+(`pass1_<f0>.npz`, gate-scene files `<scene>__s<seed>_hd_<tag>.npz`, dump front names given on the command line) and the
+directories under `out/` keep their names.
+
+| before | after |
+|---|---|
+| `processing/front.py`, `processing/pass2_front.py`, `processing/front_fast.py` | `processing/pass1_inference.py`, `processing/pass2_inference.py`, `processing/inference_fast.py` |
+| `solve/autoc.py`; `config.CAL_AUTOC` / `CAL_AUTOC_START`; run record `fixed.autoc` | `solve/brightness_noise_fit.py`; `config.CAL_BRIGHTNESS_NOISE_FIT` / `CAL_BRIGHTNESS_NOISE_FIT_START`; `fixed.brightness_noise_fit` |
+| `fourpi/psf4pi.py`, `fourpi/lut4pi.py` | `fourpi/coherent_psf.py`, `fourpi/spline_table.py` (classes unchanged: PSF4Pi, LUT4Pi) |
+| `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `tests/check_spline_table_insitu.py` |
+| `benchmark/gate.py`, `gate_report.py`, `gate_report_detector_matched.py` | `benchmark/gate_scenes.py`, `gate_scenes_report.py`, `gate_scenes_report_detector_matched.py` |
+| `emitter.model.ARCH_TAGS`, the legacy part of `emitter.fourpi.ARCH_TAGS`, `runconfig.KEYS_FORMAT1` | `util/legacy_names.py` (EMITTER_ARCH_TAGS, FOURPI_ARCH_TAGS, RUN_RECORD_FORMAT1_KEYS / _FIXED) |
+| model folder `<set>/`: `det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`, `p2headL_<set>.pt` | `detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt` |
+| `<set>/calib/calib_sc_hd_<set>.json`, `calib_sc_hd_<set>_real.json`, `calib_p2L_<set>.json`, `calib_p2L_<set>_real.json`, `sigu_p1_<set>.json`, `sigu_p2_<set>.json` | `calib_emitter_pass1_sim.json`, `calib_emitter_pass1_real.json`, `calib_emitter_pass2_sim.json`, `calib_emitter_pass2_real.json`, `sigma_rescale_pass1.json`, `sigma_rescale_pass2.json` (the same in `archive_2d/`, `archive_psf_v1/`, `archive_pass2_dedicated/`) |
+| `det_n1.pt`, `hd_sc5nb.pt` | `pretrain_detector_pass1.pt`, `pretrain_emitter_pass1.pt` (`config.PRETRAIN_DETECTOR` / `PRETRAIN_EMITTER`) |
+| `calib/calib_sc_hd_sc5nbb15_pm.json`, `_pm_bright.json`, `_pm_bright_real.json`, `_pm_autoc1.json`, `calib/calib_p2L.json`, `calib/calib_p2L_b10_real.json` | `calib/template_calib_emitter_pass1_base.json`, `template_calib_emitter_pass1_sim.json`, `template_calib_emitter_pass1_real.json`, `template_calib_emitter_pass1_brightness_noise_fit.json`, `template_calib_emitter_pass2_sim.json`, `template_calib_emitter_pass2_real.json` (`config.TEMPLATE_CAL_*`) |
+| `calib/calib_sc_hd_sc5nbb15_pm_autoc.json`, `calib_p2L_movie_b10.json`, `calib_autoc_r05 / r25 / r20.json`, `sigu/sigu_p1_cur.json`, `sigu_p2_cur.json` (unused) | `archive_superseded/previous_default/calib/calib_emitter_pass1_brightness_noise_fit_first.json`, `calib_emitter_pass2_sim_movie.json`, `calib_emitter_pass1_brightness_noise_fit_{0.5nM,2.5nM,20nM}.json`, `sigma_rescale_pass{1,2}.json` |
+| `calib/calib_{sc_hd,p2L}_{m1809,m25,g13}{,_real}.json`, `calib/sigu/sigu_p{1,2}_{m1809,m25,g13}.json` (copies of the 2D models' calibrations) | removed; the byte-identical originals are `archive_2d/<set>/calib/` (new names above) |
+| `archive_p2dedicated/`, `archive_p2generic/p2det_<g>.pt`, `p2headL_<g>.pt`, `calib/calib_p2L_<g>{,_real}.json`, `calib/sigu/sigu_p2_g2ss.json` | `archive_pass2_dedicated/`, `archive_pass2_generic/<g>/detector_pass2.pt`, `emitter_pass2.pt`, `calib/calib_emitter_pass2_{sim,real}.json`, `calib/sigma_rescale_pass2.json` |
+| `archive_superseded/p2_det.pt`, `p2_head_long.pt`, `{det,hd,p2det,p2headL}_psf3dmix.pt`, `p2{det,headL}_psf3dmix_pair.pt`, `p2{det,headL}_gnr80.pt`, `hd_abl1809_{avg,ax}.pt`, `hd_sc7bg.pt` | `archive_superseded/previous_default/{detector,emitter}_pass2.pt`, `psf3dmix/{detector,emitter}_pass{1,2}.pt`, `psf3dmix_pair/…_pass2.pt`, `gnr80/…_pass2.pt`, `ablation_1809_{avg,ax}/emitter_pass1.pt`, `earlier_architecture/emitter_pass1.pt` |
+| `processing.gate_dump` front names `p1`, `p2L` (default `--fronts p1,p2L`) | `pass1`, `pass2` |
+| process titles `train-p2det` / `train-det` | `train-detector-pass2` / `train-detector` |
 
 ## Renamed (2026-11-15)
 
-No aliases or old names remain. Checkpoint files are unchanged (read by format readers); run records, model.json files and
+Old names in the column "before"; the "after" column is the state of 2026-11-15 (renamed again on 2026-11-16 above). Checkpoint files are unchanged (read by format readers); run records, model.json files and
 CLI flags use the new names; run-output file names (pass1_<f0>.npz, pass2_est2_<f0>.npz; the tables locs_p*.npz became locs_p*.hdf5 on 2026-11-15) and the gate-dump
 column names are unchanged.
 
-| before | now |
+| before | after |
 |---|---|
 | `auto/` (pipeline.py, config.py, order.py, psffit.py, stage_psf.py, train.py, runwrap.py, accept.py, …) | `pipeline/` (localization_pipeline.py, acquisition_config.py, frame_order.py, psf_fit.py, psf_stage.py, training.py, run_with_overrides.py, acceptance.py, …) |
 | `pipeline/` (sc_front.py, sc_front_fast.py, pattern_est.py, …), `p2/front.py`, `p2/dump.py` | `processing/` (front.py, front_fast.py, pattern_estimation.py, …, pass2_front.py, gate_dump.py) |

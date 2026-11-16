@@ -84,7 +84,7 @@ def resolve(p, kind='models'):
 
 
 def model(name):
-    """network / calibration file shipped in the models directory, e.g. model('det_n1.pt'), model('calib/x.json')"""
+    """network / calibration file shipped in the models directory, e.g. model('pretrain_detector_pass1.pt'), model('calib/x.json')"""
     return resolve(name, 'models')
 
 
@@ -170,8 +170,20 @@ CAL_REAL = _S['cal_real']                                      # pass-1 solve ca
 CAL_SIM = _S['cal_sim']                                        # same, sim sigma table (gate scenes)
 CAL_REAL_PASS2 = _S['cal_real_pass2']                          # pass-2 solve calibration, real-data sigma
 CAL_SIM_PASS2 = _S['cal_sim_pass2']                            # pass-2, sim sigma (gate scenes)
-# calibrations that exist only for the earlier default emitter network (hd_sc5nb): the sigma table of the opt-in automatic-(c, c_a)
-# estimator (solve/autoc.py), and the templates from which the calibration of a new model is fitted (analysis/psfmatch/fit_cal_set.py)
-CAL_AUTOC = 'calib/calib_sc_hd_sc5nbb15_pm_autoc1.json'
-CAL_AUTOC_START = 'calib/calib_sc_hd_sc5nbb15_pm_bright.json'
+# calibrations of the pretraining networks (pretrain_detector_pass1 + pretrain_emitter_pass1): the sigma table of the opt-in automatic
+# (s, c, c_a) fit (solve/brightness_noise_fit.py) and its start; the templates from which the calibration of a new model is fitted
+# (analysis/psfmatch/fit_cal_set.py) are TEMPLATE_CAL_*
+CAL_BRIGHTNESS_NOISE_FIT = 'calib/template_calib_emitter_pass1_brightness_noise_fit.json'
+TEMPLATE_CAL_SIM = 'calib/template_calib_emitter_pass1_sim.json'           # pass 1, sim sigma
+TEMPLATE_CAL_REAL = 'calib/template_calib_emitter_pass1_real.json'         # pass 1, real-data sigma multiplier
+TEMPLATE_CAL_SIM_PASS2 = 'calib/template_calib_emitter_pass2_sim.json'     # pass 2, sim sigma
+TEMPLATE_CAL_REAL_PASS2 = 'calib/template_calib_emitter_pass2_real.json'   # pass 2, real-data sigma multiplier
+PRETRAIN_DETECTOR = 'pretrain_detector_pass1.pt'                         # start of a new pass-1 detector (4Pi) / default detector of the emitter trainer
+PRETRAIN_EMITTER = 'pretrain_emitter_pass1.pt'                           # start of a new pass-1 emitter network
+CAL_BRIGHTNESS_NOISE_FIT_START = TEMPLATE_CAL_SIM
+# file names inside a model folder (model.json; simcode.pipeline.training writes them)
+MODEL_FILES = dict(detector='detector_pass1.pt', emitter='emitter_pass1.pt', detector_pass2='detector_pass2.pt', emitter_pass2='emitter_pass2.pt',
+                   cal_sim='calib/calib_emitter_pass1_sim.json', cal_real='calib/calib_emitter_pass1_real.json',
+                   cal_sim_pass2='calib/calib_emitter_pass2_sim.json', cal_real_pass2='calib/calib_emitter_pass2_real.json',
+                   sig_u='calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json')
 INSITU_05 = 'insitu/calib_0.5nM.json'                          # in-situ PSF + camera calibration, 0.5 nM movie (default PSF of the gate scenes)

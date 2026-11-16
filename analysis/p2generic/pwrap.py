@@ -1,7 +1,7 @@
 """Run a simcode module (gate, dump, trainer, ...) with the AcquisitionSim presets patched in memory from a json (no package file is
 edited by this wrapper): env P2G_PRESET = {"common": {...}, "0.5nM": {...}, "2.5nM": {...}} (keys as acquisition.PRESETS, incl. the
 opt-in keys of 2026-11-13 generic p2). Process title env P2G_TITLE (default 'p2gen').
-    python analysis/p2generic/pwrap.py simcode.benchmark.gate --scen iso ... (the module's own arguments)
+    python analysis/p2generic/pwrap.py simcode.benchmark.gate_scenes --scen iso ... (the module's own arguments)
 Without P2G_PRESET the module runs unchanged."""
 import json, math, os, runpy, sys
 sys.path.insert(0, '/home/jc/simcode2')

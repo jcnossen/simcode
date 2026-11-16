@@ -52,7 +52,7 @@ def context(c):
     net, ck = load_emitter(f['emitter'])
     net.use_cs = f['learned_cs']
     if f.get('lut_psf'):          # the network's PSF table from another PSF json (fourpi.lut_psf)
-        from simcode.fourpi.lut4pi import LUT4Pi
+        from simcode.fourpi.spline_table import LUT4Pi
         zl = dict(zip(('zmin', 'zmax'), ck['args']['zlut'])) if ck['args'].get('zlut') else {}
         net.lut = LUT4Pi(json.load(open(f['lut_psf']))['psf'], P=15, dev=dev, **zl)
     det, _ = dload(f['detector'])

@@ -1,5 +1,5 @@
 """
-Reference implementation of the per-chunk pass 1 (run_uncalibrated stage pass1; the pipeline runs the fast version in front_fast.py,
+Reference implementation of the per-chunk pass 1 (run_uncalibrated stage pass1; the pipeline runs the fast version in inference_fast.py,
 this is the test oracle) and z_inputs (the stored pass-1 z outputs as solve inputs, used by the fast pattern solve). No linear-intensity stage anywhere: no
 pixel-level per-frame intensity fit, no wing subtraction, no pixel-level position refinement.
 
@@ -12,7 +12,7 @@ pixel-level per-frame intensity fit, no wing subtraction, no pixel-level positio
                          central half holds the time centroid of the network intensities, inside the crop, own frames),
                          in the pass-1 file format (wstart, x, y, sx, sy, z, p, phot, phot_t, I, sI, bg, out, tc, frame)
                          + L [n,6,6], x_det, y_det. pattern_estimation.py runs on these network intensities unchanged.
-  pattern solve          (stage pass1_solve: front_fast.run_chunk_pattern_solve_fast) the explicit intensity-domain pattern solve (simcode/solve/solve.solve_emitters: fringe starts,
+  pattern solve          (stage pass1_solve: inference_fast.run_chunk_pattern_solve_fast) the explicit intensity-domain pattern solve (simcode/solve/solve.solve_emitters: fringe starts,
                          kinetic model selection, box 1.5, calibrated sigma, fringe-start posterior mean) with
                          the estimated pattern (pattern_frames of pattern_est.pt) on the stored head outputs; output in
                          the pass-2 format (x_hy0, y_hy0, sig_hy0 (mean calibrated sigma), kin_hy, fringe_hy, pf_hy,

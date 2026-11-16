@@ -242,7 +242,7 @@ def classify(R, key, Dkey='D', c0key=None):
     return out
 
 
-CALF = {1: 'calib/calib_sc_hd_m1809.json', 2: 'calib/calib_p2L_m1809.json'}
+CALF = {1: 'archive_2d/m1809/calib/calib_emitter_pass1_sim.json', 2: 'archive_2d/m1809/calib/calib_emitter_pass2_sim.json'}
 
 
 def main(ps):

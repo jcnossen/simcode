@@ -42,7 +42,7 @@ class StageFailed(RuntimeError):
 
 class LocalizationPipeline:
     def __init__(self, cfg, gpus=None, log=None, quick=None):
-        """cfg: ConfigDict (simcode/util/cfgdict.py), dict, yaml / json path, or a Python file that defines one `config`;
+        """cfg: ConfigDict (simcode/util/config_dict.py), dict, yaml / json path, or a Python file that defines one `config`;
         validated against the schema of simcode/pipeline/acquisition_config.py in every form. self.c = the resolved plain dict."""
         self.c = C.load(cfg)
         from simcode import setups
@@ -97,7 +97,7 @@ class LocalizationPipeline:
     @property
     def cfg(self):
         """the resolved config as a read-only ConfigDict (pipe.cfg.optics.NA)"""
-        from simcode.util.cfgdict import ConfigDict
+        from simcode.util.config_dict import ConfigDict
         return ConfigDict({k: v for k, v in self.c.items() if not k.startswith('_')}).freeze()
 
     # ---- helpers
@@ -445,7 +445,7 @@ def main(argv=None):
     ap.add_argument('--show', action='store_true', help='print the resolved config(s) and exit (nothing is written)')
     a = ap.parse_args(argv)
     if a.show:
-        from simcode.util.cfgdict import ConfigDict
+        from simcode.util.config_dict import ConfigDict
         only = [n for n in a.only.split(',') if n]
         for c in C.load_all(a.config):
             if not only or c['name'] in only: print(ConfigDict(c))

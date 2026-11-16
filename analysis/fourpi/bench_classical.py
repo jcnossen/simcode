@@ -17,7 +17,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
-from simcode.fourpi.lut4pi import LUT4Pi
+from simcode.fourpi.spline_table import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j

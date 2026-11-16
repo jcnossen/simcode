@@ -330,7 +330,7 @@ def evaluate(model_or_spline, D, th, idx=None, central=4):
 def baked_spline(model, P=17, z_range=ZR, oversample=2, dz_um=0.02, zpad=3, xy_limit=2.5, chunk=128):
     """FourPiSplinePSF of model with its registration offsets (channel c tabulated at (x, y) + reg[c]) and the beta z
     phase baked into the knots (cr + i ci rotated by beta z), i.e. the table SIMCODE's LUT4Pi builds from the state
-    (simcode/fourpi/lut4pi.py table4pi); evaluate it with SplineModel(spl, reg=0, beta=0)"""
+    (simcode/fourpi/spline_table.py table4pi); evaluate it with SplineModel(spl, reg=0, beta=0)"""
     from torch_psf.spline import CubicSplinePSF
     p = model.psf
     geo = CubicSplinePSF(P, z_range, oversample=oversample, dz_um=dz_um, zpad=zpad, xy_limit=xy_limit, device='cpu')
@@ -360,7 +360,7 @@ def baked_spline(model, P=17, z_range=ZR, oversample=2, dz_um=0.02, zpad=3, xy_l
 
 
 def simcode_state(model):
-    """the SIMCODE PSF4Pi state of a Model4Pi (simcode/fourpi/psf4pi.py, lut4pi.py): the FourPiPSF parameter dict
+    """the SIMCODE PSF4Pi state of a Model4Pi (simcode/fourpi/coherent_psf.py, spline_table.py): the FourPiPSF parameter dict
     (without its 'raw' copy) + 'arms', 'reg', 'beta'"""
     st = model.state()
     s = dict(st['psf']); s.pop('raw', None)

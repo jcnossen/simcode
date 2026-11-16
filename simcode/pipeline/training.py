@@ -4,13 +4,13 @@ simcode/pipeline/run_with_overrides.py for the in-memory preset overrides of a n
 
 Steps (resumable: a trainer whose <dir>/final.pt exists is skipped; quick mode = train.quick_steps per trainer, in its own
 directory 'quick/'):
-  detector -> emitter (init hd_sc5nb) and detector_pass2 (zero-initialised from detector: the dedicated pass-2 detector, the
+  detector -> emitter (init models/pretrain_emitter_pass1.pt) and detector_pass2 (zero-initialised from detector: the dedicated pass-2 detector, the
   dataset's own pattern only) -> detector_pass2_mix (fine-tuned on the 50 / 50 mix of its own and generic patterns, lr 3e-4)
   -> detector_pass2_cont (the same mix, lr 1e-4); emitter_pass2 (detector = detector_pass2 at 25k steps, init emitter) ->
   emitter_pass2_long -> emitter_pass2_final (detector = detector_pass2). The pattern draw of the pass-2 stages is fixed in the
   trainers (simulate/batches.P_STD_DEDICATED / P_STD; generic patterns: simulate/acquisition.AcquisitionSim._generic): own
   pattern only in detector_pass2, half own / half generic in every other pass-2 stage (models/README.md)
-  gate scenes (simcode.benchmark.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (detector + emitter) and pass 2
+  gate scenes (simcode.benchmark.gate_scenes, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (detector + emitter) and pass 2
   (detector_pass2_cont + emitter_pass2_final)
   -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
@@ -91,19 +91,19 @@ def run(ds):
     from simcode import config as SC
     det_init = Tc['init']['detector'] or (SC.resolve(SC.model_set(Tc['real_mult_from'])['detector']) if quick else None)   # quick: a few steps on top of the template detector
     det = stage('detector', ['--init', det_init] if det_init else [])
-    hd = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if os.path.exists(hold) else []))
-    p2det = stage('detector_pass2', ['--illum', '1', '--init', det])
-    p2det_m = stage('detector_pass2_mix', ['--init', p2det, '--pass1_ref', det])
-    p2det_c = stage('detector_pass2_cont', ['--init', p2det_m, '--pass1_ref', det])
-    p25 = os.path.join(D, 'detector_pass2', 'ckpt_25000.pt')
-    p2head = stage('emitter_pass2', ['--detector', p25 if os.path.exists(p25) else p2det, '--init', hd])
-    p2headL = stage('emitter_pass2_long', ['--detector', p2det, '--init', p2head])
-    p2headL2 = stage('emitter_pass2_final', ['--detector', p2det, '--init', p2headL])
+    emitter = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if os.path.exists(hold) else []))
+    det2 = stage('detector_pass2', ['--illum', '1', '--init', det])
+    det2_mix = stage('detector_pass2_mix', ['--init', det2, '--pass1_ref', det])
+    det2_cont = stage('detector_pass2_cont', ['--init', det2_mix, '--pass1_ref', det])
+    det2_25k = os.path.join(D, 'detector_pass2', 'ckpt_25000.pt')
+    emitter2 = stage('emitter_pass2', ['--detector', det2_25k if os.path.exists(det2_25k) else det2, '--init', emitter])
+    emitter2_long = stage('emitter_pass2_long', ['--detector', det2, '--init', emitter2])
+    emitter2_final = stage('emitter_pass2_final', ['--detector', det2, '--init', emitter2_long])
     name = ('q' if quick else 'a') + c['name']
     M = os.path.join(D, 'models'); os.makedirs(M, exist_ok=True)
     files = {}
-    for k, f in (('detector', det), ('emitter', hd), ('detector_pass2', p2det_c), ('emitter_pass2', p2headL2)):
-        files[k] = os.path.join(M, f'{k}_{name}.pt'); shutil.copyfile(f, files[k])
+    for k, f in (('detector', det), ('emitter', emitter), ('detector_pass2', det2_cont), ('emitter_pass2', emitter2_final)):
+        files[k] = os.path.join(M, SC.MODEL_FILES[k]); shutil.copyfile(f, files[k])
     # ---- gate scenes, dumps, calibrations
     tag = 'g' + c['name']
     O = os.path.join(D, 'psfmatch'); G = os.path.join(O, 'gate_' + tag); FE = os.path.join(O, 'fe_' + tag)
@@ -112,23 +112,22 @@ def run(ds):
     nt = '400' if quick else '3500'
     env = dict(SIMCODE_GATE_CALIB=cal, SIMCODE_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
-        sh('gate', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.benchmark.gate', '--scen', scen, '--fronts', 'sc', '--emitter', 'hd_sc5nb.pt', '--cal',
-               'calib/calib_sc_hd_sc5nbb15_pm_bright.json', '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
+        sh('gate', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.benchmark.gate_scenes', '--scen', scen, '--fronts', 'sc', '--emitter', SC.PRETRAIN_EMITTER, '--cal',
+               SC.TEMPLATE_CAL_SIM, '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
               os.path.join(D, 'gate.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(G, 'done'), 'w').close()
     if not os.path.exists(os.path.join(FE, 'done')):
         sh('dump', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.processing.gate_dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
                f's1={files["detector"]}:{files["emitter"]},s2={files["detector_pass2"]}:{files["emitter_pass2"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W, env=env)
         open(os.path.join(FE, 'done'), 'w').close()
-    C = os.path.join(M, 'calib'); os.makedirs(C, exist_ok=True)
-    cals = dict(cal_sim=os.path.join(C, f'calib_sc_hd_{name}.json'), cal_real=os.path.join(C, f'calib_sc_hd_{name}_real.json'),
-                cal_sim_pass2=os.path.join(C, f'calib_p2L_{name}.json'), cal_real_pass2=os.path.join(C, f'calib_p2L_{name}_real.json'))
+    os.makedirs(os.path.join(M, 'calib'), exist_ok=True)
+    cals = {k: os.path.join(M, SC.MODEL_FILES[k]) for k in ('cal_sim', 'cal_real', 'cal_sim_pass2', 'cal_real_pass2')}
     fcs = os.path.join(REPO, 'analysis', 'psfmatch', 'fit_cal_set.py')
     rm = Tc['real_mult_from']
     from simcode import config as SC
     tmpl = SC.model_set(rm)
     fallback = []
-    for fr, base, ks, ksr in (('s1', 'calib/calib_sc_hd_sc5nbb15_pm_bright.json', 'cal_sim', 'cal_real'), ('s2', 'calib/calib_p2L.json', 'cal_sim_pass2', 'cal_real_pass2')):
+    for fr, base, ks, ksr in (('s1', SC.TEMPLATE_CAL_SIM, 'cal_sim', 'cal_real'), ('s2', SC.TEMPLATE_CAL_SIM_PASS2, 'cal_sim_pass2', 'cal_real_pass2')):
         sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
               os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
         if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
@@ -157,8 +156,8 @@ def run(ds):
     # stored in each checkpoint are part of the file records
     from simcode.util import runconfig as RC
     recs = {k: RC.model_file(v) for k, v in {**files, **cals}.items()}
-    trained = {k: RC.file_record(f) for k, f in (('detector', det), ('emitter', hd), ('detector_pass2', p2det), ('detector_pass2_mix', p2det_m), ('detector_pass2_cont', p2det_c), ('emitter_pass2', p2head),
-                                                 ('emitter_pass2_long', p2headL), ('emitter_pass2_final', p2headL2))}
+    trained = {k: RC.file_record(f) for k, f in (('detector', det), ('emitter', emitter), ('detector_pass2', det2), ('detector_pass2_mix', det2_mix), ('detector_pass2_cont', det2_cont), ('emitter_pass2', emitter2),
+                                                 ('emitter_pass2_long', emitter2_long), ('emitter_pass2_final', emitter2_final))}
     recipe = dict(what='PSF-matched recipe of simcode.pipeline stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
                   written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,
                   code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),

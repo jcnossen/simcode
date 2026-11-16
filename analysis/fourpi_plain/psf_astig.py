@@ -11,7 +11,7 @@ Writes the state with that scale (CPU, a few minutes).
 import argparse, json, copy
 import numpy as np, torch
 from scipy.optimize import least_squares
-from simcode.fourpi.psf4pi import psf_from_state
+from simcode.fourpi.coherent_psf import psf_from_state
 
 R = 25
 yy, xx = np.mgrid[-(R // 2):R // 2 + 1, -(R // 2):R // 2 + 1].astype(float)

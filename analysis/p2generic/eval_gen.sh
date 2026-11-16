@@ -11,12 +11,13 @@ G=${G:-g1809}; GN=g2; SX=""; [ $G = g1809 ] || { GN=$G; SX=_$G; }; B=m1809; C=${
 PARTS=${@:-a b d c}
 gpu() { NEED_GB=4 pickgpu 4 "${PREF:-0 2}"; }
 say() { echo "$(date +%F_%T) $*"; }
-# model files (2026-11-15 layout): the 2D base set in archive_2d/$B, the generic study sets in archive_p2generic; the g2ss
-# detector is m1809/p2det_m1809.pt (byte-identical; the adopted generic pass-2 detector)
-PD() { case $1 in $B) echo archive_2d/$B/p2det_$B.pt;; g2ss) echo m1809/p2det_m1809.pt;; *) echo archive_p2generic/p2det_$1.pt;; esac; }
-PH() { [ "$1" = "$B" ] && echo archive_2d/$B/p2headL_$B.pt || echo archive_p2generic/p2headL_$1.pt; }
-F3="s1=archive_2d/$B/det_$B.pt:archive_2d/$B/hd_$B.pt,s2=$(PD $B):$(PH $B),$GN=$(PD $G):$(PH $G)"
-CALS="s1=calib/calib_sc_hd_$B.json,s2=calib/calib_p2L_$B.json,$GN=calib/calib_p2L_$G.json"
+# model files (2026-11-16 layout): the 2D base set in archive_2d/$B, the generic study sets in archive_pass2_generic/<set>; the g2ss
+# detector is m1809/detector_pass2.pt (byte-identical; the adopted generic pass-2 detector)
+PD() { case $1 in $B) echo archive_2d/$B/detector_pass2.pt;; g2ss) echo m1809/detector_pass2.pt;; *) echo archive_pass2_generic/$1/detector_pass2.pt;; esac; }
+PH() { [ "$1" = "$B" ] && echo archive_2d/$B/emitter_pass2.pt || echo archive_pass2_generic/$1/emitter_pass2.pt; }
+PC() { [ "$1" = "$B" ] && echo archive_2d/$B/calib/calib_emitter_pass2_sim.json || echo archive_pass2_generic/$1/calib/calib_emitter_pass2_sim.json; }
+F3="s1=archive_2d/$B/detector_pass1.pt:archive_2d/$B/emitter_pass1.pt,s2=$(PD $B):$(PH $B),$GN=$(PD $G):$(PH $G)"
+CALS="s1=archive_2d/$B/calib/calib_emitter_pass1_sim.json,s2=$(PC $B),$GN=$(PC $G)"
 CMP="$GN:s2,$GN:s1,s2:s1"
 export SIMCODE_GATE_CALIB=$C GATE_PSF_CHUNK=1500
 for part in $PARTS; do
@@ -25,16 +26,17 @@ a)  FE=$P/fe_m1809a_gen; [ $G = g1809 ] || FE=$P/fe_m1809a_$G; mkdir -p $FE
     for f in out/psfmatch/fe_m1809a/*__s*_s[12].npz; do ln -sfn $PWD/$f $FE/$(basename $f); done
     SIMCODE_GATE_DIR=out/psfmatch/gate_m1809a P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.processing.gate_dump --scen iso,pair1,pair2,rs05qm,rs05pm \
       --seeds 202,301,302,303 --fronts $GN=$(PD $G):$(PH $G) --out $FE || { say FAILED dump a; exit 1; }
-    [ -f models/calib/calib_p2L_$G.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fitcal_wrap.py $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/calib_p2L.json \
-      models/calib/calib_p2L_$G.json models/calib/calib_p2L_${G}_real.json calib/calib_p2L_b10_real.json || { say FAILED cal; exit 1; }
+    GC=models/archive_pass2_generic/$G/calib; mkdir -p $GC
+    [ -f $GC/calib_emitter_pass2_sim.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fitcal_wrap.py $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/template_calib_emitter_pass2_sim.json \
+      $GC/calib_emitter_pass2_sim.json $GC/calib_emitter_pass2_real.json calib/template_calib_emitter_pass2_real.json || { say FAILED cal; exit 1; }
     CUDA_VISIBLE_DEVICES=$(gpu) python $A/eval_cmp.py $FE iso,pair1,pair2,rs05qm,rs05pm $CMP $CALS $P/eval_a$SX.json > $P/eval_a$SX.txt && say "a done" ;;
 b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs05pm; else LIST="ood_nr ood_p3s4 ood_rph"; SCN=iso,pair2,rs05qm; fi
     for pr in $LIST; do
       GD=$P/gate_$pr; FE=$P/fe_$pr; mkdir -p $GD $FE; g=$(gpu)
       export P2G_PRESET=$P/presets/$pr.json
       last=${SCN##*,}
-      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate --scen $SCN --fronts sc --emitter hd_sc5nb.pt \
-        --cal calib/calib_sc_hd_sc5nbb15_pm_bright.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
+      [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate_scenes --scen $SCN --fronts sc --emitter pretrain_emitter_pass1.pt \
+        --cal calib/template_calib_emitter_pass1_sim.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
       SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.processing.gate_dump --scen $SCN --seeds 301,302,303 --fronts $F3 --out $FE || { say FAILED dump $pr; exit 1; }
       unset P2G_PRESET
       CUDA_VISIBLE_DEVICES=$g python $A/eval_cmp.py $FE $SCN $CMP $CALS $P/eval_$pr$SX.json > $P/eval_$pr$SX.txt && say "$part $pr done"
@@ -42,8 +44,8 @@ b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs
 c)  SD=out/psf3d_nets/sims/m05r3; mkdir -p $P/sims
     for s in $B $G; do RD=$P/sims/m05r3_$s
       # simcode.run takes a model: pass 1 of $B, pass 2 of $s, with these (sim-sigma) calibrations, no sigma rescale (analysis/p2generic/mkmodel.py)
-      [ -f $RD/locs_p2.hdf5 ] || { python analysis/p2generic/mkmodel.py $RD/model.json m05r3_$s archive_2d/$B/det_$B.pt archive_2d/$B/hd_$B.pt calib/calib_sc_hd_$B.json \
-        $(PD $s) $(PH $s) calib/calib_p2L_$s.json > /dev/null && \
+      [ -f $RD/locs_p2.hdf5 ] || { python analysis/p2generic/mkmodel.py $RD/model.json m05r3_$s archive_2d/$B/detector_pass1.pt archive_2d/$B/emitter_pass1.pt \
+        archive_2d/$B/calib/calib_emitter_pass1_sim.json $(PD $s) $(PH $s) $(PC $s) > /dev/null && \
         CUDA_VISIBLE_DEVICES=$(gpu) python -m simcode.run --movie $SD/sim_movie.tif --calib out/psf3d_nets/calibs/calib_1809_2_psf3d_simcam.json \
         --out $RD --model $RD/model.json --crop 5,5,110 > $P/sims/m05r3_$s.log 2>&1; } || { say FAILED sim $s; exit 1; }
       python analysis/p2generic/pass12_sim.py $RD $SD > $P/p12_m05r3_$s.md 2> $P/p12_m05r3_$s.err

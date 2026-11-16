@@ -1,15 +1,15 @@
-"""Train det4pi: the det_n1 detector (simcode/detector/model.Detector, up = 1) on 4Pi scenes.
+"""Train det4pi: the pretrain_detector_pass1 detector (simcode/detector/model.Detector, up = 1) on 4Pi scenes.
 
-Input: the registered 4-channel sum of the 6 frames (6 planes, photons) = det_n1's input format, from the full-scene
+Input: the registered 4-channel sum of the 6 frames (6 planes, photons) = pretrain_detector_pass1's input format, from the full-scene
 4Pi simulator (simcode/fourpi/acquisition4pi.py: dense scenes 0.01-2 /um^2, filaments / rings / close pairs, kinetics,
-pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss and nn weights: those of det_n1
+pattern with arbitrary phase, PSF jitter bank, real registration). Targets, loss and nn weights: those of pretrain_detector_pass1
 (simulate/targets.detector_targets, focal_w, gt_nn, simulate/targets.nn_weights); the GT position is the emitter position (not the image centroid,
 which sits ~0.25 px away for the 4Pi PSF), so candidates come out centred on the emitter.
-Init from det_n1 (models/det_n1.pt). Data come from `--workers` generator processes (the simulator is the bottleneck).
+Init from pretrain_detector_pass1 (models/pretrain_detector_pass1.pt). Data come from `--workers` generator processes (the simulator is the bottleneck).
 Usage: CUDA_VISIBLE_DEVICES=0 python analysis/fourpi/train_det4pi.py --out out/4pi/models/det4pi --steps 20000
 Plain 4Pi (--acq <acquisition config of setup fourpi_plain>): the scene simulator of the config's training recipe
 (FourPiPlainSetup.sim_kw: the acquisition's registration map, background, photons, density, z range; no pattern),
-T = fourpi.window frames per window, the PSF of fourpi.psf, init from det_n1 with the input conv folded to T frames
+T = fourpi.window frames per window, the PSF of fourpi.psf, init from pretrain_detector_pass1 with the input conv folded to T frames
 (detector.model.init_T); --out / --steps default to fourpi.detector's folder and fourpi_train.det_steps.
 """
 import argparse, json, os, sys, time
@@ -19,7 +19,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
 from simcode.psf import fourpi_state
-from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
+from simcode.util.checkpoint import save as safe_save   # atomic, disk-guarded
 
 
 def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None):
@@ -64,7 +64,7 @@ def main():
     ap.add_argument('--acq', default='', help='plain 4Pi: acquisition config (file.py[:name]) with the training recipe (fourpi_train)')
     ap.add_argument('--batch', type=int, default=16); ap.add_argument('--size', type=int, default=64)
     ap.add_argument('--lr', type=float, default=3e-4); ap.add_argument('--pct', type=float, default=0.05)
-    ap.add_argument('--w_off', type=float, default=1.0); ap.add_argument('--init', default='det_n1.pt')
+    ap.add_argument('--w_off', type=float, default=1.0); ap.add_argument('--init', default='pretrain_detector_pass1.pt')
     ap.add_argument('--psf', default='NPC_f_dxy15'); ap.add_argument('--workers', type=int, default=2)
     ap.add_argument('--dens', default='0.01,2.0'); ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--ckpt_every', type=int, default=5000)
@@ -74,7 +74,7 @@ def main():
     if a.acq:
         c = acquisition(a.acq); T = c['fourpi']['window']
         a.out = a.out or os.path.dirname(c['fourpi']['detector']); a.steps = a.steps or c['fourpi_train']['det_steps']
-        a.init = a.init if a.init != 'det_n1.pt' else c['fourpi_train']['det_init']
+        a.init = a.init if a.init != 'pretrain_detector_pass1.pt' else c['fourpi_train']['det_init']
     if not a.out: raise SystemExit('--out (or --acq) is required')
     a.steps = a.steps or 20000
     from simcode.util.proctitle import set_title; set_title('4pi-det')

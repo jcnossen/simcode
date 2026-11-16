@@ -1,6 +1,6 @@
 """Covariance ablation (2026-11-12): pass-2 head outputs of a finished pipeline run, WITH the Cholesky factor of the intensity
 covariance (the pipeline's pass2_est2_<f0>.npz files do not store it), so the explicit solve can be re-run offline per variant.
-= the pass-2 stage of simcode.run (processing.front_fast.Pass2FrontFast.run_chunk, return_head=True; same networks, pattern_est.pt,
+= the pass-2 stage of simcode.run (processing.inference_fast.Pass2FrontFast.run_chunk, return_head=True; same networks, pattern_est.pt,
 candidate cut, crop, batches), no package code changed. Per chunk: <out>/head_<f0>.npz with the solve inputs (I, L, x, y, lsxy,
 x_det, y_det; region coordinates), bw (window index into PW), PW [nW,6,5] (pattern per window), and the production output rows
 (wstart, frame, p, phot, X0, Y0, and the production solve x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy as the reference for variant A).
@@ -25,8 +25,8 @@ def main():
     a = ap.parse_args()
     proctitle.set_title('covabl')
     N = config.model_set(a.model)
-    from simcode.processing import front as _scf, front_fast as _scff
-    from simcode.processing import pass2_front as _p2f
+    from simcode.processing import pass1_inference as _scf, inference_fast as _scff
+    from simcode.processing import pass2_inference as _p2f
     _scf.CAND_PMIN = _scff.CAND_PMIN = _p2f.CAND_PMIN = a.cand_pmin
     from simcode.psf import TiffMovie
     from simcode.processing.common import load_calib

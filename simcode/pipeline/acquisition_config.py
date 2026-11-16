@@ -1,5 +1,5 @@
 """Acquisition config of the automatic pipeline (docs/AUTO_PIPELINE.md section 1): defaults = the DMD-SIMFLUX setup.
-load(cfg) -> nested dict with every default filled in; unknown keys raise. cfg: a ConfigDict (simcode/util/cfgdict.py), a
+load(cfg) -> nested dict with every default filled in; unknown keys raise. cfg: a ConfigDict (simcode/util/config_dict.py), a
 dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) -> list (a Python file with `configs`).
 
   setup         widefield (default) | fourpi: the set-up plug-in (simcode/setups/), which adds its own config section
@@ -34,7 +34,7 @@ DEFAULTS = {
     'train': dict(model=None, quick=False, quick_steps=30,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
-                  init=dict(detector=None, emitter='hd_sc5nb.pt'), extra=dict(detector='', emitter='', pass2=''),
+                  init=dict(detector=None, emitter='pretrain_emitter_pass1.pt'), extra=dict(detector='', emitter='', pass2=''),
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), real_mult_from='m1809'),
     'process': dict(model=None, calib=None, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,
                     cycle_aligned_only=False, extra=[]),
@@ -59,7 +59,7 @@ def _merge(d, u, path=''):
 
 def _read(cfg):
     """any accepted form -> [(plain dict, source file or None), ...]"""
-    from simcode.util.cfgdict import ConfigDict, load_python
+    from simcode.util.config_dict import ConfigDict, load_python
     if isinstance(cfg, Mapping):
         u = ConfigDict(cfg).to_dict()
         return [(u, u.pop('_file', None))]          # '_file': a config that was already resolved (resolving again is a no-op)

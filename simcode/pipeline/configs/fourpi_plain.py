@@ -12,7 +12,7 @@ Work directory (models, PSF, map, outputs): <out>/plain4pi (SIMCODE_OUT / config
 Training (fourpi_train section): analysis/fourpi/train_det4pi.py --acq <this file>, analysis/fourpi/train_head4pi_w.py --acq <this file>
 """
 from simcode import config as K
-from simcode.util.cfgdict import ConfigDict
+from simcode.util.config_dict import ConfigDict
 
 W4 = K.out_dir('plain4pi', make=False)
 DATA = '/mnt/data/dmdsf/public_4pi_sms/zenodo_4022827/extracted'

@@ -17,7 +17,7 @@ def test_solve_oracle():
     f = f'{P4}/psf4pi/NPC_f_dxy15.json'
     if not os.path.exists(f) or not torch.cuda.is_available():
         print(f'  skip (needs a GPU and {f})'); return
-    from simcode.fourpi.lut4pi import LUT4Pi
+    from simcode.fourpi.spline_table import LUT4Pi
     from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.solve.fourpi import FourPiSolve, psi_from_eps
     lut = LUT4Pi(json.load(open(f))['psf'], P=15)

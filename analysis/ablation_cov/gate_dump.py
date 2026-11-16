@@ -1,6 +1,6 @@
 """Covariance ablation: extra gate-scene dumps of the m1809 set on the averaged 1809/2 PSF (= the recipe of out/psfmatch/fe_m1809a,
 verified bit-identical on rs05qm seed 301: simcode.processing.gate_dump with SIMCODE_GATE_CALIB=insitu/calib_1809_2_psf3d_avg.json, fronts
-s1 = det_m1809 + hd_m1809, s2 = p2det_m1809 + p2headL_m1809), optionally with the gate's mismatch overrides (simcode.benchmark.gate POVER /
+s1 = pass 1, s2 = pass 2 of archive_2d/m1809), optionally with the gate's mismatch overrides (simcode.benchmark.gate_scenes POVER /
 SOVER: AcquisitionSim preset values / scene() flags of the *qm scenes) for the excess-intensity-variance control and recovery tests.
 usage: CUDA_VISIBLE_DEVICES=2 python gate_dump.py <scene> <seeds> <out dir> <tag> [pover k=v,..|-] [sover k=v,..|-] [fronts s1,s2] [ntarget]"""
 import os, sys
@@ -10,14 +10,14 @@ from simcode.util import proctitle; proctitle.set_title('covabl')
 sc, seeds, out, tag = sys.argv[1:5]
 pover = sys.argv[5] if len(sys.argv) > 5 else '-'; sover = sys.argv[6] if len(sys.argv) > 6 else '-'
 fr = sys.argv[7] if len(sys.argv) > 7 else 's1,s2'; nt = sys.argv[8] if len(sys.argv) > 8 else '3500'
-from simcode.benchmark import gate as GA
+from simcode.benchmark import gate_scenes as GA
 for kv in filter(None, pover.strip('-').split(',')):
     k, v = kv.split('='); GA.POVER[k] = float(v)
 for kv in filter(None, sover.strip('-').split(',')):
     k, v = kv.split('='); GA.SOVER[k] = v if k == 'bgmode' else bool(int(v))
 print('overrides', GA.POVER, GA.SOVER, flush=True)
 # the 2D m1809 of the ablation (archive_2d/m1809: byte-identical to the files it was run with)
-F = dict(s1='s1=archive_2d/m1809/det_m1809.pt:archive_2d/m1809/hd_m1809.pt', s2='s2=archive_2d/m1809/p2det_m1809.pt:archive_2d/m1809/p2headL_m1809.pt')
+F = dict(s1='s1=archive_2d/m1809/detector_pass1.pt:archive_2d/m1809/emitter_pass1.pt', s2='s2=archive_2d/m1809/detector_pass2.pt:archive_2d/m1809/emitter_pass2.pt')
 sys.argv = ['dump', '--scen', sc, '--seeds', seeds, '--fronts', ','.join(F[f] for f in fr.split(',')), '--ntarget', nt, '--out', out, '--tag', tag]
 from simcode.processing import gate_dump
 gate_dump.main()

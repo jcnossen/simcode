@@ -1,5 +1,5 @@
 """
-Scene generator and multi-emitter Cramer-Rao bounds for the benchmark scenes (used by the gate suite simcode/benchmark/gate.py,
+Scene generator and multi-emitter Cramer-Rao bounds for the benchmark scenes (used by the gate suite simcode/benchmark/gate_scenes.py,
 the nuisance CRLB archive-2026-11-15:simcode/benchmark/crlb_nuisance.py, the detector training data archive-2026-11-15:simcode/simulate/emitters.py).
 
 Multi-emitter CRLB (exact vectorial PSF, true pattern, per-pixel read noise, Poisson + Gaussian variance) on the fixed

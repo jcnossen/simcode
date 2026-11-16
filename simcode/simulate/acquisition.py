@@ -1,5 +1,5 @@
 """
-Experiment-matched simulator (hd step 0). Wraps simcode/simulate/simulator.py (PSF LUT rendering, calibration) without
+Experiment-matched simulator. Wraps simcode/simulate/simulator.py (PSF LUT rendering, calibration) without
 editing it. Everything is taken from existing calibration / summary files only (no movie is read):
   PSF       calibrated vectorial PSF (analysis/calib_0.5nM.json); per-emitter PSF jitter = one of NPSF perturbed LUTs
             (width x U(0.97, 1.03), Zernike jitter 0.008 waves, focus +-15 nm; psfcheck: 2-3 % coherent residual)
@@ -35,7 +35,7 @@ the real-output statistics realstats.json with the development scripts realstats
 pattern-free + hybrid (pixel-fit) front-end on real and simulated windows; that front-end is not part of simcode, so the
 tuning check is not reproducible here. Snapshots of its statistics and of the final sim-vs-real tables:
 analysis/results/realism/ (realstats.json, validate_{0.5,2.5}nM_final.txt). The realism check against the simcode front-end
-itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is archive-2026-11-15:analysis/figures/scorecard.py
+itself (pretrain_detector_pass1 + pretrain_emitter_pass1 + pattern solve, same statistics on real and sim pass-1 outputs) is archive-2026-11-15:analysis/figures/scorecard.py
 (-> realism_scorecard.png).
 API: AcquisitionSim(preset, H, W, T).scene(nb, em=None, **overrides) -> scene dict (frames, illum, patt, gt; + patt_est,
 illum_est, shift_est, bg_static); .emitters(nb, **kw) -> em dict.

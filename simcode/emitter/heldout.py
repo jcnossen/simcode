@@ -15,7 +15,7 @@ from simcode.emitter.model import PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_fu
 
 dev = 'cuda'
 HOLD = os.path.join(config.root('out'), 'emitter_heldout', 'heldout4.pt')      # stage 'prep' output (not shipped: 0.2-0.3 GB)
-HOLD5 = os.path.join(config.root('out'), 'emitter_heldout', 'heldout5.pt')      # iteration 30b: det_n1 candidates, + rs05p / rs25p, >= 150 ph
+HOLD5 = os.path.join(config.root('out'), 'emitter_heldout', 'heldout5.pt')      # iteration 30b: pretrain_detector_pass1 candidates, + rs05p / rs25p, >= 150 ph
 SC5_SCEN = (('iso', 13000), ('pair2', 5000), ('rs25x', 5000), ('rs05p', 6000), ('rs25p', 6000))
 PHB = ((200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 1e9))
 
@@ -26,8 +26,8 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
     phase-gradient projection vectors (cov_or metric) and their reference variances, nn, photons, kinetics."""
     from simcode.simulate import gate_layouts as ST
     from simcode.simulate.gate_layouts import CD, S
-    from simcode.benchmark import gate as GA
-    from simcode.benchmark.gate_report import match
+    from simcode.benchmark import gate_scenes as GA
+    from simcode.benchmark.gate_scenes_report import match
     from simcode.detector.select import select_subpixel
     from simcode.detector.model import load as load_det
     from simcode.simulate.crlb import illum_at
