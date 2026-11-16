@@ -13,6 +13,8 @@ numbers, rendered with the in-situ PSF v2 of 1809/2 at one height per GT point (
 condition in photons (see STATUS.md 2026-11-15 v2 PSF).
 --gt wsm:<seed>:<dx>:<dy> (2026-11-15, the *_wsm sets): the webSMLM microtubule field of wsm_gt.py instead of the preprint tubules
 (gen.json 'zoom_crop' = the figures' zoom box); --device cpu renders on the CPU.
+--gt wsm3d:<seed>:<dx>:<dy> (2026-11-15, the *_wsm3d sets; needs --psf v2): as wsm, every label rendered at its own webSMLM height
+(wsm_gt.heights_um, clipped to [0, 0.40] um) instead of a v2-rule height; all other random streams as the wsm set.
 usage: CUDA_VISIBLE_DEVICES=0 python analysis/papersim/gen_density.py --density 1 [--nframes 60000] [--out out/papersim/D1] [--psf v2]
 outputs (<out>): movie.tif (uint16 ADU), gt.npz (pts = GT point set [N,3] px, knots, events: id / x / y / t0 / t1 frames,
 pattern), calib_sim.json + camera_sim.npz, gt_pattern.pt, mp_gt.pickle, gen.json"""
@@ -47,6 +49,7 @@ def main():
     if a.gt.startswith('wsm'):
         import wsm_gt
         wsm = wsm_gt.load(a.gt.split(':', 1)[1]); pts = wsm['pts']; knots = np.zeros((0, 2))
+        assert a.psf == 'v2' or not a.gt.startswith('wsm3d'), '--gt wsm3d renders heights: needs --psf v2'
     else:
         pts, knots = C.preprint_tubules()
     area = (W * C.PX_NM / 1000) ** 2
@@ -67,7 +70,8 @@ def main():
     o = np.argsort(fr, kind='stable'); ev, fr, x, y, ph = ev[o], fr[o], x[o], y[o], ph[o]
     v2 = a.psf == 'v2'
     if v2:
-        zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
+        if a.gt.startswith('wsm3d'): zpt = wsm_gt.heights_um(wsm)                  # the labels' own webSMLM heights (um)
+        else: zpt = C.heights_v2(len(pts), np.random.default_rng([a.seed, 5150]))      # one height per GT point (um)
         zr = zpt[ids[ev]]
         R = C.RendererV2(W, W, dev=a.device); R.z = float(np.median(zpt))
         cpt = R.collected(zpt)                     # detected photons = the condition: intensity parameter = photons / collected(z)
@@ -97,7 +101,9 @@ def main():
                         else dict(gain=C.GAIN, offset=C.OFFSET, read_noise=0)),
                 psf=C.PSF_CALIB_V2 if v2 else (C.PSF_CALIB if a.psf == 'vectorial' else a.psf), calib=calib, seed=a.seed,
                 **(dict(z_dist_um=dict(zip(['p05', 'p25', 'p50', 'p75', 'p95'], np.percentile(zpt, [5, 25, 50, 75, 95]).round(4).tolist())),
-                        z_rule='v2 calibration emitter_z_quantiles_um (non-pinned fits), clipped to emitter_z_range_um, one height per GT point',
+                        z_rule=('webSMLM label heights (wsm_z_nm / 1000) clipped to [0, 0.40] um' if a.gt.startswith('wsm3d') else
+                                'v2 calibration emitter_z_quantiles_um (non-pinned fits), clipped to emitter_z_range_um, one height per GT point'),
+                        **(dict(wsm_z_raw_nm=wsm_gt.height_stats(zpt, wsm['wsm_z_nm'])['wsm_z_raw_nm']) if a.gt.startswith('wsm3d') else {}),
                         z_frac_at_0=float(np.mean(zpt <= 0)), z_frac_at_040=float(np.mean(zpt >= 0.40)),
                         photons='detected: intensity parameter = condition photons / collected(z) (common.RendererV2.collected)',
                         collected_p05_p50_p95=np.percentile(cpt, [5, 50, 95]).round(4).tolist()) if v2 else {}),

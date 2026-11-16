@@ -16,11 +16,11 @@ sys.path.insert(0, HERE)
 import common as C
 import metrics as M
 
-ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig']      # table order; figures: FIG_ORDER
+ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v1gt', 'v2sig', 'v2c']      # table order; figures: FIG_ORDER
 FIG_ORDER = ['smlm', 'sf', 'sf_gtp', 'decode', 'decode_pre', 'decode_sim', 'v1', 'v2sig']
 LAB = dict(smlm='SMLM', sf='SIMFLUX (est. pattern)', sf_gtp='SIMFLUX (GT pattern)', decode='DECODE (dec_1809_2, out of range)', decode_sim='DECODE (retrained dec_sim1809)', decode_pre='DECODE (preprint model)',
-           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2sig='SIMCODE v2, σ <= 12 nm', v2sel='SIMCODE v2 all')
-COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2sig='crimson', v2sel='salmon')
+           v1='SIMCODE v1 (preprint)', v1gt='SIMCODE v1, GT pattern (diag.)', v2sig='SIMCODE v2, σ <= 12 nm', v2c='SIMCODE, σ < 0.15 px (common rule)', v2sel='SIMCODE v2 all')
+COL = dict(smlm='tab:blue', sf='tab:green', sf_gtp='olive', decode='tab:orange', decode_sim='darkorange', decode_pre='orangered', v1='tab:brown', v1gt='peru', v2sig='crimson', v2c='darkred', v2sel='salmon')
 CROP = ((9, 10), 16)
 
 

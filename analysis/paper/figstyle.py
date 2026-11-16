@@ -107,6 +107,30 @@ def frc_axes(ax, ylabel='FRC', xmax=FRC_XMAX, ymin=-0.03):
     ax.set_xlabel('Spatial frequency (nm$^{-1}$)'); ax.set_ylabel(ylabel)
 
 
+ZCMAP_COLORS = ['#3987e5', '#c3c2b7', '#eb6834']      # the z colormap of the 4Pi figures (si_4pi.py, showcase4pi_fig.py)
+
+
+def zcmap():
+    from matplotlib.colors import LinearSegmentedColormap
+    return LinearSegmentedColormap.from_list('zdiv', ZCMAP_COLORS)
+
+
+def zrgb(x, y, z, x0, y0, w, h, sr, zr, blur=1.0, clip_pct=CLIP_PCT, gamma=1.0, nonzero=True):
+    """z-coded histogram render (as si_4pi.zrgb): brightness = the blurred count image saturated at clip_pct (of the non-empty
+    pixels; nonzero=False: of all pixels, as the intensity renders of Figs 2-4), colour = the blurred mean z (zcmap over zr); box [x0, x0 + w) x [y0, y0 + h), pixel sr (same units as x, y)
+    -> [ny, nx, 3] RGB on black"""
+    import numpy as np
+    from scipy.ndimage import gaussian_filter
+    nx, ny = int(round(w / sr)), int(round(h / sr))
+    ix = np.floor((x - x0) / sr).astype(np.int64); iy = np.floor((y - y0) / sr).astype(np.int64)
+    ok = (ix >= 0) & (ix < nx) & (iy >= 0) & (iy < ny)
+    c = np.zeros((ny, nx)); zs = np.zeros((ny, nx))
+    np.add.at(c, (iy[ok], ix[ok]), 1); np.add.at(zs, (iy[ok], ix[ok]), z[ok])
+    cs = gaussian_filter(c, blur); zz = gaussian_filter(zs, blur) / np.maximum(cs, 1e-9)
+    v = np.clip(cs / max(np.percentile(cs[cs > 0] if nonzero else cs, clip_pct), 1e-9), 0, 1) ** gamma if (cs > 0).any() else cs
+    return zcmap()(np.clip((zz - zr[0]) / (zr[1] - zr[0]), 0, 1))[..., :3] * v[..., None]
+
+
 def save(fig, out, exts=('pdf', 'svg', 'png'), **kw):
     for ext in exts:
         fig.savefig(f'{out}.{ext}', dpi=300, **kw)
