@@ -1,0 +1,132 @@
+{
+ "pattern": 0,
+ "min_phot": 300.0,
+ "n_show_per_panel": 2000,
+ "sampling": "one random sample of the base population per panel (true proportions); red drawn first, blue on top",
+ "seed": 1,
+ "panels": {
+  "1809_2_SIMFLUX": {
+   "files": [
+    "out/paper2/1809_2/baselines_psfv2/smlm/smlm.npy",
+    "out/paper2/1809_2/baselines_psfv2/sf/mp_sf.pickle"
+   ],
+   "rule": "modulation error < 0.1 (own pattern, SMLM per-frame intensities at the SMLM position; the SIMFLUX input filter)",
+   "base": "SMLM fits accepted by the baseline (chi^2 <= 4 x ROI^2 on the 8 x 8 px ROI, smlm.npy) in the crop",
+   "n_before_photon_cut": 7007224,
+   "min_phot": 300.0,
+   "n_after_photon_cut": 5737430,
+   "isolation": "no other detection of either method within 3.0 px (325 nm) in the same window (union list; own counterpart within 1 px of the other method not counted)",
+   "n_after_photon_cut_and_own_method_isolation": 5737419,
+   "n": 2350519,
+   "n_included": 622502,
+   "frac_included": 0.26483597877745296,
+   "depth": 0.8999999761581421,
+   "relint": 0.17475761473178864,
+   "pitch_nm": 224.19189485720906,
+   "n_shown": 2000,
+   "n_shown_included": 533,
+   "m_eff_excluded": 0.7554212207799387,
+   "phase_offset_deg_excluded": -5.743530348398849,
+   "m_eff_included": 0.9476544746658051,
+   "phase_offset_deg_included": -0.36775878740297685
+  },
+  "1809_2_SIMCODE": {
+   "files": [
+    "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115/locs_p1.hdf5",
+    "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115/pattern_est.pt"
+   ],
+   "rule": "modulation error < 0.1 (own pattern, pass-1 intensities at the pass-1 head position)",
+   "base": "detections p >= 0.63 in the crop (no precision cut), finite positive intensities",
+   "n_before_photon_cut": 2233041,
+   "min_phot": 300.0,
+   "n_after_photon_cut": 2214839,
+   "isolation": "no other detection of either method within 3.0 px (325 nm) in the same window (union list; own counterpart within 1 px of the other method not counted)",
+   "n_after_photon_cut_and_own_method_isolation": 935478,
+   "n": 919821,
+   "n_included": 482580,
+   "frac_included": 0.5246455560375334,
+   "depth": 0.9008955359458923,
+   "relint": 0.17400880744380712,
+   "pitch_nm": 224.28437477511247,
+   "paper_selection_frac_of_base": 0.9166957484119193,
+   "paper_selection_frac_within_0.1": 0.5647239787665027,
+   "n_shown": 2000,
+   "n_shown_included": 1058,
+   "m_eff_excluded": 0.6222986567511775,
+   "phase_offset_deg_excluded": 2.742474631386102,
+   "m_eff_excluded_solved_position": 0.8642702958937938,
+   "phase_offset_deg_excluded_solved_position": 0.09541698209437754,
+   "m_eff_included": 0.8604734635849101,
+   "phase_offset_deg_included": 1.721009302385994,
+   "m_eff_included_solved_position": 0.9072752182344899,
+   "phase_offset_deg_included_solved_position": -0.1556556084370868,
+   "phase_position": "pass-1 head (x_prior, y_prior), pattern-free"
+  },
+  "2.5nM_2_SIMFLUX": {
+   "files": [
+    "out/paper2/2.5nM_2/baselines_psfv2/smlm/smlm.npy",
+    "out/paper2/2.5nM_2/baselines_psfv2/sf/mp_sf.pickle"
+   ],
+   "rule": "modulation error < 0.1 (own pattern, SMLM per-frame intensities at the SMLM position; the SIMFLUX input filter)",
+   "base": "SMLM fits accepted by the baseline (chi^2 <= 4 x ROI^2 on the 8 x 8 px ROI, smlm.npy) in the crop",
+   "n_before_photon_cut": 11097610,
+   "min_phot": 300.0,
+   "n_after_photon_cut": 10522837,
+   "isolation": "no other detection of either method within 3.0 px (325 nm) in the same window (union list; own counterpart within 1 px of the other method not counted)",
+   "n_after_photon_cut_and_own_method_isolation": 10522750,
+   "n": 1101084,
+   "n_included": 156407,
+   "frac_included": 0.14204819977404085,
+   "depth": 0.8999999761581421,
+   "relint": 0.17580997943878174,
+   "pitch_nm": 224.04058709781302,
+   "n_shown": 2000,
+   "n_shown_included": 294,
+   "m_eff_excluded": 0.5723548890071635,
+   "phase_offset_deg_excluded": -4.922207965498785,
+   "m_eff_included": 0.8895912846562545,
+   "phase_offset_deg_included": -1.1312262394652635
+  },
+  "2.5nM_2_SIMCODE": {
+   "files": [
+    "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final/locs_p1.hdf5",
+    "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final/pattern_est.pt"
+   ],
+   "rule": "modulation error < 0.1 (own pattern, pass-1 intensities at the pass-1 head position)",
+   "base": "detections p >= 0.63 in the crop (no precision cut), finite positive intensities",
+   "n_before_photon_cut": 7297365,
+   "min_phot": 300.0,
+   "n_after_photon_cut": 7291532,
+   "isolation": "no other detection of either method within 3.0 px (325 nm) in the same window (union list; own counterpart within 1 px of the other method not counted)",
+   "n_after_photon_cut_and_own_method_isolation": 935383,
+   "n": 915741,
+   "n_included": 395104,
+   "frac_included": 0.4314582398298209,
+   "depth": 0.7791308760643005,
+   "relint": 0.1749236202494749,
+   "pitch_nm": 224.18489890524165,
+   "paper_selection_frac_of_base": 0.7889927392133802,
+   "paper_selection_frac_within_0.1": 0.505404055013543,
+   "n_shown": 2000,
+   "n_shown_included": 879,
+   "m_eff_excluded": 0.4548319516182024,
+   "phase_offset_deg_excluded": 10.27209999477759,
+   "m_eff_excluded_solved_position": 0.6992699331253229,
+   "phase_offset_deg_excluded_solved_position": 0.48533434103836726,
+   "m_eff_included": 0.7342446250508117,
+   "phase_offset_deg_included": 2.3742588243100613,
+   "m_eff_included_solved_position": 0.7857009225481973,
+   "phase_offset_deg_included_solved_position": -0.7005979003801315,
+   "phase_position": "pass-1 head (x_prior, y_prior), pattern-free"
+  }
+ },
+ "layout": "A SIMFLUX | B SIMCODE; rows = datasets",
+ "datasets": [
+  "1809_2",
+  "2.5nM_2"
+ ],
+ "figsize_in": [
+  10.0,
+  8.0
+ ]
+}

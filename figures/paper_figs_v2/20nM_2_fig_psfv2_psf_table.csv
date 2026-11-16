@@ -1,0 +1,21 @@
+quantity,value,unit,note
+PSF model,calib_20nM_m2_psf_v2.json,,in-situ vectorial PSF fit (Zernike Noll 5-21)
+rms aberration (Noll >= 5),87,mλ,
+focal plane,200,nm,above the coverslip
+"emitter height, median",91,nm,pass-1 z of the plotted SIMCODE set
+"emitter height, q25-q75",51-151,nm,q05-q95 20-275 nm
+rows without z,0.56,%,no pass-1 partner
+"signal, median (PSF intensity parameter)",1845,photons / 6-frame window,network photons of the plotted set
+collected fraction at the median height,0.76,,41 x 41 px PSF image
+"signal, median (detected)",1397,photons / 6-frame window,intensity parameter x collected fraction
+"background, median",5.36,photons / px / frame,"pass-1 network bg, p >= 0.63, disjoint windows, crop"
+camera read noise,1.40,e- rms,mean variance 1.95 e^2 over the crop
+camera gain,0.4256,e- / ADU,
+pattern pitch,224,nm,mean of the 2 orientations
+modulation depth,0.94,,mean of the 2 orientations
+pattern,2 x 3,orientations x phase steps,
+CRLB SMLM x / y / z,8.9 / 9.0 / 27,nm,"3D fit (x, y, z, I, bg)"
+"CRLB SMLM x / y, z known",8.9 / 8.8,nm,2D fit at the emitter height
+CRLB SIMFLUX x / y / z,3.3 / 3.2 / 23,nm,"3D fit (x, y, z, I, bg)"
+"CRLB SIMFLUX x / y, z known",3.3 / 3.2,nm,2D fit at the emitter height
+SIMCODE rows in the figure (n_frc),2 183 888,,fair-FRC set

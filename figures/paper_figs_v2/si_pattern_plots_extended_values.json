@@ -1,0 +1,63 @@
+{
+ "run": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115",
+ "table": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115/locs_p1.hdf5",
+ "n_in_crop": 10737414,
+ "n_selected": 1837311,
+ "n_rest": 8900103,
+ "n_show_rows": 700,
+ "seed": 1,
+ "depth": [
+  0.9008955359458923,
+  0.9229534268379211
+ ],
+ "pitch_nm": [
+  224.28437477511247,
+  224.32504270935402
+ ],
+ "angle_deg": [
+  1.2164347721508404,
+  91.35980805571832
+ ],
+ "rel": [
+  1.0452247127892547,
+  1.0469242030067105,
+  1.0531691930924012,
+  0.955895302216289,
+  0.9513689026611678,
+  0.9541522196387029
+ ],
+ "fits": {
+  "angle0_rest": {
+   "n_rows": 8900103,
+   "m_eff": 0.3370891171138658,
+   "phase_offset_deg": -1.356421411854452,
+   "mean_level": 1.0265314823663063,
+   "m_eff_prior_pos": 0.10368986507277947,
+   "phase_offset_prior_pos_deg": -7.036657194933991
+  },
+  "angle0_sel": {
+   "n_rows": 1837311,
+   "m_eff": 0.9012401753326914,
+   "phase_offset_deg": 0.01225652171193697,
+   "mean_level": 0.9972381540178112,
+   "m_eff_prior_pos": 0.7622685063533173,
+   "phase_offset_prior_pos_deg": 2.514947187302001
+  },
+  "angle1_rest": {
+   "n_rows": 8900103,
+   "m_eff": 0.41427091302599417,
+   "phase_offset_deg": 1.5610433910398769,
+   "mean_level": 0.9708332186240509,
+   "m_eff_prior_pos": 0.2135262952161373,
+   "phase_offset_prior_pos_deg": 1.408671318384634
+  },
+  "angle1_sel": {
+   "n_rows": 1837311,
+   "m_eff": 0.92205061376476,
+   "phase_offset_deg": -0.05805881151193667,
+   "mean_level": 1.003071186925814,
+   "m_eff_prior_pos": 0.8102583031734204,
+   "phase_offset_prior_pos_deg": -2.2956361556412492
+  }
+ }
+}

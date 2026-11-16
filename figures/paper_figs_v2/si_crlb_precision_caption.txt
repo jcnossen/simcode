@@ -1,0 +1,32 @@
+Caption draft: si_crlb_precision (label fig:crlb_vs_precision), regenerated 2026-11-15 with model m1809
+(in-situ PSF + camera calibration). Files: out/paper_figs_v2/si_crlb_precision.{pdf,svg,png} (+ _values.json: example stack), table
+si_crlb_precision_table.md (= out/papersim/s10/s10_table_m1809v2.md, nm). Extended version (3 side-by-side panels incl. both SIMFLUX fits):
+si_crlb_precision_extended.* with si_crlb_precision_extended_caption.txt.
+
+--- caption text ---
+
+Comparison of the estimation precision of conventional MLE fitters (SMLM, SIMFLUX) with our deep-learning model at constant background (A) and
+under fluctuating background (B, C), where each frame has a background drawn from U(1, 6) photons/px. Isolated emitters in 6 x 16 x 16 px regions
+(108.33 nm pixels; the regions sit in a 4 x 4 grid in 80 x 80 px fields so that the network sees image context), each emitter uniformly 5-11 px inside its
+region; the in-situ vectorial PSF fitted on the 1809/2 data set, all emitters at that data set's median emitter height (116 nm); modulation (2 orientations
+x 3 phase steps, pitch 224 nm, depth 0.9) and pixel size as our experimental setup; pure Poisson noise. The x axis is the total number of detected signal
+photons over the 6 frames (photons collected by the objective for an emitter at 116 nm above the coverslip). Each bin has 1008 emitters; the precision is the RMSD over all fitted (SMLM, SIMFLUX) or detected (NN Output, SIMCODE) emitters, without outlier trimming.
+(A) Constant background of 1 photon/px/frame. The SMLM fit starts from the centroid of the 6-frame sum (background = ROI-border median) and the SIMFLUX fit from the SMLM fit, as in the experimental pipeline; at 100 photons 6.6 % of the SIMFLUX fits converge one fringe off (|error| > 112 nm), 0.1 % at 147 photons, none from 215 photons up. (B) Fluctuating background. NN Output is the deep-learning model's output prior to fitting with the
+modulation pattern. SIMCODE is the final estimate (pattern-aware networks followed by the explicit fit with the modulation pattern). Dashed lines: CRLB
+computed from the ground truth; the 'SIMCODE bound' is the SIMFLUX CRLB with a separate background per frame (the model SIMCODE fits; no separate
+SIMCODE CRLB is computed). Dotted lines (B): predicted precision, i.e. the mean of the method's own uncertainty estimate. Open symbols: bins in which the network
+detected fewer than 50 % of the emitters (only the 100-photon bin: 26 % at constant, 8.5 % at fluctuating background); the error there is over the
+detected emitters. (C) One example 6-frame stack at 1468 photons under fluctuating background, with each frame's background (photons/px) and the true
+position (red cross).
+
+--- numbers, NO TRIMMING (as plotted, 2026-11-15; ratios of the x RMSD per photon bin 100, 147, 215, 316, 464, 681, 1000, 1468, 2154, 3162) ---
+- A: SIMCODE / SIMCODE bound 1.00 1.09 1.09 1.01 1.12 1.05 1.07 1.14 1.19 1.27 (2 % trim: 0.95 1.03 1.03 0.96 1.05 0.99 1.03 1.08 1.12 1.22);
+  NN Output / SMLM CRLB 0.87 0.97 1.02 1.02 1.05 1.07 1.08 1.04 1.06 1.05 (trim: 0.85-1.03); SMLM MLE / CRLB 2.45 1.03 1.06 1.02 1.02 1.02 1.06 0.99
+  1.02 1.00; SIMFLUX MLE / CRLB 5.81 1.32 1.08 0.98 1.09 1.00 1.02 1.03 1.01 1.05.
+- B: SIMCODE / SIMCODE bound 1.26 1.65 1.54 1.33 1.29 1.25 1.16 1.23 1.26 1.31 (2 % trim: 1.20 1.45 1.45 1.26 1.21 1.17 1.11 1.17 1.20 1.24);
+  NN Output / SMLM CRLB 0.61 0.91 1.03 0.99 1.02 1.04 1.01 1.05 1.04 1.05 (trim: 0.62-1.00).
+- Untrimmed vs 2 % trimmed: the network rows rise by ~3-7 % (B 147-215 photons: SIMCODE +8-14 %); only the SMLM / SIMFLUX MLE at 100 photons change
+  much (2.4-2.5 x / 2.3 x, the fringe-off and unconverged fits). Trimmed numbers stay in the values json (rmsd_x_px, ratio_to_*_x).
+
+--- working notes ---
+Trimmed numbers, settings, code, decisions and comparisons with earlier versions: si_crlb_precision_notes_internal.txt (internal).

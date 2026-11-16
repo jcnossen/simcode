@@ -1,0 +1,4 @@
+PSF panel: in-situ vectorial PSF fit (Zernike Noll 5-21), xy section at the emitters' median height (91 nm) and xz section, log scale; rms aberration over Noll >= 5 87 mλ.
+Cramér-Rao lower bounds for a single isolated emitter at the data's median signal (1397 detected photons per 6-frame window), background 5.36 photons/px/frame and camera read noise 1.4 e- rms: SMLM x/y/z 8.9/9.0/27 nm, SIMFLUX (pattern pitch 224 nm, depth 0.94, 2 x 3 phase steps) x/y/z 3.3/3.2/23 nm.
+All methods: disjoint 6-frame windows, sigma < 0.15 px, own DME v2 drift; FRC with alternating 300-frame halves.
+SIMCODE: networks trained on the in-situ PSF + camera calibration; selection p >= 0.63 and calibrated max(sigma_x, sigma_y) <= 12 nm. SMLM / SIMFLUX: 2D fits with the in-situ PSF at the median emitter height + camera calibration.

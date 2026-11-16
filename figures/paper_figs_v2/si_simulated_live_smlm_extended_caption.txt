@@ -1,0 +1,60 @@
+Simulated moving microtubules: the preprint's simulation (15 microtubules with Brownian motion and spring-like mechanics, 50 x 50 px of 108.33 nm, 64000 frames after 1000 skipped), rendered with the in-situ PSF of 1809/2 and the sCMOS camera maps of that movie (gain, offset, per-pixel read noise), emitter heights 0-400 nm (median 118 nm, one height per labelling site); experimental photons and background of 1809/2 (median 621 detected photons per 6-frame window, lognormal, 1.94 photons/px/frame, mean on-time 20 frames); 2 x 3-step pattern, pitch 224 nm, depth 0.9. The reconstruction is divided into 64 blocks of 1000 frames; each block gives one reconstructed frame (movie in the supplemental media).
+
+(A) One input frame and the reconstructions of two blocks (frames 10000-11000 and 40000-41000); ground truth = all positions of the labelling sites during the block. Every method is shown with the localizations that enter its FRC (disjoint 6-frame windows, σ < 0.15 px; SIMCODE v2: localizations with calibrated precision ≤ 12 nm); each tile gives the block's FRC and number of localizations. SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; DECODE was retrained for this PSF, the emitter heights and the photon / background / density ranges.
+
+(B): the in-situ vectorial PSF fit the movies were simulated with (Zernike Noll 5-21), xy section at the emitters' median height (118 nm) and xz section, log scale (3 decades); rms aberration over Noll >= 5 68 mλ. xz section: white dashed line = focal plane, cyan dotted line = median emitter height.
+Cramér-Rao lower bounds for a single isolated emitter (mean over sub-pixel positions and pattern phases, 16 x 16 px ROI, z free) at 621 detected photons per 6-frame window, background 1.94 photons/px/frame and camera read noise 1.3 e- rms: SMLM (the 6-frame sum) x/y/z 12.7/12.6/58 nm, SIMFLUX (the 6 frames with the known pattern: pitch 224 nm, depth 0.9, 2 x 3 phase steps) x/y/z 5.0/5.0/50 nm.
+
+(C) FRC of each 1000-frame block (half-split within the block, halves alternating every 60 frames). (D) Localization error against the ground truth: each localization is matched to the nearest emitter that is on in its 6-frame window (photon-weighted mean position over the window) within 100 nm; bars = RMS error of the matched localizations, diamonds = % of localizations that are unmatched or more than 30 nm off. (E) Mean Jaccard index over the blocks at 10 / 20 / 40 nm (the preprint's measure: ground truth = all trajectory points of the block). With ~10^6 ground-truth points per block it mostly measures how much of the moving structure is covered, so it grows with the number of localizations rather than with their accuracy; read it together with C and D.
+
+Numbers (moving_exp_v2psf): SMLM: FRC per block 101 nm, RMS error 33.2 nm, 63 % unmatched / > 30 nm, Jaccard 0.18 / 0.34 / 0.55; SIMFLUX (estimated pattern): FRC per block - nm, RMS error 24.5 nm, 37 % unmatched / > 30 nm, Jaccard 0.02 / 0.05 / 0.13; SIMFLUX (true pattern): FRC per block - nm, RMS error 12.0 nm, 8 % unmatched / > 30 nm, Jaccard 0.05 / 0.12 / 0.25; DECODE (retrained): FRC per block 57 nm, RMS error 20.3 nm, 28 % unmatched / > 30 nm, Jaccard 0.42 / 0.70 / 0.91; SIMCODE preprint (estimated pattern): FRC per block 57 nm, RMS error 11.3 nm, 6 % unmatched / > 30 nm, Jaccard 0.25 / 0.49 / 0.76; SIMCODE v2: FRC per block 44 nm, RMS error 10.4 nm, 4 % unmatched / > 30 nm, Jaccard 0.43 / 0.72 / 0.92.
+
+--- notes for the coordinator / user (not caption text) ---
+
+Sim used and why: out/papersim/moving_exp_v2psf (NEW, 2026-11-15). The current m1809 is trained on the in-situ PSF v2 + camera v2; the existing moving sims
+(moving, moving_exp, moving_gauss) were rendered with the old averaged PSF v1 at 55 nm on a pure-Poisson gain-1 camera, so running the current m1809 on them
+is a model mismatch. moving_exp_v2psf is the moving_exp scene (same tubules, motion, seeds, blinking: on-time 20 frames, on_fraction 0.01) rendered exactly as
+the density sets Dexp*_v2psf (gen_hollow.py --v2psf 1): PSF v2 (41 x 41 px LUT, 0-0.40 um), one height per labelling site from the v2 calibration rule
+(median 118 nm, 21 % at 0, 7 % at 0.40 um), detected photons (intensity parameter = photons / collected(z)), v2 camera (50 x 50 crop at row/col 40 of
+camera_maps_1809_2_v2.npz: gain 0.4256, offset map, read noise), real 1809/2 photon / bg statistics converted to v2 units (median 621 detected photons
+per window, bg 1.94 photons/px/frame). It matches the main simulation figure (out/papersim/figures/fig_sim_Dexp_v2psf.*).
+Baselines as in reproduce.sh v2psf: SMLM / SIMFLUX with PSF v2 (run_baselines.py --psf models/insitu/calib_1809_2_psf_v2.json), DECODE dec_sim1809v2
+(retrained for PSF v2), SIMCODE preprint (v1, own pattern estimate), SIMCODE v2 = current m1809 (output name m1809v2; selection max(σx, σy) ≤ 12 nm, p ≥ 0.63).
+Not run: SIMCODE preprint with the true pattern (v1gt does not run on the moving-movie format, as before); the old-PSF m1809 reference.
+
+Commands (repository root, PYTHONPATH=., GPU 0):
+  python analysis/papersim/gen_moving.py --cond 1809_2 --v2psf 1 --out out/papersim/moving_exp_v2psf                      (2.6 min)
+  python analysis/papersim/run_all.py out/papersim/moving_exp_v2psf --steps base,decode,v1,v2 --psf models/insitu/calib_1809_2_psf_v2.json \
+        --decode_name dec_sim1809v2 --model m1809 --name m1809v2 --gt_diag 0            (base 7.2, decode 2.2, v1 4.3, v2 10.0 min)
+  python analysis/papersim/run_all.py out/papersim/moving_exp_v2psf --steps metrics --model m1809 --name m1809v2             (11.2 min, mostly CPU)
+  python analysis/papersim/moving_matched.py out/papersim/moving_exp_v2psf --model m1809v2                                  (CPU)
+  python analysis/papersim/fig_moving_main.py --movie out/papersim/moving_exp_v2psf --model m1809v2                         (CPU, 1.5 min)
+  (= reproduce.sh moving_v2psf). Outputs: out/papersim/moving_exp_v2psf/full/{base,decode,v1,v2_m1809v2,metrics_m1809v2.json,moving_gterr_m1809v2.json,
+  moving_matched_m1809v2.*}; logs out/papersim/logs/{gen,full}_moving_exp_v2psf.log; timing in full/timing.json.
+Code changes: common.py camera_v2(H, W) / RendererV2 / v2 calib for any field size (was 40 x 40 only; 40 x 40 output unchanged); gen_moving.py --v2psf;
+new fig_moving_main.py (this figure + GT-matched error); reproduce.sh moving_v2psf / s10_v2psf entries.
+
+Metrics shown: A per-block FRC + localization count (FRC set); C per-block FRC over time; D GT-matched RMS error and % unmatched / > 30 nm (new metric);
+E mean block Jaccard 10 / 20 / 40 nm (the preprint's panel B). Table: si_simulated_live_smlm_table.md / .csv (incl. SIMFLUX with the true pattern, recall).
+
+Old vs new (moving_exp, PSF v1, old m1809 + DECODE dec_1809_2 -> moving_exp_v2psf, PSF v2, current m1809 + DECODE dec_sim1809v2):
+  SIMCODE v2: FRC/block 42.3 -> 43.7 nm; RMS error 10.4 -> 10.4 nm; Jaccard 0.519/0.794/0.948 -> 0.431/0.716/0.916
+  DECODE:     53.3 -> 56.5 nm; 18.3 -> 20.3 nm; 0.683/0.900/0.960 -> 0.421/0.698/0.912 (old row = dec_1809_2 with 1.22 M rows; new dec_sim1809v2 0.64 M rows)
+  preprint SIMCODE: 50.2 -> 56.5 nm; 10.8 -> 11.3 nm; 0.313/0.578/0.826 -> 0.245/0.490/0.762
+  SMLM: 94.2 -> 101.3 nm; 33.3 -> 33.2 nm; 0.195/0.357/0.555 -> 0.179/0.340/0.547
+  SIMFLUX (est. pattern): FRC n/a (< 200 FRC rows per block); 25.2 -> 24.5 nm; Jaccard 0.016/0.042/0.099 -> 0.021/0.053/0.126
+  -> On the v2-PSF sim SIMCODE v2 is best on every shown metric, including the Jaccard (0.431 vs DECODE 0.421 at 10 nm); in the old sim DECODE dec_1809_2
+     led the Jaccard by output volume. The preprint-photon condition (500 ph, 'moving') was not redone: there the 12 nm selection keeps few rows
+     (Jaccard 0.08 / 0.21 / 0.42 in the old run), PAPER_HANDOFF section 6.
+
+Open decisions:
+1. Condition: experimental photons (this figure) vs the preprint's 500 photons / bg 4 (old caption). A v2-PSF preprint-condition moving sim would need
+   gen_moving.py --cond preprint --v2psf 1 + the same run_all steps (~25 GPU-min) and suffers from the 12 nm selection at 500 photons.
+2. Old caption text is outdated: "60000 frames" (it is 64 000 analysed + 1000 skipped), "4 different methods" (now 5 + GT), "SIMFLUX used the estimated
+   pattern from SIMCODE" (now SIMFLUX estimates its own pattern from SMLM and fails at this density: 59 FRC rows per block; with the true pattern it is
+   in the table). Decide whether SIMFLUX should be shown with the SIMCODE v2 pattern / true pattern instead.
+3. Which metrics: keep the Jaccard (E) or replace it by the error panel D (Jaccard rewards coverage; at matched counts see moving_matched_m1809v2.md).
+4. Renders use the FRC set (disjoint windows, σ < 0.15 px) like the main simulation figure; the old figure rendered all output rows.
+5. Colours follow fig_sim_main.py / fig_density.COL (tab colours, preprint SIMCODE brown, v2 crimson), not the blue/green/orange/red/purple of
+   fig_exp_new.py (analysis/paper/paper_common.py defines no palette).
+6. The movie (supplemental media, github) should be re-rendered from this sim (old: moving_exp/full/movie_m1809.mp4).

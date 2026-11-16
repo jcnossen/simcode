@@ -1,0 +1,66 @@
+Caption draft: si_crlb_precision (label fig:crlb_vs_precision), regenerated 2026-11-15 with the current model m1809 (in-situ PSF v2 + camera v2)
+
+Files: out/paper_figs_v2/si_crlb_precision.{pdf,svg,png} (= out/papersim/s10/si_crlb_precision_m1809v2.*). Numbers: out/papersim/s10/s10_table_m1809v2.md,
+s10_m1809v2.json (+ per-emitter s10_m1809v2_<cond>_b<i>.npz). Code: analysis/papersim/s10.py --model m1809 --psf v2 (simulation + all methods),
+analysis/papersim/si_crlb_figure.py --tag m1809v2 (figure + table). Log: out/papersim/logs/s10_m1809v2.log. Previous version (old PSF, old m1809 =
+models/archive_psf_v1/m1809): out/papersim/s10/si_crlb_precision_m1809.*, s10_table_m1809.md, si_crlb_precision_caption.md (kept unchanged).
+
+--- caption text ---
+
+Figure S10. Localization precision versus the Cramér-Rao lower bound.
+
+Isolated emitters in 6-frame stacks: 16 x 16 px regions (108.33 nm pixels), placed as a 4 x 4 grid in 80 x 80 px fields (the networks need
+image context beyond a 16 px region), each emitter uniformly 5-11 px inside its region. PSF: the in-situ vectorial PSF fitted on the 1809/2 data set,
+with every emitter at the median emitter height of that data set (116 nm). Illumination: two pattern orientations x three phase steps, pitch 224 nm,
+modulation depth 0.9 (random phase offset per orientation and field). Pure Poisson noise. 1008 emitters per photon bin; the x axis is the number of
+detected signal photons over the 6 frames (100-3162, 10 log-spaced bins).
+(A) Constant background of 1 photon/px/frame. (B, C) Fluctuating background: every frame has its own background drawn from U(1, 6) photons/px.
+Symbols and solid lines: root-mean-square error in x of SMLM (MLE on the 6-frame sum with the same PSF), SIMFLUX (joint MLE of the 6 frames with the
+known pattern), the network output before the pattern fit (NN output: the pattern-free position estimate of the pass-1 network) and SIMCODE
+(final output: pattern-aware networks + explicit pattern fit, given the true pattern). In C SIMFLUX is shown with the model of the original pipeline
+(one background for all six frames) and with a background per frame. The 2 % largest errors per bin and method are removed. Dashed lines: CRLB
+computed from the ground truth, in the colour of the method it bounds (B: the SMLM CRLB; C: the SIMFLUX CRLB with a background per frame). Dotted lines:
+predicted precision, i.e. the mean of the method's own reported uncertainty. Open symbols: bins in which the network detected fewer than 50 % of the
+emitters (100 photons: 26 % at constant, 8.5 % at fluctuating background); the error there is over the detected emitters.
+
+Result (numbers for the text):
+- From 316 photons up, SIMCODE reaches 1.01-1.29 x the SIMFLUX CRLB at constant background (1.01-1.10 up to 1000 photons, rising to 1.29 at 3162)
+  and 1.11-1.26 x the per-frame-background SIMFLUX CRLB under fluctuating background.
+- The NN output follows the SMLM CRLB (e.g. 14.4 vs 15.0 nm at 316 photons, 3.50 vs 3.47 nm at 3162 photons, constant background).
+- Under fluctuating background the one-background SIMFLUX model fails (39.1 nm at 316 photons against a bound of 8.5 nm), while the
+  per-frame-background SIMFLUX reaches its bound (8.2 nm).
+- SIMCODE's reported uncertainty is conservative on these idealised isolated emitters: 1.33-1.58 x the actual error at constant background and
+  1.16-1.53 x under fluctuating background, from 316 photons up (on the realistic simulations it is calibrated).
+- Detection: >= 97 % of the emitters from 147 photons up at constant background, >= 96 % from 215 photons up at fluctuating background
+  (old PSF / old networks: 51 % / 15 % at 147 photons).
+
+Old vs new (same protocol; old = averaged in-situ PSF v1 at 55 nm, x axis = the PSF model's intensity parameter):
+- SIMCODE / SIMFLUX CRLB from 316 photons up: constant 1.02-1.19 -> 1.01-1.29; fluctuating 1.09-1.25 -> 1.11-1.26.
+- Predicted / actual: constant 1.50-1.61 -> 1.33-1.58; fluctuating 1.17-1.49 -> 1.16-1.53.
+- One-background SIMFLUX at 316 photons, fluctuating: 46 nm vs bound 10.4 nm -> 39.1 nm vs 8.5 nm.
+- Absolute values are not comparable bin by bin: the x axis changed from the intensity parameter to detected photons (the PSF v2 image at 116 nm holds
+  0.722 of the intensity parameter), and the PSF / height changed (SIMFLUX CRLB at 316 photons, constant bg: 7.12 -> 6.01 nm).
+
+Settings / code references:
+- s10.py --psf v2: scenes rendered with common.RendererV2 (PSF v2 LUT, 41 x 41 px, 10 nm planes 0-0.40 um) at z = emitter_z_median_um of
+  models/insitu/calib_1809_2_psf_v2.json (0.1159 um); intensity parameter = detected photons / 0.7218; no camera (pure Poisson in photons, as the
+  preprint protocol; the v2 camera's read noise is NOT included). SMLM / SIMFLUX fits and CRLBs: zpsf.load(PSF v2), 2D fits at the known height
+  (CRLB with z known; agrees with psfpanel.psf_info xy_zfixed to 0.01 nm). Networks: model m1809 (models/m1809, PSF v2), the PSF template column
+  built from the scene PSF (fix 2026-11-15: before, s10.py always used the PSF v1 template; irrelevant for the old run, whose scene PSF was v1).
+  Detection = detector p >= 0.5 matched within 1 px. Trim 2 % (TRIM_KEEP 0.98); the 5 % values are in s10_m1809v2.json (rmsd_trim5).
+- GPU: about 1 min on GPU 0.
+
+Open decisions for the user (carried over, updated):
+1. SIMFLUX under fluctuating background (panel C): both fits are shown (one-background model of the original pipeline and per-frame background).
+   Option si_crlb_figure.py --sf paper|pfbg keeps one. The preprint's figure did not show SIMFLUX in B/C.
+2. Low-photon bins where the detector finds few emitters: now only the 100-photon bin (recall 0.26 / 0.085); 147 photons is 0.97 / 0.56. Marked with
+   open symbols; option --cut 147 (or 200) removes them instead.
+3. Panel B: pass-2 head prior curve not shown (--p2prior 1 adds it; it is pattern-aware, so not "before the pattern").
+4. Colour of the NN output: purple (the paper palette has none). Note: the 5-method experimental figures (fig_exp_new.py) now use purple for
+   SIMCODE v2, so purple for "NN output" here may be confusing; alternative e.g. grey or dark violet.
+5. Outlier trim: the old caption said 5 %; old code and this figure remove 2 % (stated above). The 5 % values are stored.
+6. (new) x axis = DETECTED photons and fixed height = the calibration's median (116 nm) instead of 55 nm, to match the v2-PSF simulation sets. Alternative:
+   keep 55 nm, or plot the intensity parameter (x 1/0.722).
+7. (new) SIMCODE / CRLB rises to 1.18-1.29 above 2000 photons at constant background (old networks: 1.10-1.19); worth a sentence ("approaches the bound
+   within 10 % up to 1000 photons") or a check of the pass-2 solve at high photons. Panel A/B/C also contain no camera read noise (v2 camera:
+   median 0.9 e-), as the preprint protocol; decide whether that should be said.

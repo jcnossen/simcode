@@ -1,0 +1,29 @@
+DRAFT CAPTION
+Estimated sample drift of the low-density DNA-PAINT movie of main-text Fig. 3 (1809/cover1/2, 120 000 frames), estimated separately for every method on its own localizations with DME v2 (Drift at Minimum Entropy, github.com/jcnossen/drift-estimation) with identical settings for all methods (2000-frame spline bins refined with the learned temporal prior on 96-frame segments), on the localizations of the fair comparison of Fig. 3: disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px (16.2 nm) with each method's own uncertainty, x, y in [5, 115) px, time = window start + 3. X (top) and Y (bottom) drift for SMLM, SIMFLUX, DECODE and SIMCODE; each trace has its mean removed and is offset by 15 nm from the next for clarity. The four independent estimates agree: rms difference (x / y) to SIMCODE 2.0 / 1.9 nm (SMLM), 1.7 / 1.6 nm (DECODE) and 3.8 / 5.3 nm (SIMFLUX, which has the fewest localizations), against a drift range of 44 nm (x) and 101 nm (y).
+
+NUMBERS (si_dme_drift_values.json)
+Peak-to-peak drift (x, y) nm: SMLM 42.6, 104.3; SIMFLUX 48.4, 77.9; DECODE 47.9, 110.6; SIMCODE 43.7, 101.4
+Pairwise rms difference after removing the mean (x / y nm), all / slow (2000-frame running mean) / fast (remainder):
+  SMLM - SIMFLUX: 3.97 / 5.11; slow 2.93 / 4.54; fast 2.42 / 2.06
+  SMLM - DECODE: 1.86 / 1.81; slow 0.87 / 0.87; fast 1.61 / 1.54
+  SMLM - SIMCODE: 2.00 / 1.93; slow 1.21 / 1.08; fast 1.46 / 1.53
+  SIMFLUX - DECODE: 4.25 / 5.33; slow 2.91 / 4.64; fast 2.93 / 2.42
+  SIMFLUX - SIMCODE: 3.79 / 5.33; slow 2.83 / 4.99; fast 2.27 / 1.57
+  DECODE - SIMCODE: 1.70 / 1.65; slow 0.68 / 0.63; fast 1.55 / 1.51
+  (the difference of two independent estimates; its rms is ~sqrt(e1^2 + e2^2) of the two estimation errors, plus any genuine difference from the different localization sets, e.g. position-dependent bias.)
+DME SETTINGS (identical for every method; values json dme_fixed): {"estimator": "DME v2, fixed choice: dme_grid_estimate(framesperbin=fpb, estimatePrecision=False) + dme_prior.refine(segment L, scales); sigma = mean per-localization sigma of the rows", "fpb": 2000, "segment_frames": 96, "scales": [4, 2, 1, 1, 1], "nframes": 120000, "t": "window start + 3", "rows": "frc_fair steps 1-4: disjoint 6-frame windows, max(sigma) < 0.15 px, crop [5, 115) px; f + 6 <= F", "v2_selection_sigma_max_nm": 16.25, "dme_version": "2.0.0 (external/drift-estimation, git 374300f)"}
+  smlm: table out/paper2/1809_2/baselines_psfv2/smlm/smlm.npy, rows 618591, mean sigma 0.1091 / 0.1072 px; its own cross-validated DME v2 choice would be {'kind': 'smooth', 'start_framesperbin': 2000, 'segment_frames': 96}
+  sf: table out/paper2/1809_2/baselines_psfv2/sf/sf.hdf5, rows 211680, mean sigma 0.0441 / 0.0466 px; its own cross-validated DME v2 choice would be {'kind': 'smooth', 'start_framesperbin': 2000, 'segment_frames': 24}
+  decode: table out/paper2/1809_2/decode/locs_fixed.npz, rows 1037823, mean sigma 0.0993 / 0.0896 px; its own cross-validated DME v2 choice would be {'kind': 'smooth', 'start_framesperbin': 200, 'segment_frames': 48}
+  v2: table /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115, rows 1334783, mean sigma 0.0866 / 0.0852 px; its own cross-validated DME v2 choice would be {'kind': 'smooth', 'start_framesperbin': 1798, 'segment_frames': 96}
+
+FILES USED
+  SMLM: out/paper_figs_v2/si_dme_drift_smlm_drift.npy (mtime 2026-11-15 18:06:45)
+  SIMFLUX: out/paper_figs_v2/si_dme_drift_sf_drift.npy (mtime 2026-11-15 18:07:06)
+  DECODE: out/paper_figs_v2/si_dme_drift_decode_drift.npy (mtime 2026-11-15 18:07:34)
+  SIMCODE: out/paper_figs_v2/si_dme_drift_v2_drift.npy (mtime 2026-11-15 22:52:24)
+  Array layout: float32 [120000, 2] = (x, y) px, index = time (window start + 3); plotted x 108.33 nm/px.
+  NB DECODE: the DECODE table is decode/locs_fixed.npz (frame-label fix: rows shift by one 6-frame window); rerun this script after any DECODE drift recompute (--decode <npy>).
+
+CODE: analysis/paper/si_dme_drift.py (this figure); analysis/paper/frc_fair.py (protocol, evaluate -> drift cache); simcode/util/drift.py (dme_v2, drift_rows); analysis/paper/fig_exp_new.py (writes the caches, --reuse_drift).
+Rerun: cd <repo>; PYTHONPATH=. python analysis/paper/si_dme_drift.py [--smlm/--sf/--decode/--v2 <npy>] [--outdir d]

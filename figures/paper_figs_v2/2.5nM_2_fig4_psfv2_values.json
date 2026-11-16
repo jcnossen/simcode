@@ -1,0 +1,209 @@
+{
+ "dataset": "2.5nM_2",
+ "nframes": 180000,
+ "labels": [
+  "SMLM",
+  "SIMFLUX",
+  "DECODE",
+  "SIMCODE"
+ ],
+ "paths": {
+  "smlm": "out/paper2/2.5nM_2/baselines_psfv2/smlm/smlm.npy",
+  "sf": "out/paper2/2.5nM_2/baselines_psfv2/sf/sf.hdf5",
+  "decode": "out/paper2/2.5nM_2/decode/locs_fixed.npz",
+  "v2": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final"
+ },
+ "frc_nm": [
+  48.52,
+  33.977591036414566,
+  42.11805555555556,
+  23.784313725490197
+ ],
+ "n_raw": [
+  2428529,
+  2432634,
+  11055312,
+  6594973
+ ],
+ "n_frc": [
+  805795,
+  134166,
+  1529311,
+  5370329
+ ],
+ "n_disjoint": [
+  1972141,
+  134375,
+  11055312,
+  5370501
+ ],
+ "n_all": [
+  12117748,
+  826634,
+  24781485,
+  10778942
+ ],
+ "frc_nm_nofilter": [
+  52.06008583690987,
+  33.977591036414566,
+  50.96638655462185,
+  23.784313725490197
+ ],
+ "frc_nm_30frame_halves": [
+  44.43223443223443,
+  26.955555555555556,
+  32.00527704485488,
+  22.216117216117215
+ ],
+ "pearson": [
+  0.6263059588316936,
+  0.21907376153071936,
+  0.6188269067267705,
+  0.7136308988466794
+ ],
+ "rmsd": [
+  0.31535500112128945,
+  0.3219868930186831,
+  0.3171226595633205,
+  0.3153768598930449
+ ],
+ "drift_ptp_nm": [
+  [
+   53.20000076293945,
+   89.5999984741211
+  ],
+  [
+   33.5,
+   68.0
+  ],
+  [
+   60.900001525878906,
+   111.19999694824219
+  ],
+  [
+   54.79999923706055,
+   93.0999984741211
+  ]
+ ],
+ "drift_info": [
+  {
+   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_smlm_drift.npy"
+  },
+  {
+   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_sf_drift.npy"
+  },
+  {
+   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_decode_drift.npy"
+  },
+  {
+   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_v2_drift.npy"
+  }
+ ],
+ "note": "SIMCODE: networks trained on the in-situ PSF v2 + v2 camera; detection p >= 0.63. All methods: precision < 0.15 px (16.25 nm) on their own reported uncertainty: CRLB for SMLM / SIMFLUX, network uncertainty for DECODE, calibrated uncertainty for SIMCODE. SMLM / SIMFLUX: 2D fits with the in-situ PSF v2 + v2 camera.",
+ "aois": [
+  [
+   [
+    50,
+    15
+   ],
+   30
+  ],
+  [
+   [
+    85,
+    40
+   ],
+   15
+  ]
+ ],
+ "protocol": {
+  "sigma_max_px": 0.15,
+  "grid": 6,
+  "halves_frames": 300,
+  "crop": [
+   5,
+   5,
+   110
+  ]
+ },
+ "style": {
+  "clip_percentile": 99.0,
+  "font": "Liberation Sans",
+  "width_mm": 180
+ },
+ "psf_panel": {
+  "conditions": {
+   "calib": "models/insitu/calib_2p5nM_m2_psf_v2.json",
+   "photons_median": 1174.6702880859375,
+   "n_rows": 5370329,
+   "bg_px_frame": 3.477656364440918,
+   "bg_n": 3698642,
+   "bg_q25_q75": [
+    2.9585087299346924,
+    4.066405653953552
+   ],
+   "rn2_e": 1.9540470110432628,
+   "z_median_um": 0.10560426969259978,
+   "z_quantiles_um": {
+    "q05": 0.02246560032099488,
+    "q25": 0.058393240388929867,
+    "q75": 0.1782149307074398,
+    "q95": 0.30938908532500264
+   },
+   "z_nan_frac": 0.011917891808863107,
+   "pattern": {
+    "pitch_nm": 224.34593193863248,
+    "depth": 0.7917026281356812,
+    "angles_deg": [
+     1.233860015344356,
+     91.39195931718402
+    ],
+    "pitch_nm_per_angle": [
+     224.18489890524165,
+     224.5069649720233
+    ],
+    "depth_per_angle": [
+     0.7791308760643005,
+     0.8042743802070618
+    ],
+    "relint": [
+     1.0495417214968492,
+     1.0476331855521412,
+     1.0282361898380223,
+     0.9585477425318992,
+     0.9645761598876986,
+     0.9514650006933886
+    ],
+    "source": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final/pattern_est.pt"
+   },
+   "gain_e_per_adu": 0.4256,
+   "focus_um": 0.2
+  },
+  "rms_mwaves": 72.3167657317655,
+  "z_um": 0.10560426969259978,
+  "collected": 0.7334493398666382,
+  "intensity_param": 1174.6702880859375,
+  "detected_photons": 861.5611473575846,
+  "crlb_nm": {
+   "smlm": {
+    "x": 11.146495819091797,
+    "y": 11.900068283081055,
+    "z": 58.88988494873047,
+    "xy_zfixed": [
+     10.860129356384277,
+     11.049361228942871
+    ]
+   },
+   "sf": {
+    "x": 4.841216087341309,
+    "y": 5.012851715087891,
+    "z": 48.98761749267578,
+    "xy_zfixed": [
+     4.818660259246826,
+     4.9412407875061035
+    ]
+   }
+  },
+  "text": "In-situ vectorial PSF fit\n72 m\u03bb rms\n(Zernike modes 5-21)"
+ }
+}

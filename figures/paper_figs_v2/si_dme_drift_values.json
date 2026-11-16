@@ -1,0 +1,254 @@
+{
+ "files": {
+  "SMLM": {
+   "path": "out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
+   "mtime": 1794762405.0072734
+  },
+  "SIMFLUX": {
+   "path": "out/paper_figs_v2/si_dme_drift_sf_drift.npy",
+   "mtime": 1794762426.8373528
+  },
+  "DECODE": {
+   "path": "out/paper_figs_v2/si_dme_drift_decode_drift.npy",
+   "mtime": 1794762454.2634525
+  },
+  "SIMCODE": {
+   "path": "out/paper_figs_v2/si_dme_drift_v2_drift.npy",
+   "mtime": 1794779544.7025967
+  }
+ },
+ "nframes": 120000,
+ "offset_nm": 15.0,
+ "units": "nm (px x 108.33)",
+ "ptp_nm": {
+  "SMLM": [
+   42.6,
+   104.3
+  ],
+  "SIMFLUX": [
+   48.4,
+   77.9
+  ],
+  "DECODE": [
+   47.9,
+   110.6
+  ],
+  "SIMCODE": [
+   43.7,
+   101.4
+  ]
+ },
+ "range_nm": {
+  "SMLM": [
+   [
+    -17.2,
+    -73.8
+   ],
+   [
+    25.4,
+    30.5
+   ]
+  ],
+  "SIMFLUX": [
+   [
+    -18.3,
+    -57.0
+   ],
+   [
+    30.1,
+    20.9
+   ]
+  ],
+  "DECODE": [
+   [
+    -17.6,
+    -76.8
+   ],
+   [
+    30.4,
+    33.8
+   ]
+  ],
+  "SIMCODE": [
+   [
+    -17.3,
+    -72.3
+   ],
+   [
+    26.4,
+    29.1
+   ]
+  ]
+ },
+ "pair_rms_nm": {
+  "SMLM - SIMFLUX": {
+   "all": [
+    3.97,
+    5.11
+   ],
+   "slow": [
+    2.93,
+    4.54
+   ],
+   "fast": [
+    2.42,
+    2.06
+   ]
+  },
+  "SMLM - DECODE": {
+   "all": [
+    1.86,
+    1.81
+   ],
+   "slow": [
+    0.87,
+    0.87
+   ],
+   "fast": [
+    1.61,
+    1.54
+   ]
+  },
+  "SMLM - SIMCODE": {
+   "all": [
+    2.0,
+    1.93
+   ],
+   "slow": [
+    1.21,
+    1.08
+   ],
+   "fast": [
+    1.46,
+    1.53
+   ]
+  },
+  "SIMFLUX - DECODE": {
+   "all": [
+    4.25,
+    5.33
+   ],
+   "slow": [
+    2.91,
+    4.64
+   ],
+   "fast": [
+    2.93,
+    2.42
+   ]
+  },
+  "SIMFLUX - SIMCODE": {
+   "all": [
+    3.79,
+    5.33
+   ],
+   "slow": [
+    2.83,
+    4.99
+   ],
+   "fast": [
+    2.27,
+    1.57
+   ]
+  },
+  "DECODE - SIMCODE": {
+   "all": [
+    1.7,
+    1.65
+   ],
+   "slow": [
+    0.68,
+    0.63
+   ],
+   "fast": [
+    1.55,
+    1.51
+   ]
+  }
+ },
+ "dme_fixed": {
+  "settings": {
+   "estimator": "DME v2, fixed choice: dme_grid_estimate(framesperbin=fpb, estimatePrecision=False) + dme_prior.refine(segment L, scales); sigma = mean per-localization sigma of the rows",
+   "fpb": 2000,
+   "segment_frames": 96,
+   "scales": [
+    4,
+    2,
+    1,
+    1,
+    1
+   ],
+   "nframes": 120000,
+   "t": "window start + 3",
+   "rows": "frc_fair steps 1-4: disjoint 6-frame windows, max(sigma) < 0.15 px, crop [5, 115) px; f + 6 <= F",
+   "v2_selection_sigma_max_nm": 16.25,
+   "dme_version": "2.0.0 (external/drift-estimation, git 374300f)"
+  },
+  "methods": {
+   "smlm": {
+    "kind": "smlm",
+    "table": "out/paper2/1809_2/baselines_psfv2/smlm/smlm.npy",
+    "n_rows": 618591,
+    "sigma_mean_px": [
+     0.10909131914377213,
+     0.10715122520923615
+    ],
+    "cache": "out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
+    "cached": true,
+    "auto_choice": {
+     "kind": "smooth",
+     "start_framesperbin": 2000,
+     "segment_frames": 96
+    }
+   },
+   "sf": {
+    "kind": "sf",
+    "table": "out/paper2/1809_2/baselines_psfv2/sf/sf.hdf5",
+    "n_rows": 211680,
+    "sigma_mean_px": [
+     0.04406445473432541,
+     0.04664136841893196
+    ],
+    "cache": "out/paper_figs_v2/si_dme_drift_sf_drift.npy",
+    "cached": true,
+    "auto_choice": {
+     "kind": "smooth",
+     "start_framesperbin": 2000,
+     "segment_frames": 24
+    }
+   },
+   "decode": {
+    "kind": "decode",
+    "table": "out/paper2/1809_2/decode/locs_fixed.npz",
+    "n_rows": 1037823,
+    "sigma_mean_px": [
+     0.0992727130651474,
+     0.08955167233943939
+    ],
+    "cache": "out/paper_figs_v2/si_dme_drift_decode_drift.npy",
+    "cached": true,
+    "auto_choice": {
+     "kind": "smooth",
+     "start_framesperbin": 200,
+     "segment_frames": 48
+    }
+   },
+   "v2": {
+    "kind": "v2",
+    "table": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115",
+    "n_rows": 1334783,
+    "sigma_mean_px": [
+     0.08655429631471634,
+     0.08516056835651398
+    ],
+    "cache": "out/paper_figs_v2/si_dme_drift_v2_drift.npy",
+    "s": 7.3,
+    "auto_choice": {
+     "kind": "smooth",
+     "start_framesperbin": 1798,
+     "segment_frames": 96
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,24 @@
+Caption material: si_review-single-frame (script analysis/paper/si_single_frame.py)
+
+Draft caption:
+A single raw frame of the low-density DNA-PAINT data set (main text Fig. 3; frame 30008 of 120 000, 110 x 110 px region
+analysed in the paper), in photo-electrons (camera offset map subtracted, gain 0.4256 e-/ADU). Inset: one
+diffraction-limited spot (9 x 9 px). With 60x magnification and 6.5 um camera pixels the pixel size is
+108.33 nm. The PSF (in-situ vectorial PSF fit at the median emitter height, 114 nm) has a full width at half
+maximum of 2.91 px (315 nm) as sampled by the camera pixels. Scale bar: 2 um.
+
+Facts:
+- movie /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif, frame index 30008 (0-based); frame index mod 6 = 2 (cycle of 6 frames = 2 pattern orientations x 3 phase steps).
+- display: grey scale, linear, clipped at the 0.5 / 99.8 percentiles of the region (-2.8 / 17.9 e-).
+- inset spot at x, y = 37.17, 70.85 px (full-frame px), the isolated SIMCODE localization (of a window containing this frame) with the
+  largest signal in this frame (3 x 3 px sum minus background) and no other
+  3 x 3 px box of the 9 x 9 px inset above 30 % of it (paper selection: p >= 0.63, calibrated max(sigma) <= 16.25 nm = 0.15 px), no other pass-2 row
+  of these windows (any p) at 1.5-8 px; its photons 1741
+  (network photons per 6-frame window, PSF-model intensity units).
+- PSF FWHM (in-situ PSF model as loaded by analysis/baselines/zpsf.py, pixel-integrated, at z = 114 nm): x 2.94 px, y 2.88 px
+  (318 / 312 nm).
+- spot FWHM (1D Gaussian fit to the inset's centre row / column, background = border median): x 2.92 px,
+  y 3.02 px (single noisy spot; informative only).
+- variant si_review-single-frame_locs.*: cyan circles = the 121 selected SIMCODE localizations of the 6 windows that contain
+  this frame (window starts every 3 frames, so most emitters appear in two windows).
+- calibration models/insitu/calib_1809_2_psf_v2.json; run /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115.
