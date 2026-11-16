@@ -1,6 +1,7 @@
 """Old vs new DECODE on the paper simulations: dec_sim1809v2 (<run>/decode/locs.npz via decode_table = the frame-label-fixed
 table) vs the v3 model (<run>/decode/locs_v3.npz, dec_m1809v3, published training scale).
-Per density movie (gt.npz with structure points): the gtfrc_run.py metrics on the FRC set of metrics.py (GT-FRC, frames to
+Per density movie (gt.npz with structure points): the gtfrc_run.py metrics on the FRC set of metrics.py = the paper's common rule
+(disjoint windows, max(sigma) < 0.15 px on DECODE's predicted sigma; GT-FRC with the shared crossing rule gtfrc.RULE, frames to
 40 / 30 / 20 nm, sigma-gated Jaccard, false-positive ('ghost') fraction, coverage CV) + pixel bias as pixlock.py (|c1| x / y
 of all rows inside [0.5, W - 0.5), GT bias A_bias x / y of isolated GT-matched rows) + rows. Moving movies: pixel bias and rows
 only (their GT moves; their metrics come from the moving scripts).
@@ -54,7 +55,8 @@ def one(mv):
             _, _, f = M.frc_set(T, W, nf)
             pos = np.c_[T['x'][f], T['y'][f]]; sig = np.c_[T['sx'][f], T['sy'][f]]; fr = T['f'][f]
             r['n_frc'] = int(f.sum())
-            r['gt_frc_nm'] = G.gt_frc(pos, None, lo, hi, pix, C.PX_NM, gt_img=gimg)['res_nm']
+            gf = G.gt_frc(pos, None, lo, hi, pix, C.PX_NM, gt_img=gimg)
+            r['gt_frc_nm'] = gf['res_nm']; r['gt_frc_first_nm'] = gf.get('res_nm_first'); r['frc_rule'] = gf.get('rule')
             r['frames_to'] = G.time_to_fidelity(pos, fr, pts, lo, hi, pix, C.PX_NM, grid=grid, targets=(40, 30, 20))['frames_to']
             r['sigma_jaccard'] = G.sigma_jaccard(pos, sig, pts, GR.K)['jaccard']
             r['false_pos_frac'] = G.ghost_fraction(pos, sig, fr, EW, GR.K)['ghost_fraction']
