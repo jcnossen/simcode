@@ -180,7 +180,6 @@ of 1809_2). If the settings or input files of a directory change between invocat
 ```bash
 python -m simcode.util.runconfig show <dir>       # one-page summary
 python -m simcode.util.runconfig verify <dir>     # recorded file hashes / commit / versions against the present ones
-python -m simcode.util.runconfig backfill <dir>   # reconstruct the record of a run made before 2026-11-14 (nothing is recomputed)
 ```
 
 `command.txt` stays a plain log (one line per `simcode.run` / `simcode.table` command); `summary.json`, `runtime.json` and

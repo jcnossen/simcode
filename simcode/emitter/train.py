@@ -14,7 +14,7 @@ Pass 1 (illum 0): emitter_batch with the paper-matched photons and the bright ta
   median --med, pair fraction --pair_frac (pair curriculum), on-time --tau; the neighbour map from the detector's p >= 0.2
   candidates; held-out = the stored gate-type patches of emitter/heldout.py (--hold), evaluated every --eval_every steps.
 Pass 2 (illum 1): illumination_batch ('paper' mix, pair curriculum, the pattern-error model --pert_model of the input
-  estimate, generic patterns in a share 1 - --p_std of the FOVs), the illumination patches as extra input (zero-initialised
+  estimate, generic patterns in half the FOVs: simulate/batches.P_STD, fixed recipe), the illumination patches as extra input (zero-initialised
   from a pass-1 --init, so it starts exactly at that network); the detector gets the same estimated pattern when it is a
   pass-2 detector. Held-out: fixed seeded batches (make_pattern_hold): nll_I, |I - I_gt| / I_gt, prior RMSE / z per nn bin
   and photon bin, with the default model's pass-1 network on its pass-1 detector as reference (eval_ref.json).
@@ -176,9 +176,6 @@ def parser():
     ap.add_argument('--pert_model', default='real')         # pattern-error model of the input estimate (illumination.MODELS; the
                                                             # recipe's first pass-2 stage: v1)
     ap.add_argument('--hold_v1', type=int, default=0)       # also a held-out set with the v1 error model (n batches)
-    # pattern draw: generic (any pitch / orientation / phases / frame order / depth / power; simulate/acquisition.AcquisitionSim._generic)
-    # in a share 1 - p_std of the FOVs, the SIMCODE pattern in the others (models/README.md recipe: 0.25, then 0.5 in the last stage)
-    ap.add_argument('--p_std', type=float, default=0.5)
     ap.add_argument('--check', type=int, default=0, help='1: zero-init check only')
     return ap
 
@@ -199,7 +196,7 @@ def main(argv=None):
     for k, v in DEFAULTS[a.illum].items():
         if getattr(a, k) is None: setattr(a, k, v)
     if a.illum and not a.detector: raise SystemExit('--detector is required for a pass-2 network')
-    from simcode.util.proctitle import auto; auto('train-p2head' if a.illum else 'train-head')     # name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('train-p2head' if a.illum else 'train-head')     # name in nvidia-smi / ps
     (train_pass2 if a.illum else train_pass1)(a)
 
 
@@ -298,9 +295,10 @@ def log_record(step, t0, sched, acc, IS, GS, **extra):
 
 
 def train_pass2(a):
-    from simcode.simulate.batches import TrainingBatches, z_target_px
+    from simcode.simulate.batches import TrainingBatches, z_target_px, P_STD
     from simcode.detector.model import load as load_det
     from simcode.emitter.model import load as load_net
+    a.p_std = P_STD          # share of SIMCODE-pattern FOVs (fixed recipe, models/README.md; stored in args)
     args = dict(vars(a), arch=ARCH)
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
@@ -360,11 +358,11 @@ def train_pass2(a):
 
 def check():
     """zero-init check: a pass-2 network from the default model's pass-1 network == that network (pass-1 detector candidates)"""
-    from simcode.simulate.batches import TrainingBatches
+    from simcode.simulate.batches import TrainingBatches, P_STD
     from simcode.detector.model import load as load_det
     from simcode.emitter.model import load as load_net
     torch.manual_seed(0)
-    gen = TrainingBatches(64, 64, 6, seed=0, p_std=0.5)
+    gen = TrainingBatches(64, 64, 6, seed=0, p_std=P_STD)
     o = gen.illumination_batch(4, pair_curr=True)
     det, _ = load_det(config.model(config.DETECTOR))
     col = PSFCol(gen.rs['0.5nM'].sim)

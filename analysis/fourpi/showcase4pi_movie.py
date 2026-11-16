@@ -18,6 +18,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
 from simcode.fourpi.lut4pi import LUT4Pi
 
@@ -77,7 +78,7 @@ def main():
     p.add_argument('--r', type=float, default=0.025, help='label radius um (0.025 antibody, 0.0125 bare tube)')
     p.add_argument('--seed', type=int, default=0); p.add_argument('--fchunk', type=int, default=1500)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-scmovie')
+    from simcode.util.proctitle import set_title; set_title('4pi-scmovie')
     out = f'{P4}/simmovie/{a.tag}'; os.makedirs(out, exist_ok=True)
     if os.path.exists(f'{out}/meta.json'):
         print('exists', out); return
@@ -112,7 +113,7 @@ def main():
     Phi = phi0_field(x, y, fr, H, W, T) + np.where(ang == 1, DELTA, 0.0)
     print(f'sites {len(S)}, events {len(site)}, emitter-frames {len(fr)} ({len(fr) / T:.1f} per frame = {len(fr) / T / area:.2f} /um^2/frame)', flush=True)
     dev = 'cuda'
-    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
+    st = fourpi_state('NPC_f_dxy15', P4)
     R = 21; h = R // 2
     lut = LUT4Pi(st, P=R, dev=dev)
     o = torch.arange(R, device=dev)

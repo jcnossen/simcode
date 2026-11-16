@@ -1,6 +1,6 @@
 {
  "m1809": {
-  "psf": "calib_1809_2_psf_v2.json",
+  "psf": "calib_1809_2_psf_v2.psf.zip",
   "detector": "det_m1809.pt",
   "emitter": "hd_m1809.pt",
   "cal_sim": "calib/calib_sc_hd_m1809.json",

@@ -105,7 +105,7 @@ psf:                               # stage d
 train:                             # stage e
   model: null                      # null = 'a<name>'; an existing model name / model folder = skip training and use it
   quick: false                     # few steps per trainer (plumbing test)
-  steps: {detector: 40000, emitter: 18000, detector_pass2: 40000, detector_pass2_cont: 40000, emitter_pass2: 24000,
+  steps: {detector: 40000, emitter: 18000, detector_pass2: 40000, detector_pass2_mix: 40000, detector_pass2_cont: 40000, emitter_pass2: 24000,
           emitter_pass2_long: 50000, emitter_pass2_final: 50000}
   init: {detector: null, emitter: hd_sc5nb.pt}
   extra: {detector: '', emitter: '', pass2: ''}   # extra trainer flags (e.g. g13: --dens 0.0005,0.06 --tau 3,80)
@@ -171,8 +171,9 @@ for p in pipes: p.run()
 Every form goes through the same schema (`simcode/pipeline/acquisition_config.py`: unknown keys are errors, defaults filled in, names
 must be unique within a file), and `<out>/config_resolved.json` is written as before. The Python file runs as ordinary
 code with `__file__` set (it is not imported as a module). Examples in `simcode/pipeline/configs/`: `example_setup.py` (base
-config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py`, `nr80.py` = the two yaml files in this style
-(`tests/test_cfgdict.py` checks that they resolve to the same config).
+config of the DMD-SIMFLUX setup + 1809_2, 2.5nM_2, 20nM_2), and `1809_2.py` = `1809_2.yaml` in this style
+(`tests/test_cfgdict.py` checks that they resolve to the same config). The nanoruler config nr80 was removed on 2026-11-15
+(its paths and model were archived with out/archive/nanoruler; see git history).
 
 ### 1.2 Set-ups and channels (2026-11-15)
 
@@ -318,11 +319,18 @@ if a calibration fit has no matched targets the template calibrations are copied
 |---|---|---|
 | detector | `simcode.detector.train --batch 16 --size 64 --lr 1e-3 --w_off 1.0 --nnw 1 --seed 0` | 40000 / 30 |
 | emitter | `simcode.emitter.train --init hd_sc5nb.pt --detector <detector> --lr 1.5e-4 --ch 96 --tau 15,80 --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 --seed 1 --w_mr 2.0 --w_slope 50.0 --bf16 1 --pct 0.1 --bright_tail 0.1,2000,20000 --hold <heldout5.pt>` | 18000 / 30 |
-| detector_pass2 | `simcode.detector.train --illum 1 --init <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11 --p_std 0.25` | 40000 / 30 |
-| detector_pass2_cont | `simcode.detector.train --init <detector_pass2> --pass1_ref <detector> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 51 --p_std 0.5` (the model's pass-2 detector) | 40000 / 30 |
-| emitter_pass2 | `simcode.emitter.train --detector <detector_pass2 ckpt 25k> --init <emitter> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0 --pert_model v1 --p_std 0.25` | 24000 / 30 |
-| emitter_pass2_long | `simcode.emitter.train --detector <detector_pass2> --init <emitter_pass2> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15 --p_std 0.25` | 50000 / 30 |
-| emitter_pass2_final | `simcode.emitter.train --detector <detector_pass2> --init <emitter_pass2_long> --lr 1e-4 --pct 0.05 --seed 41 --no_illum 0 --pert_model real --hold_v1 0 --p_std 0.5` (the model's pass-2 head) | 50000 / 30 |
+| detector_pass2 | `simcode.detector.train --illum 1 --init <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 11` (dedicated: the dataset's own pattern only) | 40000 / 30 |
+| detector_pass2_mix | `simcode.detector.train --init <detector_pass2> --pass1_ref <detector> --lr 3e-4 --pct 0.05 --w_off 1.0 --seed 61` (50 / 50 own / generic patterns) | 40000 / 30 |
+| detector_pass2_cont | `simcode.detector.train --init <detector_pass2_mix> --pass1_ref <detector> --lr 1e-4 --pct 0.05 --w_off 1.0 --seed 71` (same mix; the model's pass-2 detector) | 40000 / 30 |
+| emitter_pass2 | `simcode.emitter.train --detector <detector_pass2 ckpt 25k> --init <emitter> --lr 1.5e-4 --pct 0.1 --w_mr 2.0 --w_slope 50.0 --seed 21 --no_illum 0 --pert_model v1` | 24000 / 30 |
+| emitter_pass2_long | `simcode.emitter.train --detector <detector_pass2> --init <emitter_pass2> --lr 1e-4 --pct 0.05 --seed 31 --no_illum 0 --pert_model real --hold_v1 15` | 50000 / 30 |
+| emitter_pass2_final | `simcode.emitter.train --detector <detector_pass2> --init <emitter_pass2_long> --lr 1e-4 --pct 0.05 --seed 41 --no_illum 0 --pert_model real --hold_v1 0` (the model's pass-2 head) | 50000 / 30 |
+
+The share of the dataset's own pattern in the pass-2 training is fixed in the trainers since 2026-11-15 (no `--p_std` option;
+`simulate/batches.P_STD_DEDICATED` = 1 for a pass-2 detector initialised from a pass-1 detector, `P_STD` = 0.5 for the
+pass-2 detector continuations and every pass-2 emitter stage). Before that the chain was detector_pass2 (p_std 0.25) ->
+detector_pass2_cont (seed 51, 0.5) and the emitter stages 0.25 / 0.25 / 0.5; the checkpoints store the value they used
+(`args['p_std']`).
 | gates | `simcode.benchmark.gate` scenes (iso, pair1, pair2, rs*qm) with the dataset PSF (`SIMCODE_GATE_CALIB`), `simcode.processing.gate_dump` of pass 1 and pass 2 | seeds 202, 301-303 / 202 only, small ntarget |
 | calibs | `analysis/psfmatch/fit_cal_set.py` (sim sigma table on seed 202; the `_real` multiplier copied from m1809's) | same |
 | accept | sigma zcal on the held-out seeds in `train.gates.sigma_zcal`; pass-2 RMS / CRLB not worse than pass 1 on rs*qm | same |
@@ -349,7 +357,7 @@ p2head 1.9 + p2headL 2.5 = 6.8 GPU-h, + the generic pass-2 continuations p2det_c
 | 7 | `simulate/acquisition.PRESETS` (k, step spacing, camera maps, bg, brightness of the DMD setup), `PX_NM` 108.33 in the acquisition simulator / plib / sigcal | stage e: in-memory preset patch (`simcode/pipeline/run_with_overrides.py`) from the stage-d pattern and the stage-c statistics; `PX_NM` likewise patched (P6) |
 | 8 | gate photon settings hard-coded in `benchmark/gate.py` (rs05qm median 1260 ph) | reported; P7 |
 | 9 | (strict-product density anchors fitted on the DMD movies; the strict product was removed on 2026-11-14) | none: the selection (global sigma threshold) has no setup-specific constant |
-| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `simulate/acquisition.AcquisitionSim._generic`) in a share 1 - `--p_std` of the FOVs and the dataset's own pattern (preset patch) in the others |
+| 10 | pass-2 networks trained on the DMD pattern distribution (equal steps 2.09-2.12 rad, pitch 2.07 px) | resolved (2026-11-14): the pass-2 trainers draw generic patterns (any pitch 1.8-4 px, orientation, per-frame phases, frame order, depth, power; `simulate/acquisition.AcquisitionSim._generic`) in a share 1 - p_std of the FOVs and the dataset's own pattern (preset patch) in the others (p_std fixed in the trainers since 2026-11-15, see section 6) |
 
 ## 8. Proposed changes in files this work does not edit
 

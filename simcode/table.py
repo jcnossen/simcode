@@ -142,11 +142,9 @@ def build_table(out, tag, px_nm=PX_NM_DEFAULT, drift=None, *, sig_u=None, crop=N
              dnll=R['dnll'].astype(np.float32) if 'dnll' in R else np.full(n, np.nan, np.float32),
              x_prior=R['x_prior'].astype(np.float64), y_prior=R['y_prior'].astype(np.float64))
     zinfo = ''
-    if 'z_hy0' in R and tag.endswith('2') and 'p1_row' not in R:
-        # pass-2 files written before the pass-1 z (2026-11-14) carry the pass-2 head's z, which is not used: no z columns
-        zinfo = 'none (pass-2 files without p1_row: the pass-2 head z of an earlier run is not used; re-run pass 2)'
-        print(f'build_table {out} [{tag}]: {zinfo}', flush=True)
-    elif 'z_hy0' in R:
+    if 'z_hy0' in R and tag.endswith('2') and 'p1_row' not in R:      # their z is the pass-2 head's, not the linked pass-1 z
+        raise ValueError(f'build_table {out} [{tag}]: pass-2 chunk files of a run before 2026-11-14 (no p1_row): re-run pass 2')
+    if 'z_hy0' in R:
         # 3D heads (2026-11-14): z (px of the lateral pixel, relative to the PSF calibration's focal plane) after the solve, its
         # sd and covariances with x, y (px^2); NaN for 2D heads. Pass 1 (est): the pass-1 head's z conditioned on the pass-1
         # solved x, y. Pass 2 (est2): the LINKED PASS-1 candidate's z prior conditioned on the pass-2 solved x, y
@@ -201,7 +199,7 @@ def model_sig_u(out, tag):
     from simcode.util import runconfig as RC
     try: R = RC.load(out)
     except (OSError, ValueError):
-        print(f'table: {out} has no run record: no sigma rescale (python -m simcode.util.runconfig backfill writes one)', flush=True)
+        print(f'table: {out} has no run record: no sigma rescale', flush=True)
         return ''
     M = (R.get('model') or {}).get('definition') or config.model_set(R['settings']['model'])
     su = ((M.get('sig_u') or '').split(',') + [''])[:2][1 if tag.endswith('2') else 0]

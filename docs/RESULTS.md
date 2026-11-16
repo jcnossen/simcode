@@ -376,9 +376,9 @@ separately; SIMCODE uses all its rows.
     For p2L, use a view dir with `pass2_est2_*` linked as `pass2_est_*`.
   - PSF shape and m05rb: `archive-2026-11-15:analysis/psfshape/evalgt.py`.
   - Gate: `GPU=1 bash archive-2026-11-15:analysis/gate/run_gate.sh iso` (expect iso 1.17 [1.14, 1.20]).
-    - SIMCODE on the gate: `python -m simcode.eff.simcode_gate --model ni6_3 --scen iso,pair2,rs05qm`.
+    - SIMCODE on the gate: `archive-2026-11-15:simcode/benchmark/preprint_gate.py --model ni6_3 --scen iso,pair2,rs05qm`.
     - Paired comparison: `archive-2026-11-15:analysis/gate/gate_paired.py _scode_ni6_3 _hd_sc5nbb15pmb10 iso,pair2,rs05qm --offset`.
-    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `python -m simcode.eff.simcode_gate --model ni6_3 --scen pair1,pair1.5,rs05qm`
+    - Pass-2 gate vs SIMCODE (rs05qm / rs25qm in §3b): `archive-2026-11-15:simcode/benchmark/preprint_gate.py --model ni6_3 --scen pair1,pair1.5,rs05qm`
       and `--model L64_5 --scen rs25qm` (gate npz `_scode_<net>` / `_scodenf_<net>`), then `archive-2026-11-15:analysis/gate/merged_d1.py` and
       `archive-2026-11-15:analysis/gate/vs_simcode_p2.py` on the pass-2 gate dumps (`<out>/p2/fe`) → `<out>/p2/long/{gate_long,merged_d1}_vs_simcode.txt`
       (reproduces the snapshots in `analysis/results/gate/` exactly).
@@ -403,7 +403,7 @@ separately; SIMCODE uses all its rows.
   `lm_icrlb.py`, joint SIMFLUX MLE `sf_gate.py`, `icrlb.py`), real renders (`recon_full*.py`, `hdzoom.py`, `render_matched20.py`,
   `render_strict20.py`, zooms `zoompick.py`), summaries (`fig_gap.py`, `scorecard.py --stack`, `frc_plot.py`,
   `field/plot_field_offsets.py` with its inputs `field/check1_offsets.py`, `field_maps.py`, `check3_pattern.py`).
-- **In-situ PSF / camera calibration:** `simcode/insitu/README.md`.
+- **In-situ PSF / camera calibration:** `archive-2026-11-15:simcode/calibration/README.md`.
 - **Not reproducible from this repo alone:**
   - the injection movies of evalgt
   - the real depth fields (`field/depth/real05|real25/field_own.pt`)

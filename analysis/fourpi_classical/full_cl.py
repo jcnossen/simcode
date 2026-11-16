@@ -24,6 +24,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.config import root
+from simcode.psf import fourpi_state
 from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
 P4 = root('fourpi'); S4 = FourPiSetup()
 GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
@@ -202,7 +203,7 @@ def main():
     ap.add_argument('--min_free_gb', type=float, default=10.0, help='the reader does not start a file with less free space on the temporary directory')
     ap.add_argument('--poll_s', type=float, default=30.0)
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-classic')
+    from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True); os.makedirs(TMP, exist_ok=True)
     order = []
     for cell in a.cells:
@@ -228,7 +229,7 @@ def main():
         atomic_text(f'{TMP}/READER_DONE', time.strftime('%H:%M'))
         print('reader done', flush=True); return
     # fitter: claim ready files in movie order (claim marker of the table; a claim of a dead fitter is taken over)
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=P, dev=dev)
     reg = json.load(open(f'{P4}/patches/regions_MT.json'))
     c4s, frs = {}, {}

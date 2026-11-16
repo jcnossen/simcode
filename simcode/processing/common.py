@@ -1,8 +1,8 @@
 """
 Shared pieces of the per-window pipeline (simcode/processing): the read plan of the chunks, the rows of the pass-1 chunk
 files, camera conversion and the PSF model. Movie reading: torch_psf.movie (TIFF) and simcode/io/movie.py (dcimg,
-Prefetch). Only the camera and PSF entries of the calibration json are read here; its 'pattern' entry is
-never used.
+Prefetch). Only the camera and PSF entries of the calibration (calib json or psf.zip, simcode.psf.read_calib) are read
+here; its 'pattern' entry is never used.
 """
 import json, os
 import numpy as np, torch
@@ -41,21 +41,14 @@ def load_pass1_rows(out, chunks, crop=None, prior_off=None, cols=('wstart', 'x',
     return R
 
 
-def camera_maps_path(path, c=None):
-    """camera-map npz of a calib json: 'camera.maps', relative to the json's directory unless absolute"""
-    c = c if c is not None else json.load(open(path))
-    m = c['camera']['maps']
-    return m if os.path.isabs(m) else os.path.join(os.path.dirname(os.path.abspath(path)), m)
-
-
 def load_calib(path, dev='cuda'):
-    """camera maps + PSF from a calib json (camera / PSF entries only)."""
+    """camera maps + PSF from a calibration (calib json or psf.zip; camera / PSF entries only)."""
     from simcode.config import resolve
     path = resolve(path)
-    c = json.load(open(path))
-    cam = c['camera']; maps = np.load(camera_maps_path(path, c))
     from simcode import psf as spsf
     from simcode.psf import spline
+    c = spsf.read_calib(path)
+    cam = c['camera']; maps = spsf.camera_maps(path, c)
     psf = spsf.PSF.load(path, roisize=11, oversample=3, device=dev)   # opt-in calib PSF terms: angle average
     zmax = 0.2
     lut = spline(psf, zmax)

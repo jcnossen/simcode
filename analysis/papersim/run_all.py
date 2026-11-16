@@ -39,7 +39,7 @@ def main():
     ap.add_argument('--ref', default='', help="gtfrc: also the v2 table of this metrics name (e.g. m1809 = the earlier v2) as 'v2sig_ref'")
     a = ap.parse_args()
     sys.path.insert(0, REPO)
-    from simcode.util.proctitle import auto; auto('psim-all')
+    from simcode.util.proctitle import set_title; set_title('psim-all')
     md = os.path.abspath(a.movie_dir)
     if not os.path.exists(os.path.join(md, 'movie.tif')):
         sys.exit(f'{md}/movie.tif missing: generate it first (gen_density.py --density D / gen_moving.py)')

@@ -25,7 +25,8 @@ def run():
     P4 = root('fourpi')
     torch.set_num_threads(16)
     R = {}
-    st = json.load(open(f'{P4}/psf4pi/NPC_f_dxy15.json'))['psf']
+    from simcode.psf import fourpi_state
+    st = fourpi_state('NPC_f_dxy15', P4)
     # ---- scene simulator
     for pat in (True, False):
         sim = MultiChannelAcquisitionSim(st, H=32, W=32, n_psf=2, dev=dev, seed=3, patterns=pat, sub=1)

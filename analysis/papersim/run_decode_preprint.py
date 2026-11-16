@@ -37,7 +37,7 @@ def main():
     ap.add_argument('--starts', default='0'); ap.add_argument('--crlb', type=float, default=0.2); ap.add_argument('--maxframes', type=int, default=None)
     a = ap.parse_args()
     sys.path.insert(0, REPO)
-    from simcode.util.proctitle import auto; auto('psim-decpre')
+    from simcode.util.proctitle import set_title; set_title('psim-decpre')
     md = os.path.abspath(a.movie_dir); out = a.out or os.path.join(md, 'full', 'decode_pre', 'locs.npz')
     inst = load()
     tif = os.path.join(md, 'movie.tif'); cam = np.load(os.path.join(md, 'camera_sim.npz'))

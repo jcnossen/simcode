@@ -37,7 +37,7 @@ tuning check is not reproducible here. Snapshots of its statistics and of the fi
 analysis/results/realism/ (realstats.json, validate_{0.5,2.5}nM_final.txt). The realism check against the simcode front-end
 itself (det_n1 + sc5nb + pattern solve, same statistics on real and sim pass-1 outputs) is archive-2026-11-15:analysis/figures/scorecard.py
 (-> realism_scorecard.png).
-API: AcquisitionSim(preset, H, W, T).scene(nb, em=None, **overrides) -> dict as crlb_dense.make_scene (+ patt_est,
+API: AcquisitionSim(preset, H, W, T).scene(nb, em=None, **overrides) -> scene dict (frames, illum, patt, gt; + patt_est,
 illum_est, shift_est, bg_static); .emitters(nb, **kw) -> em dict.
 (2026-11-10/11 critic 37 #2, opt-in; absent keys = unchanged, no extra random draws) smooth illumination envelope across the
 FOV, measured on the real movies (archive-2026-11-15:analysis/evalproto/envmap.py): keys env_x0 / env_y0 (centre px), env_s1 / env_s2
@@ -49,6 +49,7 @@ import json, math
 import numpy as np, torch
 from simcode.simulate.simulator import Simulator
 from simcode import config as _cfg
+from simcode import psf as _spsf
 
 dev = 'cuda'
 _M = lambda f: _cfg.model('insitu/' + f)
@@ -189,7 +190,7 @@ class AcquisitionSim:
         self.p = dict(PRESETS[preset], **over); self.preset = preset
         # emitter heights from the calibration (2026-11-15): a calibration with fitted spot heights (emitter_z_quantiles_um) sets
         # the height distribution (height_quantiles / draw_z) and widens the LUT range to it; None = the presets' TIRF draw
-        c = json.load(open(_cfg.resolve(self.p['calib'])))
+        c = _spsf.read_calib(_cfg.resolve(self.p['calib']))
         self.zq = height_quantiles(c)
         # physical range of the drawn heights (calibration key emitter_z_range_um, e.g. [0, 0.40]; draws are clipped to it)
         self.zclip = [float(v) for v in c['emitter_z_range_um']] if (self.zq is not None and c.get('emitter_z_range_um')) else None

@@ -28,7 +28,8 @@ def simulate(c, frames, dens, seed, dev, B=25):
     sp = S_.cell_spec(c)
     L = S_.layout(c)
     init['cells'] = [CellSpec(sp.name, sp.regmap, sp.W, sp.H, (0, L.W), (0, L.H), sp.bg)]   # scene = the whole crop (origin 0, 0)
-    st = json.load(open(c['fourpi']['psf']))['psf']
+    from simcode.psf import fourpi_state
+    st = fourpi_state(c['fourpi']['psf'])
     sim = MultiChannelAcquisitionSim(st, H=L.H, W=L.W, seed=seed, dev=dev, **init)
     smp['dens'] = dens
     rng = np.random.default_rng(seed)

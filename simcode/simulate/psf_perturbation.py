@@ -1,15 +1,12 @@
 """
-PSF-perturbed simulation (critic review 24 #1): a bank of Simulator PSF lookup tables, each rendered from the
-calibrated vectorial PSF with a random perturbation:
-  width   pixel-size scale (PSF width in pixels x w, w log-uniform in [w_lo, w_hi])
-  zern    Gaussian jitter of every Zernike coefficient (sd zj waves rms) on top of the calibration
-  focus   focus shift (uniform +- df um)
-plus, per batch (sample()), a wider emitter z range (zmax_pert), and camera gain / offset errors (the frames are
-converted with gain (1 + eg) and offset + eo ADU instead of the true ones).
+PSF-perturbed simulation (critic review 24 #1): build_lut renders a Simulator PSF lookup table from the calibrated
+vectorial PSF with a perturbation (used by simulate/acquisition.py):
+  width   pixel-size scale (PSF width in pixels x w)
+  zern    Zernike coefficient deltas on top of the calibration
+  focus   focus shift (um)
 """
-import json, math
-import numpy as np, torch
-from simcode.simulate.simulator import Simulator
+import json
+import torch
 from simcode import psf as spsf
 from simcode.psf import render
 
@@ -22,7 +19,7 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle
     and the Zernikes changed (angle = that pattern angle's PSF, None = average).
     A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike / focus terms do not apply to it."""
     zmax = zmax or sim.zmax
-    c = json.load(open(sim.calib_path))
+    c = spsf.read_calib(sim.calib_path)
     if c.get('psf_gauss_sigma_um') is not None:
         base = spsf.PSF.load(c, roisize=sim.R, device=dev)
         psf = spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)
@@ -42,34 +39,3 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle
     return lut.reshape(sim.lz, sim.ls + 1, sim.ls + 1, sim.R, sim.R), zmax
 
 
-class PertBank:
-    def __init__(self, sim, n=12, w=(0.92, 1.12), zj=0.02, df=0.1, zmax=0.35, seed=0):
-        g = torch.Generator().manual_seed(seed)
-        self.sim = sim; self.items = []
-        self.base = (sim.lut, sim.zmax, sim.zs)
-        nz = len(sim.c['zernike_waves'])
-        for i in range(n):
-            u = torch.rand(3, generator=g)
-            wi = math.exp(math.log(w[0]) + (math.log(w[1]) - math.log(w[0])) * float(u[0]))
-            zd = (torch.randn(nz, generator=g) * zj).to(dev)
-            fs = (float(u[1]) - 0.5) * 2 * df
-            lut, zm = build_lut(sim, wi, zd, fs, zmax)
-            self.items.append(dict(lut=lut, zmax=zm, width=wi, focus=fs, zern_sd=float(zd.std())))
-
-    def use(self, i):
-        it = self.items[i]
-        self.sim.lut = it['lut']; self.sim.zmax = it['zmax']; self.sim.zs = torch.linspace(self.sim.zmin, it['zmax'], self.sim.lz, device=dev)
-        return it
-
-    def reset(self):
-        self.sim.lut, self.sim.zmax, self.sim.zs = self.base
-
-
-def camera_error(o, sim, eg=0.1, eo=2.0):
-    """re-convert frames with a wrong gain (x (1 + U(-eg, eg))) and offset (+ U(-eo, eo) ADU) per FOV"""
-    nb = o['frames'].shape[0]
-    ge = 1 + (torch.rand(nb, 1, 1, 1, device=dev) - 0.5) * 2 * eg
-    oe = (torch.rand(nb, 1, 1, 1, device=dev) - 0.5) * 2 * eo
-    adu = o['frames'] / sim.gain + sim.offset
-    o['frames'] = (adu - (sim.offset + oe)) * sim.gain * ge
-    return o

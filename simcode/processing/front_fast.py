@@ -275,7 +275,7 @@ class Pass1FrontFast:
 # ------------------------------------------------------------------------------------------------ pattern solve (pass-1 rows)
 @torch.no_grad()
 def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_batch=16384, timing=None, compile='auto'):
-    """= front.run_chunk_pattern_solve (same output columns) with solve_fast.solve_emitters_fast, results kept on the GPU until the
+    """pattern solve (solve_fast.solve_emitters_fast) of the stored pass-1 head outputs of the `out` rows, results kept on the GPU until the
     end of the chunk"""
     from simcode.solve import solve_fast as MF
     timing = timing if timing is not None else {}

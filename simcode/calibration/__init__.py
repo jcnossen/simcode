@@ -5,8 +5,6 @@ from simcode import config
 
 MOVIE_05 = 'dnapaint/0.5nM/cover1/1/simflux_5.5ms_500mW.tif'                     # 0.5 nM movie (data root)
 SMLM_05 = 'dnapaint/0.5nM/cover1/1/results/simflux_5.5ms_500mW/smlm.hdf5'        # its SIMCODE-pipeline 'smlm' locs (Picasso hdf5)
-SFCFG_05 = 'dnapaint/0.5nM/cover1/1/cache/simflux_5.5ms_500mW/sf_fits_cfg.pickle'  # its SIMCODE-pipeline pattern (init of the archived fit_pattern.py)
-BEAD_PSF = 'insitu/beads/psf_fit_sign-1_na149_ball_drift.pt'                      # bead z-stack fit (earlier SIMCODE bead fit; now simcode.psf.beads), models dir
 
 
 def data(p):
@@ -17,9 +15,3 @@ def data(p):
 def out(*f):
     """default output path under <out>/insitu"""
     return os.path.join(config.out_dir('insitu'), *f)
-
-
-def cam_maps(calib_path, cam):
-    """camera-map path of a calibration json (relative paths are relative to the json, as in sim.simulator)"""
-    mp = cam['maps']
-    return mp if os.path.isabs(mp) else os.path.join(os.path.dirname(os.path.abspath(calib_path)), mp)

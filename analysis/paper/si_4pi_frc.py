@@ -343,6 +343,6 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser(); ap.add_argument('cmd', choices=['compute', 'fig']); ap.add_argument('--procs', type=int, default=18)
     a = ap.parse_args()
     if a.cmd == 'compute':
-        from simcode.util.proctitle import auto; auto('4pi_frc_frames'); compute(a)
+        from simcode.util.proctitle import set_title; set_title('4pi_frc_frames'); compute(a)
     else:
         import si_4pi_frc_fig as F; F.main(RES)

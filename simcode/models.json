@@ -8,19 +8,19 @@
   "datasets": {
    "1809_2": {
     "movie": "1809/cover1/2/simflux_5.5ms_500mW.tif",
-    "calib": "insitu/calib_1809_2_psf_v2.json",
+    "calib": "insitu/calib_1809_2_psf_v2.psf.zip",
     "crop": "5,5,110",
     "model": "m1809"
    },
    "2.5nM_2": {
     "movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_2p5nM_m2_psf_v2.json",
+    "calib": "insitu/calib_2p5nM_m2_psf_v2.psf.zip",
     "crop": "5,5,110",
     "model": "m25"
    },
    "20nM_2": {
     "movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_20nM_m2_psf_v2.json",
+    "calib": "insitu/calib_20nM_m2_psf_v2.psf.zip",
     "crop": "5,5,110",
     "model": "m25",
     "_doc": "2026-11-15: processed with m25 (trained on the 2.5 nM v2 PSF) and the movie's own v2 calibration"
@@ -29,7 +29,7 @@
  },
  "m1809": {
   "_doc": "PSF-matched model for the 1809/2 movie (averaged 1809/2 in-situ PSF; adopted 2026-11-11; production out/paper2/1809_2/v2_matched); also the model of the realistic-PSF paper simulations | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m1809/; the previous 2D model is the folder archive_2d/m1809/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/m1809/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); the previous model is the folder archive_psf_v1/m1809/ (not referenced)",
-  "psf": "m1809/calib_1809_2_psf_v2.json",
+  "psf": "m1809/calib_1809_2_psf_v2.psf.zip",
   "detector": "m1809/det_m1809.pt",
   "emitter": "m1809/hd_m1809.pt",
   "cal_sim": "m1809/calib/calib_sc_hd_m1809.json",
@@ -42,7 +42,7 @@
  },
  "m25": {
   "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/m25/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); pass-2 detector = generic fine-tuned from a dedicated (SIMCODE-pattern) detector (out/generic_mix, out/psf_v2/eval/m25v2/det2); also the model of the 20 nM / 2 movie; the previous model is the folder archive_psf_v1/m25/ (not referenced)",
-  "psf": "m25/calib_2p5nM_m2_psf_v2.json",
+  "psf": "m25/calib_2p5nM_m2_psf_v2.psf.zip",
   "detector": "m25/det_m25.pt",
   "emitter": "m25/hd_m25.pt",
   "cal_sim": "m25/calib/calib_sc_hd_m25.json",
@@ -55,7 +55,7 @@
  },
  "g13": {
   "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in g13/; the previous 2D model is the folder archive_2d/g13/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_p2dedicated/g13/ (not referenced by any config)",
-  "psf": "g13/calib_gauss1.3.json",
+  "psf": "g13/calib_gauss1.3.psf.zip",
   "detector": "g13/det_g13.pt",
   "emitter": "g13/hd_g13.pt",
   "cal_sim": "g13/calib/calib_sc_hd_g13.json",

@@ -26,7 +26,7 @@ def main():
     ap.add_argument('--starts', default='0,3')
     ap.add_argument('--model_file', default=None, help='weights (default <model dir>/model_final.pt), e.g. a frozen snapshot')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-decode')
+    from simcode.util.proctitle import set_title; set_title('psim-decode')
     md = os.path.abspath(a.movie_dir)
     out = a.out or os.path.join(md, 'decode', 'locs.npz')
     D = DP.D

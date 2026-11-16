@@ -223,7 +223,7 @@ def main():
                     help="SMLM / SIMFLUX start: gt = GT + U(-0.5, 0.5) px (preprint script); smlmfit = paper_pipeline: SMLM from the "
                          "centroid / border-median init of the 6-frame sum, SIMFLUX (both bg models) from that SMLM fit")
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('psim-s10')
+    from simcode.util.proctitle import set_title; set_title('psim-s10')
     from simcode.config import model_set
     os.makedirs(a.out, exist_ok=True)
     ns = model_set(a.model)

@@ -4,11 +4,12 @@ simcode/pipeline/run_with_overrides.py for the in-memory preset overrides of a n
 
 Steps (resumable: a trainer whose <dir>/final.pt exists is skipped; quick mode = train.quick_steps per trainer, in its own
 directory 'quick/'):
-  detector -> emitter (init hd_sc5nb) and detector_pass2 (zero-initialised from detector) -> detector_pass2_cont (init
-  detector_pass2); emitter_pass2 (detector = detector_pass2 at 25k steps, init emitter) -> emitter_pass2_long -> emitter_pass2_final
-  (detector = detector_pass2); the pass-2 trainers draw generic illumination patterns (simulate/acquisition.AcquisitionSim._generic)
-  with a share --p_std of the dataset's own pattern: 0.25 in detector_pass2 / emitter_pass2 / emitter_pass2_long, 0.5 in
-  detector_pass2_cont / emitter_pass2_final (models/README.md)
+  detector -> emitter (init hd_sc5nb) and detector_pass2 (zero-initialised from detector: the dedicated pass-2 detector, the
+  dataset's own pattern only) -> detector_pass2_mix (fine-tuned on the 50 / 50 mix of its own and generic patterns, lr 3e-4)
+  -> detector_pass2_cont (the same mix, lr 1e-4); emitter_pass2 (detector = detector_pass2 at 25k steps, init emitter) ->
+  emitter_pass2_long -> emitter_pass2_final (detector = detector_pass2). The pattern draw of the pass-2 stages is fixed in the
+  trainers (simulate/batches.P_STD_DEDICATED / P_STD; generic patterns: simulate/acquisition.AcquisitionSim._generic): own
+  pattern only in detector_pass2, half own / half generic in every other pass-2 stage (models/README.md)
   gate scenes (simcode.benchmark.gate, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (detector + emitter) and pass 2
   (detector_pass2_cont + emitter_pass2_final)
   -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
@@ -25,18 +26,17 @@ T_BASE = dict(detector=['-m', 'simcode.detector.train', '--batch', '16', '--size
               emitter=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1.5e-4', '--ch', '96', '--tau', '15,80',
                   '--pair_frac', '0.25', '--dens', '0.0005,0.04', '--med', '40,2500', '--nnw', '1', '--seed', '1', '--w_mr', '2.0', '--w_slope', '50.0',
                   '--bf16', '1', '--pct', '0.1'],
-              detector_pass2=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11',
-                     '--p_std', '0.25'],
-              detector_pass2_cont=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '1e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '51',
-                       '--p_std', '0.5'],
+              detector_pass2=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '11'],
+              detector_pass2_mix=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '3e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '61'],
+              detector_pass2_cont=['-m', 'simcode.detector.train', '--batch', '16', '--size', '64', '--lr', '1e-4', '--pct', '0.05', '--w_off', '1.0', '--seed', '71'],
               emitter_pass2=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1.5e-4', '--pct', '0.1', '--w_mr', '2.0', '--w_slope', '50.0',
-                      '--seed', '21', '--no_illum', '0', '--pert_model', 'v1', '--p_std', '0.25'],
+                      '--seed', '21', '--no_illum', '0', '--pert_model', 'v1'],
               emitter_pass2_long=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
-                       '--seed', '31', '--no_illum', '0', '--hold_v1', '15', '--p_std', '0.25'],
+                       '--seed', '31', '--no_illum', '0', '--hold_v1', '15'],
               emitter_pass2_final=['-m', 'simcode.emitter.train', '--batch', '16', '--lr', '1e-4', '--pct', '0.05', '--w_mr', '2.0', '--w_slope', '50.0',
-                        '--seed', '41', '--no_illum', '0', '--hold_v1', '0', '--p_std', '0.5'])
-EVERY = dict(detector=None, emitter=('2000', '6000'), detector_pass2=('2500', '5000'), detector_pass2_cont=('5000', '10000'), emitter_pass2=('4000', '8000'), emitter_pass2_long=('2000', '10000'),
-             emitter_pass2_final=('5000', '10000'))
+                        '--seed', '41', '--no_illum', '0', '--hold_v1', '0'])
+EVERY = dict(detector=None, emitter=('2000', '6000'), detector_pass2=('2500', '5000'), detector_pass2_mix=('5000', '10000'), detector_pass2_cont=('5000', '10000'),
+             emitter_pass2=('4000', '8000'), emitter_pass2_long=('2000', '10000'), emitter_pass2_final=('5000', '10000'))
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCEN_FIT = 'rs05qm'
 
@@ -93,7 +93,8 @@ def run(ds):
     det = stage('detector', ['--init', det_init] if det_init else [])
     hd = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if os.path.exists(hold) else []))
     p2det = stage('detector_pass2', ['--illum', '1', '--init', det])
-    p2det_c = stage('detector_pass2_cont', ['--init', p2det, '--pass1_ref', det])
+    p2det_m = stage('detector_pass2_mix', ['--init', p2det, '--pass1_ref', det])
+    p2det_c = stage('detector_pass2_cont', ['--init', p2det_m, '--pass1_ref', det])
     p25 = os.path.join(D, 'detector_pass2', 'ckpt_25000.pt')
     p2head = stage('emitter_pass2', ['--detector', p25 if os.path.exists(p25) else p2det, '--init', hd])
     p2headL = stage('emitter_pass2_long', ['--detector', p2det, '--init', p2head])
@@ -156,7 +157,7 @@ def run(ds):
     # stored in each checkpoint are part of the file records
     from simcode.util import runconfig as RC
     recs = {k: RC.model_file(v) for k, v in {**files, **cals}.items()}
-    trained = {k: RC.file_record(f) for k, f in (('detector', det), ('emitter', hd), ('detector_pass2', p2det), ('detector_pass2_cont', p2det_c), ('emitter_pass2', p2head),
+    trained = {k: RC.file_record(f) for k, f in (('detector', det), ('emitter', hd), ('detector_pass2', p2det), ('detector_pass2_mix', p2det_m), ('detector_pass2_cont', p2det_c), ('emitter_pass2', p2head),
                                                  ('emitter_pass2_long', p2headL), ('emitter_pass2_final', p2headL2))}
     recipe = dict(what='PSF-matched recipe of simcode.pipeline stage e (docs/AUTO_PIPELINE.md section 6)', acquisition=c['name'], quick=quick,
                   written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,

@@ -28,8 +28,6 @@ Re-run with exactly the settings of a record: python -m simcode.run --config <ru
 
   python -m simcode.util.runconfig show <dir>            one-page summary
   python -m simcode.util.runconfig verify <dir>          compare the recorded file hashes / commit with the current ones
-  python -m simcode.util.runconfig backfill <dir> ...    reconstruct the record of a run made before 2026-11-14 from its
-                                                         command.txt / summary.json / runtime.json / info files (no recompute)
 """
 import contextlib, hashlib, json, os, platform, shlex, socket, subprocess, sys, time
 import numpy as np
@@ -200,9 +198,14 @@ def checkpoint_info(path):
 
 
 def json_params(path, maxlen=8):
-    """scalar / short entries of a calibration json (cmult = the fixed c, prior_off, kappa, sigma model, notes)"""
+    """scalar / short entries of a calibration json (cmult = the fixed c, prior_off, kappa, sigma model, notes) or of a
+    PSF calibration psf.zip (simcode.psf.read_calib)"""
     try:
-        J = json.load(open(path))
+        if path.endswith('.zip'):
+            from simcode import psf as spsf
+            J = spsf.read_calib(path)
+        else:
+            J = json.load(open(path))
     except Exception as e:
         return dict(error=f'{type(e).__name__}: {e}')
     return {k: v for k, v in J.items() if isinstance(v, (int, float, str, bool)) or (isinstance(v, list) and len(v) <= maxlen
@@ -213,7 +216,7 @@ def model_file(path):
     r = file_record(path)
     if r.get('missing'): return r
     if path.endswith('.pt'): r['checkpoint'] = checkpoint_info(path)
-    elif path.endswith('.json'): r['params'] = json_params(path)
+    elif path.endswith(('.json', '.zip')): r['params'] = json_params(path)
     return r
 
 
@@ -231,13 +234,16 @@ def model_record(name, definition, files):
 
 
 def calib_record(path):
-    """in-situ PSF / camera calibration json: file + camera maps + the key parameters"""
+    """in-situ PSF / camera calibration (calib json or psf.zip): file + camera maps + the key parameters"""
     p = config.resolve(path); r = file_record(p)
     if r.get('missing'): return r
     try:
-        c = json.load(open(p))
-        from simcode.processing.common import camera_maps_path
-        r['camera_maps'] = file_record(camera_maps_path(p, c))
+        from simcode import psf as spsf
+        c = spsf.read_calib(p)                     # calib json or psf.zip
+        r['format'] = 'psf.zip' if spsf.is_psf_zip(p) else 'calib json'
+        mp = spsf.camera_maps_path(p, c)
+        r['camera_maps'] = (dict(path=os.path.abspath(p), inside='psf.zip camera arrays') if spsf.is_psf_zip(p) and mp
+                            else file_record(mp))
         z = np.asarray(c.get('zernike_waves', []), float)
         r['psf'] = dict(model='vectorial (torch_psf.VectorialPSF, 11 px, oversample 3; LUT z range +-0.2 um)',
                         NA=c.get('NA'), wavelength_um=c.get('wavelength_um'), n_imm=c.get('n_imm'), n_med=c.get('n_med'),
@@ -453,7 +459,7 @@ def append_step(out, step, outputs=None, selection=None):
     def fn(R):
         if not R or R.get('format') != FORMAT:
             R = dict(format=FORMAT, status='no run record', note='this directory was made before run_config.json existed, or by another tool; '
-                     'only later steps are recorded (python -m simcode.util.runconfig backfill reconstructs the run)', steps=[])
+                     'only later steps are recorded', steps=[])
         R.setdefault('steps', []).append(step); i = len(R['steps']) - 1
         for f in outputs or []:
             if os.path.dirname(os.path.abspath(f)) == os.path.abspath(out):
@@ -504,139 +510,6 @@ def verify(R, check_movie=True, fixed=None, overrides=None):
     return W
 
 
-# ---- reconstruction of runs made before the record existed
-def _parse_commands(path):
-    """command.txt -> [(time text, gpu, module, argv)] of its 'python -m <module> ...' lines"""
-    import re
-    L = []
-    for line in open(path).read().splitlines():
-        m = re.search(r'python -m (\S+)\s+(.*)$', line)
-        if not m: continue
-        g = re.search(r'GPU (\d+)', line[:m.start()])
-        L.append((line[:m.start()].strip().rstrip(':').strip(), g.group(1) if g else None, m.group(1), shlex.split(m.group(2))))
-    return L
-
-
-def _old_run_args(argv):
-    """a simcode.run command line of a run made before 2026-11-14 (single network / calibration files, --netset, the options that
-    were removed since) -> (args, model dict, pass-1 calibration) as simcode.run.resolve, for the reconstruction of its record"""
-    from simcode import run as RUN, table as SP
-    ap = RUN.build_parser()
-    for k in ('--det', '--head', '--cal', '--p2_det', '--p2_head', '--p2_cal', '--netset', '--autoc', '--autoc_fast', '--cand_pmin', '--fast',
-              '--compile', '--compile_head', '--strict_q', '--u_max', '--format', '--prefetch', '--subset', '--sigma_max'):
-        ap.add_argument(k, default='')
-    ap.add_argument('--sig_u', default='set')
-    ap.add_argument('--pass2', action='store_true')
-    a = ap.parse_known_args(argv)[0]
-    a.model = a.model or a.netset
-    if a.dataset:
-        D = RUN.PROD['datasets'][a.dataset]
-        a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.model = a.model or D['model']
-    N = config.model_set(a.model or None)
-    # the single-file options of the old command line -> the model's files
-    for old, r in (('det', 'detector'), ('head', 'emitter'), ('p2_det', 'detector_pass2'), ('p2_head', 'emitter_pass2')):
-        setattr(a, r, getattr(a, old) or N[r])
-    a.cal_pass2 = a.p2_cal or N[f'cal_{a.cal_kind}_pass2']
-    if a.sig_u == 'set': a.sig_u = N['sig_u']
-    return a, N, config.resolve(a.cal) if a.cal else N[f'cal_{a.cal_kind}']
-
-
-def backfill(out, write_file=True):
-    """reconstruct run_config.json of a run made before 2026-11-14 from command.txt, summary.json, runtime.json, the info files
-    and the present input files (nothing is recomputed). status 'reconstructed'; 'not_recovered' lists what is unknown."""
-    from simcode import run as RUN, table as SP
-    out_abs = os.path.abspath(out); real = os.path.realpath(out)
-    cmds = _parse_commands(os.path.join(out, 'command.txt'))
-    runs = [c for c in cmds if c[2].split('.')[-1] == 'run']; stricts = [c for c in cmds if c[2].split('.')[-1] == 'strict']
-    if not runs: raise SystemExit(f'{out}: no simcode run line in command.txt')
-    cwd = os.getcwd()
-    try:
-        os.chdir(REPO)                                   # the commands were given from the repository root (relative paths)
-        a, N, cal = _old_run_args(runs[0][3] + ['--sig_u', ''])
-        # the model name is not in the old command lines: the model of models.json whose network files were used
-        name = next((k for k, v in config.model_sets().items() if not k.startswith('_') and all(
-            os.path.abspath(config.resolve(v[r])) == os.path.abspath(config.resolve(getattr(a, r))) for r in ('detector', 'emitter', 'detector_pass2', 'emitter_pass2'))), None)
-        Nd = config.model_set(name) if name else None
-        S = RUN.settings_of(a, cal); S['model'] = name; S['out'] = out_abs
-        RTJ = json.load(open(os.path.join(out, 'runtime.json'))); SUM = json.load(open(os.path.join(out, 'summary.json')))
-        fast = RTJ.get('fast', {})
-        fixed = RUN.fixed_values()
-        fixed.update(det_batch=fast.get('det_batch'), emitter_batch=fast.get('head_batch'), solve_batch=fast.get('solve_batch'),
-                     compile=fast.get('compile'), compile_emitter=fast.get('compile_head'), cand_pmin=SUM.get('cand_pmin'))
-        fixed['_source'] = 'batch sizes / compile / cand_pmin from runtime.json and summary.json of the run; the other values are those of the present code'
-        # runtime.json of a run made before 2026-11-14 (its keys of that time: sc / p2, det / head / cal)
-        files = dict(detector=RTJ['sc']['det'], emitter=RTJ['sc']['head'], cal=RTJ['sc']['cal'], detector_pass2=RTJ['p2']['det'],
-                     emitter_pass2=RTJ['p2']['head'], cal_pass2=RTJ['p2']['cal'])
-        steps = []; sel = {}
-        for t, g, mod, av in stricts:
-            sp = SP.build_parser()                                 # (options of that time that no longer exist are ignored)
-            for k in ('--sig_u', '--format', '--sigma_max', '--subset'): sp.add_argument(k, default='')
-            sa = sp.parse_known_args(av)[0]
-            su = config.resolve(sa.sig_u) if sa.sig_u else ''
-            steps.append(dict(step='strict', time=t, command=f'python -m {mod} ' + shlex.join(av), reconstructed=True,
-                              settings=dict(tag=sa.tag, sig_u=su, drift=sa.drift, format=sa.format, crop=sa.crop),
-                              files=dict(sig_u=file_record(su)) if su else {}))
-            files['sig_u_pass1' if sa.tag == 'est' else 'sig_u_pass2'] = su
-        # the tables were built by the logged simcode.table commands with these rescales; simcode.run now does the same in its
-        # table stage, so the pair goes into the settings (a re-run from this record then builds the same kind of tables)
-        S['sig_u'] = ','.join(files.get(k, '') for k in ('sig_u_pass1', 'sig_u_pass2')) if any(files.get(k) for k in ('sig_u_pass1', 'sig_u_pass2')) else ''
-        iso = lambda t: time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(t))
-        t_cmd = os.path.getmtime(os.path.join(out, 'command.txt'))
-        unlogged = {f: time.strftime('%Y-%m-%dT%H:%M:%S%z', time.localtime(os.path.getmtime(os.path.join(out, f)))) for f in sorted(os.listdir(out))
-                    if f.startswith('locs_') and (f not in ('locs_p1.npz', 'locs_p2.npz', 'locs_p1_info.json', 'locs_p2_info.json')   # the outputs of the logged commands
-                                                  or os.path.getmtime(os.path.join(out, f)) > t_cmd + 600)}
-        t_first = min(os.path.getmtime(os.path.join(out, f)) for f in os.listdir(out) if f.startswith('pass1_') and f.endswith('.npz'))
-        t_tab = {n: os.path.getmtime(os.path.join(out, n + '.npz')) for n in ('locs_p1', 'locs_p2') if os.path.exists(os.path.join(out, n + '.npz'))}
-        res = results(out, written_by='table rebuild (see table_state)')
-        infos = {n: json.load(open(os.path.join(out, n + '_info.json'))) for n in t_tab}
-        model = model_record(name, Nd, files); calib = calib_record(a.calib); movie = movie_record(a.movie, a.nframes, a.chunk, a.chunk_list)
-        late = [dict(file=k, path=v['path'], modified=v['mtime'], sha256_now=v.get('sha256'),
-                     git_commits_since_run_start=(_git(REPO, 'log', '--format=%h %cI %s', f'--since={iso(t_first)}', '--', v['path']) or '').splitlines(),
-                     note='the present file is not the one the run read; see the commits (git diff) for what changed')
-                for k, v in list(model['files'].items()) + [('calib', calib), ('camera_maps', calib.get('camera_maps') or {})]
-                if v.get('mtime') and time.mktime(time.strptime(v['mtime'][:19], '%Y-%m-%dT%H:%M:%S')) > t_first]
-        commit_then = _git(REPO, 'log', '-1', '--format=%H %cI %s', f'--before={iso(t_first)}')
-        R = dict(format=FORMAT, status='reconstructed', reconstructed=dict(
-                     when=now(), by='python -m simcode.util.runconfig backfill', from_files=['command.txt', 'summary.json', 'runtime.json', 'locs_p*_info.json',
-                     'pattern_est.json', 'pattern_est.pt', 'file modification times', 'the present model / calibration / movie files'],
-                     not_recovered=[
-                         'git commit and working-tree state at run time (code.git_commit_inferred = the last commit before the first chunk file; '
-                         'the working tree had uncommitted changes at the time, and the package was still named simcode2)',
-                         'torch / CUDA / numpy versions and the GPU model at run time (environment = the present ones, as a hint only)',
-                         'sha256 of the input files at run time: the hashes are of the present files; a file modified after the run started '
-                         'is listed in inputs_modified_after_run_start (empty = all inputs are older than the run)',
-                         'the commands that wrote the files of files_without_logged_command (the subset files, which the logged commands do not '
-                         'write, and files modified more than 10 minutes after the last command.txt line, e.g. an updated info file); table_state gives '
-                         'the settings stored in the info files as they are now',
-                         'settings that were not on the command line are the defaults of the present code (crop 5,5,110, chunk 6000, margin 5, nn_min 3, '
-                         'min_phot 300; they agree with the chunk files: crop entry of the pass-1 files, chunk starts). settings.sigma_max / u_max / subset '
-                         'did not exist at run time (present defaults); settings.sig_u = the rescales of the logged simcode.table commands, which '
-                         'simcode.run now applies itself',
-                         'the run time of invocations other than the last one (summary.json holds the timing of the last invocation only)'],
-                     inputs_modified_after_run_start=late, files_without_logged_command=unlogged),
-                 started=iso(t_first), finished=iso(max(t_tab.values())) if t_tab else None,
-                 reproduce='python -m simcode.run --config <this file> --out <new dir>  (re-runs with the present code and the present input files)',
-                 settings=S, fixed=fixed, overrides=None, model=model, calib=calib, movie=movie,
-                 code=dict(code_record(), git_commit=None, git_commit_time=None, git_dirty=None, modified_files=None, untracked_package_files=None,
-                           git_commit_inferred=commit_then, package_name_at_run_time=runs[0][2].split('.')[0],
-                           note='git_commit_inferred: last commit before the first chunk file; not verified. dme / models_file: present state'),
-                 environment=dict(env_record(gpu=False), note='PRESENT environment, not recorded at run time', cuda_visible_devices=None),
-                 invocations=[dict(command=f'python -m {mod} ' + shlex.join(av), time=t, gpu=g, reconstructed=True) for t, g, mod, av in runs],
-                 steps=steps,
-                 table_state={n: dict(file_modified=iso(t_tab[n]), sig_u=infos[n].get('sig_u'), sigma_max_nm=infos[n].get('sigma_max'), u_max=infos[n].get('u_max'),
-                                      drift=infos[n].get('drift'), crop=infos[n].get('crop', list(SP.run_crop(out))),
-                                      note='settings stored in the info file of the table as it is now') for n in t_tab},
-                 summary_json={k: v for k, v in SUM.items() if k not in ('columns', 'locs_p1', 'locs_p2')},
-                 chunk_files=dict(first_modified=iso(t_first), crop=list(SP.run_crop(out))), **res)
-        R['timing'] = dict(SUM.get('timing', {}), note='timing of the last simcode.run invocation (earlier invocations did part of the chunks)')
-        R['real_path'] = real
-    finally:
-        os.chdir(cwd)
-    if write_file:
-        with locked(out): write(out, R)
-    return R
-
-
 def show(R):
     S = R.get('settings', {}); M = R.get('model', {}); c = R.get('code', {}); e = R.get('environment', {})
     L = [f'status {R.get("status")}   started {R.get("started")}   finished {R.get("finished")}',
@@ -656,16 +529,12 @@ def show(R):
 def main(argv=None):
     import argparse
     ap = argparse.ArgumentParser(description='run record (run_config.json) of simcode output directories')
-    ap.add_argument('action', choices=['show', 'verify', 'backfill'])
+    ap.add_argument('action', choices=['show', 'verify'])
     ap.add_argument('dirs', nargs='+')
     a = ap.parse_args(argv)
     for d in a.dirs:
         print(f'== {d}')
-        if a.action == 'backfill':
-            if os.path.exists(os.path.join(d, NAME)) and load(d).get('status') != 'reconstructed':
-                print('  has a run record that is not a reconstruction: left alone'); continue
-            print(show(backfill(d)))
-        elif a.action == 'show':
+        if a.action == 'show':
             print(show(load(d)))
         else:
             W = verify(load(d))

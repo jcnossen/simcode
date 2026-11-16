@@ -99,7 +99,8 @@ def main():
     pre, dA, fA, cA, dB, fB, cB, calib, scen = sys.argv[1:10]
     f1, c1 = (sys.argv[10:12] + ['', ''])[:2]
     C1 = json.load(open(config.resolve(c1))) if f1 else None
-    c = json.load(open(config.resolve(calib))); focus, px_um = c['focus_um'], c['pixelsize_um']
+    from simcode.psf import read_calib
+    c = read_calib(config.resolve(calib)); focus, px_um = c['focus_um'], c['pixelsize_um']
     CA, CB = json.load(open(config.resolve(cA))), json.load(open(config.resolve(cB)))
     res = {}; L = [f'# 3D {fA} ({dA}, cal {cA}) vs 2D {fB} ({dB}, cal {cB}); psf {calib}']
     for sc in scen.split(','):

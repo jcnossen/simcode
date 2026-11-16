@@ -155,5 +155,5 @@ if __name__ == '__main__':
     ap.add_argument('--camera', default='old', choices=['old', 'v2'], help="infer: 'v2' = models/insitu/camera_maps_<ds>_v2.npz (models trained in camera-v2 units: dec_m1809v3, dec_m25v3)")
     ap.add_argument('--variant', default='sum6p'); ap.add_argument('--vover', default=None); ap.add_argument('--out'); ap.add_argument('--maxframes', type=int, default=None); ap.add_argument('--starts', default='0,3')
     a = ap.parse_args()
-    from simcode.util.proctitle import auto; auto('decode')     # recognizable name in nvidia-smi / ps
+    from simcode.util.proctitle import set_title; set_title('decode')     # recognizable name in nvidia-smi / ps
     train(a) if a.cmd == 'train' else infer(a)

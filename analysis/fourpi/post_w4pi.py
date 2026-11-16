@@ -26,7 +26,7 @@ def main():
     p.add_argument('--kstride', type=int, default=25)
     a = p.parse_args()
     if REPO not in sys.path: sys.path.insert(0, REPO)
-    from simcode.util.proctitle import auto; auto('4pi-post-w')
+    from simcode.util.proctitle import set_title; set_title('4pi-post-w')
     fs = sorted(glob.glob(f'{OUT}/locs_{a.cell}_[0-9][0-9][0-9]_{a.head}.npz'))
     fidx = lambda f: int(re.search(rf'locs_{a.cell}_(\d\d\d)_', os.path.basename(f)).group(1))     # the head tag may contain underscores
     if a.files: fs = [f for f in fs if fidx(f) in a.files]

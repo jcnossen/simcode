@@ -75,13 +75,6 @@ def dme_grid(pos, frame, crlb, framesperbin, numframes=None, **kw):
     return dme_grid_estimate(pos, frame, crlb, framesperbin, numframes=numframes, **{'verbose': False, **kw})
 
 
-def dme_exact(pos, frame, crlb, framesperbin, numframes=None, **kw):
-    """the 2021 algorithm (exact pairwise objective) on the GPU (dme.dme_pipeline.dme_estimate_gpu)"""
-    dme_package()
-    from dme.dme_pipeline import dme_estimate_gpu
-    return dme_estimate_gpu(pos, frame, crlb, framesperbin, numframes=numframes, **{'verbose': False, **kw})
-
-
 def drift_rows(x, y, frame, sx, sy, nframes, t_offset=3):
     """the rows that enter the drift estimate -> (pos [n,2] float32, time [n] int64 = frame + t_offset, crlb [n,2] float32):
     finite position and sigma, 0 < sigma < 1 px on both axes, time inside [0, nframes)"""

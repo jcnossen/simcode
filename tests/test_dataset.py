@@ -8,7 +8,7 @@ Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
              before 2026-11-15 (columns=); select / mask equal table.select; columns(); the subclass survives indexing and
              the filters
   hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata; select after the round trip
-  old files  the earlier SIMCODE npz save (metadata, drift, applied flag), the preprint code's .npy, the paper's DECODE npz,
+  old files  the preprint code's .npy, the paper's DECODE npz,
              Picasso (the paper's sf.hdf5)
   drift      apply at the window centre (frame + 3); estimate (DME v2) close to simcode.util.drift.drift_of_table
   frc        Dataset.frc = simcode.evaluation.frc.frc_halves
@@ -114,20 +114,6 @@ def test_hdf5_roundtrip():
         N.apply_drift(); assert torch.allclose(N.pos, L.pos - L.drift[L.center_frame.long()], atol=0, rtol=0)
 
 
-def test_old_simcode_npz():
-    """a file of the earlier SIMCODE Dataset.save_npz (v2 table + locs_meta json + locs_drift + locs_drift_applied)"""
-    with tempfile.TemporaryDirectory() as d:
-        T, info = _table(d)
-        D = np.random.default_rng(2).normal(0, 0.1, (6100, 2)).astype(np.float32)
-        meta = dict(window=6, model='mtest', imgshape=[120, 120], nframes=6100, sigma_max=12.0, crop=[5.0, 5.0, 110.0])
-        np.savez(f'{d}/old.npz', **T, locs_meta=np.array(json.dumps(meta)), locs_drift=D, locs_drift_applied=np.array(True))
-        L = Dataset.load(f'{d}/old.npz')
-        _check_layout(L, T)
-        assert L.drift_applied and np.array_equal(L.drift.numpy(), D) and L.meta['model'] == 'mtest'
-        assert L.meta['image_size'] == [120, 120] and L.num_frames == 6100 and L.pixel_nm == SP.PX_NM_DEFAULT and 'window' not in L.meta
-        assert int(L.mask().sum()) == info['n_main']
-
-
 def test_v1_decode_picasso_files():
     """the preprint code's numpy file (structured array, read without that package), the paper's DECODE npz, Picasso"""
     r = np.random.default_rng(3); n = 200
@@ -205,7 +191,9 @@ def test_frc_equals_reference():
     x, y = site[k, 0] + r.normal(0, 0.08, n), site[k, 1] + r.normal(0, 0.08, n)
     L = Dataset.from_arrays(np.c_[x, y], f, meta=dict(pixel_nm=SP.PX_NM_DEFAULT))
     v, freq, curve = L.frc(return_curve=True); w, freq2, curve2 = frc_halves(x, y, f, return_curve=True)
-    assert np.isfinite(v) and v == w and np.array_equal(curve, curve2) and L.frc(block=30) == frc_halves(x, y, f, blk=30)
+    # torch-psf since 5f740a9 (pin 0fee3c3) computes the FRC with float32 histograms and a complex64 rfft2 (the paper estimator: float64): the
+    # curves agree to ~2e-8 (here: the same resolution)
+    assert np.isfinite(v) and v == w and np.allclose(curve, curve2, rtol=0, atol=1e-6) and L.frc(block=30) == frc_halves(x, y, f, blk=30)
 
 
 def test_real_table():

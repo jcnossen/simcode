@@ -256,7 +256,7 @@ def main(argv=None):
     p.add_argument('--out', default=None, help='output directory (default <out>/process)')
     p.add_argument('--set', nargs='*', default=[], help='overrides of the fourpi section: key=value (json values)')
     a = p.parse_args(argv)
-    from simcode.util.proctitle import auto; auto('4pi-process')
+    from simcode.util.proctitle import set_title; set_title('4pi-process')
     from simcode.pipeline import acquisition_config as AC
     L = AC.load_all(a.config)
     if a.only: L = [c for c in L if c['name'] == a.only]

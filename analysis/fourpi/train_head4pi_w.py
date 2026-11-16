@@ -18,6 +18,7 @@ import torch.nn.functional as F
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.util.ckpt import save as safe_save
 from simcode.fourpi.lut4pi import LUT4Pi
 from simcode.simulate.fourpi_patches import FourPiPatchSim
@@ -48,9 +49,9 @@ def main():
     a = p.parse_args(); a.arch = 'w'; a.wins = [list(w) for w in WINDOWS_K]
     if a.acq:
         return main_plain(a)
-    from simcode.util.proctitle import auto; auto('4pi-train-w')
+    from simcode.util.proctitle import set_title; set_title('4pi-train-w')
     torch.manual_seed(a.seed)
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=15)
     sim = FourPiPatchSim(lut, seed=a.seed)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
@@ -112,7 +113,7 @@ def main_plain(a):
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from train_det4pi import acquisition, setup_of
-    from simcode.util.proctitle import auto; auto('4pi-train-plain')
+    from simcode.util.proctitle import set_title; set_title('4pi-train-plain')
     c = acquisition(a.acq); t = c['fourpi_train']; S_ = setup_of(c)
     T = c['fourpi']['window']; out = c['fourpi']['emitter']; os.makedirs(os.path.dirname(out), exist_ok=True)
     steps = a.steps if a.steps != 20000 else t['emitter_steps']
@@ -122,7 +123,7 @@ def main_plain(a):
     a.wins = [list(w) for w in WINDOWS_PLAIN]; a.excess = T > 1     # single frames: no frame-mean excess in the pixel variance
     torch.manual_seed(a.seed)
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'      # cpu: smoke tests only
-    st = json.load(open(c['fourpi']['psf']))['psf']
+    st = fourpi_state(c['fourpi']['psf'])
     lut = LUT4Pi(st, P=15, zmin=t['zlut'][0], zmax=t['zlut'][1], dev=dev)
     init, smp = S_.sim_kw(c)
     sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)

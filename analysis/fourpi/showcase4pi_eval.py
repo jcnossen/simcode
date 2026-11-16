@@ -29,6 +29,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
 from simcode.fourpi.lut4pi import LUT4Pi
@@ -87,12 +88,12 @@ def main():
     p.add_argument('--sz_max', type=float, default=0.025); p.add_argument('--sxy_max', type=float, default=0.12)
     p.add_argument('--chi2_max', type=float, default=4.0)
     a = p.parse_args()
-    from simcode.util.proctitle import auto; auto('4pi-sceval')
+    from simcode.util.proctitle import set_title; set_title('4pi-sceval')
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     out = f'{P4}/showcase/{a.tag}'; os.makedirs(out, exist_ok=True)
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     LO, HI = 8.0, W - 8.0
-    st = json.load(open(f'{P4}/psf4pi/{meta["psf"]}.json'))['psf']
+    st = fourpi_state(meta["psf"], P4)
     lut = LUT4Pi(st, P=15, dev=dev)
     t0 = time.time()
     U = gt_units(d, T)

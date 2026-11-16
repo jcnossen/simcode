@@ -401,11 +401,12 @@ def main():
         cam = np.load(os.path.join(REPO, 'models', 'insitu', D['cam']))
         gain, offset = float(cam['gain']), cam['offset_adu'].astype(np.float32)
     elif a.camera == 'calib':
-        assert a.psf.endswith('.json'), '--camera calib needs a calib json --psf'
-        cc = json.load(open(a.psf))['camera']; cam_src = os.path.join(os.path.dirname(os.path.abspath(a.psf)), cc['maps'])
-        cam = np.load(cam_src)
+        assert a.psf.endswith(('.json', '.zip')), '--camera calib needs a calibration (calib json or psf.zip) --psf'
+        from simcode.psf import read_calib, camera_maps, camera_maps_path
+        C = read_calib(a.psf); cc = C['camera']; cam_src = camera_maps_path(a.psf, C)
+        cam = camera_maps(a.psf, C)
         gain, offset = float(cc['gain_e_per_adu']), cam['offset_adu'].astype(np.float32)
-        assert abs(float(cam['gain']) - gain) < 1e-6, (cam_src, float(cam['gain']), gain)
+        if 'gain' in cam: assert abs(float(cam['gain']) - gain) < 1e-6, (cam_src, float(cam['gain']), gain)
     else:
         gain, offset = PAPER['gain'], PAPER['offset']
     height = None

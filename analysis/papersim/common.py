@@ -77,7 +77,8 @@ def heights_v2(n, rng, calib=PSF_CALIB_V2):
     """[n] emitter heights (um) by the v2 calibration rule (simcode.simulate.acquisition.height_quantiles / draw_z, numpy draw)"""
     import torch
     import simcode.simulate.acquisition as acq
-    c = json.load(open(calib))
+    from simcode.psf import read_calib
+    c = read_calib(calib)
     d0 = acq.dev; acq.dev = torch.device('cpu')            # the quantile nodes only (CPU-only generation works too)
     try: P, Z = (t.numpy().astype(np.float64) for t in acq.height_quantiles(c))
     finally: acq.dev = d0
@@ -95,7 +96,8 @@ def camera_v2(H=40, W=40):
 
 
 def z_um():
-    return float(json.load(open(PSF_CALIB)).get('emitter_z_median_um', 0.055))
+    from simcode.psf import read_calib
+    return float(read_calib(PSF_CALIB).get('emitter_z_median_um', 0.055))
 
 
 # ------------------------------------------------------------------------------------------------ preprint sources
@@ -198,7 +200,8 @@ def write_sim_calib(d, H, W, P, psf='vectorial'):
     psf_gauss_sigma_um), so SIMCODE v2's head template and solve use the movie's PSF"""
     if psf == 'v2':
         return _write_sim_calib_v2(d, H, W, P)
-    c = json.load(open(GAUSS_CALIB if psf.startswith('gauss') else PSF_CALIB))
+    from simcode.psf import read_calib
+    c = read_calib(GAUSS_CALIB if psf.startswith('gauss') else PSF_CALIB)
     if psf.startswith('gauss'):
         assert abs(c['psf_gauss_sigma_um'] / c['pixelsize_um'] - float(psf[5:])) < 1e-3, 'calib_gauss sigma != movie sigma'
     np.savez(os.path.join(d, 'camera_sim.npz'), offset_adu=np.full((H, W), OFFSET, np.float32), readnoise_e=np.zeros((H, W), np.float32),
@@ -216,7 +219,8 @@ def write_sim_calib(d, H, W, P, psf='vectorial'):
 
 def _write_sim_calib_v2(d, H, W, P):
     """calib_sim.json of a v2-PSF movie: the v2 calibration (PSF, emitter-height keys) with the movie's camera (camera_v2 crop)"""
-    c = json.load(open(PSF_CALIB_V2))
+    from simcode.psf import read_calib
+    c = read_calib(PSF_CALIB_V2)
     g, off, rn = camera_v2(H, W)
     np.savez(os.path.join(d, 'camera_sim.npz'), offset_adu=off, readnoise_e=rn, gain=np.float32(g))
     c['source'] = ('papersim simulated movie (v2 PSF set): PSF of ' + os.path.basename(PSF_CALIB_V2) + '; camera = the v2 1809/2 camera '

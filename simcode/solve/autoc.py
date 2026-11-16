@@ -13,7 +13,7 @@ residual covariance is exactly V_e(theta) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^
                  B is shared, so h is the per-angle brightness ratio: it splits c_a from c)
 binned by the frame SNR^2 = mu_t^2 / Sigma_net,tt (low SNR pins s, high SNR pins c^2 + c_a^2) and the window SNR^2 of the
 contrast; theta minimises sum_bins wt (median u - 1/2)^2 (robust to FP / merged tails) at the fixed solutions; the solve is
-re-run with theta and the fit repeated (fixed point, 3 iterations). Analysis estimator (2026-11-14: no longer a pipeline stage): run_dir(<pipeline output dir>) -> theta; make_calib(theta) -> a solve calibration.
+re-run with theta and the fit repeated (fixed point, 3 iterations). Analysis estimator (2026-11-14: no longer a pipeline stage): run_dir(<pipeline output dir>) -> theta.
 The 'q/dof' of the solve uses dof = T + 2 - n_free
 (5 = 6 intensities + 2 prior pseudo-observations - (x, y, B); 3 with the kinetic on/off times)."""
 import json, os, glob
@@ -24,7 +24,6 @@ from simcode.util import spatial_hash as SH
 
 T = 6
 PHB = [(200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 4000), (4000, 1e9)]
-FIT_LO = 400        # the 200-400 bin (FP / selection-dominated) is reported but not used in the fit
 R_ISO = 2.0
 dev = 'cuda'
 tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
@@ -46,7 +45,7 @@ def iso_flag(key, x, y, r=R_ISO):
 
 
 def pipeline_rows(d, chunks=None, nmax=120000, seed=0, pattern=None):
-    """rows of a pipeline output dir (pass1_<f0>.npz + pattern_est.pt): the 'out' rows as run_chunk_pattern_solve solves them.
+    """rows of a pipeline output dir (pass1_<f0>.npz + pattern_est.pt): the 'out' rows as front_fast.run_chunk_pattern_solve_fast solves them.
     Returns a list of (o-dict, PW, b, ph, iso) per chunk (subsampled to ~nmax rows in total)."""
     from simcode.processing.common import pattern_frames
     fs = sorted(glob.glob(f'{d}/pass1_*.npz'), key=lambda f: int(f.split('_')[-1][:-4]))
@@ -211,17 +210,6 @@ def q_table(rows, cal, fast=True):
     S = solve_rows(rows, cal, keep_all=True, fast=fast)
     qd = S['q'] / S['dof']; ph = S['ph']
     return [(lo, float(qd[(ph >= lo) & (ph < hi)].median()) if ((ph >= lo) & (ph < hi)).sum() > 30 else np.nan) for lo, hi in PHB]
-
-
-# ------------------------------------------------------------------------------------------------------------- pipeline use
-def make_calib(theta, table=None, src=''):
-    """solve calibration with the automatic theta: the autoc sigma table (models/calib/calib_sc_hd_sc5nbb15_pm_autoc1.json)
-    with cmult = c, cmult_ang = c_a; the Sigma scale stays 1 (s is a nuisance of the fit, not applied)"""
-    from simcode import config
-    c = json.load(open(config.model(table or config.CAL_AUTOC)))
-    s, cm, ca = theta
-    c.update(cmult=float(cm), cmult_ang=float(ca), autoc_theta=[float(s), float(cm), float(ca)], autoc_from=src)
-    return c
 
 
 def run_dir(d, nmax=120000, n_chunks=5, cal0=None, n_iter=3, log=print, fast=True):

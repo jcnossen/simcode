@@ -39,9 +39,10 @@ def _dev(device):
 
 def rms_aberration_mwaves(spec):
     """rms of the Zernike coefficients Noll >= 5 (Noll-normalised, waves) of a calib json -> mλ; None if not a calib"""
-    if not spec.endswith('.json'): return None
+    if not spec.endswith(('.json', '.zip')): return None
     from simcode.config import resolve
-    c = json.load(open(resolve(spec)))
+    from simcode.psf import read_calib
+    c = read_calib(resolve(spec))
     n = np.asarray(c.get('zernike_noll', []), int); w = np.asarray(c.get('zernike_waves', []), float)
     if not len(w): return 0.0
     return float(np.sqrt(np.sum(w[n >= 5] ** 2)) * 1e3)

@@ -183,18 +183,14 @@ def test_config_names():
                            env={k: v for k, v in dict(env, **e).items() if v is not None})
         assert r.returncode == 0, r.stderr
         return r.stdout.strip()
-    old = 'SIMCODE' + '2_'                                    # the pre-rename prefix (no longer read)
-    clean = {k: None for k in ('SIMCODE_OUT', 'SIMCODE_MODELS', 'SIMCODE_MODEL', 'SIMCODE_CONFIG', old + 'OUT', old + 'MODELS', old + 'MODEL', old + 'CONFIG')}
+    clean = {k: None for k in ('SIMCODE_OUT', 'SIMCODE_MODELS', 'SIMCODE_MODEL', 'SIMCODE_CONFIG')}
     with tempfile.TemporaryDirectory() as d:
-        json.dump(dict(out='o_new'), open(f'{d}/simcode.json', 'w')); json.dump(dict(out='o_old', data='/dd'), open(f'{d}/simcode2.json', 'w'))
+        json.dump(dict(out='o_new'), open(f'{d}/simcode.json', 'w'))
         c = 'from simcode import config; print(config.root("out"), config.root("data"), config.root("fourpi"))'
         assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json')) == f'{d}/o_new  {d}/o_new/4pi'
-        assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json', **{old + 'OUT': '/x'})).split()[0] == f'{d}/o_new'   # old variable name: ignored
         assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json', SIMCODE_OUT='/y')).split()[0] == '/y'
-        assert run('from simcode import config; print(config.root("out"))', **dict(clean, **{old + 'CONFIG': f'{d}/simcode2.json'})) != f'{d}/o_old'
     from simcode import config
     S = config.model_sets()
-    assert not hasattr(config, 'netset') and not hasattr(config, 'netsets') and not hasattr(config, 'NETSETS_FILE')   # removed 2026-11-14
     sets = [k for k in S if not k.startswith('_')]
     assert S['_default'] in sets and config.model_set()['name'] == (config.env('MODEL') or S['_default'])
     for n in sets:

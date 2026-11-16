@@ -38,13 +38,9 @@ def test_settings_roundtrip():
     assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'sigu_p2_m25' in S['sig_u']
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
-    # --model is required (no single-file options); the removed options are refused; an old record's removed keys are dropped
-    for bad in (['--movie', 'm.tif', '--calib', 'c.json', '--out', 'x'], ['--dataset', '1809_2', '--out', 'x', '--det', 'd.pt'],
-                ['--dataset', '1809_2', '--out', 'x', '--netset', 'm25'], ['--dataset', '1809_2', '--out', 'x', '--pass2'],
-                ['--dataset', '1809_2', '--out', 'x', '--subset', '12'], ['--dataset', '1809_2', '--out', 'x', '--sig_u', ''],
-                ['--dataset', '1809_2', '--out', 'x', '--format', 'npz'], ['--dataset', '1809_2', '--out', 'x', '--prefetch', '0']):
-        try: _settings(bad); raise AssertionError(bad)
-        except SystemExit: pass
+    # --model is required; a record's settings that are no longer options are not passed on (rerun_argv takes RERUN_KEYS only)
+    try: _settings(['--movie', 'm.tif', '--calib', 'c.json', '--out', 'x']); raise AssertionError('--model is required')
+    except SystemExit: pass
     old = dict(settings=dict(S, subset='main,u,strict', sigma_max=12.0, format='npz', prefetch=1, sig_u='', u_max=0.45, strict_q=None, det='/x/det.pt'))
     av = RC.rerun_argv(old)
     assert not {'--subset', '--sigma_max', '--format', '--prefetch', '--sig_u', '--u_max', '--det'} & set(av) and av[av.index('--crop') + 1] == '5,5,110'

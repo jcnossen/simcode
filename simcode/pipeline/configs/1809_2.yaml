@@ -1,5 +1,5 @@
 # DMD-SIMFLUX TIRF-SIM (NA 1.49 oil, Zyla 4.2 sCMOS, 642 nm, 108.33 nm px); the paper's low-density movie 1809/cover1/2.
-# Reference calibration: models/insitu/calib_1809_2_psf3d.json (+ _avg), camera_maps_1809_2.npz.
+# Reference calibration (production): models/insitu/calib_1809_2_psf_v2.json, camera_maps_1809_2_v2.npz.
 name: "1809_2"
 movie: /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif
 out: /mnt/data/dmdsf/simcode2_out/auto/1809_2
