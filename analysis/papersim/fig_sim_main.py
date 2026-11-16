@@ -155,7 +155,7 @@ def main():
            "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px" + ("; SIMCODE: detection probability >= 0.63 and its calibrated σ < 0.15 px, "
            "the same precision cut as every method" if a.v2key == 'v2c' else "") + "). "
            + ("SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; " if a.internal else
-              "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF, the emitter heights and these photon / background / density ranges. "
+              "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF following its published training settings (Supplementary Note: DECODE training), with the emitter heights and these photon / background / density ranges. "
            "Results with the true pattern, the fair half-split FRC, the Jaccard index and the false-positive fraction are in the SI table. "
            + GR.RULE_CAPTION,
            psfpanel.caption_text(info, what='(B)'),
