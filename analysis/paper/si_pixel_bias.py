@@ -209,9 +209,14 @@ def caption(V, a):
     L.append('Rows: the common rule for every method (own filters, disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px on its own '
              'reported uncertainty; SIMCODE p >= 0.63 with calibrated sigma). Bias: rows matched within 1 px to a ground-truth emitter with '
              'no other emitter ON within 2 px. SIMFLUX uses the true pattern throughout; on the isolated-emitter movie SIMCODE also uses the '
-             'true pattern (its pattern estimate fails on this sparse movie). DECODE = DECODE retrained on our conditions with its '
-             'published training schedule (32 768 simulated frames per epoch, learning rate 6e-4 with plateau halving), weights frozen '
-             'at convergence (epoch 300, 9.8 M frames; all monitored metrics flat from epoch ~200).')
+             'true pattern (its pattern estimate fails on this sparse movie).')
+    L.append('DECODE training: DECODE was retrained on our conditions following the training settings published with DECODE '
+             '(AdamW, learning rate 6e-4, weight decay 0.1, ReduceLROnPlateau with factor 0.5, patience 20 and cooldown 10, batch 64, '
+             '32 768 simulated frames per epoch), from scratch with a 512-step linear learning-rate warm-up (without it the training '
+             'diverged in the first epoch). It was trained to convergence (all monitored metrics flat from epoch ~200) and the weights '
+             'were frozen at epoch 300 (9.8 M training frames). The training simulations use the in-situ PSF v2 model only (the PSF of '
+             'these simulations). With this training DECODE\'s pixel bias is reduced (e.g. D1, all localizations: |c1| 0.30 / 0.25 -> '
+             '0.12 / 0.14 and bias 6.7 / 4.3 -> -0.2 / 1.8 nm x / y, vs the earlier, shorter-trained model) but does not go away.')
     L.append('NUMBERS (si_pixel_bias_values.json)')
     I = V['movies']['iso']['methods_nocut']
     for k, lab in METH:

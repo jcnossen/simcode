@@ -3,8 +3,6 @@
 # epoch 28 and resumed: same checkpoint, RNG state, schedule), + the sim-only reference (preset sim1809 = the dec_sim1809v2 recipe,
 # same schedule, from scratch) for ~100 epochs next to it (matched-epoch cost of the wider ranges), + the progress evaluation.
 source ~/miniconda3/bin/activate simcode-py311; cd ~/simcode2-decodev3
-# (2026-11-16) the shared env moved to torch-psf 0fee3c3; this branch uses the old torch_psf API
-export PYTHONPATH=/home/jc/simcode2/external/torch-psf-040c3f3${PYTHONPATH:+:$PYTHONPATH}
 export CUDA_VISIBLE_DEVICES=${GPU:-2} TQDM_DISABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 L=~/simcode2/out/decode_checks/v3/logs; T=analysis/baselines/decode/train_v3.py
 nohup python -u $T --preset m1809 --name dec_m1809v3 --snap_every 4 --warmup 512 >> $L/train_dec_m1809v3.log 2>&1 &

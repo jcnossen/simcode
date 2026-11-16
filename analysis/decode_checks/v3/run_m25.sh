@@ -3,8 +3,6 @@
 # free GPU: waits until GPU ${GPU:-1} has < 20 % use and > 12 GB free in 10 checks over ~5 min, then trains + evaluates
 # (iso movie with the m25 PSF, real-data chunk 2.5 nM (20 nM is not in the paper)).
 source ~/miniconda3/bin/activate simcode-py311; cd ~/simcode2-decodev3
-# (2026-11-16) the shared env moved to torch-psf 0fee3c3; this branch uses the old torch_psf API
-export PYTHONPATH=/home/jc/simcode2/external/torch-psf-040c3f3${PYTHONPATH:+:$PYTHONPATH}
 G=${GPU:-1}; L=~/simcode2/out/decode_checks/v3/logs
 ok=0
 while [ $ok -lt 10 ]; do
