@@ -5,8 +5,10 @@ candidate cut, crop, batches), no package code changed. Per chunk: <out>/head_<f
 x_det, y_det; region coordinates), bw (window index into PW), PW [nW,6,5] (pattern per window), and the production output rows
 (wstart, frame, p, phot, X0, Y0, and the production solve x_hy0, y_hy0, sx_cal, sy_cal, q_dof, kin_hy as the reference for variant A).
 usage: CUDA_VISIBLE_DEVICES=2 python analysis/ablation_cov/capture.py --run <pipeline out dir> --movie <tif> --calib <json> --out <dir>
+          [--data-root /mnt/data/dmdsf/bn_dnapaint]
           --cal_pass2 <calib json> [--crop 5,5,110] [--chunks 0,6000] [--model m1809]
-(--model: a name of simcode/models.json or a model folder; its pass-2 detector and head are used)"""
+(--model: a name of simcode/models.json or a model folder; its pass-2 detector and head are used;
+ --data-root: joined with a relative --movie, an absolute --movie is used as given)"""
 import argparse, json, os, sys, time
 import numpy as np, torch
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(os.path.dirname(HERE))
@@ -22,6 +24,7 @@ def main():
     ap.add_argument('--crop', default='5,5,110'); ap.add_argument('--chunks', default=''); ap.add_argument('--chunk', type=int, default=6000)
     ap.add_argument('--model', default='m1809'); ap.add_argument('--cand_pmin', type=float, default=0.3)
     ap.add_argument('--pattern', default='')
+    ap.add_argument('--data-root', default='', help='folder a relative --movie is joined with')
     a = ap.parse_args()
     proctitle.set_title('covabl')
     N = config.model_set(a.model)
@@ -31,7 +34,7 @@ def main():
     from simcode.psf import TiffMovie
     from simcode.processing.common import load_calib
     os.makedirs(a.out, exist_ok=True)
-    calib = config.resolve(a.calib); movie = TiffMovie(config.resolve(a.movie, 'data')); cal = load_calib(calib)
+    calib = config.resolve(a.calib); movie = TiffMovie(os.path.abspath(os.path.join(os.path.expanduser(a.data_root), os.path.expanduser(a.movie)))); cal = load_calib(calib)
     crop = tuple(int(v) for v in a.crop.split(','))
     nf = movie.n
     chunks = [int(v) for v in a.chunks.split(',')] if a.chunks else list(range(0, nf, a.chunk))

@@ -1,16 +1,18 @@
 """(2026-11-11 in-situ 3D PSF) Summary tables of the psf3d fits: per movie the final PSF parameters (out/psf3d/final) and the held-out
 evidence (cb0 fit / cb1 held-out, out/psf3d/ho_*.npz) for the model sequence base -> line blur -> + photoselection / + per-angle
 blur, and the cross-prediction matrix (cb1 samples of movie B with the line-blur fit of movie A). Prints markdown; writes
-out/psf3d/summary.json.  usage: python analysis/psf3d/summary.py"""
+<psf3d>/summary.json.  usage: python analysis/psf3d/summary.py --psf3d ~/simcode2/out/psf3d
+  (--psf3d: the psf3d output folder with final/ and ho_*.npz)"""
 import os, sys
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode import config as _config; OUTR = _config.root('out')
-import json, os, math
+import argparse, json, os, math
 import numpy as np, torch
 from simcode.calibration.psf_compare import summarize
 
-O = f'{OUTR}/psf3d'
+_ap = argparse.ArgumentParser()
+_ap.add_argument('--psf3d', required=True, help='psf3d output folder (final/, ho_*.npz); summary.json is written there')
+O = _ap.parse_args().psf3d
 MOV = [('r05', '0.5 nM cover1/1 (ref)', 'bl'), ('m1809', '1809/2 (low)', 'bli'), ('m25', '2.5 nM/2 600 mW (medium)', 'bli'), ('m20', '20 nM/2 (high)', 'bli')]
 res = {}
 

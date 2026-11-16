@@ -1,8 +1,8 @@
 # analysis/figures
 
-Figure scripts for the paper and the summary plots. `<out>` is the out root of `simcode.config` (`SIMCODE_OUT`, or `out` in
-`simcode.json`), and `<data>` is the data root. Inputs are read from `<out>` under the same relative paths as in the
-development tree. Every script writes its PNG to `<out>/plots/` by default; `--out` or the first argument redirects it.
+Figure scripts for the paper and the summary plots. `<out>` is the output root (on this machine `~/simcode2/out`) and
+`<data>` the data root (`/mnt/data/dmdsf/bn_dnapaint`); both are given explicitly on the command line (simcode has no path
+configuration). Inputs are read from `<out>` under the same relative paths as in the development tree. Every script writes its PNG to `<out>/plots/` by default; `--out` or the first argument redirects it.
 Run the scripts from the repo with `PYTHONPATH=<repo>`. Use `--help` on any script for its usage.
 
 Check: each script below was run on the existing development outputs, and its PNG / text output was compared with the stored
@@ -62,5 +62,5 @@ outputs.
 composite command was not saved. Their font rendering differs slightly.
 
 `field/`: run `check1_offsets.py`, `check1_summary.py`, `field_maps.py` and `check3_pattern.py`, then `plot_field_offsets.py`.
-On a fresh out root (`SIMCODE_OUT`) with links to the run dirs, these reproduced every stored `<out>/field` npz / txt / json
+On a fresh out root with links to the run dirs, these reproduced every stored `<out>/field` npz / txt / json
 file and the PNG exactly.

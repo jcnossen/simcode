@@ -2,7 +2,10 @@
 on the gate scenes (simcode/benchmark/gate.gen, identical seeds / iteration loop as gate.main, no CRLB), so pattern-solve
 variants (Sigma models, per-bin calibration, prior offset) can be re-run offline. The CRLB (gt_sf_m) is copied from the
 existing gate npz of the same scene / seed after checking that the GT is identical.
-usage: CUDA_VISIBLE_DEVICES=1 python dump_fe.py --scen iso,rs05q,rs05qm --seeds 301,302,303 [--ref_tag _hd_sc5nbb15pm]"""
+usage: CUDA_VISIBLE_DEVICES=1 python dump_fe.py --scen iso,rs05q,rs05qm --seeds 301,302,303 --gate_dir ~/simcode2/out/gate \
+         --out ~/simcode2/out/bright/fe [--calib <scene PSF calibration>] [--ref_tag _hd_sc5nbb15pm]
+  --calib: scene PSF of the gate scenes (simcode.benchmark.gate.gate_calib; '' = the default model's PSF)
+  --gate_dir: folder of the gate npz (<gate_dir>/<scene>__s<seed><ref_tag>.npz) the CRLB is copied from"""
 import argparse, os, sys, time
 from simcode import config as _cfg
 import numpy as np, torch
@@ -12,8 +15,6 @@ from simcode.benchmark import gate_scenes as GA
 from simcode.emitter import model as SCM
 from simcode.detector import model as DM
 from simcode.detector.select import select_subpixel
-
-OUT = os.path.join(_cfg.root('out'), 'bright', 'fe')
 
 
 @torch.no_grad()
@@ -44,9 +45,13 @@ def main():
     ap.add_argument('--head', default='pretrain_emitter_pass1.pt')
     ap.add_argument('--name', default='sc5nb')
     ap.add_argument('--ref_tag', default='_hd_sc5nbb15pm')
+    ap.add_argument('--calib', default='', help="scene PSF calibration (GA.gate_calib; '' = the default model's PSF)")
+    ap.add_argument('--gate_dir', required=True, help='folder of the gate npz the CRLB (gt_sf_m) is copied from')
+    ap.add_argument('--out', default='simcode_out/bright/fe')
     a = ap.parse_args()
+    OUT = a.out
     os.makedirs(OUT, exist_ok=True)
-    CD.a.calib = GA.gate_calib()
+    CD.a.calib = GA.gate_calib(a.calib)
     sim, _, _ = CD.models(6)
     det, _ = DM.load(_cfg.model(_cfg.DETECTOR)); det.eval()   # as the gate runs (SC_DET) and the pipeline
     head = SCM.load(a.head); col = SCM.PSFCol(sim)
@@ -83,7 +88,7 @@ def main():
             D = {'gt_' + k: v for k, v in cat(GT).items()}
             D.update({'sc_' + k: v for k, v in cat(OU).items()})
             D['patt_est'] = np.concatenate(PE); D['patt_true'] = np.concatenate(PT); D['n_fov'] = np.array(fov0)
-            ref = f'{GA.OUT}/{sc}__s{seed}{a.ref_tag}.npz'
+            ref = f'{a.gate_dir}/{sc}__s{seed}{a.ref_tag}.npz'
             if os.path.exists(ref):
                 R = np.load(ref)
                 same = len(R['gt_x']) == len(D['gt_x']) and np.allclose(R['gt_x'], D['gt_x']) and np.allclose(R['gt_phot'], D['gt_phot'])

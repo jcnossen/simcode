@@ -31,7 +31,7 @@ KEYS = ('detector', 'emitter', 'cal_sim', 'cal_real', 'detector_pass2', 'emitter
 def main():
     name, E = sys.argv[1], sys.argv[2]; dry = '--dry' in sys.argv
     if '--generic' in sys.argv: return generic(name, E, dry)
-    MD = config.models_dir(); MF = os.path.join(E, 'model_files')
+    MD = config.MODELS; MF = os.path.join(E, 'model_files')
     S = json.load(open(config.MODELS_FILE)); old = S[name]
     if old.get('emitter', '').startswith(name + '/'): raise SystemExit(f'{name}: already swapped ({old["emitter"]})')
     p1 = name
@@ -71,7 +71,7 @@ def main():
 
 def generic(name, E, dry):
     import shutil
-    MD = config.models_dir(); MF = os.path.join(E, f'model_files_{name}')
+    MD = config.MODELS; MF = os.path.join(E, f'model_files_{name}')
     S = json.load(open(config.MODELS_FILE)); old = S[name]
     if not old.get('emitter', '').startswith(name + '/'): raise SystemExit(f'{name}: not a model folder ({old["emitter"]}); run the 3D swap first')
     cur = os.path.join(MD, name); arc = os.path.join(MD, 'archive_p2dedicated', name)

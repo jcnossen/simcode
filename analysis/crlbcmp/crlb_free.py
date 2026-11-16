@@ -4,8 +4,8 @@ ideal two-stage bound (crlb.two_stage_bounds: free-model (x, y, I_t) of the targ
 Same generator / seeds / iteration loop as simcode/benchmark/gate.main (GT checked against out/psfmatch/gate_m1809a), PSF of the m1809 set.
 Output out/crlbcmp/crlbfree/<scen>__s<seed>.npz: gt_x, gt_phot, gt_target, fr_xy [n,2] (free-model x / y CRLB, px),
 cov_or [n,8,8], ts_full [n,2], sm_m, sf_m (check).
-usage: SIMCODE_GATE_CALIB=models/insitu/calib_1809_2_psf3d_avg.json CUDA_VISIBLE_DEVICES=1 python analysis/crlbcmp/crlb_free.py iso 301,302,303"""
-import os, sys, time
+usage: CUDA_VISIBLE_DEVICES=1 python analysis/crlbcmp/crlb_free.py iso 301,302,303 --calib models/insitu/calib_1809_2_psf3d_avg.json"""
+import argparse, os, sys, time
 import numpy as np, torch
 from simcode.simulate import gate_layouts as ST
 from simcode.simulate.gate_layouts import CD, S
@@ -17,9 +17,9 @@ OUT = os.path.join(REPO, 'out', 'crlbcmp', 'crlbfree')
 GD = os.path.join(REPO, 'out', 'psfmatch', 'gate_m1809a')
 
 
-def main(scen, seeds, ntarget=3500):
+def main(scen, seeds, ntarget=3500, calib=''):
     os.makedirs(OUT, exist_ok=True)
-    CD.a.calib = GA.gate_calib()
+    CD.a.calib = GA.gate_calib(calib)
     T = 6
     sim, rpsf, lut = CD.models(T)
     for sc in scen:
@@ -63,4 +63,8 @@ def main(scen, seeds, ntarget=3500):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1].split(','), [int(s) for s in sys.argv[2].split(',')])
+    ap = argparse.ArgumentParser()
+    ap.add_argument('scen'); ap.add_argument('seeds')
+    ap.add_argument('--calib', default='', help="scene PSF calibration (GA.gate_calib; '' = the default model's PSF)")
+    a = ap.parse_args()
+    main(a.scen.split(','), [int(s) for s in a.seeds.split(',')], calib=a.calib)

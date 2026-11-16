@@ -4,18 +4,25 @@
   2. kap_I2(bin) = robust z^2 of the full-covariance whitened I_t errors vs the realized GT I_t
   3. solve with the nuisance Sigma (cmult, cmult_ang) + 1-2 + prior_off, then sig_ph(bin) = robust zcal of e / s_cal
      (multiplies s_cal so that zcal = 1 per bin)
-usage: fit_cal.py out.json scen1,scen2 '{"cmult":0.10,"cmult_ang":0.10}' [base.json]"""
-import os
+usage: fit_cal.py out.json scen1,scen2 '{"cmult":0.10,"cmult_ang":0.10}' [base.json] --fe_dir ~/simcode2/out/bright/fe \
+         --gate_dir ~/simcode2/out/gate
+  --fe_dir: dump_fe.py output folder; --gate_dir: gate npz folder (CRLB gt_sf_m for dumps without it)"""
+import argparse, os
 import sys, json, numpy as np
 from simcode import config as _cfg
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import blib as B
 EDG = [100, 300, 500, 800, 1200, 2000, 3000, 5000, 1e9]
 rob = lambda v: float(1.4826 * np.median(np.abs(v[np.isfinite(v)])))
-out, scen, extra = sys.argv[1], sys.argv[2].split(','), json.loads(sys.argv[3])
-base = json.load(open(sys.argv[4] if len(sys.argv) > 4 else _cfg.model('calib/template_calib_emitter_pass1_base.json')))
+ap = argparse.ArgumentParser()
+ap.add_argument('out'); ap.add_argument('scen'); ap.add_argument('extra'); ap.add_argument('base', nargs='?')
+ap.add_argument('--fe_dir', required=True, help='dump_fe.py output folder')
+ap.add_argument('--gate_dir', required=True, help='gate npz folder (CRLB gt_sf_m)')
+A = ap.parse_args()
+out, scen, extra = A.out, A.scen.split(','), json.loads(A.extra)
+base = json.load(open(A.base if A.base else _cfg.model('calib/template_calib_emitter_pass1_base.json')))
 cal = dict(base); cal.update(extra)
-Rs = [B.load(sc, (202,)) for sc in scen]
+Rs = [B.load(sc, (202,), fe=A.fe_dir, gate=A.gate_dir) for sc in scen]
 TI = [B.targets(R) for R in Rs]
 zp, zI, ph = [], [], []
 for R, (ti, oi) in zip(Rs, TI):

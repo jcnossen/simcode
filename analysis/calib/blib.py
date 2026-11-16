@@ -2,22 +2,20 @@
 calibration dict, match targets as gate_scenes_report_detector_matched (x_det, 1 px, score >= 0.5, resolvable CRLB < 25 nm), per-GT-photon-bin
 RMS / CRLB_SF_multi, zcal, the oracle convex mix with the prior (per-bin optimal alpha), paired FOV-bootstrap CIs."""
 import glob, json, os
-from simcode import config as _cfg
 import numpy as np, torch
 from simcode.benchmark.gate_scenes_report import match
 
 PX = 108.33
-FE = os.path.join(_cfg.root('out'), 'bright', 'fe')
-GATE = os.path.join(_cfg.root('out'), 'gate')
 PHB = [(200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 4000), (4000, 1e9), (200, 2000), (2000, 1e9)]
 
 
-def load(sc, seeds=(301, 302, 303), name='sc5nb'):
+def load(sc, seeds=(301, 302, 303), name='sc5nb', *, fe, gate):
+    """fe: dump_fe.py output folder; gate: folder of the gate npz (CRLB gt_sf_m when the dump has none)"""
     out = []; off = 0
     for sd in seeds:
-        D = dict(np.load(f'{FE}/{sc}__s{sd}_{name}.npz'))
+        D = dict(np.load(f'{fe}/{sc}__s{sd}_{name}.npz'))
         if 'gt_sf_m' not in D:
-            for f in sorted(glob.glob(f'{GATE}/{sc}__s{sd}_hd_*.npz')):
+            for f in sorted(glob.glob(f'{gate}/{sc}__s{sd}_hd_*.npz')):
                 R = np.load(f)
                 if len(R['gt_x']) == len(D['gt_x']) and np.allclose(R['gt_x'], D['gt_x']) and 'gt_sf_m' in R.files:
                     D['gt_sf_m'] = R['gt_sf_m']; break

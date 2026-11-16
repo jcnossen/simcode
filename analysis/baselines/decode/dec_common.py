@@ -34,10 +34,9 @@ from decode.instance import DecodeInstance
 from decode.simulation.psf_kernel import PSF
 from decode.simulation.background import Background
 
-SP = _cfg.root('out')
-SPD = f'{SP}/decode_hd'
-LUTPSF = f'{SPD}/lutpsf.txt'          # dummy 'psf file': models live in SPD/lutpsf/<name>/
-PAPER_PSF = f'{SPD}/paper/zstack1_3dcal.mat'
+# DECODE work folder: set by the importing script before use (decode_paper.py: SPD = <repo>/out/paper2/decode, LUTPSF below)
+SPD = None
+LUTPSF = None                         # f'{SPD}/lutpsf.txt': dummy 'psf file': models live in SPD/lutpsf/<name>/
 CAM = _cfg.model('insitu/camera_maps_0.5nM.npz')
 
 VARIANTS = {
@@ -258,7 +257,7 @@ def load_paper(model_name, model_file='model_2.pt', device='cuda:0'):
     p.Hardware.device = device; p.Hardware.device_simulation = 'cpu'
     p.Simulation.frame_block_size = 1; p.HyperParameter.enable_pattern_prior = False
     p.TestSet.test_size = 16; p.TestSet.bg_uniform = 10
-    inst = DecodeInstance(p, psf_path=PAPER_PSF, model_name=model_name)
+    inst = DecodeInstance(p, psf_path=f'{SPD}/paper/zstack1_3dcal.mat', model_name=model_name)
     inst.load_model(f'{SPD}/paper/zstack1_3dcal/{model_name}/{model_file}')
     return inst
 

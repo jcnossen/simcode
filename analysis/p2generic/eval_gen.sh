@@ -19,13 +19,13 @@ PC() { [ "$1" = "$B" ] && echo archive_2d/$B/calib/calib_emitter_pass2_sim.json 
 F3="s1=archive_2d/$B/detector_pass1.pt:archive_2d/$B/emitter_pass1.pt,s2=$(PD $B):$(PH $B),$GN=$(PD $G):$(PH $G)"
 CALS="s1=archive_2d/$B/calib/calib_emitter_pass1_sim.json,s2=$(PC $B),$GN=$(PC $G)"
 CMP="$GN:s2,$GN:s1,s2:s1"
-export SIMCODE_GATE_CALIB=$C GATE_PSF_CHUNK=1500
+export GATE_PSF_CHUNK=1500
 for part in $PARTS; do
 case $part in
 a)  FE=$P/fe_m1809a_gen; [ $G = g1809 ] || FE=$P/fe_m1809a_$G; mkdir -p $FE
     for f in out/psfmatch/fe_m1809a/*__s*_s[12].npz; do ln -sfn $PWD/$f $FE/$(basename $f); done
-    SIMCODE_GATE_DIR=out/psfmatch/gate_m1809a P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.processing.gate_dump --scen iso,pair1,pair2,rs05qm,rs05pm \
-      --seeds 202,301,302,303 --fronts $GN=$(PD $G):$(PH $G) --out $FE || { say FAILED dump a; exit 1; }
+    P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$(gpu) $W simcode.processing.gate_dump --scen iso,pair1,pair2,rs05qm,rs05pm \
+      --seeds 202,301,302,303 --fronts $GN=$(PD $G):$(PH $G) --calib $C --gate_dir out/psfmatch/gate_m1809a --out $FE || { say FAILED dump a; exit 1; }
     GC=models/archive_pass2_generic/$G/calib; mkdir -p $GC
     [ -f $GC/calib_emitter_pass2_sim.json ] || CUDA_VISIBLE_DEVICES=$(gpu) python $A/fitcal_wrap.py $A/fit_cal_gen.py $GN $FE rs05qm,rs05pm calib/template_calib_emitter_pass2_sim.json \
       $GC/calib_emitter_pass2_sim.json $GC/calib_emitter_pass2_real.json calib/template_calib_emitter_pass2_real.json || { say FAILED cal; exit 1; }
@@ -36,8 +36,8 @@ b|d) if [ $part = b ]; then LIST="realpat_1809_2"; SCN=iso,pair1,pair2,rs05qm,rs
       export P2G_PRESET=$P/presets/$pr.json
       last=${SCN##*,}
       [ -f $GD/${last}__s303_hd_cur.npz ] || P2G_TITLE=p2gen-gate CUDA_VISIBLE_DEVICES=$g $W simcode.benchmark.gate_scenes --scen $SCN --fronts sc --emitter pretrain_emitter_pass1.pt \
-        --cal calib/template_calib_emitter_pass1_sim.json --tag _hd_cur --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
-      SIMCODE_GATE_DIR=$GD P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.processing.gate_dump --scen $SCN --seeds 301,302,303 --fronts $F3 --out $FE || { say FAILED dump $pr; exit 1; }
+        --cal calib/template_calib_emitter_pass1_sim.json --tag _hd_cur --calib $C --out $GD --ntarget 3500 --seeds 301,302,303 || { say FAILED gate $pr; exit 1; }
+      P2G_TITLE=p2gen-dump CUDA_VISIBLE_DEVICES=$g $W simcode.processing.gate_dump --scen $SCN --seeds 301,302,303 --fronts $F3 --calib $C --gate_dir $GD --out $FE || { say FAILED dump $pr; exit 1; }
       unset P2G_PRESET
       CUDA_VISIBLE_DEVICES=$g python $A/eval_cmp.py $FE $SCN $CMP $CALS $P/eval_$pr$SX.json > $P/eval_$pr$SX.txt && say "$part $pr done"
     done ;;

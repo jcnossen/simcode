@@ -8,8 +8,8 @@ ROI centred on the matched detector pixel (pass-2 cache, h3 rows). Two-step clas
 detector point, then SIMFLUX from the SMLM result (LM / Fisher scoring, 60 iterations). Also: SIMFLUX fit started at the truth,
 and the Fisher bound of this model at the truth (vs the stored gt_sf_i: is the CRLB reference the simulation's model?).
 Output out/solvegap/sffit_s<seed>.npz (rows = h3-matched iso targets of the pass-2 cache).
-usage: SIMCODE_GATE_CALIB=models/insitu/calib_1809_2_psf3d_avg.json CUDA_VISIBLE_DEVICES=0 python analysis/solvegap/sffit.py 301,302,303"""
-import os, sys, time
+usage: CUDA_VISIBLE_DEVICES=0 python analysis/solvegap/sffit.py 301,302,303 --calib models/insitu/calib_1809_2_psf3d_avg.json"""
+import argparse, os, sys, time
 import numpy as np, torch
 from simcode.simulate.gate_layouts import CD, S
 from simcode.benchmark import gate_scenes as GA
@@ -105,11 +105,11 @@ def fisher_xy(M, p, pt, cx, cy, ang, rn2):
 
 
 @torch.no_grad()
-def run(seed):
+def run(seed, calib=''):
     fo = f'{OUT}/sffit_s{seed}.npz'
     if os.path.exists(fo): print('exists', fo); return
     D = dict(np.load(f'{CACHE}/iso__s{seed}_p2.npz'))
-    CD.a.calib = GA.gate_calib()
+    CD.a.calib = GA.gate_calib(calib)
     rs = GA.rsim('0.5nM')
     M = Model(rs)
     tg_all = np.nonzero(D['gt_target'] > 0)[0]
@@ -176,5 +176,9 @@ def GA_patch(x, fov, cy, cx):
 
 
 if __name__ == '__main__':
-    for sd in [int(s) for s in sys.argv[1].split(',')]:
-        run(sd)
+    ap = argparse.ArgumentParser()
+    ap.add_argument('seeds')
+    ap.add_argument('--calib', default='', help="scene PSF calibration (GA.gate_calib; '' = the default model's PSF)")
+    a = ap.parse_args()
+    for sd in [int(s) for s in a.seeds.split(',')]:
+        run(sd, a.calib)

@@ -23,10 +23,10 @@ i.e. before the paper processing of 2025-01-20) -> the estimated phase drift is 
 Variants: --model L64_2 (released ~/simcode/model, checkpoint_1), --pattern gt (true per-frame pattern converted to the
 SIMCODE convention exc = relint (1 + depth sin(k.r - phase)); requires --coord_off = our_coord - simcode_coord (measured ~0: -0.006 px)).
 usage: CUDA_VISIBLE_DEVICES=1 python run_simcode.py <sim_dir> <out.npz> [--model L48] [--ckpt 3] [--pattern est|gt]
+         [--smlmtorch_models ~/smlmtorch/scripts/models]
 """
 import argparse, json, os, time, sys
 from simcode import config as _cfg
-SMLMTORCH_MODELS = os.environ.get('SMLMTORCH_MODELS') or _cfg._config().get('smlmtorch_models') or os.path.expanduser('~/smlmtorch/scripts/models')
 os.environ.setdefault("TORCH_DISABLE_NATIVE_JIT", "1")
 import numpy as np, torch
 import smlmtorch.util.progbar
@@ -39,11 +39,12 @@ from smlmtorch.nn.sf_model import SFLocalizationModel
 import smlmtorch.simflux.pattern_estimator as pe
 from smlmtorch.simflux.pattern_estimator import ModulationPattern, ModulationType
 
-MODELS = {'L48': SMLMTORCH_MODELS + '/sf_conv_g1.3_tio2_L48',
+# relative names are folders under --smlmtorch_models; an absolute path is used as given
+MODELS = {'L48': 'sf_conv_g1.3_tio2_L48',
           'L64_2': os.path.expanduser('~/simcode/model/sf_conv_g1.3_tio2_L64_2'),
           # 2026-11-09 (simcode_base2): the networks that reproduce the paper's real-data net outputs exactly
-          'ni6_3': SMLMTORCH_MODELS + '/sf_conv_g1.3_tio2_L64_ni6_3',   # 0.5 nM cover1/1 (100 % identical)
-          'L64_5': SMLMTORCH_MODELS + '/sf_conv_g1.3_L64_5'}           # 1809/cover1/2 (99.9 %), 2.5 nM movie 2 (99.8 %)
+          'ni6_3': 'sf_conv_g1.3_tio2_L64_ni6_3',   # 0.5 nM cover1/1 (100 % identical)
+          'L64_5': 'sf_conv_g1.3_L64_5'}           # 1809/cover1/2 (99.9 %), 2.5 nM movie 2 (99.8 %)
 GAIN, OFFSET, PX = 0.56, 106.34, 108.33
 PF = np.array([[0, 1, 2], [3, 4, 5]])
 FIX_DEPTH, MOD_ERR, MAX_DIST = 0.9, 0.1, 0.2
@@ -75,12 +76,13 @@ def main():
     ap.add_argument('--pattern', default='est'); ap.add_argument('--coord_off', default='0,0')
     ap.add_argument('--cam', default='paper')     # 'paper' = global gain 0.56 / offset 106.34 (as the paper); 'map' = our per-pixel offset map (99.3 ADU mean) + gain 0.56
     ap.add_argument('--net_cache', default='')
+    ap.add_argument('--smlmtorch_models', default=os.path.expanduser('~/smlmtorch/scripts/models'), help='smlmtorch model folder (L48, ni6_3, L64_5)')
     ap.add_argument('--fix_sign', type=int, default=0)   # 1: apply the estimated phase drift with the sign estimate_phases defines it (see below)
     a = ap.parse_args()
     dev = 'cuda:0'
     torch.cuda.set_per_process_memory_fraction(0.2)     # shared 24 GB card: stay < ~5 GB
     T = {}
-    mdir = MODELS[a.model]
+    mdir = os.path.join(a.smlmtorch_models, MODELS[a.model])
     ck = 1 if a.model == 'L64_2' else a.ckpt
     t0 = time.time()
     if a.net_cache and os.path.exists(a.net_cache):

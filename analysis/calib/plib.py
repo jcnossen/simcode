@@ -1,5 +1,5 @@
-"""Offline evaluation of the pass-2 benchmark dumps (simcode/processing/gate_dump.py -> <out>/gate_dumps):
-  load(scene, front)            seeds pooled, FOV ids made unique
+"""Offline evaluation of the pass-2 benchmark dumps (simcode/processing/gate_dump.py --out <dir>):
+  load(scene, front, d=<dir>)   seeds pooled, FOV ids made unique
   targets(R)                    gate_scenes_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
   solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe posterior / cmult per cal) on
@@ -12,20 +12,18 @@
   detect(...)                   recall / FP / JI on the final positions (0.5 px, gate_scenes_report.detection rule), matched-FP sweep
 """
 import glob, json, os
-from simcode import config as _cfg
 import numpy as np, torch
 from simcode.benchmark.gate_scenes_report import match
 
 PX = 108.33
 S = 64
-FE = os.path.join(_cfg.root('out'), 'gate_dumps')
 PHB = [(200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 4000), (4000, 1e9), (200, 2000), (200, 1e9)]
 NNB = [(0, 1.0), (1.0, 1.5), (1.5, 2.5), (2.5, 4.0), (4.0, 1e9)]
 EDG = [100, 300, 500, 800, 1200, 2000, 3000, 5000, 1e9]
 rob = lambda v: float(1.4826 * np.median(np.abs(v[np.isfinite(v)])))
 
 
-def load(sc, front, seeds=(301, 302, 303), tag='', d=FE):
+def load(sc, front, seeds=(301, 302, 303), tag='', *, d):
     out = []; off = 0
     for sd in seeds:
         fn = f'{d}/{sc}__s{sd}_{front}{tag}.npz'

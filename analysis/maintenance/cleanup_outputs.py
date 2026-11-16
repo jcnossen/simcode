@@ -1,9 +1,9 @@
 """Clean-up of the output directory and the models directory after the 2026-11-15 reorganisation (docs/CLEANUP_CANDIDATES.md,
 the user's decisions of 2026-11-15). Run it after the merge, when no worker uses these files any more.
 
-  python analysis/maintenance/cleanup_outputs.py                 dry run: every action with its size (nothing is changed)
-  python analysis/maintenance/cleanup_outputs.py --apply         do it
-  options: --out <dir> (default: config root 'out'), --models <dir> (default: config models dir), --targets 1 (for a symlinked
+  python analysis/maintenance/cleanup_outputs.py --out ~/simcode2/out           dry run: every action with its size (nothing is changed)
+  python analysis/maintenance/cleanup_outputs.py --out ~/simcode2/out --apply   do it
+  options: --out <dir> (required: the output directory), --models <dir> (default: the repository's models folder), --targets 1 (for a symlinked
            entry also delete the data it points to; default 0 = only the link), --only delete|archive|models|keys|links
 
 Actions:
@@ -91,7 +91,7 @@ def remove(p, targets):
 def main():
     from simcode import config
     ap = argparse.ArgumentParser(); ap.add_argument('--apply', action='store_true'); ap.add_argument('--targets', type=int, default=0)
-    ap.add_argument('--out', default=config.root('out')); ap.add_argument('--models', default=config.models_dir())
+    ap.add_argument('--out', required=True); ap.add_argument('--models', default=config.MODELS)
     ap.add_argument('--only', default=''); ap.add_argument('--log', default='')
     a = ap.parse_args()
     do = lambda part: not a.only or part in a.only.split(',')
