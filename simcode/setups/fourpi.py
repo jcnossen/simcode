@@ -34,14 +34,13 @@ camera.offset_map, optics.pixel_um, channels, registration):
   lut_psf       '' (default): the processing uses the PSF table of the emitter checkpoint; a PSF json: the network's
                 PSF table (windows, solve) is built from that PSF instead (e.g. an in-situ PSF with a network
                 trained on another PSF)
-  detector, emitter    checkpoints of the 4Pi detector and emitter network (emitter: a path or a tag of
-                <4Pi work dir>/models/head4pi_<tag>.pt)
+  detector, emitter    checkpoints of the 4Pi detector and emitter network (paths)
   files         file numbers to process (null: all);  nframes  frames per file (0: all)
   and the processing settings of simcode/processing/fourpi.py (chunk, p_min, tile, tblk, dnll, chi2_max, coh, iters,
   batch, min_photons, nphi, regions, tag; claim / redo / order / min_free_gb of the file driver)
 
-  acquisition(name)   the resolved config of a 4Pi acquisition of simcode/pipeline/configs/fourpi.py ('MT', 'NPC' or
-                      the full name 'fourpi_MT')
+  acquisition(name, work, data)   the resolved config of a 4Pi acquisition of simcode/pipeline/configs/fourpi.py ('MT',
+                      'NPC' or the full name 'fourpi_MT'; work = the 4Pi work folder, data = the folder of the raw 4Pi movies)
   file_index(path)    the file number of a dcimg file (Cell03_561_000_005.dcimg -> 5)
 """
 import json, math, os
@@ -52,7 +51,7 @@ DEFAULTS = dict(frame_dt_s=5.575e-3, xlim=[55, 305], patch=15, window=6, pattern
                 sig_scale=[1.0, 1.0, 1.0], learned=True, refine=0, refine_keep_best=False, zstarts=[-0.5, 0.0, 0.5],
                 unwrap_r_px=0.0, unwrap_tol=0.12, unwrap_kmax=2, learned_cs=True,
                 file_field=-1, det_batch=20, zstack=None, bead_align=None, psf=None, lut_psf='',
-                pattern_ref=None, detector=None, emitter='v10', files=None, nframes=0,
+                pattern_ref=None, detector=None, emitter=None, files=None, nframes=0,
                 chunk=600, p_min=0.5, tile=12.0, tblk=50, dnll=9.21, chi2_max=2.5, coh=1.0, iters=15, batch=1500,
                 min_photons=300.0, regions='', nphi=60000, tag='', claim=0, redo=0, order='fwd', min_free_gb=10.0)
 
@@ -61,10 +60,11 @@ def file_index(fn, field=-1):
     return int(os.path.basename(fn).split('.')[0].split('_')[field])
 
 
-def acquisition(name):
-    """resolved config of a 4Pi acquisition of simcode/pipeline/configs/fourpi.py"""
+def acquisition(name, work, data):
+    """resolved config of a 4Pi acquisition of simcode/pipeline/configs/fourpi.py (work: the 4Pi work folder, data: the folder
+    of the raw 4Pi movies)"""
     from simcode.pipeline import acquisition_config as C
-    L = C.load_all(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'pipeline', 'configs', 'fourpi.py'))
+    L = C.load_all(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'pipeline', 'configs', 'fourpi.py'), dict(work=work, data=data))
     for c in L:
         if c['name'] in (name, f'fourpi_{name}'): return c
     raise KeyError(f'no 4Pi acquisition {name!r} (have {[c["name"] for c in L]})')
@@ -81,6 +81,7 @@ class FourPiSetup(Setup):
         if not c.get('channels') or len(c['channels']) != 4:
             raise ValueError('setup fourpi: four channels (the interference channels) are required in channels')
         if f['delta_deg'] is None: raise ValueError('setup fourpi: fourpi.delta_deg is required')
+        if not f['emitter']: raise ValueError('setup fourpi: fourpi.emitter (the emitter-network checkpoint) is required')
         if c['pattern']['orientations'] * c['pattern']['steps'] != 6 or f['window'] != 6 or not f['pattern']:
             raise ValueError('setup fourpi: 6-frame windows (2 angles x 3 steps) with the SIM pattern (plain 4Pi: setup fourpi_plain)')
 

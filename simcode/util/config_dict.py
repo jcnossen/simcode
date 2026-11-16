@@ -200,11 +200,12 @@ class ConfigDict(MutableMapping):
         os.replace(tmp, path)
 
     @staticmethod
-    def load(path):
-        """read .yaml / .yml, .json, or a Python file that defines exactly one config (load_python for several)"""
+    def load(path, params=None):
+        """read .yaml / .yml, .json, or a Python file that defines exactly one config (load_python for several; params: the
+        arguments of its config(...) function)"""
         path = os.fspath(path)
         if path.endswith('.py'):
-            L = load_python(path)
+            L = load_python(path, params=params)
             if len(L) != 1: raise ValueError(f'{path} defines {len(L)} configs; use load_python(path) for the list')
             return L[0]
         with open(path) as f: txt = f.read()
@@ -229,16 +230,30 @@ class ConfigDict(MutableMapping):
     def _repr_pretty_(self, p, cycle): p.text(repr(self))        # IPython / Jupyter
 
 
-def load_python(path, names=('configs', 'config')):
+def load_python(path, names=('configs', 'config'), params=None):
     """Run a Python config file and return its configs as a list of ConfigDict: the file defines `configs` (a list / tuple
-    of ConfigDict or dict, or a dict name -> config) or one `config`. The file runs as ordinary Python (imports, loops,
-    derived values) with __file__ set; it is not imported as a module, so `if __name__ == '__main__':` blocks do not run."""
+    of ConfigDict or dict, or a dict name -> config) or one `config`, or either of them as a function of keyword arguments
+    that returns that (e.g. configs(work, data) of the 4Pi configs), called with `params` (dict). The file runs as ordinary
+    Python (imports, loops, derived values) with __file__ set; it is not imported as a module, so
+    `if __name__ == '__main__':` blocks do not run."""
     import runpy
     path = os.path.abspath(os.fspath(path))
     ns = runpy.run_path(path, run_name='__simcode_config__')
+    params = dict(params or {})
     for n in names:
         if ns.get(n) is None: continue
         v = ns[n]
+        if callable(v) and not isinstance(v, Mapping):
+            import inspect
+            sig = inspect.signature(v)
+            miss = [k for k, q in sig.parameters.items() if q.default is q.empty and q.kind in (q.POSITIONAL_OR_KEYWORD, q.KEYWORD_ONLY) and k not in params]
+            extra = [k for k in params if k not in sig.parameters]
+            if miss or extra:
+                raise TypeError(f'{path}: `{n}{sig}` needs the arguments {miss or ""}{" and does not take " + str(extra) if extra else ""} '
+                                f'(python -m simcode.pipeline {os.path.basename(path)} ' + ' '.join(f'--{k} <...>' for k in sig.parameters) + ')')
+            v = v(**params)
+        elif params:
+            raise TypeError(f'{path}: `{n}` is not a function, so it takes no arguments (given {sorted(params)})')
         if isinstance(v, Mapping) and n == 'configs':
             v = [ConfigDict(c).updated(name=k) if 'name' not in c else c for k, c in v.items()]
         elif isinstance(v, Mapping): v = [v]

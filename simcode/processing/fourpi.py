@@ -16,7 +16,7 @@ Files are the units of the shared work driver (simcode/io/work.py): finished fil
 atomically, the disk is checked before a file starts, and with --claim 1 several workers (one per GPU, python -m
 simcode.io.launch) share the files.
 
-  python -m simcode.processing.fourpi <config_resolved.json | acquisition config> [--files 5 6] [--nframes 3600]
+  python -m simcode.processing.fourpi <config_resolved.json | acquisition config --work <dir> --data <dir>> [--files 5 6] [--nframes 3600]
          [--claim 1] [--redo 1] [--out DIR] [--set fourpi.coh=1.56 ...]
 Output: <out>/process/locs_<file>.npz (<out> of the config, or --out), a record locs_<file>.json per file and the merged
 locs_summary.json. Normally started by the pipeline: python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --only fourpi_MT
@@ -250,6 +250,8 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('config', help='resolved config json of the pipeline (<out>/config_resolved.json) or an acquisition config')
     p.add_argument('--only', default='', help='acquisition name (a config file with several acquisitions)')
+    p.add_argument('--work', default=None, help='an acquisition config file with configs(work, data) (simcode/pipeline/configs/fourpi*.py): the work folder')
+    p.add_argument('--data', default=None, help='such a config file: the folder of the raw movies')
     p.add_argument('--files', type=int, nargs='+', default=None, help='file numbers (default: fourpi.files of the config)')
     p.add_argument('--nframes', type=int, default=None)
     p.add_argument('--claim', type=int, default=None); p.add_argument('--redo', type=int, default=None)
@@ -258,7 +260,7 @@ def main(argv=None):
     a = p.parse_args(argv)
     from simcode.util.proctitle import set_title; set_title('4pi-process')
     from simcode.pipeline import acquisition_config as AC
-    L = AC.load_all(a.config)
+    L = AC.load_all(a.config, {k: v for k, v in (('work', a.work), ('data', a.data)) if v is not None})
     if a.only: L = [c for c in L if c['name'] == a.only]
     if len(L) != 1: raise SystemExit(f'{a.config}: {len(L)} acquisitions; give --only <name>')
     c = L[0]

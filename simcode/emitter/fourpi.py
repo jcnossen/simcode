@@ -396,16 +396,18 @@ def solve_loss(sv, o, S, Ystar, sb=0.2, clamp=50.0, grad_model=False):
     return nll, dict(u=(dth / var.sqrt()).detach(), r2=(ru ** 2).mean(1) * w, dth=dth.detach(), var=var.detach())
 
 # -------------------------------------------------------------------------------------------------------------- checkpoints
-def checkpoint_path(tag_or_path):
-    from simcode.config import root
-    return tag_or_path if os.path.sep in tag_or_path else f"{root('fourpi')}/models/head4pi_{tag_or_path}.pt"
+def checkpoint_path(tag_or_path, work=None):
+    """a checkpoint path (kept), or a tag: <work>/models/head4pi_<tag>.pt (work = the 4Pi work folder)"""
+    if os.path.sep in tag_or_path: return tag_or_path
+    if not work: raise ValueError(f'4Pi emitter network {tag_or_path!r}: a tag needs the 4Pi work folder (work=...), or give the checkpoint path')
+    return os.path.join(work, 'models', f'head4pi_{tag_or_path}.pt')
 
 
-def load(tag_or_path, dev='cuda'):
-    """4Pi emitter-network checkpoint (path, or a tag of <4Pi work dir>/models/head4pi_<tag>.pt) -> (net in eval mode,
-    checkpoint dict), by the architecture tag args['arch']"""
+def load(tag_or_path, dev='cuda', work=None):
+    """4Pi emitter-network checkpoint (path, or a tag of <work>/models/head4pi_<tag>.pt, work = the 4Pi work folder) ->
+    (net in eval mode, checkpoint dict), by the architecture tag args['arch']"""
     from simcode.fourpi.spline_table import LUT4Pi
-    f = checkpoint_path(tag_or_path)
+    f = checkpoint_path(tag_or_path, work)
     ck = torch.load(f, weights_only=False)
     a = ck['args']
     cls = ARCH_TAGS.get(a.get('arch')) or FOURPI_ARCH_TAGS.get(a.get('arch'))

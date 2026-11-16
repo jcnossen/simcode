@@ -41,10 +41,11 @@ class StageFailed(RuntimeError):
 
 
 class LocalizationPipeline:
-    def __init__(self, cfg, gpus=None, log=None, quick=None):
-        """cfg: ConfigDict (simcode/util/config_dict.py), dict, yaml / json path, or a Python file that defines one `config`;
-        validated against the schema of simcode/pipeline/acquisition_config.py in every form. self.c = the resolved plain dict."""
-        self.c = C.load(cfg)
+    def __init__(self, cfg, gpus=None, log=None, quick=None, params=None):
+        """cfg: ConfigDict (simcode/util/config_dict.py), dict, yaml / json path, or a Python file that defines one `config`
+        (params: the arguments of its config(...) function); validated against the schema of simcode/pipeline/acquisition_config.py
+        in every form. self.c = the resolved plain dict."""
+        self.c = C.load(cfg, params)
         from simcode import setups
         self.setup = setups.get(self.c['setup'])
         self.stages = self.setup.stages(self.c)
@@ -84,10 +85,11 @@ class LocalizationPipeline:
             self.log(f'run_config.json not written ({e})')
 
     @classmethod
-    def from_file(cls, cfg, only=None, **kw):
+    def from_file(cls, cfg, only=None, params=None, **kw):
         """every acquisition of a config (a Python file with a list `configs`, or any single form) -> [LocalizationPipeline,
-        ...]; only = names to keep. All configs are validated before the first object (and output directory) is made."""
-        L = C.load_all(cfg)
+        ...]; only = names to keep; params = the arguments of a Python file's configs(...) function (the 4Pi configs: work,
+        data). All configs are validated before the first object (and output directory) is made."""
+        L = C.load_all(cfg, params)
         if only:
             miss = [n for n in only if n not in [c['name'] for c in L]]
             if miss: raise KeyError(f'no acquisition named {miss} in {cfg} (has: {[c["name"] for c in L]})')
@@ -443,14 +445,18 @@ def main(argv=None):
     ap.add_argument('--force', action='store_true', help='continue after failed checks')
     ap.add_argument('--only', default='', help='comma list of acquisition names (a Python file with several `configs`)')
     ap.add_argument('--show', action='store_true', help='print the resolved config(s) and exit (nothing is written)')
+    ap.add_argument('--work', default=None, help='a Python config with a configs(work, data) function (the 4Pi configs): the work folder '
+                    '(models, PSF, registration, camera maps, outputs)')
+    ap.add_argument('--data', default=None, help='a Python config with a configs(work, data) function: the folder of the raw movies')
     a = ap.parse_args(argv)
+    params = {k: os.path.abspath(os.path.expanduser(v)) for k, v in (('work', a.work), ('data', a.data)) if v is not None}
     if a.show:
         from simcode.util.config_dict import ConfigDict
         only = [n for n in a.only.split(',') if n]
-        for c in C.load_all(a.config):
+        for c in C.load_all(a.config, params):
             if not only or c['name'] in only: print(ConfigDict(c))
         return
-    L = LocalizationPipeline.from_file(a.config, only=[n for n in a.only.split(',') if n],
+    L = LocalizationPipeline.from_file(a.config, only=[n for n in a.only.split(',') if n], params=params,
                               gpus=[int(v) for v in a.gpus.split(',')] if a.gpus else None, quick=True if a.quick else None)
     failed = []
     for ds in L:                    # one after the other; a failed acquisition does not stop the next ones

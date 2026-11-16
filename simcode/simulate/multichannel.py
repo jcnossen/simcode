@@ -6,7 +6,7 @@ A batch = B scenes of H x W px (ch0 grid), T frames (patterns=True: T = 6 = 2 an
 4Pi: any T, one 4Pi phase for all frames, e.g. T = 1), C channels (C = the channels of the PSF table, 4 for the 4Pi LUT).
 Each channel is rendered in its OWN crop coordinates through the registration map of the scene's cell (a CellSpec: map
 json (a PolyMap: simcode/channels/registration.py) with its crop size, the field the scene origin is drawn in, the
-background level per channel, the SIM wave vectors; the 4Pi-SIMFLUX cells MT / NPC: fourpi_sf_cells(), the default), so
+background level per channel, the SIM wave vectors; the 4Pi-SIMFLUX cells MT / NPC: fourpi_sf_cells(work)), so
 the front end's code path (registered sum by bilinear warp for the detector; unwarped channel patches at mapped
 positions for the head) is the real one.
 
@@ -40,8 +40,6 @@ import torch
 import torch.nn.functional as F
 from simcode.fourpi.spline_table import LUT4Pi
 
-from simcode.config import root
-P4 = root('fourpi')
 
 
 @dataclass
@@ -59,8 +57,9 @@ class CellSpec:
     k0: tuple = None
 
 
-def fourpi_sf_cells():
-    """the 4Pi-SIMFLUX cells (MT = Cell03, NPC = Cell07): in-situ maps of the 4Pi work dir, 360 x 200 crops"""
+def fourpi_sf_cells(work):
+    """the 4Pi-SIMFLUX cells (MT = Cell03, NPC = Cell07): in-situ maps of the 4Pi work folder `work`, 360 x 200 crops"""
+    P4 = work
     BG = {'MT': (0.42, 1.06, 0.54, 1.17), 'NPC': (0.41, 0.93, 0.51, 1.15)}
     K0 = {'MT': ((3.839, -0.024), (0.003, 3.851)), 'NPC': ((3.826, -0.028), (0.013, 3.845))}
     return [CellSpec(c, f'{P4}/smlm/reg/reg_insitu_{c}.json', 360, 200, (60, 300), (0, 200), BG[c], K0[c]) for c in ('MT', 'NPC')]
@@ -105,14 +104,16 @@ def perturbed_states(st, n, rng):
 
 class MultiChannelAcquisitionSim:
     def __init__(self, psf_state, H=64, W=64, cells=None, n_psf=6, P=17, dev='cuda', seed=0, wsd=1.0, sub=2,
-                 patterns=True, phase_field_deg=60.0, reg_shift_sd=0.0, reg_lin_sd=0.0, T=6, zlut=(-0.6, 0.6)):
-        """cells: list of CellSpec (default: the 4Pi-SIMFLUX cells); T frames per window (patterns: 6); zlut: z range of the PSF tables"""
+                 patterns=True, phase_field_deg=60.0, reg_shift_sd=0.0, reg_lin_sd=0.0, T=6, zlut=(-0.6, 0.6), work=None):
+        """cells: list of CellSpec, or None: the 4Pi-SIMFLUX cells of the 4Pi work folder `work` (fourpi_sf_cells); T frames
+        per window (patterns: 6); zlut: z range of the PSF tables"""
+        if cells is None and not work: raise ValueError('MultiChannelAcquisitionSim: give cells, or work (the 4Pi work folder) for the 4Pi-SIMFLUX cells')
         if patterns and T != 6: raise ValueError('MultiChannelAcquisitionSim: the SIM pattern needs T = 6 (2 angles x 3 steps)')
         self.H, self.W, self.dev, self.P, self.wsd, self.T = H, W, dev, P, wsd, T
         self.g = torch.Generator(device=dev).manual_seed(seed)
         rng = np.random.default_rng(seed)
         self.luts = [LUT4Pi(s, P=P, dev=dev, sub=sub, zmin=zlut[0], zmax=zlut[1]) for s in perturbed_states(psf_state, n_psf, rng)]
-        cells = fourpi_sf_cells() if cells is None else list(cells)
+        cells = fourpi_sf_cells(work) if cells is None else list(cells)
         self.spec = {c.name: c for c in cells}
         self.cells = [c.name for c in cells]
         self.reg = {c.name: cell_map(c, dev) for c in cells}

@@ -5,22 +5,22 @@ left-right), 192 x 168 px channel crops. Derived in out/fourpi_refactor/public_4
 e/ADU from their own 4-channel sum, offset 103 ADU from the dark columns, read noise about 1 e), 128 nm px, the in-situ
 registration of file 000 (used for every file: registration mode 'file'), the 4Pi PSF fitted to their bead stack
 (PSF4Pi, NA 1.35 / n 1.406 / lambda 0.67 assumed; astigmatism scaled to the bead data: analysis/fourpi_plain/psf_astig.py).
-Work directory (models, PSF, map, outputs): <out>/plain4pi (SIMCODE_OUT / config key out).
+Arguments of configs(work, data): work = the work folder (models, PSF, map, outputs; on qnano1 ~/simcode2/out/plain4pi), data = the
+folder of the extracted Zenodo data (on qnano1 /mnt/data/dmdsf/public_4pi_sms/zenodo_4022827/extracted).
 
-  python -m simcode.pipeline simcode/pipeline/configs/fourpi_plain.py --only fourpi_plain_Cell11
-  python -m simcode.processing.fourpi simcode/pipeline/configs/fourpi_plain.py --files 0
+  python -m simcode.pipeline simcode/pipeline/configs/fourpi_plain.py --work <dir> --data <dir> --only fourpi_plain_Cell11
+  python -m simcode.processing.fourpi simcode/pipeline/configs/fourpi_plain.py --work <dir> --data <dir> --files 0
 Training (fourpi_train section): analysis/fourpi/train_det4pi.py --acq <this file>, analysis/fourpi/train_head4pi_w.py --acq <this file>
 """
-from simcode import config as K
 from simcode.util.config_dict import ConfigDict
 
-W4 = K.out_dir('plain4pi', make=False)
-DATA = '/mnt/data/dmdsf/public_4pi_sms/zenodo_4022827/extracted'
 X0, MIRROR = (90, 460, 1399, 1768), ('none', 'none', 'lr', 'lr')
 CW, CH = 192, 168
 
 
-def acquisition(cell, movies):
+def acquisition(cell, movies, work, data):
+    """work: the work folder, data: the folder of the extracted Zenodo data"""
+    W4, DATA = work, data
     return ConfigDict(
         name=f'fourpi_plain_{cell}', setup='fourpi_plain',
         movie=f'{DATA}/{movies}', out=f'{W4}/pipeline/{cell}',
@@ -38,4 +38,5 @@ def acquisition(cell, movies):
         gpus=[0])
 
 
-configs = [acquisition('Cell11', 'Cell11/Cell11_642_*_000.dcimg')]
+def configs(work, data):
+    return [acquisition('Cell11', 'Cell11/Cell11_642_*_000.dcimg', work, data)]
