@@ -44,9 +44,15 @@ def method_tables(run, model, decode_name):
                 v2=('v2c', P.get('v2c')))
 
 
-def common_rows(kind, path, W, nf):
-    T = M.load_method(kind, path)
-    _, _, f = M.frc_set(T, W, nf)
+def common_rows(kind, path, W, nf, cut=True):
+    """cut=False: the same rows without the common precision cut (own filters, SIMCODE p >= 0.63, disjoint windows, inside)"""
+    s0 = M.SIGMA_MAX
+    if not cut: M.SIGMA_MAX = np.inf
+    try:
+        T = M.load_method(kind, path)
+        _, _, f = M.frc_set(T, W, nf)
+    finally:
+        M.SIGMA_MAX = s0
     f &= (T['x'] >= 0.5) & (T['x'] < W - 0.5) & (T['y'] >= 0.5) & (T['y'] < W - 0.5)
     return {k: v[f] for k, v in T.items()}
 
@@ -88,6 +94,8 @@ def compute(a):
             if not path or not os.path.exists(path): print('missing', mv, k, path, flush=True); continue
             T = common_rows(kind, path, W, nf)
             R['methods'][k] = stats(T, gt, nf, LEVELS if mv == 'iso' else None); R['paths'][k] = path
+            if mv == 'iso':      # isolated emitters vs photons: also without the precision cut (it removes the dim levels of SMLM / DECODE)
+                R.setdefault('methods_nocut', {})[k] = stats(common_rows(kind, path, W, nf, cut=False), gt, nf, LEVELS)
             b = R['methods'][k]['bias']
             print(mv, k, R['methods'][k]['n'], '|c1| %.3f %.3f  A %.2f %.2f' % (R['methods'][k]['c1_x'] or np.nan, R['methods'][k]['c1_y'] or np.nan,
                   b['A_x'] or np.nan, b['A_y'] or np.nan), flush=True)
@@ -112,7 +120,7 @@ def draw(V, a):
     FS.apply()
     fig = plt.figure(figsize=(FS.FIG_W, FS.FIG_W * 0.62))
     gs = fig.add_gridspec(2, 1, height_ratios=[0.8, 1.15], hspace=0.42)
-    top = gs[0].subgridspec(1, 6, wspace=0.12); bot = gs[1].subgridspec(1, 4, wspace=0.42)
+    top = gs[0].subgridspec(1, 6, wspace=0.12); bot = gs[1].subgridspec(1, 4, wspace=0.5)
     xs = np.linspace(-0.475, 0.475, 20)
     H = V['movies'][HIST_MOVIE]
     cols = [('gt', 'Ground truth', 'k')] + [(k, lab, FS.COL['v2' if k == 'v2' else k]) for k, lab in METH] + [('pub', 'DECODE (published model)', 'tab:orange')]
@@ -140,7 +148,7 @@ def draw(V, a):
     ax0.set_ylim(0.4, 1.9)
     # b: A_bias vs photons (iso)
     ax = fig.add_subplot(bot[0, 0]); FS.letter(ax, 'b', dx=-0.22)
-    I = V['movies']['iso']['methods']
+    I = V['movies']['iso']['methods_nocut']
     for j, (k, lab) in enumerate(METH):
         if k not in I: continue
         c = FS.COL['v2' if k == 'v2' else k]; L = np.array(LEVELS, float) * (1 + 0.025 * (j - 1.5))
@@ -150,7 +158,7 @@ def draw(V, a):
         ax.errorbar(L, np.array(ay_, float), np.array(ey, float), color=c, marker='o', mfc='white', ms=2.5, lw=0.8, ls=(0, (2, 1)), capsize=0)
     ax.axhline(0, color='0.5', lw=0.5); ax.set_xscale('log'); ax.set_xticks(LEVELS); ax.set_xticklabels([str(l) for l in LEVELS])
     ax.minorticks_off(); ax.set_xlabel('detected photons / 6-frame window'); ax.set_ylabel('bias toward pixel centre (nm)')
-    ax.set_title('isolated emitters', fontsize=FS.FS_LABEL); ax.legend(loc='upper right', handlelength=1.2)
+    ax.set_title('isolated emitters', fontsize=FS.FS_LABEL); ax.legend(loc='lower right', handlelength=1.2)
     # c: published model vs photons (own conditions)
     ax = fig.add_subplot(bot[0, 1], sharey=ax); FS.letter(ax, 'c', dx=-0.22)
     Pp = V['published']['iso_ph']; ph = sorted(Pp, key=float); Lp = np.array([float(p) for p in ph])
@@ -194,7 +202,8 @@ def caption(V, a):
              'for DECODE\'s published model, its own simulated conditions (10 emitters per 40 x 40 px frame). |c1| = amplitude of the first '
              'Fourier harmonic of the histogram (x / y; 0 for a uniform histogram, noise floor 1/sqrt(n)). (b) Bias toward the pixel centre '
              '(first-harmonic amplitude A of the error vs the true sub-pixel position, e = -A sin(2 pi f); filled x, open y; +-1 SE) of '
-             'isolated emitters vs detected photons per 6-frame window. (c) The same for DECODE\'s published model in its own conditions '
+             'isolated emitters vs detected photons per 6-frame window (each method\'s own filters, without the common precision cut, '
+             'which removes most dim SMLM and DECODE localizations). (c) The same for DECODE\'s published model in its own conditions '
              '(astigmatic PSF, EMCCD, 127 x 117 nm pixels, photons per frame). (d, e) Bias and |c1| vs density (emitters ON per um^2 per '
              'window), DECODE\'s published model at 10 and 50 emitters per frame.')
     L.append('Rows: the common rule for every method (own filters, disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px on its own '
@@ -203,8 +212,9 @@ def caption(V, a):
              'true pattern (its pattern estimate fails on this sparse movie). DECODE = DECODE retrained on our conditions at its published '
              'training scale (32.8 M frames).')
     L.append('NUMBERS (si_pixel_bias_values.json)')
+    I = V['movies']['iso']['methods_nocut']
     for k, lab in METH:
-        if k in I: L.append(f"  iso {lab}: A x / y (nm) " + ', '.join(f"{l}: {_f(I[k]['bias_ph'][str(l)]['A_x'])} / {_f(I[k]['bias_ph'][str(l)]['A_y'])}" for l in LEVELS))
+        if k in I: L.append(f"  iso (no precision cut) {lab}: A x / y (nm) " + ', '.join(f"{l}: {_f(I[k]['bias_ph'][str(l)]['A_x'])} / {_f(I[k]['bias_ph'][str(l)]['A_y'])}" for l in LEVELS))
     for m in DENS:
         R = V['movies'][m]
         L.append(f"  {m} ({R['density_um2']:.2f} /um^2): " + '; '.join(f"{lab} |c1| {_f(R['methods'][k]['c1_x'], '%.3f')}/{_f(R['methods'][k]['c1_y'], '%.3f')} A {_f(R['methods'][k]['bias']['A_x'])}/{_f(R['methods'][k]['bias']['A_y'])} nm"

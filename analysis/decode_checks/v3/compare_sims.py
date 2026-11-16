@@ -18,8 +18,8 @@ from simcode.dataset import decode_table
 
 PS_DIR = os.path.join(MAIN, 'out', 'papersim')
 OUT = os.path.join(MAIN, 'out', 'decode_checks', 'v3')
-DENS = [f'{p}{d}_v2psf{s}' for s in ('', '_wsm', '_wsmaxis') for p in ('D', 'Dexp') for d in ('0.5', '1', '2', '4')]
-MOVING = ['moving_exp_v2psf']
+DENS = [f'{p}{d}_v2psf{s}' for s in ('', '_wsm', '_wsm3d', '_wsmaxis') for p in ('D', 'Dexp') for d in ('0.5', '1', '2', '4')]
+MOVING = ['moving_exp_v2psf', 'moving_exp_v2psf_wsm']
 
 
 def pixbias(T, gt, nf, W):
@@ -72,10 +72,19 @@ def fmt(v, d=2):
 
 
 def main():
-    mvs = sys.argv[1:] or DENS + MOVING
-    mvs = [m for m in mvs if os.path.exists(os.path.join(PS_DIR, m, 'gt.npz'))]
-    R = {}
-    for mv in mvs: R[mv] = one(mv)
+    if sys.argv[1:2] == ['--merge']:
+        import glob
+        R = {}
+        for f in sorted(glob.glob(os.path.join(OUT, 'compare_sims_*.json'))): R.update(json.load(open(f)))
+        R = {m: R[m] for m in DENS + MOVING if m in R}
+    else:
+        mvs = sys.argv[1:] or DENS + MOVING
+        mvs = [m for m in mvs if os.path.exists(os.path.join(PS_DIR, m, 'gt.npz'))]
+        R = {}
+        for mv in mvs: R[mv] = one(mv)
+    tag = os.environ.get('TAG', '')
+    if tag:      # partial run (one group of movies): its own json, merged by --merge
+        json.dump(R, open(os.path.join(OUT, f'compare_sims_{tag}.json'), 'w'), indent=1, default=float); return
     json.dump(R, open(os.path.join(OUT, 'compare_sims.json'), 'w'), indent=1, default=float)
     L = ['| movie | model | rows | n FRC | GT-FRC nm | frames to 30 nm | sigma-Jaccard | false-pos. frac | |c1| x / y | A_bias x / y nm | RMS matched nm |',
          '|---|---|---|---|---|---|---|---|---|---|---|']
