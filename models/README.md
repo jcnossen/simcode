@@ -3,8 +3,10 @@
 This directory is where the code looks up the names of networks and calibrations (`simcode/config.py`: `MODELS` =
 `<repo>/models`; there is no setting to move it: give a path, or a model folder with a `model.json`, to use files elsewhere).
 
-**The repository holds source only.** Network weights (`*.pt`) are not in git: they are distributed separately and have to
-be copied into this directory. Where they are distributed from is not decided yet.
+**The repository holds source only.** Network weights (`*.pt`) are not in git. The weights of the example models m1809 and
+g13 and the pretraining networks are assets of the GitHub release `models-v1` (`python -m simcode.download_models [--set
+m1809 g13 pretrain | all]`, sha256-checked); the other weights below (m25, DECODE, the archived models, the 4Pi networks) are
+not release assets and have to be copied into this directory.
 The small calibration json files are in git.
 
 ## What is in git
