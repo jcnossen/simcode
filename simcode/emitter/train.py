@@ -167,7 +167,7 @@ def parser():
     ap.add_argument('--dens', default=None)
     ap.add_argument('--tau', default=None)
     # pass 1
-    ap.add_argument('--hold', default=None, help='held-out patches (emitter/heldout.py; default heldout4)')
+    ap.add_argument('--hold', default=None, help='held-out patches (python -m simcode.emitter.heldout; default simcode_out/emitter_heldout/heldout4.pt)')
     ap.add_argument('--pair_frac', type=float, default=0.25)
     ap.add_argument('--med', default='40,2500')
     ap.add_argument('--nnw', type=int, default=1)
@@ -202,7 +202,7 @@ def main(argv=None):
 
 def train_pass1(a):
     from simcode.simulate.batches import TrainingBatches, Z_RANGE_UM, Z_UNIF, BRIGHT_TAIL, z_target_px
-    from simcode.emitter.heldout import HOLD, HOLD5, eval_hold
+    from simcode.emitter.heldout import HOLD, HOLD5_NAME, eval_hold
     from simcode.detector.model import load as load_det
     from simcode.detector.select import select_subpixel
     a.hold = a.hold or HOLD
@@ -219,7 +219,7 @@ def train_pass1(a):
     col = PSFCol(gen.rs['0.5nM'].sim)
     cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
     Hd = torch.load(a.hold, weights_only=False)
-    sc5 = os.path.abspath(a.hold) == HOLD5
+    sc5 = os.path.basename(a.hold) == HOLD5_NAME
     tau_r = tuple(float(v) for v in a.tau.split(','))
     dens = tuple(float(v) for v in a.dens.split(',')); med = tuple(float(v) for v in a.med.split(','))
     opt = torch.optim.AdamW(head.parameters(), lr=a.lr, weight_decay=1e-4)

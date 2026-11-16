@@ -9,7 +9,12 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   registration  of the channels to channel 0 (simcode/channels/registration.py): mode insitu (per file, from the
                 movie itself; no beads) | file (one map json for every file: map) | none; order of the polynomial; the
                 settings of the in-situ chain (frames per file, frames per sum, detection / fit / matching)
-  camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)"""
+  camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)
+  train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
+                recipe's set); null: the trainer runs without it
+A Python config file can define `configs` / `config` as a function of keyword arguments (e.g. the 4Pi configs:
+configs(work, data) = the 4Pi work folder and the raw-movie folder); load / load_all(cfg, params) call it with params
+(python -m simcode.pipeline <file> --work <dir> --data <dir>)."""
 import copy, json, math, os
 from collections.abc import Mapping
 
@@ -31,7 +36,7 @@ DEFAULTS = {
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
-    'train': dict(model=None, quick=False, quick_steps=30,
+    'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
                   init=dict(detector=None, emitter='pretrain_emitter_pass1.pt'), extra=dict(detector='', emitter='', pass2=''),
@@ -57,17 +62,19 @@ def _merge(d, u, path=''):
     return d
 
 
-def _read(cfg):
-    """any accepted form -> [(plain dict, source file or None), ...]"""
+def _read(cfg, params=None):
+    """any accepted form -> [(plain dict, source file or None), ...]; params: the arguments of a Python config file's
+    configs / config function"""
     from simcode.util.config_dict import ConfigDict, load_python
     if isinstance(cfg, Mapping):
         u = ConfigDict(cfg).to_dict()
         return [(u, u.pop('_file', None))]          # '_file': a config that was already resolved (resolving again is a no-op)
     if isinstance(cfg, (list, tuple)):
-        return [r for c in cfg for r in _read(c)]
+        return [r for c in cfg for r in _read(c, params)]
     src = os.path.abspath(os.fspath(cfg))
     if src.endswith('.py'):
-        return [(c.to_dict(), src) for c in load_python(src)]
+        return [(c.to_dict(), src) for c in load_python(src, params=params)]
+    if params: raise ValueError(f'{src}: arguments {sorted(params)} apply to a Python config file with a configs(...) / config(...) function')
     txt = open(src).read()
     if src.endswith(('.yaml', '.yml')):
         import yaml
@@ -79,19 +86,20 @@ def _read(cfg):
     return [(u, src)]
 
 
-def load_all(cfg):
+def load_all(cfg, params=None):
     """every acquisition config of cfg (a Python file with a list `configs`, a list of configs, or any single form),
-    each validated and with the defaults filled in"""
-    L = [_resolve(u, src) for u, src in _read(cfg)]
+    each validated and with the defaults filled in; params: the arguments of a Python file's configs(...) function"""
+    L = [_resolve(u, src) for u, src in _read(cfg, params)]
     names = [c['name'] for c in L]
     dup = sorted({n for n in names if names.count(n) > 1})
     if dup: raise ValueError(f'config: acquisition names must be unique, repeated: {dup}')
     return L
 
 
-def load(cfg):
-    """one acquisition config (ConfigDict, dict, yaml / json path, or a Python file that defines one `config`)"""
-    L = _read(cfg)
+def load(cfg, params=None):
+    """one acquisition config (ConfigDict, dict, yaml / json path, or a Python file that defines one `config`); params: the
+    arguments of a Python file's config(...) function"""
+    L = _read(cfg, params)
     if len(L) != 1:
         raise ValueError(f'{cfg}: {len(L)} acquisition configs; LocalizationPipeline takes one (use '
                          f'LocalizationPipeline.from_file(file) or python -m simcode.pipeline <file> [--only name])')

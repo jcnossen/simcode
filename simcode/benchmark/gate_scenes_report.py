@@ -11,7 +11,6 @@ FP / FOV <= the det front-end's FP / FOV at p > 0.5).
 usage: python -m simcode.benchmark.gate_scenes_report --dir <out>/gate --scen iso,pair1.5,... --out <out>/gate_report.json
 """
 import argparse, glob, json, os
-from simcode import config
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
@@ -202,7 +201,7 @@ def line(sc, key, nm, q):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default=os.path.join(config.root('out'), 'gate'))
+    ap.add_argument('--dir', default=os.path.join('simcode_out', 'gate'), help='folder of the gate npz files (simcode.benchmark.gate_scenes --out)')
     ap.add_argument('--scen', default='iso,pair1,pair1.5,pair2,pair3,rs05x,rs05,rs25x,rs25,rs25s')
     ap.add_argument('--tag', default='')
     ap.add_argument('--out', default='')

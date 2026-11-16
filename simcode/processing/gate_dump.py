@@ -4,7 +4,7 @@ and iteration loop as gate_scenes.main). Per scene x seed x front-end: GT table,
 the solve, and the truth), and the raw head outputs (I_t, Cholesky L, prior x, y, log sigma, bg, detector point, score; z,
 log s_z|xy, b of a 3D head),
 so the explicit pattern solve, the calibration and all reports run offline. CRLB gt_sf_m copied from an existing gate npz
-of the same scene / seed after checking that the GT is identical.
+of the same scene / seed (--gate_dir) after checking that the GT is identical.
 Fronts:
   pass1  pass-1 detector + emitter network of the default model (config.DETECTOR / EMITTER; pattern-free)
   pass2  pass-2 detector + emitter network of the default model (config.DETECTOR_PASS2 / EMITTER_PASS2)
@@ -12,7 +12,8 @@ Fronts:
 Pattern fed (both passes, networks and solve): the scene's patt_est (gate default; exact for iso / pairs, the acquisition simulator errors for
 *qm), or with --pert 1 a perturbed estimate of the truth (pattern/illumination.perturb, the training error model, own seed) with the
 GT moved into its gauge (shift = K^-1 e_angle, as the acquisition simulator shift_est).
-usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.processing.gate_dump --scen iso,pair1 --fronts pass1,pass2 --seeds 301,302,303
+usage: CUDA_VISIBLE_DEVICES=1 python -m simcode.processing.gate_dump --scen iso,pair1 --fronts pass1,pass2 --seeds 301,302,303 \
+         [--calib <scene PSF calib>] [--gate_dir <simcode.benchmark.gate_scenes --out>] [--out <dir>]
 """
 import argparse, glob, os, sys, time
 import numpy as np, torch
@@ -25,8 +26,8 @@ from simcode.detector import model as DM
 
 from simcode import config as _cfg
 
-OUT = os.path.join(_cfg.root('out'), 'gate_dumps')
-GATE = _cfg.env('GATE_DIR') or os.path.join(_cfg.root('out'), 'gate')   # env: opt-in (2026-11-11)
+OUT = os.path.join('simcode_out', 'gate_dumps')         # default output folder
+GATE = os.path.join('simcode_out', 'gate')              # default --gate_dir (simcode.benchmark.gate_scenes --out)
 FRONTS = dict(pass1=(_cfg.model(_cfg.DETECTOR), _cfg.model(_cfg.EMITTER)),            # pass 1 of the default model
               pass2=(_cfg.model(_cfg.DETECTOR_PASS2), _cfg.model(_cfg.EMITTER_PASS2)))  # pass 2 of the default model
 
@@ -68,8 +69,8 @@ def gauge_shift(pe, pt):
     return torch.linalg.solve(K, e[..., None])[..., 0]
 
 
-def find_ref(sc, seed, gx0, gph):
-    for f in sorted(glob.glob(f'{GATE}/{sc}__s{seed}_hd_*.npz')):
+def find_ref(gate_dir, sc, seed, gx0, gph):
+    for f in sorted(glob.glob(f'{gate_dir}/{sc}__s{seed}_hd_*.npz')):
         R = np.load(f)
         if 'gt_sf_m' in R.files and len(R['gt_x']) == len(gx0) and np.allclose(R['gt_x'], gx0, atol=1e-4) and np.allclose(R['gt_phot'], gph):
             return R['gt_sf_m'], os.path.basename(f)
@@ -86,10 +87,12 @@ def main():
     ap.add_argument('--pert_model', default='v1')  # illumination.MODELS ('real' = the training error model of the earlier default pass-2 network)
     ap.add_argument('--tag', default='')
     ap.add_argument('--p2', default='')           # override 'det,head' of the p2 front
+    ap.add_argument('--calib', default='', help="PSF of the scenes (in-situ calibration json); default the default model's PSF")
+    ap.add_argument('--gate_dir', default=GATE, help='folder of the simcode.benchmark.gate_scenes npz files of the same scenes / seeds (their CRLB is copied)')
     ap.add_argument('--out', default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    CD.a.calib = GA.gate_calib()
+    CD.a.calib = GA.gate_calib(a.calib)
     sim, _, _ = CD.models(6)
     col = EM.PSFCol(sim)
     if a.p2: FRONTS['p2'] = tuple(a.p2.split(','))
@@ -149,7 +152,7 @@ def main():
             cat = lambda L: {k: np.concatenate([r[k] for r in L]) for k in L[0]}
             D = {'gt_' + k: v for k, v in cat(GT).items()}
             D['patt_est'] = np.concatenate(PE); D['patt_true'] = np.concatenate(PT); D['n_fov'] = np.array(fov0)
-            sf, rn = find_ref(sc, seed, np.concatenate(gx0), D['gt_phot'])
+            sf, rn = find_ref(a.gate_dir, sc, seed, np.concatenate(gx0), D['gt_phot'])
             print(f'  CRLB from {rn}', flush=True)
             D['gt_sf_m'] = sf if sf is not None else np.full((len(D['gt_x']), 2), np.nan, np.float32)
             for f in todo:

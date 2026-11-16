@@ -14,7 +14,6 @@ Gate report v2 (critic review 27 items 5, 6, 7): as gate_report but
 usage: python -m simcode.benchmark.gate_scenes_report_detector_matched --tag _hd_sc2 --out <out>/decomp/gate_report_xdet_sc2.json
 """
 import argparse, glob, json, os
-from simcode import config
 import numpy as np
 from simcode.benchmark.gate_scenes_report import load, match, detection
 
@@ -132,7 +131,7 @@ def report(d, sc, tag, thr=0.5, lo=500, hi=5000, nboot=200, phb=None):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dir', default=os.path.join(config.root('out'), 'gate'))
+    ap.add_argument('--dir', default=os.path.join('simcode_out', 'gate'), help='folder of the gate npz files (simcode.benchmark.gate_scenes --out)')
     ap.add_argument('--scen', default='iso,pair1,pair1.5,pair2,pair3,rs05x,rs05,rs25x,rs25,rs25s,rs05p,rs25p')
     ap.add_argument('--tag', default='_hd_sc2')
     ap.add_argument('--lo', type=float, default=500)

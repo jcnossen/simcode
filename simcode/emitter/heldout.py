@@ -4,8 +4,8 @@ seed 401; heldout5: + rs05p / rs25p, >= 150 photons, the pass-1 detector's candi
 target -> projected efficiency (median of (w.e)^2 / w C_or w over chi2_1 median) and Sigma_net calibration along the
 B-profiled phase-gradient directions, nll_I, slope, I_lin / I_gt and |I - I_lin| / I_gt, prior z, per nn bin; prepared once
 (prep), evaluated during training from the stored patches (eval_hold).
-usage: python -m simcode.emitter.heldout            -> <out>/emitter_heldout/heldout4.pt
-       python -m simcode.emitter.heldout --set 5    -> <out>/emitter_heldout/heldout5.pt (the set of the model recipe)
+usage: python -m simcode.emitter.heldout [--out <file>]           -> simcode_out/emitter_heldout/heldout4.pt
+       python -m simcode.emitter.heldout --set 5 [--out <file>]   -> simcode_out/emitter_heldout/heldout5.pt (the set of the model recipe)
 """
 import argparse, os, time
 import numpy as np, torch
@@ -14,8 +14,9 @@ from simcode.layers.blocks import extract_patches
 from simcode.emitter.model import PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, mod_slope
 
 dev = 'cuda'
-HOLD = os.path.join(config.root('out'), 'emitter_heldout', 'heldout4.pt')      # stage 'prep' output (not shipped: 0.2-0.3 GB)
-HOLD5 = os.path.join(config.root('out'), 'emitter_heldout', 'heldout5.pt')      # iteration 30b: pretrain_detector_pass1 candidates, + rs05p / rs25p, >= 150 ph
+HOLD = os.path.join('simcode_out', 'emitter_heldout', 'heldout4.pt')      # default file of set 4 (stage 'prep' output; not shipped: 0.2-0.3 GB)
+HOLD5 = os.path.join('simcode_out', 'emitter_heldout', 'heldout5.pt')     # set 5 (iteration 30b: pretrain_detector_pass1 candidates, + rs05p / rs25p, >= 150 ph)
+HOLD5_NAME = os.path.basename(HOLD5)      # the trainer recognizes set 5 by this file name
 SC5_SCEN = (('iso', 13000), ('pair2', 5000), ('rs25x', 5000), ('rs05p', 6000), ('rs25p', 6000))
 PHB = ((200, 400), (400, 700), (700, 1200), (1200, 2000), (2000, 1e9))
 
@@ -32,8 +33,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
     from simcode.detector.model import load as load_det
     from simcode.simulate.crlb import illum_at
     T = 6
-    CD.a.calib = config.model(config.INSITU_05)
-    os.environ.setdefault('SIMCODE_GATE_CALIB', CD.a.calib)    # the scenes with the same PSF (the gate default is the model's PSF since 2026-11-14)
+    CD.a.calib = config.model(config.INSITU_05)               # the PSF of the scenes (gate.gen renders with it)
     sim, rpsf, _ = CD.models(T)
     det, _ = load_det(config.DETECTOR)
     col = PSFCol(sim)
@@ -154,6 +154,8 @@ def eval_hold(head, H, chunk=4096, band=(500, 5000), extra=False):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--set', type=int, default=4, choices=[4, 5])
+    ap.add_argument('--out', default='', help=f'output file (default {HOLD} / {HOLD5}; set 5 must be named {HOLD5_NAME})')
     a = ap.parse_args()
-    if a.set == 4: prep()
-    else: prep(SC5_SCEN, out=HOLD5, minph=150)
+    out = a.out or (HOLD if a.set == 4 else HOLD5)
+    if a.set == 4: prep(out=out)
+    else: prep(SC5_SCEN, out=out, minph=150)

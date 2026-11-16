@@ -64,7 +64,8 @@ def run(ds):
     cal = ds.summary('psf')['calib_avg']
     W = ds.wrapfile(dict(presets(ds), title='auto-train'), 'wrap_train')
     steps = {k: (Tc['quick_steps'] if quick else v) for k, v in Tc['steps'].items()}
-    hold = os.path.join(config.root('out'), 'emitter_heldout', 'heldout5.pt')
+    hold = Tc['heldout']                     # held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5), or none
+    if hold and not os.path.isfile(hold): raise FileNotFoundError(f'train.heldout {hold}: no such file (python -m simcode.emitter.heldout --set 5 --out <file>)')
 
     cmds = []                                # every command of the recipe, in order (model.json '_recipe', summary 'recipe')
 
@@ -91,7 +92,7 @@ def run(ds):
     from simcode import config as SC
     det_init = Tc['init']['detector'] or (SC.resolve(SC.model_set(Tc['real_mult_from'])['detector']) if quick else None)   # quick: a few steps on top of the template detector
     det = stage('detector', ['--init', det_init] if det_init else [])
-    emitter = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if os.path.exists(hold) else []))
+    emitter = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if hold else []))
     det2 = stage('detector_pass2', ['--illum', '1', '--init', det])
     det2_mix = stage('detector_pass2_mix', ['--init', det2, '--pass1_ref', det])
     det2_cont = stage('detector_pass2_cont', ['--init', det2_mix, '--pass1_ref', det])
@@ -110,15 +111,14 @@ def run(ds):
     seeds = '202,301' if quick else '202,301,302,303'
     scen = 'iso,' + SCEN_FIT if quick else 'iso,pair1,pair2,' + SCEN_FIT
     nt = '400' if quick else '3500'
-    env = dict(SIMCODE_GATE_CALIB=cal, SIMCODE_GATE_DIR=G, SIMCODE_OUT=D)
     if not os.path.exists(os.path.join(G, 'done')):
         sh('gate', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.benchmark.gate_scenes', '--scen', scen, '--fronts', 'sc', '--emitter', SC.PRETRAIN_EMITTER, '--cal',
-               SC.TEMPLATE_CAL_SIM, '--tag', '_hd_cur', '--out', G, '--ntarget', nt, '--seeds', seeds],
-              os.path.join(D, 'gate.log'), gpu=ds.gpu(8), wrap=W, env=env)
+               SC.TEMPLATE_CAL_SIM, '--tag', '_hd_cur', '--calib', cal, '--out', G, '--ntarget', nt, '--seeds', seeds],
+              os.path.join(D, 'gate.log'), gpu=ds.gpu(8), wrap=W)
         open(os.path.join(G, 'done'), 'w').close()
     if not os.path.exists(os.path.join(FE, 'done')):
-        sh('dump', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.processing.gate_dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--out', FE, '--fronts',
-               f's1={files["detector"]}:{files["emitter"]},s2={files["detector_pass2"]}:{files["emitter_pass2"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W, env=env)
+        sh('dump', ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.processing.gate_dump', '--scen', scen, '--seeds', seeds, '--ntarget', nt, '--calib', cal, '--gate_dir', G, '--out', FE, '--fronts',
+               f's1={files["detector"]}:{files["emitter"]},s2={files["detector_pass2"]}:{files["emitter_pass2"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W)
         open(os.path.join(FE, 'done'), 'w').close()
     os.makedirs(os.path.join(M, 'calib'), exist_ok=True)
     cals = {k: os.path.join(M, SC.MODEL_FILES[k]) for k in ('cal_sim', 'cal_real', 'cal_sim_pass2', 'cal_real_pass2')}
@@ -128,8 +128,8 @@ def run(ds):
     tmpl = SC.model_set(rm)
     fallback = []
     for fr, base, ks, ksr in (('s1', SC.TEMPLATE_CAL_SIM, 'cal_sim', 'cal_real'), ('s2', SC.TEMPLATE_CAL_SIM_PASS2, 'cal_sim_pass2', 'cal_real_pass2')):
-        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', fcs, fr, tag, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
-              os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
+        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', fcs, fr, FE, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
+              os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, check=not quick)
         if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
             # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template set's calibrations
             shutil.copyfile(SC.resolve(tmpl[ks]), cals[ks]); shutil.copyfile(SC.resolve(tmpl[ksr]), cals[ksr]); fallback.append(fr)
@@ -137,7 +137,7 @@ def run(ds):
     # ---- acceptance (held-out seed 301)
     acc_js = os.path.join(D, 'accept.json')
     sh('accept', ['-m', 'simcode.pipeline.run_with_overrides', os.path.join(REPO, 'simcode', 'pipeline', 'acceptance.py'), FE, cals['cal_sim'], cals['cal_sim_pass2'],
-           scen, acc_js], os.path.join(D, 'accept.log'), gpu=ds.gpu(4), wrap=W, env=env, check=not quick)
+           scen, acc_js], os.path.join(D, 'accept.log'), gpu=ds.gpu(4), wrap=W, check=not quick)
     if not os.path.exists(acc_js):
         json.dump(dict(zcal={}, rms={}, n={}, p2_over_p1=None, note='acceptance failed (quick plumbing: no matched targets)'), open(acc_js, 'w'))
     A = json.load(open(acc_js))

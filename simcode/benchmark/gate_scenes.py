@@ -15,11 +15,12 @@ targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / is
 'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
 a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_scenes_report.py).
 Front-end: sc = detector (--detector) + emitter network (--emitter) + the explicit pattern solve with the calibration --cal (defaults: the default
-model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: env
-SIMCODE_GATE_CALIB (an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf').
+model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: --calib
+(an in-situ calibration json), default the PSF the default model was trained on (models.json 'psf'); the scenes are rendered
+with simcode.simulate.crlb.a.calib, which main() (and every other user of gen()) sets first.
 Other front-ends (SIMCODE: archive-2026-11-15:simcode/benchmark/preprint_gate.py; pass 2: simcode/processing/gate_dump.py) write the same npz format.
 Reports: python -m simcode.benchmark.gate_scenes_report_detector_matched --dir <out> --tag <tag> --scen iso,...
-usage: python -m simcode.benchmark.gate_scenes --scen iso,pair1.5 --fronts sc --ntarget 3500 [--out <dir>] [--tag _pretrain]
+usage: python -m simcode.benchmark.gate_scenes --scen iso,pair1.5 --fronts sc --ntarget 3500 [--calib <in-situ calib>] [--out <dir>] [--tag _pretrain]
 """
 import argparse, json, math, os, time
 import numpy as np, torch
@@ -29,21 +30,21 @@ from simcode.simulate.acquisition import AcquisitionSim
 from simcode import config
 
 dev = 'cuda'
-OUT = os.path.join(config.root('out'), 'gate')
+OUT = os.path.join('simcode_out', 'gate')          # default output folder
 RSI = {}
 THR0 = 0.2
 
 
-def gate_calib():
-    """PSF calib of the gate scenes (renders the scenes, the CRLB and the head's PSF template): env SIMCODE_GATE_CALIB, default
-    the PSF of the default model (models.json 'psf'; until 2026-11-14 the default was the 0.5 nM in-situ calib insitu/calib_0.5nM.json)"""
-    c = config.env('GATE_CALIB', '')
-    return config.resolve(c) if c else config.model(config.model_set()['psf'])
+def gate_calib(calib=''):
+    """PSF calib of the gate scenes (renders the scenes, the CRLB and the head's PSF template): `calib` (an in-situ calibration
+    json, name or path), default the PSF of the default model (models.json 'psf'; until 2026-11-14 the default was the 0.5 nM
+    in-situ calib insitu/calib_0.5nM.json). Set simcode.simulate.crlb.a.calib to it before gen()."""
+    return config.resolve(calib) if calib else config.model(config.model_set()['psf'])
 
 
 def rsim(pre):
     if pre not in RSI:
-        RSI[pre] = AcquisitionSim(pre, S, S, 6, calib=gate_calib())
+        RSI[pre] = AcquisitionSim(pre, S, S, 6, calib=CD.a.calib)
     return RSI[pre]
 
 
@@ -162,10 +163,11 @@ def main():
     ap.add_argument('--detector', default=config.DETECTOR)
     ap.add_argument('--emitter', default=config.EMITTER)
     ap.add_argument('--cal', default=config.CAL_SIM)
+    ap.add_argument('--calib', default='', help="PSF of the scenes (in-situ calibration json); default the default model's PSF")
     ap.add_argument('--out', default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    CD.a.calib = gate_calib()
+    CD.a.calib = gate_calib(a.calib)
     T = 6
     sim, rpsf, lut = CD.models(T)
     fronts = a.fronts.split(',')
