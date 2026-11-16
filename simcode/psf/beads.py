@@ -6,7 +6,8 @@ refitted), for the setup's optics and camera.
   python -m simcode.psf.beads --stacks PSF_calib/raw/zstack{2..7}-1.tif --dz 0.010 --sign -1 --holdout 7 --out <prefix>
 
 Writes <prefix>_sign<sign><tag>.json (zernike {noll: waves}, NA, n_med, dz_nm (fitted z step), ze (fitted bead height, um),
-nll_per_px, heldout_nll_per_px, n_beads, ...) and <prefix>_sign<sign><tag>.pt (zcoef, NA, n_med): the bead stage of the
+nll_per_px, heldout_nll_per_px, n_beads, ...), <prefix>_sign<sign><tag>.pt (zcoef, NA, n_med) and
+<prefix>_sign<sign><tag>.psf.zip (the fitted VectorialPSF with the camera and the estimator's report: torch-psf psf.zip): the bead stage of the
 automatic pipeline (simcode/pipeline/localization_pipeline.py) and the Zernike start of the in-situ fit. Stacks are numbered 2, 3, ... in the
 order given (--holdout 7 = the 6th stack; 0 = none). --bead_diameter: finite bead volume (um; default a point emitter);
 --fit_dz_scale 0 / --fit_height 0 / --intensity free switch the fitted z step / bead height / per-plane factors off.
@@ -66,6 +67,8 @@ def main(argv=None):
     pre = a.out + f'_sign{int(a.sign)}{a.tag}'
     json.dump(res, open(pre + '.json', 'w'), indent=1)
     torch.save(dict(n_med=m.n_med.detach().cpu(), zcoef=m.zcoef.detach().cpu(), NA=m.NA.detach().cpu()), pre + '.pt')
+    spsf.save_zip(pre + '.psf.zip', m, camera=camera, report=est,
+                  acquisition=dict(bead_height_um=res['ze'], dz_nm=res['dz_nm'], stage_sign=a.sign, stacks=a.stacks))
     return est, res
 
 

@@ -205,7 +205,9 @@ def test_frc_equals_reference():
     x, y = site[k, 0] + r.normal(0, 0.08, n), site[k, 1] + r.normal(0, 0.08, n)
     L = Dataset.from_arrays(np.c_[x, y], f, meta=dict(pixel_nm=SP.PX_NM_DEFAULT))
     v, freq, curve = L.frc(return_curve=True); w, freq2, curve2 = frc_halves(x, y, f, return_curve=True)
-    assert np.isfinite(v) and v == w and np.array_equal(curve, curve2) and L.frc(block=30) == frc_halves(x, y, f, blk=30)
+    # torch-psf since 5f740a9 (pin 0fee3c3) computes the FRC with float32 histograms and a complex64 rfft2 (the paper estimator: float64): the
+    # curves agree to ~2e-8 (here: the same resolution)
+    assert np.isfinite(v) and v == w and np.allclose(curve, curve2, rtol=0, atol=1e-6) and L.frc(block=30) == frc_halves(x, y, f, blk=30)
 
 
 def test_real_table():

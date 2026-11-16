@@ -18,6 +18,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.config import root
+from simcode.psf import fourpi_state
 from simcode.setups.fourpi import FourPiSetup, acquisition, file_index
 P4 = root('fourpi'); S4 = FourPiSetup()
 GAIN = acquisition('MT')['camera']['gain_e_per_adu']; P = acquisition('MT')['fourpi']['patch']   # the same for MT and NPC
@@ -237,7 +238,7 @@ def main():
     if a.follow: return follow(a)
     from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, DELTA[a.cell]), dev=dev)
     U = units(a.cell, a.tag, claim=a.claim, redo=not a.skip_done, min_free_gb=a.min_free_gb)
     for fi in (a.files or []):
@@ -251,7 +252,7 @@ def main():
 def follow(a):
     from simcode.util.proctitle import auto; auto('4pi-classic')
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=P, dev=dev)
     US = {c: units(c, a.tag, claim=True) for c in a.cells}
     c4s = {c: Classic4Pi(lut, delta=(0.0, DELTA[c]), dev=dev) for c in a.cells}

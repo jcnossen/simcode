@@ -29,7 +29,8 @@ sys.path.insert(0, os.path.join(REPO, 'analysis', 'papersim'))
 def _calib(calib):
     from simcode.config import resolve
     p = resolve(calib)
-    return p, json.load(open(p))
+    from simcode.psf import read_calib
+    return p, read_calib(p)
 
 
 def run_pattern(run_dir, px_nm):
@@ -58,7 +59,8 @@ def data_conditions(run_dir, rows, calib, crop=(5.0, 5.0, 110.0), p_min=0.63):
         m = (p >= p_min) & (w % 6 == 0) & (x >= x0) & (x < x0 + s) & (y >= y0) & (y < y0 + s)
         bg.append(d['bg'][m].mean(1))
     bg = np.concatenate(bg)
-    rn = np.load(os.path.join(os.path.dirname(cp), c['camera']['maps']))['readnoise_e'].astype(np.float64)
+    from simcode.psf import camera_maps
+    rn = camera_maps(cp, c)['readnoise_e'].astype(np.float64)
     i0, i1 = int(y0), int(y0 + s); j0, j1 = int(x0), int(x0 + s)
     rn2 = float((rn[i0:i1, j0:j1] ** 2).mean())
     F = rows.numpy()

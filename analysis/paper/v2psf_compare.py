@@ -92,7 +92,8 @@ def main():
     focus = None
     if a.calib:
         from simcode.config import resolve
-        focus = json.load(open(resolve(a.calib)))['focus_um']
+        from simcode.psf import read_calib
+        focus = read_calib(resolve(a.calib))['focus_um']
     ro, ho = stats(a.old, 'previous v2 production', GAIN_NEW / GAIN_OLD)
     rn, hn = stats(a.new, 'v2, PSF-v2 models', 1.0, focus_um=focus)
     ro.update(from_values(a.old_values) if a.old_values != '-' else from_fair(a.old, a.drift_old, a.nframes))

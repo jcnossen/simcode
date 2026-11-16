@@ -18,6 +18,7 @@ import torch.multiprocessing as mp
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.util.ckpt import save as safe_save   # atomic, disk-guarded
 
 
@@ -27,9 +28,9 @@ def worker(q, seed, psf, B, size, dens, ksums=(1,), acq=None):
     if acq:     # plain 4Pi: the training recipe of the acquisition config
         c = acquisition(acq)
         init, smp = setup_of(c).sim_kw(c)
-        rs = MultiChannelAcquisitionSim(json.load(open(c['fourpi']['psf']))['psf'], H=size, W=size, seed=seed, **init)
+        rs = MultiChannelAcquisitionSim(fourpi_state(c['fourpi']['psf']), H=size, W=size, seed=seed, **init)
     else:
-        st = json.load(open(f'{P4}/psf4pi/{psf}.json'))['psf']
+        st = fourpi_state(psf, P4)
         rs = MultiChannelAcquisitionSim(st, H=size, W=size, seed=seed, n_psf=6); smp = dict(dens=dens)
     while True:
         S = rs.sample(B=B, ksum=ksums[int(torch.randint(len(ksums), (1,)))], **smp)

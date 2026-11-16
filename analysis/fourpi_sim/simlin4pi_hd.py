@@ -20,6 +20,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'fourpi'))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.config import root; P4 = root('fourpi')
+from simcode.psf import fourpi_state
 from simcode.processing import fourpi_pattern_phase as SR
 from simcode.processing.fourpi_pattern_phase import repattern_xy
 from simcode.fourpi.lut4pi import LUT4Pi
@@ -60,7 +61,7 @@ def main():
     global SB; SB = 0.2 * math.sqrt(a.ksum)
     d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))
-    st = json.load(open(f'{P4}/psf4pi/{a.psf}.json'))['psf']
+    st = fourpi_state(a.psf, P4)
     lut = LUT4Pi(st, P=15)
     t0 = time.time()
     F = np.load(f'{d}/front_SIM_000_{a.front}.npz')

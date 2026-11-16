@@ -11,8 +11,8 @@ dependencies = [
     "numpy", "scipy", "tifffile", "torch>=2.1",
     # DME v2 drift estimation (MIT), pinned to the commit the paper results were made with
     "dme @ git+https://github.com/jcnossen/drift-estimation.git@374300f12b893a934067703c34a0097c6659bdc1",
-    # torch-psf (MIT): PSF models, calibration json reader, bead / in-situ PSF fits, TIFF reader
-    "torch-psf @ git+https://github.com/jcnossen/torch-psf.git@040c3f3d55bcce1e10156f515efaf0f13a3ad7b4",
+    # torch-psf (MIT): PSF models, PSF files (psf.zip, calibration json), bead / in-situ PSF fits, TIFF reader
+    "torch-psf @ git+https://github.com/jcnossen/torch-psf.git@0fee3c395847802acc1572602cab929db858365e",
 ]
 # Optional: h5py (hdf5 tables). A local checkout of drift-estimation can still override the installed dme
 # (env DME_PATH or the config key "dme"), see simcode/util/drift.py. On qnano1 the simcode-py311 env keeps the older dme 1.0

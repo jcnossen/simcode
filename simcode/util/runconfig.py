@@ -200,9 +200,14 @@ def checkpoint_info(path):
 
 
 def json_params(path, maxlen=8):
-    """scalar / short entries of a calibration json (cmult = the fixed c, prior_off, kappa, sigma model, notes)"""
+    """scalar / short entries of a calibration json (cmult = the fixed c, prior_off, kappa, sigma model, notes) or of a
+    PSF calibration psf.zip (simcode.psf.read_calib)"""
     try:
-        J = json.load(open(path))
+        if path.endswith('.zip'):
+            from simcode import psf as spsf
+            J = spsf.read_calib(path)
+        else:
+            J = json.load(open(path))
     except Exception as e:
         return dict(error=f'{type(e).__name__}: {e}')
     return {k: v for k, v in J.items() if isinstance(v, (int, float, str, bool)) or (isinstance(v, list) and len(v) <= maxlen
@@ -213,7 +218,7 @@ def model_file(path):
     r = file_record(path)
     if r.get('missing'): return r
     if path.endswith('.pt'): r['checkpoint'] = checkpoint_info(path)
-    elif path.endswith('.json'): r['params'] = json_params(path)
+    elif path.endswith(('.json', '.zip')): r['params'] = json_params(path)
     return r
 
 
@@ -231,13 +236,16 @@ def model_record(name, definition, files):
 
 
 def calib_record(path):
-    """in-situ PSF / camera calibration json: file + camera maps + the key parameters"""
+    """in-situ PSF / camera calibration (calib json or psf.zip): file + camera maps + the key parameters"""
     p = config.resolve(path); r = file_record(p)
     if r.get('missing'): return r
     try:
-        c = json.load(open(p))
-        from simcode.processing.common import camera_maps_path
-        r['camera_maps'] = file_record(camera_maps_path(p, c))
+        from simcode import psf as spsf
+        c = spsf.read_calib(p)                     # calib json or psf.zip
+        r['format'] = 'psf.zip' if spsf.is_psf_zip(p) else 'calib json'
+        mp = spsf.camera_maps_path(p, c)
+        r['camera_maps'] = (dict(path=os.path.abspath(p), inside='psf.zip camera arrays') if spsf.is_psf_zip(p) and mp
+                            else file_record(mp))
         z = np.asarray(c.get('zernike_waves', []), float)
         r['psf'] = dict(model='vectorial (torch_psf.VectorialPSF, 11 px, oversample 3; LUT z range +-0.2 um)',
                         NA=c.get('NA'), wavelength_um=c.get('wavelength_um'), n_imm=c.get('n_imm'), n_med=c.get('n_med'),

@@ -17,9 +17,3 @@ def data(p):
 def out(*f):
     """default output path under <out>/insitu"""
     return os.path.join(config.out_dir('insitu'), *f)
-
-
-def cam_maps(calib_path, cam):
-    """camera-map path of a calibration json (relative paths are relative to the json, as in sim.simulator)"""
-    mp = cam['maps']
-    return mp if os.path.isabs(mp) else os.path.join(os.path.dirname(os.path.abspath(calib_path)), mp)
