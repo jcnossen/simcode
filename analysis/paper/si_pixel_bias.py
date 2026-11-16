@@ -209,8 +209,9 @@ def caption(V, a):
     L.append('Rows: the common rule for every method (own filters, disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px on its own '
              'reported uncertainty; SIMCODE p >= 0.63 with calibrated sigma). Bias: rows matched within 1 px to a ground-truth emitter with '
              'no other emitter ON within 2 px. SIMFLUX uses the true pattern throughout; on the isolated-emitter movie SIMCODE also uses the '
-             'true pattern (its pattern estimate fails on this sparse movie). DECODE = DECODE retrained on our conditions at its published '
-             'training scale (32.8 M frames).')
+             'true pattern (its pattern estimate fails on this sparse movie). DECODE = DECODE retrained on our conditions with its '
+             'published training schedule (32 768 simulated frames per epoch, learning rate 6e-4 with plateau halving), weights frozen '
+             'at convergence (epoch 300, 9.8 M frames; all monitored metrics flat from epoch ~200).')
     L.append('NUMBERS (si_pixel_bias_values.json)')
     I = V['movies']['iso']['methods_nocut']
     for k, lab in METH:
