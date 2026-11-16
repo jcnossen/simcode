@@ -112,7 +112,7 @@ def check():
     # mentions of scripts in shell scripts and docs
     allb = {os.path.basename(f) for f in files}
     for f in files:
-        if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS: continue
+        if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS or f.startswith('figures/'): continue   # figures/ (paper branch): copies of figure outputs
         for i, line in enumerate(open(os.path.join(ROOT, f), encoding='utf-8', errors='replace'), 1):
             for mm in re.finditer(r'(?<![\w~/:-])((?:simcode|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
                 s = mm.group(1)
