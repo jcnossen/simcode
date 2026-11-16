@@ -640,8 +640,8 @@ def fig_sim(a):
         else:
             t = SHOW[j - 1]; E = Es[t]; Ln = L(t, BEST[t]); Lc = L(t, 'cl_pub')
             data = {'net': (Ln['x'], Ln['y'], Ln['z']), 'cl': (Lc['x'], Lc['y'], Lc['z'])}
-            ttl = f"{E['dens_fov'] / DR['d768']:.2g}x densest real region\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
-                else f"{E['dens_fov'] / DR['d768']:.2g}x densest real region"
+            ttl = f"{E['dens_fov']:.2g} emitters µm⁻² frame⁻¹\n({E['crowd_frame_mean']:.1f} others per 15 px patch)" if 'crowd_frame_mean' in E and np.isscalar(E['crowd_frame_mean']) \
+                else f"{E['dens_fov']:.2g} emitters µm⁻² frame⁻¹"
         x, y, z = data['net']
         ax = fig.add_axes([xl, up(yrow[0]), wcol, hh_(hcol)]); ax.imshow(zrgb(x, y, z, LO, LO, ext, 8.0, zr, 0.8)); noaxis(ax); ax.set_title(ttl, fontsize=6.5, pad=2)
         for (cc, s), lab in ((ZOOM2, 'zoom'),):                       # only the zoom-2 box, labelled 'zoom' (user 2026-11-15)
@@ -692,11 +692,12 @@ def fig_sim(a):
     cols = {t: cm(i / (len(DENS) - 1)) for i, t in enumerate(DENS)}
     TF = {t: json.load(open(f'{SW}/{t}/ttf_fp.json')) for t in DENS}       # analysis/fourpi_sim/sweep4pi_ttf_fp.py
     from matplotlib.lines import Line2D
-    for i, (key, ttl) in enumerate((('ttf_xy', 'GT-FRC x-y (nm)'), ('ttf_xz', 'GT-FRC x-z sections (nm)'))):
-        ax = fig.add_axes([0.075 + i * 0.255, lo_(ys), ws, hh_(hs)])
+    frc_panels = (('ttf_xy', 'GT-FRC x-y (nm)'),) if share else (('ttf_xy', 'GT-FRC x-y (nm)'), ('ttf_xz', 'GT-FRC x-z sections (nm)'))   # share: no x-z panel to refer to
+    for i, (key, ttl) in enumerate(frc_panels):
+        ax = fig.add_axes([0.075 + i * 0.255, lo_(ys), (0.36 if share else ws), hh_(hs)])
         for t in DENS:
             F = TF[t]; g = np.array(F['grid'], float)                     # frames
-            ax.plot(g, F['methods'][BEST[t]][key], color=cols[t], lw=1.2, label=f"{F['dens_fov'] / DR['d768']:.2g}x densest real region")
+            ax.plot(g, F['methods'][BEST[t]][key], color=cols[t], lw=1.2, label=f"{F['dens_fov']:.2g} emitters µm⁻² frame⁻¹")
             c = np.array(F['methods']['cl_pub'][key], float)
             ax.plot(g, c, color=cols[t], lw=0.9, ls=':')
         ax.set_xscale('log'); ax.set_yscale('log'); ax.set_ylim(15, 250); ax.set_yticks([20, 30, 50, 100, 200]); ax.set_yticklabels(['20', '30', '50', '100', '200'])
@@ -711,7 +712,7 @@ def fig_sim(a):
             fig.legend(h_, l_, frameon=False, fontsize=5.5, loc='lower left', bbox_to_anchor=(0.27, lo_(ys + hs + 0.025)),
                        ncol=4, handlelength=1.8, columnspacing=1.0, labelspacing=0.2)
             letter(ax, 'd' if share else 'e', -0.15)
-    ax = fig.add_axes([0.075 + 2 * 0.255 + 0.03, lo_(ys), 0.215, hh_(hs)])
+    ax = fig.add_axes([0.53, lo_(ys), 0.38, hh_(hs)] if share else [0.075 + 2 * 0.255 + 0.03, lo_(ys), 0.215, hh_(hs)])
     D = np.array([Es[t]['dens_fov'] for t in DENS])
     def g(t, nm, k):
         if k == 'recall': return Es[t]['methods'][nm]['recall']
@@ -722,8 +723,10 @@ def fig_sim(a):
         nm_ = np.array([TF[t]['methods']['cl_pub']['n_locs'] < NMIN_CL for t in DENS])     # too few kept: not measurable
         ax.plot(D[~nm_], y[~nm_], ls, color=COL['cl'], marker='s', ms=2, lw=1.1)
         for xx in D[nm_]: ax.text(xx, 0.02 if k == 'recall' else 0.06, 'n.m.', color=COL['cl'], fontsize=5, ha='center')
-    ax.set_xscale('log'); ax.set_xticks(D); ax.set_xticklabels([f'{v / DR["d768"]:.2g}x' for v in D]); ax.xaxis.set_minor_formatter(plt.NullFormatter())
-    ax.set_xlabel('density (x densest real region)', labelpad=1); ax.set_ylabel('fraction', labelpad=1); ax.set_ylim(0, 0.75); ax.grid(alpha=0.25, lw=0.4); ax.tick_params(length=2, pad=1)
+    ax.set_xscale('log'); ax.set_xticks(D); ax.set_xticklabels([f'{v:.2g}' for v in D]); ax.xaxis.set_minor_formatter(plt.NullFormatter())
+    ax.axvline(DR['d768'], color='0.35', lw=0.7, ls=':')
+    ax.text(DR['d768'] * 1.04, 0.73, 'densest experimental region', rotation=90, fontsize=5, color='0.35', ha='left', va='top')
+    ax.set_xlabel('density (emitters µm⁻² frame⁻¹)', labelpad=1); ax.set_ylabel('fraction', labelpad=1); ax.set_ylim(0, 0.75); ax.grid(alpha=0.25, lw=0.4); ax.tick_params(length=2, pad=1)
     hl = [Line2D([], [], color=COL['net'], lw=1.1, label='4Pi-SIMCODE'), Line2D([], [], color=COL['cl'], lw=1.1, label='4Pi-SIMFLUX'),
           Line2D([], [], color='k', ls='-', lw=0.9, label='recall'), Line2D([], [], color='k', ls='--', lw=0.9, label='false positives')]
     ax.legend(handles=hl, frameon=False, fontsize=5.3, loc='upper right', handlelength=1.8, labelspacing=0.15)
@@ -747,7 +750,7 @@ def fig_sim(a):
                 val[t][nm].update(false_pos_3d=q['fp_fraction'], false_pos_wrong_fringe_only=q['fp_wrong_fringe_only'],
                                   frames_to_xy25=q['frames_to_xy'].get('25'), frames_to_xz35=q['frames_to_xz'].get('35'),
                                   gtfrc_end_xy=q['ttf_xy'][-1], gtfrc_end_xz=q['ttf_xz'][-1])
-    json.dump(dict(selection=BEST, per_density=val), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
+    json.dump(dict(selection=BEST, per_density=val, density_unit='emitters µm⁻² frame⁻¹', reference_densest_experimental_region=dict(density=DR['d768'], sd=DR['d768_sd'], window_um=7.68, field_average=DR['field'])), open(f'{OUT}/si_4pi_sim_values.json', 'w'), indent=1, default=float)
     open(f'{OUT}/si_4pi_sim_caption.txt', 'w').write(caption_sim(val))
 
 
