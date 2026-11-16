@@ -86,54 +86,6 @@ Sources
 
 ## 4. Figure symbols: old -> new
 
-### fig_pipeline_v2 (main Fig. 1)
-| old (panel) | new | meaning |
-|---|---|---|
-| frame axis `t` (C) | removed; "6-frame window = 2 angles (i) x 3 phase steps (j)" | defines i, j |
-| logit + sub-pixel offset; p >= 0.3 (D) | "detection prob. p + sub-pixel offset" | p as in R |
-| I_t = w_t . (y_t - bg_t) + correction (D) | words: "intensity = learned weighted sum of the pixels minus background, + correction" | |
-| I_1 ... I_6, "full 6x6 covariance (Cholesky L)", covariance glyph (D) | "intensities mu-hat_{N_{i,j}} +- sigma-hat_{N_{i,j}}" (bars with error bars); glyph removed | the preprint's description; ablation: off-diagonals no measurable effect in pass 2 (out/ablation_cov/REPORT.md) |
-| bg_1 ... bg_6 (D) | "backgrounds mu-hat_{b_{i,j}}" | |
-| 3D prior (x, y, z) + 3x3 covariance; z given x, y: z + b . Delta r (D) | "position theta-hat_dl = (x, y, z) +- sigma_dl (pattern-free)" | theta-hat_dl of P, extended by z |
-| I_t, r on the D -> E arrow | mu-hat_N, theta-hat_dl | |
-| I_t = B rel_s [1 + m_a cos(k_a . r - psi_s - eps_a(t))] (E) | e_{i,j} = N r_{i,j} [1 + m_i sin(q_i . (x, y) - phi_{i,j} - eps_i(t))] | R Eq. 1 |
-| axis k_a . r - psi_s - eps_a(t), I_t / B (E) | q_i . (x, y) - phi_{i,j} - eps_i(t), mu-hat_{N_{i,j}} / N | |
-| k_a, psi_s, rel. intensities, m_a, eps_a(t) (E) | q_i, phi_{i,j}, r_{i,j}, m_i, eps_i(t) | |
-| "NLL along k_a" (G) | "cost along q_i" | |
-| LM fit of (x, y, B [, t_on, t_off]) to I_t with Sigma(mu) = s Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T, fixed c, c_a (G) | "LM fit of theta = (x, y, N): e_{i,j}(theta) to mu-hat_{N_{i,j}}, weighted by sigma-hat_{N_{i,j}} (+ a term proportional to e_{i,j}^2 for brightness fluctuations); + Gaussian prior term theta-hat_dl, sigma_dl" | |
-| on/off kinetics kept if Delta(-2 log L) > 9.21 (G) | "switching on / off within the window: kept if it lowers -2 log-likelihood by > 9.21" | L would clash with the loss L / Cholesky L |
-| z = z_p + b . (r - r_p) (H) | words: "its z is that candidate's z (D), corrected for the solved x, y" | b would clash with b_{i,j} |
-| selection p >= 0.63, max(sigma_x, sigma_y) <= 0.15 px (16.25 nm; common rule, 2026-11-15); table x, y, z, sigma_x, sigma_y, sigma_z | unchanged | R |
-
-### si_network_structure_v3 (SI network structure)
-| old | new |
-|---|---|
-| sign(y) log(1 + abs(y)/30); (y - b-bar)/100; b-bar (y = photons clashes with the coordinate y) | "log-scaled photons"; "linear (photons - border bg)"; formula in the caption facts with n = patch photons |
-| logit (p = sigma(.)), d_{x,y} = 1.5 tanh, log sigma_off = -5 + 6 sigma(.) (sigma = sigmoid clashes with the uncertainties) | "detection probability p (sigmoid of a logit); sub-pixel offset (<= 1.5 px) and its uncertainty" |
-| weight map -> m, per-frame maps -> D_t (clash with m_i, D) | "weight modulation", "per-frame weight changes" |
-| b_{0,t} scalars | "border-median background per frame" |
-| read-out box g, w_0, w, w_t, I_lin,t = w_t . (y_t - bg_t) | words (template-matched weights x modulation, unit response to the template, + per-frame changes; weighted sum of photons - background) |
-| 41-output legend: dI, log diag L, off-diag L, dx dy, log sigma_xy, bg, z / log s_z|xy / b_x / b_y | intensity corrections, intensity uncertainties, intensity correlations, x, y offset, sigma_x, sigma_y, backgrounds, z, sigma_z, z slopes |
-| outputs box: bg_t = b0 + q sqrt(.), I_t = I_lin + c dI, 6x6 Cholesky L, L_p = [[...]] (c, q, b, L clash) | "backgrounds mu-hat_{b_{i,j}}", "intensities mu-hat_{N_{i,j}}", "uncertainties sigma-hat_{N_{i,j}} (with their correlations, as a Cholesky factor)", "position theta-hat_dl, sigma_x, sigma_y, z with sigma_z and slopes" |
-| ResBlock(c, d): x + ... | ResBlock(channels, dilation d): h + ... |
-
-### si_4pi_pipeline (SI 4Pi-SIMCODE pipeline): words in the panels
-| old | new (panel) | proposed symbol if the SI text needs one (no clash with P) |
-|---|---|---|
-| c0-c3 | ch1-ch4 | c in {1, ..., 4} (channel index) |
-| (dx_c, dy_c) (red) | "channel offset(s)", "sub-pixel offset kept per channel (ch1: 0)" | (Delta x_c, Delta y_c) |
-| Y_tck, "96 read-outs Y_tck", "4 x 4 cov. per (t, c)" | "96 read-outs: 4 per frame and channel", "+- uncertainties (analytic, x learned scale)" | none needed |
-| W_ck, D, D_ck, y_tc, bg_c, p_0 | "read-out windows", "window changes", "pixels", "backgrounds: one per channel", "prior position" | none needed |
-| Y_tck = sum_px (W_ck + D_ck)(y_tc - bg_c) | "(window + change) . (pixels - background), per frame, channel and window" | |
-| SIM pattern k_a, psi_t, m | q_i, phi_{i,j}, m_i | preprint symbols |
-| 4Pi phase field Phi_0(x, y, t), per-angle offset delta_a | "4Pi phase field (per file; tiles x time)", "+ an offset per angle" | Psi(x, y, t) (4Pi phase field), Psi_i (offset of angle i). Not Phi: too close to phi / phi_ij |
-| E[Y_tck] = N_t sum W'_ck g_c(x + dx_c, ...; Phi_0 + delta_a); N_t = F [1 + m cos(k_a . r - psi_t)] | "expected read-out = e_{i,j}(theta) x the window applied to the channel 4Pi PSF at (x, y, z) + offset, with the 4Pi phase of the field"; e_{i,j}(theta) = N [1 + m_i sin(q_i . (x, y) - phi_{i,j})] | |
-| Lambda = 257 nm; 3 starts prior z, +- Lambda/2 | "period 257 nm"; "3 starts: prior z, +- half a period" | Lambda (fringe period; P uses lambda only for the LM damping / wavelength) |
-| -log L vs z | "cost vs z: the prior picks the fringe" | |
-| LM fit of x, y, z, F [, t_on, t_off], bg_c (4) | "LM fit of theta = (x, y, z, N), a background per channel [, on / off switching]" | N (= code F) |
-| SIMCODE note "I_1...I_6, 6 x 6 cov., bg_1...bg_6, prior with 3 x 3 cov." | "6 intensities +- uncertainties, 6 backgrounds, position (x, y, z)" | |
-| table (f): I_t: 6 / Y_tck: 6x4x4; covariance 6x6 / 4x4 per (t, c); solve x, y, B / x, y, z, F, bg_c; Lambda/2; p, sigma_xy | read-outs "6 intensities" / "4 per frame and channel"; uncertainties "per intensity" / "per frame and channel"; fit x, y, N / x, y, z, N, bg per channel; "half a fringe apart"; p, sigma_x, sigma_y | |
-
 ### si_phase_decouple
 psi_s -> phi_{i,j} (plotted as psi_s - 90 deg, sin convention); eps_a(t) -> eps_i(t); "angle 0 / 1" -> "angle i = 1 / 2";
 "step 0, 1, 2" -> "step j = 1, 2, 3"; caption: orientation a -> angle i; block phases phi_s(b) -> blockphase_ij(b) (phi

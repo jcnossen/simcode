@@ -6,9 +6,6 @@
 - `si_pattern.py`: SI figures of the v2 pattern estimation of one run (default 1809_2): `si_phase_decouple` (per-step phases vs time = shared per-angle drift + fixed per-step offsets, with the per-block shared-drift test) and `si_pattern_plots` (preprint layout: SIMFLUX / SIMCODE rows x 1809_2 / 2.5nM_2 columns, normalized intensity vs pattern phase, included vs excluded) and `si_pattern_plots_extended`. CPU only.
 - `si_dme_drift.py`: SI figure `si_dme_drift`: each method's own DME v2 drift in the preprint layout (the frc_fair drift caches; paths as arguments; --style extended adds difference panels).
 - `si_single_frame.py`: SI reviewer figure `si_review-single-frame`: one raw 1809/2 frame in photo-electrons (v2 camera calibration) with an inset of an isolated spot picked with the v2 table, 2 um scale bar, PSF-v2 FWHM in the caption file; `_locs` variant with the selected v2 localizations. CPU only.
-- `fig_pipeline_v2.py`: the main-text pipeline schematic (vector) -> `out/paper_figs_v2/fig_pipeline_v2.{pdf,svg,png}` + `_caption.txt`.
-- `fig_network_structure.py`: the SI network-architecture figure (layer sizes and parameter counts read from the m1809 checkpoints, CPU) -> `out/paper_figs_v2/si_network_structure_v3.{pdf,svg,png}` + `_caption.txt`.
-- `fig_4pi_pipeline.py`: the SI 4Pi-SIMCODE pipeline schematic (channel mapping, detector, emitter network, prior, solve, SIMCODE vs 4Pi-SIMCODE; layer sizes asserted against the 4Pi checkpoints, glyphs rendered from their PSF, CPU) -> `out/paper_figs_v2/si_4pi_pipeline.{pdf,svg,png}` + `_caption.txt`.
 
 ## Fair FRC protocol (`frc_fair.py`), identical for every method
 
