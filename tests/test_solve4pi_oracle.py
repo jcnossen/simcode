@@ -1,8 +1,8 @@
 """Consistency test of the explicit 4Pi solve (simcode/solve/fourpi.py) against the simulator: feed the ground-truth
 read-out targets (T = patch sum, C = Gaussian window sd 1 px at the emitter) without noise and a loose prior around the
 truth, as the two windows ('flat', 'gauss' 1.0) of the solve (tables, co-moving windows); the solve must return the truth,
-and the phase mode must return Phi0. GPU, ~1 min; needs the 4Pi PSF model <4Pi work dir>/psf4pi/NPC_f_dxy15.json (skipped without it).
-Run: CUDA_VISIBLE_DEVICES=<gpu> python tests/test_solve4pi_oracle.py  (or pytest tests)
+and the phase mode must return Phi0. GPU, ~1 min; needs the 4Pi PSF model <4Pi work folder>/psf4pi/NPC_f_dxy15.json (skipped without it).
+Run: CUDA_VISIBLE_DEVICES=<gpu> python tests/test_solve4pi_oracle.py <4Pi work folder>  (or pytest tests --work4pi <4Pi work folder>)
 
 Measured 2026-11-12 (2000 isolated on-through emitters, seed 5): mode 'on' p99 |error| 0.0026 / 0.0026 px, 5.1 nm in z;
 mode 'free' (lateral position = the prior, by construction) z p99 5.1 nm; phase mode |dPhi| median 6.3 deg."""
@@ -11,10 +11,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 
 
-def test_solve_oracle():
+def test_solve_oracle(work4pi):
     import torch
-    from simcode.config import root; P4 = root('fourpi')
-    f = f'{P4}/psf4pi/NPC_f_dxy15.json'
+    f = f'{work4pi}/psf4pi/NPC_f_dxy15.json' if work4pi else 'the 4Pi work folder (--work4pi)'
     if not os.path.exists(f) or not torch.cuda.is_available():
         print(f'  skip (needs a GPU and {f})'); return
     from simcode.fourpi.spline_table import LUT4Pi
@@ -48,5 +47,5 @@ def test_solve_oracle():
 
 
 if __name__ == '__main__':
-    print('test_solve_oracle', flush=True); test_solve_oracle()
+    print('test_solve_oracle', flush=True); test_solve_oracle(sys.argv[1] if len(sys.argv) > 1 else None)
     print('ALL OK')

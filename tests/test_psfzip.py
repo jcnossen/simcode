@@ -1,7 +1,8 @@
 """
 The paper PSFs as psf.zip (models/**/*.psf.zip, analysis/psfzip/convert_paper_psfs.py) give exactly what their json gives.
-CPU (env SIMCODE_TEST_DEVICE to change); needs only this checkout's models/ (json, camera maps, zips; no networks).
-Run: python tests/test_psfzip.py (or pytest tests/test_psfzip.py)
+CPU (env SIMCODE_TEST_DEVICE to change); needs only this checkout's models/ (json, camera maps, zips; no networks), and for the
+4Pi state json the 4Pi work folder (skipped without it).
+Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzip.py [--work4pi <4Pi work folder>])
   - read_calib(zip) (the zip's blocks) gives every key of the calib json with the json's value (camera.maps = ZIP_MAPS),
     plus only the defaults torch-psf writes explicitly (EXTRA_OK)
   - camera_maps(zip) == the json's npz (every entry: offset_adu, readnoise_e and the extra entries; values and dtype)
@@ -122,10 +123,10 @@ def test_beads():
     assert np.float32(float(p.NA)) == np.float32(B['NA']) and np.float32(float(p.n_med)) == np.float32(B['n_med'])
 
 
-def test_fourpi():
-    from simcode import psf as spsf, config
+def test_fourpi(work4pi):
+    from simcode import psf as spsf
     from simcode.fourpi.coherent_psf import psf_from_state
-    js = os.path.join(config.root('fourpi'), 'psf4pi', 'NPC_f_dxy15.json')
+    js = os.path.join(work4pi, 'psf4pi', 'NPC_f_dxy15.json') if work4pi else 'the 4Pi work folder (--work4pi)'
     if not os.path.isfile(js):
         print('skip 4Pi: no', js); return
     st = json.load(open(js))['psf']
@@ -159,4 +160,4 @@ def test_fourpi():
 if __name__ == '__main__':
     for k, f in list(globals().items()):
         if k.startswith('test_'):
-            f(); print('ok', k, flush=True)
+            (f(sys.argv[1] if len(sys.argv) > 1 else None) if k == 'test_fourpi' else f()); print('ok', k, flush=True)

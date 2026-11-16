@@ -6,20 +6,21 @@ import json, os, sys, tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 import numpy as np
+W4, D4 = '/nonexistent/4pi_work', '/nonexistent/4pi_data'     # the 4Pi config paths (not read by these tests)
 
 
 def test_fourpi_configs():
     from simcode.setups.fourpi import acquisition, FourPiSetup
     S = FourPiSetup()
     for cell, delta in (('MT', -10.4), ('NPC', -13.9)):
-        c = acquisition(cell)
+        c = acquisition(cell, W4, D4)
         assert c['setup'] == 'fourpi' and c['name'] == f'fourpi_{cell}' and c['fourpi']['delta_deg'] == delta
         L = S.layout(c)
         assert (L.C, L.H, L.W) == (4, 200, 360) and [ch.mirror for ch in L.channels] == ['none', 'none', 'lr', 'lr']
         assert [ch.crop[0] for ch in L.channels] == [217, 652, 1420, 1855]
         assert S.stages(c) == ['registration', 'process', 'report']
     raw = np.random.default_rng(0).integers(0, 9999, (3, 200, 2304)).astype(np.uint16)
-    x = S.layout(acquisition('MT')).split(raw)
+    x = S.layout(acquisition('MT', W4, D4)).split(raw)
     assert x.shape == (3, 4, 200, 360) and x.dtype == np.float32
     assert np.array_equal(x[:, 1], raw[:, :, 652:1012]) and np.array_equal(x[:, 3], raw[:, :, 1855:2215][..., ::-1])
     print('  ok 4Pi acquisition configs (channels, delta, stages, split)')
@@ -77,7 +78,7 @@ def test_pipeline_stages():
     from simcode.pipeline.localization_pipeline import LocalizationPipeline
     from simcode.util.config_dict import ConfigDict
     with tempfile.TemporaryDirectory() as t:
-        c = ConfigDict(acquisition('MT')).updated(out=t, name='test_fourpi_stages')
+        c = ConfigDict(acquisition('MT', W4, D4)).updated(out=t, name='test_fourpi_stages')
         p = LocalizationPipeline(c, log=lambda *a: None)
         assert p.stages == ['registration', 'process', 'report'] and p.setup.name == 'fourpi'
         for bad in ('psf', 'spots'):

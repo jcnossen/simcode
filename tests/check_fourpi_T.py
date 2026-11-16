@@ -5,8 +5,8 @@ training loss. Used to check that the generalisation to T frames per window (202
 outputs bit-identical: run once with the code before the change (--save), once after (--ref). Only APIs present in both
 versions are used.
 
-  PYTHONPATH=<code> python tests/check_fourpi_T.py --save ref.pt
-  PYTHONPATH=<code> python tests/check_fourpi_T.py --ref ref.pt        (exit code 1 on any difference)
+  PYTHONPATH=<code> python tests/check_fourpi_T.py --work <4Pi work folder> --save ref.pt
+  PYTHONPATH=<code> python tests/check_fourpi_T.py --work <4Pi work folder> --ref ref.pt        (exit code 1 on any difference)
 """
 import argparse, json, math, os, sys
 import torch
@@ -14,27 +14,26 @@ import torch
 dev = 'cpu'
 
 
-def run():
-    from simcode.config import root
+def run(P4):
+    """P4: the 4Pi work folder"""
     from simcode.fourpi.spline_table import LUT4Pi
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.emitter.fourpi import FourPiPrior, FourPiEmitterNet, WINDOWS_K, solve_loss, linear_readout, border_bg
     from simcode.solve.fourpi import FourPiSolve, kin_starts, best_of
     from simcode.detector.model import build
-    P4 = root('fourpi')
     torch.set_num_threads(16)
     R = {}
     from simcode.psf import fourpi_state
     st = fourpi_state('NPC_f_dxy15', P4)
     # ---- scene simulator
     for pat in (True, False):
-        sim = MultiChannelAcquisitionSim(st, H=32, W=32, n_psf=2, dev=dev, seed=3, patterns=pat, sub=1)
+        sim = MultiChannelAcquisitionSim(st, H=32, W=32, n_psf=2, dev=dev, seed=3, patterns=pat, sub=1, work=P4)
         S = sim.sample(B=3, dens=(0.5, 1.5))
         for k in ('img', 'mu', 'origin', 'det_in', 'bg'):
             R[f'mcs{int(pat)}|{k}'] = S[k]
         for k, v in S['gt'].items(): R[f'mcs{int(pat)}|gt|{k}'] = v
-    sim = MultiChannelAcquisitionSim(st, H=32, W=32, n_psf=2, dev=dev, seed=4, reg_shift_sd=0.1, reg_lin_sd=0.05, sub=1)
+    sim = MultiChannelAcquisitionSim(st, H=32, W=32, n_psf=2, dev=dev, seed=4, reg_shift_sd=0.1, reg_lin_sd=0.05, sub=1, work=P4)
     S = sim.sample(B=2, ksum=4)
     for k in ('img', 'det_in'): R[f'mcs_reg|{k}'] = S[k]
     del sim
@@ -106,9 +105,9 @@ def run():
 
 
 def main():
-    p = argparse.ArgumentParser(); p.add_argument('--save'); p.add_argument('--ref')
+    p = argparse.ArgumentParser(); p.add_argument('--work', required=True, help='the 4Pi work folder'); p.add_argument('--save'); p.add_argument('--ref')
     a = p.parse_args()
-    R = run()
+    R = run(a.work)
     if a.save:
         torch.save(R, a.save); print(f'{len(R)} outputs -> {a.save}')
     if a.ref:

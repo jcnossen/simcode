@@ -1,14 +1,14 @@
 """
 Outputs of every network checkpoint on a fixed batch (GPU): every detector and emitter network under the models directory
-(models.json models, the model folders, models/archive_*, the other shipped weights) and the 4Pi detector / heads of the 4Pi
-work directory, loaded with simcode.detector.model.load / simcode.emitter.model.load / simcode.emitter.fourpi.load.
+(models.json models, the model folders, models/archive_*, the other shipped weights; --models, default <repo>/models) and the
+4Pi detector / heads of the 4Pi work folder (--work4pi), loaded with simcode.detector.model.load / simcode.emitter.model.load / simcode.emitter.fourpi.load.
 The fixed batch (4 windows of 6 x 64 x 64 photons, a fixed pattern, 4Pi patches) is drawn from a seeded CPU generator; the
 emitter networks run on the candidates of the m1809 pass-1 detector with the PSF template of the 1809_2 calibration and with
 the Gaussian template. Used to check that a code change leaves every checkpoint's outputs bit-identical (2026-11-15
 reorganisation: the reference outputs were made with the code before it).
 
-  python tests/check_model_outputs.py --save <outputs.pt>            write the outputs
-  python tests/check_model_outputs.py --ref <outputs.pt>             compare with a saved set (exit code 1 on any difference)
+  python tests/check_model_outputs.py --work4pi <4Pi work folder> --save <outputs.pt>     write the outputs
+  python tests/check_model_outputs.py --work4pi <4Pi work folder> --ref <outputs.pt>      compare with a saved set (exit code 1 on any difference)
 """
 import argparse, glob, os, sys
 import torch
@@ -54,16 +54,16 @@ def checkpoints(md):
     return dets, nets
 
 
-def outputs():
-    from simcode import config
+def outputs(md, work4pi):
+    """md: the models folder, work4pi: the 4Pi work folder"""
     from simcode.pattern.illumination import illum_maps
     from simcode.detector.model import load as load_det
     from simcode.detector.select import select_subpixel
     from simcode.emitter import model as EM
     from simcode.layers.blocks import extract_patches
     from simcode.simulate.simulator import Simulator
-    md = config.models_dir(); root = os.path.dirname(os.path.abspath(md))
-    p4 = os.path.join(config.root('fourpi'), 'models')
+    root = os.path.dirname(os.path.abspath(md))
+    p4 = os.path.join(work4pi, 'models')
     rel = lambda f: os.path.relpath(f, root)
     D = fixed_batch()
     fr = D['frames'].to(dev); il = illum_maps(D['patt'].to(dev), 64, 64)
@@ -98,7 +98,7 @@ def outputs():
             R[f'head|{rel(f)}|z3d'] = torch.tensor(float(getattr(h, 'z3d', -1)))
         from simcode.emitter.fourpi import load as load_fourpi
         for tag in ('v10', 'v3L'):
-            net, _ = load_fourpi(tag)
+            net, _ = load_fourpi(tag, work=work4pi)
             o = net(D['img4'].to(dev), D['doff'].to(dev))
             for k, v in o.items():
                 if torch.is_tensor(v): R[f'head4pi|{tag}|{k}'] = v.float().cpu()
@@ -118,8 +118,11 @@ def compare(A, B):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
+    ap.add_argument('--models', default=None, help='the models folder (default: <repo>/models)')
+    ap.add_argument('--work4pi', required=True, help='the 4Pi work folder (models/det4pi/final.pt, models/head4pi_<tag>.pt)')
     ap.add_argument('--save', default=''); ap.add_argument('--ref', default='')
     a = ap.parse_args()
-    R = outputs()
+    from simcode import config
+    R = outputs(a.models or config.MODELS, a.work4pi)
     if a.save: torch.save(R, a.save)
     sys.exit(compare(torch.load(a.ref), R) if a.ref else 0)

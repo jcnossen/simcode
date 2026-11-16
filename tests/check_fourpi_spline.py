@@ -6,11 +6,11 @@ switch to torch-psf (out/COMPAT_AUDIT.md, plan A1). Bit-identity (torch.equal) o
     checkpoint's zlut or -0.6 .. 0.6), the prior template (P 15, sub 1), the scene simulator (P 17, sub 2)
   - FourPiSplinePSF.evaluate (value and the 4 derivatives), .components and luts[k][c].render(pos, grad) vs LUT4Pi
   - FourPiSplinePSF.render_channels (MultiChannelPSF interface, phi as the extra column) vs LUT4Pi.evaluate
-States: <4Pi work dir>/psf4pi/NPC_f_dxy15.json and ck['psf'] of head4pi_{v10, v3L, v11}.pt. LUT4Pi.tau (the stored tau)
+States: <4Pi work folder>/psf4pi/NPC_f_dxy15.json and ck['psf'] of head4pi_{v10, v3L, v11}.pt. LUT4Pi.tau (the stored tau)
 and FourPiSplinePSF.tau (softmax of the source's tau_logit) are compared too but only reported (no SIMCODE code reads
 lut.tau).
 
-  python tests/check_fourpi_spline.py [--device cpu|cuda] [--quick]     (exit code 1 on any difference)
+  python tests/check_fourpi_spline.py --work <4Pi work folder> [--device cpu|cuda] [--quick]     (exit code 1 on any difference)
 """
 import argparse, json, math, os, sys
 import torch
@@ -31,12 +31,12 @@ def states(P4):
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument('--work', required=True, help='the 4Pi work folder')
     ap.add_argument('--device', default='cpu')
     ap.add_argument('--quick', action='store_true', help='head grid only (no sub 1 / P 17 grids)')
     a = ap.parse_args()
     dev = a.device
     import torch_psf
-    from simcode import config
     from simcode.psf import FourPiPSF
     from simcode.fourpi.coherent_psf import psf_from_state
     from simcode.fourpi.spline_table import LUT4Pi
@@ -54,7 +54,7 @@ def main():
     g = torch.Generator().manual_seed(11)
     pos = torch.cat([3 * torch.rand(200, 2, generator=g) - 1.5, 1.1 * torch.rand(200, 1, generator=g) - 0.55], 1).to(dev)
     Phi = (2 * math.pi * torch.rand(200, generator=g) - math.pi).to(dev)
-    S = states(config.root('fourpi'))
+    S = states(a.work)
     seen = {}
     for name, v in S.items():
         st, zl = (v, (-0.6, 0.6)) if isinstance(v, dict) else v

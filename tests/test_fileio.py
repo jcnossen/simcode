@@ -176,23 +176,19 @@ def test_killed_writer_leaves_no_output():
 
 
 def test_config_names():
-    env = dict(os.environ)
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    def run(code, **e):
-        r = subprocess.run([sys.executable, '-c', f'import sys; sys.path.insert(0, {root!r})\n' + code], capture_output=True, text=True,
-                           env={k: v for k, v in dict(env, **e).items() if v is not None})
-        assert r.returncode == 0, r.stderr
-        return r.stdout.strip()
-    clean = {k: None for k in ('SIMCODE_OUT', 'SIMCODE_MODELS', 'SIMCODE_MODEL', 'SIMCODE_CONFIG')}
+    """no path settings: no config file / environment lookup; model and calibration names resolve under <repo>/models"""
+    from simcode import config
+    for k in ('root', 'out_dir', 'env', 'models_dir'): assert not hasattr(config, k), k
+    assert config.MODELS == os.path.join(str(config.REPO), 'models')
+    f = sorted(os.listdir(os.path.join(config.MODELS, 'calib')))[0]
+    assert config.resolve('calib/' + f) == config.resolve(f) == os.path.join(config.MODELS, 'calib', f)
+    assert config.resolve(config.CAL_SIM) == os.path.join(config.MODELS, config.CAL_SIM)
     with tempfile.TemporaryDirectory() as d:
-        json.dump(dict(out='o_new'), open(f'{d}/simcode.json', 'w'))
-        c = 'from simcode import config; print(config.root("out"), config.root("data"), config.root("fourpi"))'
-        assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json')) == f'{d}/o_new  {d}/o_new/4pi'
-        assert run(c, **dict(clean, SIMCODE_CONFIG=f'{d}/simcode.json', SIMCODE_OUT='/y')).split()[0] == '/y'
+        assert config.resolve(d) == d and config.resolve('') == ''
     from simcode import config
     S = config.model_sets()
     sets = [k for k in S if not k.startswith('_')]
-    assert S['_default'] in sets and config.model_set()['name'] == (config.env('MODEL') or S['_default'])
+    assert S['_default'] in sets and config.model_set()['name'] == S['_default']
     for n in sets:
         N = config.model_set(n)
         assert all(k in N for k in ('detector', 'emitter', 'cal_sim', 'cal_real', 'detector_pass2', 'emitter_pass2', 'cal_sim_pass2', 'cal_real_pass2', 'sig_u', 'psf'))
@@ -205,7 +201,6 @@ def test_config_names():
         config.model_set('default'); assert False
     except KeyError:
         pass
-    assert run('from simcode import config; print(config.model_set()["name"])', **dict(clean, SIMCODE_MODEL='m25')) == 'm25'
     # a model folder: model.json with one model, file names relative to the folder (absolute ones kept)
     with tempfile.TemporaryDirectory() as d:
         M = dict(config.model_set('m1809')); M.pop('name')
@@ -221,7 +216,7 @@ def test_config_names():
         except ValueError: pass
     try: config.model_set('/nonexistent/model'); assert False
     except KeyError: pass
-    print(f'  ok config: models {sets}, default {S["_default"]}; model folders; old environment / config file names not read')
+    print(f'  ok config: models {sets}, default {S["_default"]}; model folders; names resolve under {config.MODELS}')
 
 
 if __name__ == '__main__':

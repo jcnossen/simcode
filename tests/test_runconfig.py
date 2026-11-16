@@ -1,7 +1,8 @@
 """
 Tests of the run record (simcode/util/runconfig.py: <out>/run_config.json).
 Run: python tests/test_runconfig.py            CPU tests (no GPU, no models, no raw data)
-     python tests/test_runconfig.py --gpu      + the real check (needs a GPU, the m1809 model files and the 1809_2 movie, ~4 min):
+     python tests/test_runconfig.py --gpu <data root>   + the real check (needs a GPU, the m1809 model files and the 1809_2 movie
+                                               under <data root> (/mnt/data/dmdsf/bn_dnapaint), ~4 min):
                                                simcode.run on 2 chunks of 1809_2 writes the record; the re-run from it
                                                (python -m simcode.run --config <run_config.json> --out <new dir>) gives
                                                bit-identical chunk files, pattern and tables
@@ -19,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode import run as RUN, table as SP
 from simcode.util import runconfig as RC
 from test_tables import _run_dir
+DR = '/nonexistent/data_root'           # --data-root of the CPU tests (the movie is not read)
 
 
 def _settings(argv):
@@ -27,14 +29,17 @@ def _settings(argv):
 
 
 def test_settings_roundtrip():
-    S = _settings(['--dataset', '1809_2', '--out', 'x', '--nframes', '12000'])
+    S = _settings(['--dataset', '1809_2', '--data-root', DR, '--out', 'x', '--nframes', '12000'])
+    assert S['movie'] == os.path.join(DR, RUN.PROD['datasets']['1809_2']['movie'])                # the dataset's movie under --data-root
+    try: _settings(['--dataset', '1809_2', '--out', 'x']); raise AssertionError('--dataset needs --data-root')
+    except SystemExit: pass
     assert not set(S) & {'sigma_max', 'subset', 'format', 'prefetch', 'u_max', 'strict_q'} and os.path.isabs(S['detector']) and os.path.isabs(S['cal'])
     assert S['crop'] == '5,5,110' and 'm1809/calib/sigma_rescale_pass2' in S['sig_u']                   # the dataset's crop; the model's sigma rescale
     assert _settings(['--movie', 'm.tif', '--calib', 'c.json', '--model', 'm1809', '--out', 'x'])['crop'] == ''   # the whole frame
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
-    S = _settings(['--dataset', '2.5nM_2', '--out', 'x'])                 # defaults: the model's sig_u, both passes
+    S = _settings(['--dataset', '2.5nM_2', '--data-root', DR, '--out', 'x'])                 # defaults: the model's sig_u, both passes
     assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'm25/calib/sigma_rescale_pass2' in S['sig_u']
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
@@ -70,7 +75,7 @@ def test_hashes():
 def test_steps_and_start():
     with tempfile.TemporaryDirectory() as d:
         _run_dir(d)
-        S = _settings(['--dataset', '1809_2', '--out', d])
+        S = _settings(['--dataset', '1809_2', '--data-root', DR, '--out', d])
         R = RC.start(d, S, dict(cand_pmin=0.3), dict(name='m', files={}), dict(path=''), dict(path=''), argv=['--out', d])
         assert R['status'] == 'running' and len(R['invocations']) == 1 and os.path.exists(f'{d}/run_config.json')
         R = RC.start(d, S, dict(cand_pmin=0.3), dict(name='m', files={}), dict(path=''), dict(path=''), argv=['--out', d])
@@ -95,13 +100,13 @@ def test_steps_and_start():
     print('  ok start (invocations, earlier_settings), table step (settings, outputs, selection), command.txt, failed status')
 
 
-def gpu_rerun(keep=''):
+def gpu_rerun(data_root, keep=''):
     """2 chunks of 1809_2 -> run_config.json; re-run from it -> bit-identical outputs"""
     import torch
     from compare_npz import compare_files
     with tempfile.TemporaryDirectory(dir=keep or None) as d:
         py = [sys.executable, '-m', 'simcode.run']; env = dict(os.environ, PYTHONPATH=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        subprocess.run(py + ['--dataset', '1809_2', '--nframes', '12000', '--out', f'{d}/a'], check=True, env=env, stdout=subprocess.DEVNULL)
+        subprocess.run(py + ['--dataset', '1809_2', '--data-root', data_root, '--nframes', '12000', '--out', f'{d}/a'], check=True, env=env, stdout=subprocess.DEVNULL)
         A = RC.load(f'{d}/a')
         assert A['status'] == 'done' and A['movie']['chunks'] == [0, 6000] and A['model']['name'] == 'm1809' and A['code']['git_commit']
         assert all(len(v['sha256']) == 64 for v in A['model']['files'].values()) and len(A['calib']['sha256']) == 64 and len(A['movie']['parts'][0]['sha256']) == 64
@@ -126,5 +131,5 @@ if __name__ == '__main__':
     for f in (test_settings_roundtrip, test_hashes, test_steps_and_start):
         print(f.__name__); f()
     if '--gpu' in sys.argv:
-        print('gpu_rerun'); gpu_rerun()
+        print('gpu_rerun'); gpu_rerun(sys.argv[sys.argv.index('--gpu') + 1])
     print('ALL OK')
