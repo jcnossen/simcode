@@ -73,7 +73,7 @@ def main(argv=None):
     from simcode.util.proctitle import set_title; set_title('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'emitter', 'detector', 'cal', 'detector_pass2', 'emitter_pass2', 'cal_pass2'):
         setattr(a, k, config.resolve(getattr(a, k)))
-    a.movie = config.resolve(a.movie, 'data')
+    a.movie = os.path.abspath(os.path.expanduser(a.movie))
     from simcode.processing.common import load_calib, load_pass1_rows, chunk_read_plan
     from simcode.io.movie import open_movie, Prefetch
     from simcode.io.work import Units, atomic_json, atomic_torch_save

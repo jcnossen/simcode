@@ -16,13 +16,12 @@ with a per-stack cubic drift and the bead radius tied to its height)."""
 import argparse, json, os
 import numpy as np, torch
 from simcode import psf as spsf
-from simcode import config
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument('--stacks', nargs='+', default=[f'PSF_calib/raw/zstack{i}-1.tif' for i in range(2, 8)],
-                    help='bead z-stack tifs (absolute or relative to the data root)')
+    ap.add_argument('--stacks', nargs='+', required=True,
+                    help='bead z-stack tifs (the paper: <data root>/PSF_calib/raw/zstack{2..7}-1.tif)')
     ap.add_argument('--roi', type=int, default=26)
     ap.add_argument('--dz', type=float, default=0.010)
     ap.add_argument('--sign', type=float, default=1.0)       # stage direction
@@ -42,9 +41,9 @@ def main(argv=None):
     ap.add_argument('--intensity', default='bead_x_plane', choices=['bead_x_plane', 'free'])   # per-plane factors or free photons
     ap.add_argument('--bead_diameter', type=float, default=0.0)   # um; 0 = point emitter
     ap.add_argument('--tag', default='')
-    ap.add_argument('--out', default=os.path.join(config.out_dir('insitu'), 'psf_fit'))
+    ap.add_argument('--out', default='simcode_out/insitu/psf_fit')
     a = ap.parse_args(argv)
-    stacks = [config.resolve(s, 'data') for s in a.stacks]
+    stacks = [os.path.abspath(os.path.expanduser(s)) for s in a.stacks]
     optics = spsf.Optics(pixel_um=a.pixelsize, NA=a.na, wavelength_um=a.wl, n_med=a.nmed)
     camera = spsf.Camera(gain_e_per_adu=a.gain, offset_adu=a.offset)
     ho = a.holdout - 2 if a.holdout else None
@@ -65,6 +64,7 @@ def main(argv=None):
                intensity=a.intensity, bead_diameter_um=a.bead_diameter or None, method='torch_psf.ZStackEstimator')
     print(json.dumps(res, indent=1))
     pre = a.out + f'_sign{int(a.sign)}{a.tag}'
+    os.makedirs(os.path.dirname(os.path.abspath(pre)), exist_ok=True)
     json.dump(res, open(pre + '.json', 'w'), indent=1)
     torch.save(dict(n_med=m.n_med.detach().cpu(), zcoef=m.zcoef.detach().cpu(), NA=m.NA.detach().cpu()), pre + '.pt')
     spsf.save_zip(pre + '.psf.zip', m, camera=camera, report=est,

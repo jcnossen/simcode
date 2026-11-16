@@ -1,22 +1,11 @@
 """
-Paths of a SIMCODE v2 installation and the models (a "model" = one trained set of networks + their solve calibrations). Nothing in the package hard-codes an absolute path; everything goes
-through here.
+The models of SIMCODE v2 (a "model" = one trained set of networks + their solve calibrations) and where their files are.
+There are no path settings (no config file, no environment variables): every function takes its paths as arguments and
+every tool takes them on the command line (--movie, --out, --model, ...). The one default location is the repository's own
+models folder, MODELS = <repo>/models, where the names of shipped networks and calibrations are looked up.
 
-Roots, each set by (in order of precedence) an environment variable, a key in a json config file, or a default:
-  models   trained networks (*.pt) and calibrations (calib/, insitu/)   SIMCODE_MODELS     default <repo>/models
-  data     raw movies (the DNA-PAINT TIFF stacks)                         SIMCODE_DATA       default: none (pass full paths)
-  out      outputs of the benchmark / analysis scripts                    SIMCODE_OUT        default ./simcode_out
-  fourpi   work directory of the 4Pi pipelines (models, PSF, registration, SIMCODE_4PI        default <out>/4pi
-           tables)
-  data4pi  raw 4Pi movies (dcimg)                                         SIMCODE_4PI_DATA   default: none (the 4Pi acquisition
-           configs, simcode/pipeline/configs/fourpi.py, then use their own data path)
-One optional path, set the same way: dme = a checkout of the DME drift-estimation package (DME_PATH; default: the installed
-package; see simcode/util/drift.py).
-Config file: $SIMCODE_CONFIG, else <repo>/simcode.json, else ~/.config/simcode.json; keys "models", "data", "out", "fourpi",
-"data4pi", "dme" (see simcode.example.json). Relative paths in the config file are relative to the file's directory.
-
-resolve(p, kind) turns a user path into an absolute one: absolute paths and paths that exist relative to the current directory
-are kept; otherwise the path is looked up under the given root (models: also under models/calib and models/insitu).
+resolve(p) turns a model / calibration name or path into an absolute path: absolute paths and paths that exist relative to
+the current directory are kept; otherwise the name is looked up under MODELS (also MODELS/calib and MODELS/insitu).
 model_set(name) returns one model: a name of simcode/models.json (the definition of the shipped models), or the path of a
 model folder (model.json + the network and calibration files, as written by the automatic pipeline's training stage /
 simcode.pipeline.training.export_model), or of such a model.json.
@@ -25,67 +14,23 @@ import json, os
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-_ENV = {'models': 'MODELS', 'data': 'DATA', 'out': 'OUT', 'fourpi': '4PI', 'data4pi': '4PI_DATA'}
-_cfg = None
+MODELS = str(REPO / 'models')            # the repository's models folder (shipped networks and calibrations)
 
 
-def env(name, default=None):
-    """environment variable SIMCODE_<name>, else default"""
-    return os.environ.get('SIMCODE_' + name) or default
-
-
-def _config():
-    global _cfg
-    if _cfg is None:
-        _cfg = {}
-        for p in (env('CONFIG'), REPO / 'simcode.json', Path.home() / '.config' / 'simcode.json'):
-            if p and Path(p).is_file():
-                c = json.load(open(p)); base = Path(p).resolve().parent
-                ex = lambda v: os.path.expanduser(v) if isinstance(v, str) else v
-                _cfg = {k: (str((base / ex(v)).resolve()) if isinstance(v, str) and v and not k.startswith('_') and not os.path.isabs(ex(v))
-                            else ex(v)) for k, v in c.items()}
-                _cfg['_file'] = str(p)
-                break
-    return _cfg
-
-
-def root(kind):
-    """'models' | 'data' | 'out' | 'fourpi' | 'data4pi' | 'dme' -> directory (str; '' if unset)"""
-    if kind == 'dme': return os.environ.get('DME_PATH') or _config().get('dme') or ''
-    v = env(_ENV[kind]) or _config().get(kind)
-    if v: return v
-    if kind == 'models': return str(REPO / 'models')
-    if kind == 'out': return 'simcode_out'
-    if kind == 'fourpi': return os.path.join(root('out'), '4pi')
-    return ''
-
-
-def models_dir():
-    return root('models')
-
-
-def out_dir(*sub, make=True):
-    p = os.path.join(root('out'), *sub)
-    if make: os.makedirs(p, exist_ok=True)
-    return p
-
-
-def resolve(p, kind='models'):
-    """user path -> absolute path (see the module doc); returns the input unchanged if nothing is found"""
+def resolve(p):
+    """model / calibration name or path -> absolute path (see the module doc); the input unchanged if empty"""
     if not p: return p
     p = os.path.expanduser(str(p))
     if os.path.isabs(p) or os.path.exists(p): return os.path.abspath(p)
-    r = root(kind)
-    cands = [os.path.join(r, p)]
-    if kind == 'models': cands += [os.path.join(r, 'calib', p), os.path.join(r, 'insitu', p)]
+    cands = [os.path.join(MODELS, p), os.path.join(MODELS, 'calib', p), os.path.join(MODELS, 'insitu', p)]
     for c in cands:
         if os.path.exists(c): return c
-    return cands[0] if r else p
+    return cands[0]
 
 
 def model(name):
-    """network / calibration file shipped in the models directory, e.g. model('pretrain_detector_pass1.pt'), model('calib/x.json')"""
-    return resolve(name, 'models')
+    """network / calibration file shipped in the models folder, e.g. model('pretrain_detector_pass1.pt'), model('calib/x.json')"""
+    return resolve(name)
 
 
 # ---- models: the shipped ones are defined in simcode/models.json (next to this file); any other model is a folder
@@ -141,11 +86,10 @@ def is_model_folder(p):
 def model_set(name=None):
     """model -> dict with the files detector, emitter (pass-1 networks), cal_sim, cal_real (their solve calibrations),
     detector_pass2, emitter_pass2, cal_sim_pass2, cal_real_pass2 (pass 2), sig_u ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
-    directory), or the path of a model folder / model.json (absolute file names; also 'folder'). None: env SIMCODE_MODEL,
-    else '_default' of models.json (the default is for the package's own gate scenes and trainers; simcode.run and the
+    folder), or the path of a model folder / model.json (absolute file names; also 'folder'). None: '_default' of models.json (the default is for the package's own gate scenes and trainers; simcode.run and the
     pipeline require an explicit model)."""
     S = model_sets()
-    name = name or env('MODEL') or S['_default']
+    name = name or S['_default']
     if not name.startswith('_') and name in S:
         d = {k: v for k, v in S[name].items() if not k.startswith('_')}
         _check_keys(name, d, MODELS_FILE)

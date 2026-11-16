@@ -2,7 +2,6 @@ __pycache__/
 *.pyc
 *.egg-info/
 simcode_out/
-simcode.json
 runs/
 *.tif
 out/

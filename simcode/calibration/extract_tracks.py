@@ -2,21 +2,21 @@
 import argparse
 import numpy as np, h5py, tifffile
 from scipy.spatial import cKDTree
-from simcode.calibration import MOVIE_05, SMLM_05, data, out
+import os
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--movie', default=MOVIE_05)
-    ap.add_argument('--locs', default=SMLM_05)
+    ap.add_argument('--movie', required=True, help='the movie (e.g. the 0.5 nM movie, simcode/calibration/__init__.py)')
+    ap.add_argument('--locs', required=True, help='its SMLM localizations (Picasso hdf5)')
     ap.add_argument('--maxframe', type=int, default=30000)
     ap.add_argument('--roi', type=int, default=11)
     ap.add_argument('--T', type=int, default=12)            # frames per sample (tracks are cut/padded to this)
     ap.add_argument('--minlen', type=int, default=6)
     ap.add_argument('--isolation', type=float, default=7.0)  # px: no other loc within this radius in the track frames +-1
     ap.add_argument('--link', type=float, default=0.8)
-    ap.add_argument('--out', default=out('tracks_0.5nM.npz'))
+    ap.add_argument('--out', default='simcode_out/insitu/tracks_0.5nM.npz')
     a = ap.parse_args()
-    a.movie, a.locs = data(a.movie), data(a.locs)
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
 
     L = h5py.File(a.locs)['locs'][:]
     L = L[L['frame'] < a.maxframe]

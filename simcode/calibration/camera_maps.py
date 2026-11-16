@@ -4,21 +4,20 @@ Per-pixel sCMOS maps from a sparse movie (no dark frames available):
    background, the per-pixel residual is offset heterogeneity); absolute offset = global offset + deviation.
  - read noise: robust variance (MAD) of differences between frames 6 apart (same pattern step, removes static
    structure; MAD rejects blinking), minus the shot-noise contribution of the local mean level.
-Outputs <out>/insitu/camera_maps_<name>.npz (copy to models/insitu/ and reference it as camera.maps in the calib json) with offset_adu [H,W], readnoise_e [H,W], plus diagnostics.
+Outputs --out (default simcode_out/insitu/camera_maps_0.5nM.npz) (copy to models/insitu/ and reference it as camera.maps in the calib json) with offset_adu [H,W], readnoise_e [H,W], plus diagnostics.
 """
-import argparse, json
+import argparse, json, os
 import numpy as np, tifffile
 from scipy import ndimage as ndi
 from simcode import config
-from simcode.calibration import MOVIE_05, SMLM_05, data, out
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--movie', default=MOVIE_05, help='movie (absolute or relative to the data root)')
+    ap.add_argument('--movie', required=True, help='the movie (e.g. the 0.5 nM movie, simcode/calibration/__init__.py)')
     ap.add_argument('--nframes', type=int, default=20000)
     ap.add_argument('--gain', type=float, default=0.56)
     ap.add_argument('--offset', type=float, default=99.3)
-    ap.add_argument('--locs', nargs='+', default=[SMLM_05],
+    ap.add_argument('--locs', nargs='+', required=True,
                     help='Picasso hdf5 (frame, x, y; masked frames f-1..f+6) and/or localize_real .npz (x_np, y_np, wstart; masked wstart-1..wstart+T)')
     ap.add_argument('--npz_T', type=int, default=12)
     ap.add_argument('--readnoise_from', default='', help='take the read-noise map from this npz (camera property) instead of re-estimating')
@@ -26,9 +25,9 @@ if __name__ == '__main__':
                     "'auto' = cross-correlation of the high-pass log temporal-variance maps (the movies were recorded at different "
                     "sensor ROI positions: 2.5/20 nM vs 0.5 nM = 22,2). Uncovered pixels: high-passed own estimate.")
     ap.add_argument('--mask_r', type=float, default=3.0)
-    ap.add_argument('--out', default=out('camera_maps_0.5nM.npz'))
+    ap.add_argument('--out', default='simcode_out/insitu/camera_maps_0.5nM.npz')
     a = ap.parse_args()
-    a.movie = data(a.movie); a.locs = [data(p) for p in a.locs]
+    os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     if a.readnoise_from: a.readnoise_from = config.resolve(a.readnoise_from)
 
     t = tifffile.TiffFile(a.movie)

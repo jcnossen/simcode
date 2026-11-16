@@ -1,6 +1,0 @@
-{
-  "_comment": "copy to <repo>/simcode.json or ~/.config/simcode.json (or point SIMCODE_CONFIG at it). Relative paths are relative to this file; env vars SIMCODE_MODELS / SIMCODE_DATA / SIMCODE_OUT override. Optional keys 'fourpi' (4Pi work directory, default <out>/4pi) and 'data4pi' (raw 4Pi movies). 'models' defaults to <repo>/models. Optional key 'dme' (or env DME_PATH): a checkout of github.com/jcnossen/drift-estimation; without it the installed dme package is used.",
-  "data": "/mnt/data/dmdsf/bn_dnapaint",
-  "out": "simcode_out",
-  "smlmtorch_models": "~/smlmtorch/scripts/models"
-}

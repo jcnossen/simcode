@@ -2,7 +2,8 @@
 SIMCODE v2 on a DMD-SIMFLUX DNA-PAINT movie, production settings.
 
   python -m simcode.run --movie <movie.tif> --calib <in-situ calib.json> --model m1809 --out <dir>
-  python -m simcode.run --dataset 1809_2 --out <dir>          (a paper dataset: movie, calibration, model)
+  python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out <dir>
+                                                    (a paper dataset: movie under --data-root, calibration, model)
 
 Stages (each skipped if its outputs exist, unless --redo):
   1  pass 1      detector + head on every 6-frame window (start every 3 frames): network per-frame intensities
@@ -19,10 +20,11 @@ Stages (each skipped if its outputs exist, unless --redo):
 Output region: --crop x0,y0,size (px); default the whole frame (square sensors; else the largest top-left square). The
 paper datasets (--dataset) carry their crop in models.json '_production'.
 Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13;
-file names relative to the models directory, simcode/config.py), or the path of a model folder with a model.json (as written
+file names relative to the repository's models folder, simcode/config.py), or the path of a model folder with a model.json (as written
 by the automatic pipeline's training stage / simcode.pipeline.training.export_model). There are no single-file overrides: a model
 with other files is a model folder. --dataset <name> takes movie, calibration and model of a paper dataset from the
-'_production' entry of models.json (what the paper tables are made with).
+'_production' entry of models.json (what the paper tables are made with); its movie path is relative to the folder given
+with --data-root (the root of the DMD-SIMFLUX DNA-PAINT data).
 Run record: <out>/run_config.json (+ run_config.yaml), written at the start (status 'running') and completed at the end
 ('done'): the fully resolved settings, sha256 of the movie / calibration / every model file, code commit, environment,
 pattern and selection outcome (simcode/util/runconfig.py; README "Run record").
@@ -50,7 +52,9 @@ def build_parser():
                     '(movie, calibration, model files, crop, chunking, selection); arguments given after it override single settings; '
                     'a warning is printed for every input file, git commit or fixed value that differs from the record')
     ap.add_argument('--dataset', default='', help="a paper dataset (models.json '_production': " + ', '.join(PROD['datasets']) + '): '
-                    'sets --movie, --calib, --model')
+                    'sets --movie (under --data-root), --calib, --model')
+    ap.add_argument('--data-root', default='', help="with --dataset: the folder the dataset's movie path is relative to "
+                    '(e.g. /mnt/data/dmdsf/bn_dnapaint)')
     ap.add_argument('--movie', default='', help='movie .tif (further parts movie_X1.tif ... are found automatically)')
     ap.add_argument('--calib', default='', help='in-situ PSF / camera calibration json (e.g. insitu/calib_1809_2_psf_v2.json)')
     ap.add_argument('--out', required=True)
@@ -76,7 +80,8 @@ def resolve(ap, argv):
         D = PROD['datasets'].get(a.dataset)
         if D is None: ap.error(f'unknown dataset {a.dataset!r} ({", ".join(PROD["datasets"])})')
         if not (a.model or D['model']): ap.error(f'dataset {a.dataset}: no model is defined for it; give --model')
-        a.movie = a.movie or D['movie']; a.calib = a.calib or D['calib']; a.model = a.model or D['model']; a.crop = a.crop or D.get('crop', '')
+        if not a.movie and not a.data_root: ap.error(f'--dataset {a.dataset}: give --data-root (the folder its movie {D["movie"]} is in) or --movie')
+        a.movie = a.movie or os.path.join(a.data_root, D['movie']); a.calib = a.calib or D['calib']; a.model = a.model or D['model']; a.crop = a.crop or D.get('crop', '')
     if not a.movie or not a.calib: ap.error('--movie and --calib are required (or --dataset)')
     if not a.model: ap.error('--model is required (a name of simcode/models.json or a model folder), or --dataset')
     try:
@@ -93,7 +98,7 @@ def resolve(ap, argv):
 def settings_of(a, cal):
     """the fully resolved settings of a run (run_config.json 'settings'): every argument after the defaults, files as absolute paths"""
     r = config.resolve
-    return dict(dataset=a.dataset, movie=r(a.movie, 'data'), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
+    return dict(dataset=a.dataset, movie=os.path.abspath(os.path.expanduser(a.movie)), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
                 detector=r(a.detector), emitter=r(a.emitter), cal=r(cal), detector_pass2=r(a.detector_pass2), emitter_pass2=r(a.emitter_pass2),
                 cal_pass2=r(a.cal_pass2),
                 sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',

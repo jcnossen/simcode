@@ -121,18 +121,16 @@ def _git(d, *a):
 
 
 def dme_record():
-    """version / path / commit of the DME drift-estimation package that simcode.util.drift would use (not imported here)"""
-    import re
-    p = config.root('dme'); r = {}
+    """version / path / commit of the installed DME drift-estimation package that simcode.util.drift uses (not imported here)"""
+    r = {}
     try:
-        if p:
-            p = os.path.abspath(os.path.expanduser(p))
-            m = re.search(r"__version__\s*=\s*['\"]([^'\"]+)", open(os.path.join(p, 'dme', '__init__.py')).read())
-            r = dict(version=m.group(1) if m else None, path=p, git_commit=_git(p, 'rev-parse', 'HEAD'),
-                     git_dirty=bool(_git(p, 'status', '--porcelain', '--untracked-files=no')))
-        else:
-            from importlib import metadata
-            r = dict(version=metadata.version('dme'), path='installed package')
+        from importlib import metadata, util
+        r = dict(version=metadata.version('dme'))
+        sp = util.find_spec('dme')
+        if sp and sp.origin:
+            p = os.path.dirname(os.path.dirname(os.path.abspath(sp.origin)))
+            c = _git(p, 'rev-parse', 'HEAD')
+            r.update(path=p, git_commit=c, git_dirty=bool(_git(p, 'status', '--porcelain', '--untracked-files=no')) if c else None)
     except Exception as e:
         r = dict(error=f'{type(e).__name__}: {e}')
     r['note'] = 'DME v2 (github.com/jcnossen/drift-estimation); used for drift estimation of the tables, not by simcode.run itself'
@@ -260,7 +258,7 @@ def calib_record(path):
 
 
 def movie_record(path, nframes=0, chunk=6000, chunk_list=''):
-    p = config.resolve(path, 'data')
+    p = os.path.abspath(os.path.expanduser(path))
     try:
         from simcode.io.movie import open_movie
         m = open_movie(p); nf = min(m.n, nframes) if nframes else m.n
