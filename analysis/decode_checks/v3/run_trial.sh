@@ -4,6 +4,8 @@
 # (3 arms do not fit next to the other GPU-2 jobs: ~6.3 GB each; the sim-only reference (preset sim1809) runs later next to
 # the chosen run, for a matched-epoch comparison.)
 source ~/miniconda3/bin/activate simcode-py311; cd ~/simcode2-decodev3
+# (2026-11-16) the shared env moved to torch-psf 0fee3c3; this branch uses the old torch_psf API
+export PYTHONPATH=/home/jc/simcode2/external/torch-psf-040c3f3${PYTHONPATH:+:$PYTHONPATH}
 export CUDA_VISIBLE_DEVICES=${GPU:-2} TQDM_DISABLE=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 L=~/simcode2/out/decode_checks/v3/logs; T=analysis/baselines/decode/train_v3.py
 nohup python -u $T --preset m1809 --name v3t_m1809_scratch --snap_every 2 > $L/train_v3t_m1809_scratch.log 2>&1 &
