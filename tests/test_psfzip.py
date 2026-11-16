@@ -1,7 +1,7 @@
 """
-The paper PSFs as psf.zip (models/**/*.psf.zip, analysis/psfzip/convert_paper_psfs.py) give exactly what their json gives.
+The PSFs of the example models as psf.zip (models/<model>/*.psf.zip) give exactly what their json gives.
 CPU (env SIMCODE_TEST_DEVICE to change); needs only this checkout's models/ (json, camera maps, zips; no networks), and for the
-4Pi state json the 4Pi work folder (skipped without it).
+4Pi state json the 4Pi work folder and the 4Pi PSF zip models/fourpi/NPC_f_dxy15.psf.zip (paper branch; skipped without them).
 Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzip.py [--work4pi <4Pi work folder>])
   - read_calib(zip) (the zip's blocks) gives every key of the calib json with the json's value (camera.maps = ZIP_MAPS),
     plus only the defaults torch-psf writes explicitly (EXTRA_OK)
@@ -9,8 +9,7 @@ Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzi
   - PSF.load(zip) renders bit-identically to PSF.load(json) (roisize 11 / oversample 3 and the stored defaults, angle
     average), the solve spline (simcode.psf.spline) has identical knots, the Simulator's LUT and pattern are identical,
     the zip's zstack.tif = the json PSF rendered at its planes
-  - model folders: m1809 / m25 / g13 hold byte copies of the insitu zips; models.json / model.json point at the zips
-  - bead fit zip: its Zernikes / NA / n_med = the fit json
+  - model folders: models.json / model.json point at the zips
   - 4Pi: fourpi_state(zip) == the state json; torch_psf FourPiPSF of the zip renders bit-identically to
     simcode.fourpi.coherent_psf, its 'raw' parameters are those of coherent_psf; the spline zip (spline_knots='rebuild') rebuilds the
     knots of simcode.fourpi.spline_table.LUT4Pi on the same device (GPU when there is one)
@@ -22,8 +21,9 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 DEV = os.environ.get('SIMCODE_TEST_DEVICE', 'cpu')
 M = lambda f: os.path.join(REPO, 'models', f)
-CALIBS = ['insitu/calib_1809_2_psf_v2', 'insitu/calib_2p5nM_m2_psf_v2', 'insitu/calib_20nM_m2_psf_v2', 'insitu/calib_gauss1.3',
-          'm1809/calib_1809_2_psf_v2', 'm25/calib_2p5nM_m2_psf_v2', 'g13/calib_gauss1.3']
+# (json, zip): the m1809 folder's json copy; the g13 folder's json copy refers to camera maps that are only in insitu/
+# (camera_maps_1809_2.npz), so its zip is compared with models/insitu/calib_gauss1.3.json
+PAIRS = [('m1809/calib_1809_2_psf_v2.json', 'm1809/calib_1809_2_psf_v2.psf.zip'), ('insitu/calib_gauss1.3.json', 'g13/calib_gauss1.3.psf.zip')]
 # keys a zip's blocks add to its json (torch-psf writes the values the json left to the defaults: the vectorial sampling
 # and the Camera fields); every json key reads back with the json's value
 EXTRA_OK = {'camera.type': 'scmos', 'camera.excess_noise': 1.0, 'npupil': 64, 'oversample': 3, 'roisize': 15,
@@ -31,9 +31,8 @@ EXTRA_OK = {'camera.type': 'scmos', 'camera.excess_noise': 1.0, 'npupil': 64, 'o
 
 
 def _pairs():
-    """(json, zip); a model-folder zip is compared with the insitu json (the folder's json copy refers to camera maps that
-    are only in insitu/: models/g13/calib_gauss1.3.json -> camera_maps_1809_2.npz)"""
-    return [(M('insitu/' + os.path.basename(f) + '.json'), M(f + '.psf.zip')) for f in CALIBS]
+    """(json, zip) of each example model (PAIRS)"""
+    return [(M(j), M(z)) for j, z in PAIRS]
 
 
 def _positions():
@@ -89,7 +88,7 @@ def test_psf_render_spline_simulator():
 def test_zstack_member():
     import tifffile
     from simcode import psf as spsf
-    for js, zp in _pairs()[:4]:
+    for js, zp in _pairs():
         with zipfile.ZipFile(zp) as z:
             meta = json.loads(z.read('psf.json')); st = tifffile.imread(io.BytesIO(z.read('zstack.tif')))
         p = spsf.PSF.load(js, device='cpu')            # the zips were written on the CPU (convert_paper_psfs.py)
@@ -101,36 +100,23 @@ def test_zstack_member():
 
 
 def test_model_folders():
-    import hashlib
-    h = lambda f: hashlib.sha256(open(f, 'rb').read()).hexdigest()
-    for f in ('calib_1809_2_psf_v2', 'calib_2p5nM_m2_psf_v2', 'calib_gauss1.3'):
-        m = {'calib_1809_2_psf_v2': 'm1809', 'calib_2p5nM_m2_psf_v2': 'm25', 'calib_gauss1.3': 'g13'}[f]
-        assert h(M(f'insitu/{f}.psf.zip')) == h(M(f'{m}/{f}.psf.zip'))
+    for m, f in (('m1809', 'calib_1809_2_psf_v2'), ('g13', 'calib_gauss1.3')):
         assert json.load(open(M(f'{m}/model.json')))[m]['psf'] == f'{f}.psf.zip'
     S = json.load(open(os.path.join(REPO, 'simcode', 'models.json')))
-    for m in ('m1809', 'm25', 'g13'):
+    for m in ('m1809', 'g13'):
         assert S[m]['psf'].endswith('.psf.zip') and os.path.isfile(M(S[m]['psf']))
     for d in S['_production']['datasets'].values():
         assert d['calib'].endswith('.psf.zip') and os.path.isfile(M(d['calib']))
-
-
-def test_beads():
-    from simcode import psf as spsf
-    B = json.load(open(M('insitu/beads/psf_fit_sign-1_na149_ball_drift.json')))
-    p = spsf.PSF.load(M('insitu/beads/psf_fit_sign-1_na149_ball_drift.psf.zip'), device=DEV)
-    assert [int(j) for j in p.zidx] == sorted(int(k) for k in B['zernike'])
-    assert torch.equal(p.zcoef.detach().cpu(), torch.tensor([B['zernike'][str(j)] for j in sorted(int(k) for k in B['zernike'])]))
-    assert np.float32(float(p.NA)) == np.float32(B['NA']) and np.float32(float(p.n_med)) == np.float32(B['n_med'])
 
 
 def test_fourpi(work4pi):
     from simcode import psf as spsf
     from simcode.fourpi.coherent_psf import psf_from_state
     js = os.path.join(work4pi, 'psf4pi', 'NPC_f_dxy15.json') if work4pi else 'the 4Pi work folder (--work4pi)'
-    if not os.path.isfile(js):
-        print('skip 4Pi: no', js); return
-    st = json.load(open(js))['psf']
     zp = M('fourpi/NPC_f_dxy15.psf.zip')
+    if not os.path.isfile(js) or not os.path.isfile(zp):
+        print('skip 4Pi: no', js, 'or', zp); return
+    st = json.load(open(js))['psf']
     assert spsf.fourpi_state(zp) == st and spsf.fourpi_state('NPC_f_dxy15') == st
     with zipfile.ZipFile(zp) as z:
         raw = json.loads(z.read('psf.json'))['source']['model']['fourpi']['raw']

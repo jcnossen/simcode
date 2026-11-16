@@ -167,8 +167,8 @@ def test_example_configs():
     a, b = AC.load(os.path.join(CFG, '1809_2.py')), AC.load(os.path.join(CFG, '1809_2.yaml'))
     assert dict(a, _file=None) == dict(b, _file=None)
     L = AC.load_all(os.path.join(CFG, 'example_setup.py'))
-    assert [(c['name'], c['process']['model'], c['train']['model']) for c in L] == [('1809_2', 'm1809', 'm1809'), ('2.5nM_2', 'm25', 'm25'), ('20nM_2', 'm25', 'm25')]
-    assert len({c['movie'] for c in L}) == 3 and all(c['out'].endswith('/' + c['name']) and c['beads']['sign'] == -1 for c in L)
+    assert [(c['name'], c['process']['model'], c['train']['model']) for c in L] == [('1809_2', 'm1809', 'm1809')]
+    assert len({c['movie'] for c in L}) == 1 and all(c['out'].endswith('/' + c['name']) and c['beads']['sign'] == -1 for c in L)
     assert all(c['camera'] == L[0]['camera'] and c['optics'] == AC.DEFAULTS['optics'] for c in L)
 
 

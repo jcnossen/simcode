@@ -1,5 +1,9 @@
 # SIMCODE v2: method
 
+Paths under `analysis/`, the model `m25`, the in-situ calibrations of the other movies (`models/insitu/`) and the
+development notes (`docs/RESULTS.md`, `docs/AUTO_PIPELINE.md`, `docs/CLEANUP_LOG.md`, `docs/ARCHIVE.md`) named in this
+document are on the `paper` branch of the repository.
+
 SIMCODE v2 localizes emitters in DMD-SIMFLUX DNA-PAINT movies. In that setup a sinusoidal illumination pattern is stepped
 through 3 phases for each of 2 orientations, so every 6 frames form one full pattern cycle. SIMCODE v2 is a per-window
 method: each 6-frame window of an emitter gives one localization.
@@ -32,7 +36,7 @@ warns about every input or code difference; on the same code and GPU the outputs
 
 ### Models (2026-11)
 
-The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `m25`, `g13`; `--model`,
+The paper's runs use **PSF-matched models** (`simcode/models.json`: `m1809`, `g13`; the paper branch adds `m25`; `--model`,
 required; or the path of a model folder with a `model.json`). A model has the same four architectures and training recipes as described below; the simulator's PSF is the
 in-situ PSF v2 of the target movie (`insitu/calib_<movie>_psf_v2.json`, the model's `model.json` 'psf'; `--calib` of the trainers; the pre-v2 models used the axis-averaged `_psf3d_avg`, `models/archive_psf_v1/`), and the pass-1 head is fine-tuned from `pretrain_emitter_pass1`
 (`models/README.md` has the recipe and the file list). In the table above, read the networks named there as
@@ -152,7 +156,7 @@ the pattern is always estimated from the data.
 
 ## Known limitations
 
-See `RESULTS.md` for the numbers.
+The numbers are in the paper (and `docs/RESULTS.md` of the paper branch).
 
 - **Absolute accuracy is unknown.** This holds for ours and for SIMCODE. Per-site static errors and the ±3–6 nm linear
   terms are invisible to every GT-free metric, and no calibration sample exists.

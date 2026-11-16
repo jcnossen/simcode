@@ -1,5 +1,9 @@
 # Evaluation protocol
 
+Paths under `analysis/`, the model `m25`, the in-situ calibrations of the other movies (`models/insitu/`) and the
+development notes (`docs/RESULTS.md`, `docs/AUTO_PIPELINE.md`, `docs/CLEANUP_LOG.md`, `docs/ARCHIVE.md`) named in this
+document are on the `paper` branch of the repository.
+
 This is the protocol behind every cross-method statement in `RESULTS.md`. It was built and validated against ground truth
 on punctate repeated-site sims.
 

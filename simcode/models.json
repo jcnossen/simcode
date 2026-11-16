@@ -1,34 +1,22 @@
 {
- "_doc": "SIMCODE v2 models (the shipped models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = simulation sigma calibrations (no real-data mismatch multiplier); cal_real / cal_real_pass2 = the ones used on real movies; sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
+ "_doc": "SIMCODE v2 example models (m1809, g13; network weights: python -m simcode.download_models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = simulation sigma calibrations (no real-data mismatch multiplier); cal_real / cal_real_pass2 = the ones used on real movies; sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
  "_default": "m1809",
  "_production": {
-  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root (on qnano1 /mnt/data/dmdsf/bn_dnapaint).",
+  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root.",
   "cal_kind": "real",
-  "_selection_doc": "main selection (user decision 2026-11-13): rows with p >= 0.63 inside the crop and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select, Dataset.select, SIGMA_MAX_NM; since 2026-11-15 applied when a table is loaded, no subset files). Until 2026-11-13 it was the per-tile rule u <= 0.45. Study: analysis/selection_global, out/selection_global.",
+  "_selection_doc": "main selection: rows with p >= 0.63 inside the crop and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select, Dataset.select, SIGMA_MAX_NM), applied when a table is loaded.",
   "datasets": {
    "1809_2": {
     "movie": "1809/cover1/2/simflux_5.5ms_500mW.tif",
-    "calib": "insitu/calib_1809_2_psf_v2.psf.zip",
+    "calib": "m1809/calib_1809_2_psf_v2.psf.zip",
     "crop": "5,5,110",
     "model": "m1809"
-   },
-   "2.5nM_2": {
-    "movie": "dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_2p5nM_m2_psf_v2.psf.zip",
-    "crop": "5,5,110",
-    "model": "m25"
-   },
-   "20nM_2": {
-    "movie": "dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif",
-    "calib": "insitu/calib_20nM_m2_psf_v2.psf.zip",
-    "crop": "5,5,110",
-    "model": "m25",
-    "_doc": "2026-11-15: processed with m25 (trained on the 2.5 nM v2 PSF) and the movie's own v2 calibration"
    }
-  }
+  },
+  "_datasets_doc": "This repository ships the example models m1809 (in-situ PSF of the 1809/2 movie) and g13 (Gaussian PSF, sigma 1.3 px); the paper branch also has m25 (2.5 nM / 2 and 20 nM / 2 movies) and their datasets."
  },
  "m1809": {
-  "_doc": "PSF-matched model for the 1809/2 movie (averaged 1809/2 in-situ PSF; adopted 2026-11-11; production out/paper2/1809_2/v2_matched); also the model of the realistic-PSF paper simulations | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m1809/; the previous 2D model is the folder archive_2d/m1809/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_pass2_dedicated/m1809/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); the previous model is the folder archive_psf_v1/m1809/ (not referenced)",
+  "_doc": "PSF-matched model for the 1809/2 movie (trained on its averaged in-situ PSF + camera calibration v2, m1809/calib_1809_2_psf_v2.psf.zip; 3D head with z output; generic pass 2: accepts any measured two-orientation pattern); also the model of the realistic-PSF paper simulations",
   "psf": "m1809/calib_1809_2_psf_v2.psf.zip",
   "detector": "m1809/detector_pass1.pt",
   "emitter": "m1809/emitter_pass1.pt",
@@ -40,21 +28,8 @@
   "cal_real_pass2": "m1809/calib/calib_emitter_pass2_real.json",
   "sig_u": "m1809/calib/sigma_rescale_pass1.json,m1809/calib/sigma_rescale_pass2.json"
  },
- "m25": {
-  "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_pass2_dedicated/m25/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); pass-2 detector = generic fine-tuned from a dedicated (SIMCODE-pattern) detector (out/generic_mix, out/psf_v2/eval/m25v2/det2); also the model of the 20 nM / 2 movie; the previous model is the folder archive_psf_v1/m25/ (not referenced)",
-  "psf": "m25/calib_2p5nM_m2_psf_v2.psf.zip",
-  "detector": "m25/detector_pass1.pt",
-  "emitter": "m25/emitter_pass1.pt",
-  "cal_sim": "m25/calib/calib_emitter_pass1_sim.json",
-  "cal_real": "m25/calib/calib_emitter_pass1_real.json",
-  "detector_pass2": "m25/detector_pass2.pt",
-  "emitter_pass2": "m25/emitter_pass2.pt",
-  "cal_sim_pass2": "m25/calib/calib_emitter_pass2_sim.json",
-  "cal_real_pass2": "m25/calib/calib_emitter_pass2_real.json",
-  "sig_u": "m25/calib/sigma_rescale_pass1.json,m25/calib/sigma_rescale_pass2.json"
- },
  "g13": {
-  "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in g13/; the previous 2D model is the folder archive_2d/g13/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_pass2_dedicated/g13/ (not referenced by any config)",
+  "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (the preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 3D head with z output; generic pass 2)",
   "psf": "g13/calib_gauss1.3.psf.zip",
   "detector": "g13/detector_pass1.pt",
   "emitter": "g13/emitter_pass1.pt",

@@ -1,6 +1,0 @@
-# real 20 nM, pass 1, fixed c: ours <out>/full_20nM_m2_fast (est), grid G6; SIMCODE <out>/real20/simcode_real/sc_b.npz: 410088 rows, 36631 occupied 20-nm bins
-| mode | sigma_ref (nm) | q (all rows) | strict rows on grid | occupied bins | bins / SIMCODE |
-|---|---|---|---|---|---|
-| density rho 1.250 | - | 0.120 | 429146 | 35748 | 0.976 |
-| sigma_ref | 7.0 | 0.114 | 408991 | 34948 | 0.954 |
-coverage-matched on G6: global sigma_cov = 7.07 nm (N 755946), per-tile q_cov = 0.127 (N 450289); ours good rows on grid 3557287, 157028 bins

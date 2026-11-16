@@ -1,8 +1,9 @@
-"""Example of acquisitions defined in Python: one base config for the DMD-SIMFLUX setup and three movies derived from it.
+"""Example of acquisitions defined in Python: one base config for the DMD-SIMFLUX setup and the movies derived from it (here
+one, the 1809/2 movie with the example model m1809; add more with acquisition(name, movie, model)).
 
   python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --show            print the resolved configs, run nothing
-  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py                   run the three acquisitions, one after the other
-  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --only 2.5nM_2    one of them
+  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py                   run the acquisitions, one after the other
+  python -m simcode.pipeline simcode/pipeline/configs/example_setup.py --only 1809_2     one of them
 
   from simcode.pipeline import LocalizationPipeline
   pipes = LocalizationPipeline.from_file('simcode/pipeline/configs/example_setup.py')       # [LocalizationPipeline, ...]
@@ -40,8 +41,6 @@ def acquisition(name, movie, model):
 
 configs = [
     acquisition('1809_2',  '1809/cover1/2/simflux_5.5ms_500mW.tif',            'm1809'),
-    acquisition('2.5nM_2', 'dnapaint/2.5nM/2/cover1_600mW_5.5ms_cf660.tif',    'm25'),
-    acquisition('20nM_2',  'dnapaint/20nM/2/cover1_500mW_5.5ms_cf660.tif',     'm25'),
 ]
 
 # values derived in code: the camera maps use at most the frames the spot finder looks at (its spot mask ends there)

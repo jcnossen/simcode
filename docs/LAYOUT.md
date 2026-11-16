@@ -1,8 +1,11 @@
 # SIMCODE v2: package layout
 
-One line per directory and file of the `simcode` package (reorganised 2026-11-15, see "Renamed" at the end; the 2026-11
-cleanup before it: `docs/CLEANUP_LOG.md`). The docstring at the top of each file has the details. Method: `docs/METHOD.md`.
+One line per directory and file of the `simcode` package (reorganised 2026-11-15, see "Renamed" at the end). The docstring at the top of each file has the details. Method: `docs/METHOD.md`.
 Evaluation: `docs/EVALUATION.md`. Working with the results: `docs/USAGE.md`.
+
+Paths under `analysis/`, the model `m25`, the in-situ calibrations of the other movies (`models/insitu/`) and the
+development notes (`docs/RESULTS.md`, `docs/AUTO_PIPELINE.md`, `docs/CLEANUP_LOG.md`, `docs/ARCHIVE.md`) named in this
+document are on the `paper` branch of the repository.
 
 The repository holds two comparisons and what they need:
 - **SIMCODE preprint vs SIMCODE v2** on DMD-SIMFLUX DNA-PAINT movies: the v2 pipeline below with the PSF-matched models, the
@@ -37,7 +40,7 @@ simcode/
   __init__.py                 package marker, version
   run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2 --data-root …); all stages, finished ones skipped
   config.py                   the models: MODELS = <repo>/models (where model / calibration names are looked up: resolve, model), model_set(name or model folder), production(); no path settings (paths are arguments)
-  models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
+  models.json                 the shipped models (m1809, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
                               cal_sim_pass2, cal_real_pass2, sig_u, psf), the default model, the paper's datasets (_production)
   dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
   table.py                    localization table of a run directory (with the model's sigma rescale), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
@@ -181,21 +184,12 @@ of a new model: `models/calib/template_calib_emitter_pass{1,2}_{sim,real}.json` 
 
 ## Outside the package
 
-- `analysis/`: scripts that use the package; not needed to run the method.
-  - `baselines/`: SMLM, SIMFLUX, DECODE and the preprint's SIMCODE on simulated and real movies; `dme_drift.py` (CLI of `util/drift.py`).
-  - `paper/`: figure scripts of the experimental figures and the fair FRC protocol (`README.md` there).
-  - `papersim/`: the paper simulations (generators, all methods, metrics, figures); `reproduce.sh` lists the commands.
-  - `fourpi/`: 4Pi calibration chain, the v10 trainers and gates, post-processing, real-data comparisons, the simulated showcase.
-  - `fourpi_classical/`: the classical 4Pi-SIMFLUX pipeline (published-style detection and fits, pixel MLE).
-  - `fourpi_plain/`: plain 4Pi on the Li & Ries data: `psf_astig.py` (astigmatism scale of the bead-fitted PSF), `compare_published.py` (counts, z relation, precision on the same emitters, Nup96 radius / two-layer z vs their localizations), `sim_bench.py` (simulated movie through the real driver vs GT, sigma calibration), `quick_eval.py` (no-GT metrics of a table); training: `fourpi/train_det4pi.py --acq`, `fourpi/train_head4pi_w.py --acq`
-  - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF files).
-  - `pixbias/`, `crlbcmp/`, `ablation_cov/`, `p2generic/`, `selection_global/`: the pixel-bias, CRLB, ablation, generic-pass-2 and selection analyses of the paper / SI; `simreal/`: the benchmark sim movies (sigma-rescale fits); `z3d/`: 3D models (acceptance, model-folder swap); `figures/`: zoom picking and skeletons of the figures; `auto/`: calibration comparison of the automatic pipeline; `results/`: text snapshots cited by docs/RESULTS.md
-  - `fourpi_sim/`: 4Pi-SIMCODE simulations on microtubule cell fields (`mt_cells.py`: port of the inSiliScope world model, BSD-3-Clause, notice in the file), density sweeps, the hd-head experiment (`hd_run.sh`); `solvegap/`: the paper's solve-gap analysis (pattern solve vs the SIMFLUX fit on the same frames)
-  - `maintenance/`: `rename_model_keys.py` (model.json key names), `cleanup_outputs.py` (out/ + models/ clean-up, dry run by default)
-  - archived on 2026-11-15 (git tag `archive-2026-11-15`, `docs/ARCHIVE.md`): nanoruler, tput, hd_compare, evalproto, gate, dme, psfshape, most of figures, the development parts of baselines / papersim / simreal / psf3d / z3d / fourpi; deleted: zimflux.
-- `models/`: calibrations (`calib/`, `insitu/`), model folders (`model.json`, calibrations, README); network weights are not in git (`models/README.md`).
+- `analysis/` (paper branch): scripts that use the package, not needed to run the method: the baselines (SMLM, SIMFLUX,
+  DECODE, the preprint's SIMCODE), the paper figures and simulations, the 4Pi calibration chain, trainers and comparisons, the
+  classical 4Pi-SIMFLUX pipeline, plain 4Pi on the Li & Ries data, the calibration scripts of the paper models.
+- `models/`: calibrations (`calib/`, `insitu/`), the example model folders `m1809/`, `g13/` (`model.json`, calibrations, PSF, README); network weights are not in git (`python -m simcode.download_models`, `models/README.md`).
 - `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_config_dict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
-- `docs/`: this file, method, evaluation, results (development phase), usage, dataset format, automatic pipeline, PSF polarization note, the cleanup log, the cleanup candidate list and the archive index (`ARCHIVE.md`).
+- `docs/`: this file, method, evaluation, usage, dataset format, PSF polarization note (the paper branch adds the development notes: results of the development phase, automatic pipeline design, cleanup log and candidates, archive index).
 
 ## Renamed (2026-11-16)
 
@@ -209,7 +203,7 @@ directories under `out/` keep their names.
 | `processing/front.py`, `processing/pass2_front.py`, `processing/front_fast.py` | `processing/pass1_inference.py`, `processing/pass2_inference.py`, `processing/inference_fast.py` |
 | `solve/autoc.py`; `config.CAL_AUTOC` / `CAL_AUTOC_START`; run record `fixed.autoc` | `solve/brightness_noise_fit.py`; `config.CAL_BRIGHTNESS_NOISE_FIT` / `CAL_BRIGHTNESS_NOISE_FIT_START`; `fixed.brightness_noise_fit` |
 | `fourpi/psf4pi.py`, `fourpi/lut4pi.py` | `fourpi/coherent_psf.py`, `fourpi/spline_table.py` (classes unchanged: PSF4Pi, LUT4Pi) |
-| `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `tests/check_spline_table_insitu.py` |
+| `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `check_spline_table_insitu.py` (tests/ of the paper branch) |
 | `benchmark/gate.py`, `gate_report.py`, `gate_report_detector_matched.py` | `benchmark/gate_scenes.py`, `gate_scenes_report.py`, `gate_scenes_report_detector_matched.py` |
 | `emitter.model.ARCH_TAGS`, the legacy part of `emitter.fourpi.ARCH_TAGS`, `runconfig.KEYS_FORMAT1` | `util/legacy_names.py` (EMITTER_ARCH_TAGS, FOURPI_ARCH_TAGS, RUN_RECORD_FORMAT1_KEYS / _FIXED) |
 | model folder `<set>/`: `det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`, `p2headL_<set>.pt` | `detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt` |

@@ -19,15 +19,16 @@ frame. It is a per-window deep-learning method:
 More in the docs:
 
 - `docs/METHOD.md`: method
-- `docs/RESULTS.md`: results of the development phase (earlier default networks) and the limitations
 - `docs/EVALUATION.md`: evaluation protocol
 - `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset` = `torch_psf.Dataset` + SIMCODE's loaders and selection: load, select, drift, render, FRC, hdf5 / Picasso / ThunderSTORM files); `docs/DATASET_FORMAT.md`: the field layout
 - `docs/LAYOUT.md`: the package tree with one line per directory and file (and what was renamed on 2026-11-15)
-- `docs/CLEANUP_LOG.md`: the 2026-11 cleanup (what was removed, renamed, and how results were checked)
+- `docs/PSF_POLARIZATION.md`: the in-situ PSF model and its polarization terms
 
-The repository holds two comparisons and what they need: the SIMCODE preprint against SIMCODE v2 (this pipeline, the
-preprint's model and the paper's baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`), and 4Pi-SIMFLUX as published
-(classical, `analysis/fourpi_classical`) against 4Pi-SIMCODE (the network pipeline `simcode/fourpi`, see "4Pi" below).
+This branch (`master`) holds the package, its tests and two example models (`m1809`, `g13`). The branch `paper` is
+`master` plus the paper material: the analysis scripts (the baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`,
+the paper figures and simulations, the classical 4Pi-SIMFLUX pipeline `analysis/fourpi_classical`), the model `m25` and the
+in-situ calibrations of all paper movies, the development notes in `docs/` and the text sources of the paper figures
+(`figures/`).
 
 ## Install
 
@@ -63,14 +64,14 @@ Only the baselines need more:
 ```bash
 export CUDA_VISIBLE_DEVICES=1           # GPU 1 or 2 on the lab server (keep GPU 0 free)
 python -m simcode.run --movie /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif \
-    --calib insitu/calib_1809_2_psf_v2.psf.zip --model m1809 --crop 5,5,110 --out out_1809_2
+    --calib m1809/calib_1809_2_psf_v2.psf.zip --model m1809 --crop 5,5,110 --out out_1809_2
 python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out out_1809_2   # the same: a paper dataset
 ```
 
 What every run does (= the paper's settings; the options that switched these were removed on 2026-11-14):
 
 - the model (`--model`, required unless `--dataset` / `--config` gives it): a name of `simcode/models.json` (`m1809`,
-  `m25`, `g13`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
+  `g13`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
   stage / `simcode.pipeline.training.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
   calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
 - pass 1, pattern estimation, the pattern solve, and pass 2
@@ -88,10 +89,10 @@ What every run does (= the paper's settings; the options that switched these wer
   for renders and drift. (The per-tile rule "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
 
 `--dataset <name>` takes movie, calibration, model and crop of a paper dataset from the `_production` entry of `models.json`;
-its movie path is relative to `--data-root` (the folder of the DMD-SIMFLUX DNA-PAINT data, `/mnt/data/dmdsf/bn_dnapaint` on qnano1).
+its movie path is relative to `--data-root` (the folder of the DMD-SIMFLUX DNA-PAINT data).
 The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`, `--compile`, `--netset`, `--det` ...,
 `--u_max`, `--strict_q`) and on 2026-11-15 (`--format`, `--subset`, `--sigma_max`, `--prefetch` (always on), `--sig_u`
-(always the model's)) no longer exist (`docs/CLEANUP_LOG.md`).
+(always the model's)) no longer exist.
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -107,7 +108,7 @@ two workers on one TIFF movie are not necessarily faster than one (not measured)
 Other options:
 
 - `--chunk_list 12000` processes only the chunk of frames 12000–18000.
-- `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) adds the
+- `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `simcode/util/drift.py`) adds the
   drift-corrected columns `x_dc, y_dc`; the selection region and the tiles of the sigma rescale then use them.
 
 Outputs in `--out`:
@@ -137,9 +138,6 @@ Table columns (as built by `simcode.table`; in the file as Dataset fields: `pos`
 The table can be rebuilt at any time with
 `python -m simcode.table <out> [--tag est2] [--drift drift.npy] [--crop x0,y0,size]` (the sigma rescale of the run's model).
 The crop of the selection and of the sigma-rescale tiles is the output region of the run (`--crop` of the run; read from its chunk files).
-
-Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
-movie, DME, grid) is listed in its section 7, "Reproduce".
 
 The stage-level entry point is `python -m simcode.processing.run_uncalibrated` (`--stages pass1,pattern,pass1_solve,pass2`,
 the networks and calibrations, batch sizes).
@@ -185,11 +183,8 @@ python -m simcode.util.runconfig verify <dir>     # recorded file hashes / commi
 ```
 
 `command.txt` stays a plain log (one line per `simcode.run` / `simcode.table` command); `summary.json`, `runtime.json` and
-`locs_p*_info.json` are unchanged. The three production runs of the paper (`out/paper2/1809_2/v2_matched`,
-`2.5nM_2/v2_matched`, `20nM_2/v2_m25`) predate the record: theirs has status `reconstructed` and lists under
-`reconstructed.not_recovered` what could not be recovered (git commit and environment at run time, hashes at run time,
-unlogged table rebuilds). The automatic pipeline writes the same kind of record per acquisition and per stage, and the
-training recipe with file hashes into the model json (`docs/AUTO_PIPELINE.md`, section 2).
+`locs_p*_info.json` are unchanged. The automatic pipeline (`simcode.pipeline`) writes the same kind of record per
+acquisition and per stage, and the training recipe with file hashes into the model json.
 
 ## Paths
 
@@ -201,7 +196,7 @@ and every library function as arguments:
 | movie | `--movie <file>` (or `--dataset <name> --data-root <dir>`) | none |
 | outputs | `--out <dir>` | required for `simcode.run`; `./simcode_out/...` for the benchmark tools |
 | model | `--model <name or model folder>` | none for `simcode.run` / the pipeline |
-| networks / calibrations | a path, or a name in the repository's `models/` folder (also `models/calib/`, `models/insitu/`) | `<repo>/models` |
+| networks / calibrations | a path, or a name in the repository's `models/` folder (also `models/calib/`, `models/insitu/`) | `<repo>/models` (network weights: `python -m simcode.download_models`) |
 | 4Pi work folder, raw 4Pi movies | `--work <dir>`, `--data <dir>` (4Pi pipeline configs, 4Pi analysis scripts) | none |
 | DME | the installed `dme` package | |
 
@@ -209,30 +204,28 @@ and every library function as arguments:
 python -m simcode.run --movie <movie.tif> --calib <calib or name in models/> --model m1809 --out <dir>
 python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work <4Pi work folder> --data <raw 4Pi movies> --only fourpi_MT
 ```
-`--calib insitu/calib_1809_2_psf_v2.psf.zip` works from anywhere (names are looked up in `<repo>/models`). The path
+`--calib m1809/calib_1809_2_psf_v2.psf.zip` works from anywhere (names are looked up in `<repo>/models`). The path
 configuration of earlier versions (`simcode.json`, `~/.config/simcode.json`, `SIMCODE_CONFIG`, `SIMCODE_MODELS`,
 `SIMCODE_DATA`, `SIMCODE_OUT`, `SIMCODE_4PI`, `SIMCODE_4PI_DATA`, `DME_PATH`) was removed on 2026-11-16 and is not read.
 
 ## Models and calibrations (`models/`)
 
-Calibrations (json) are in git; network weights are not (`models/README.md`: the sets, their files with checksums, the
-recipe of a model). The models are defined in `simcode/models.json`.
+Calibrations (json, psf.zip, camera maps) are in git; network weights are not: they are release assets of the GitHub
+repository, fetched with `python -m simcode.download_models` ("Installation" above; `models/README.md`: the models, their
+files with checksums, the recipe of a model). The models are defined in `simcode/models.json`.
 
 ## 4Pi
 
 ```bash
-python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work ~/simcode2/out/4pi --data /mnt/data/4pi-sf \
+python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work <4Pi work folder> --data <raw 4Pi movies> \
     --only fourpi_MT --gpus 1,2                                                         # 4Pi-SIMCODE (network): registration, every file, report
 python -m simcode.processing.fourpi <out>/config_resolved.json --files 10              # one file of an acquisition (the process stage's worker)
-python analysis/fourpi_classical/full_cl.py --stage read --cells NPC --work <4Pi work folder> --data <raw 4Pi movies>   # classical 4Pi-SIMFLUX: reader ...
-python analysis/fourpi_classical/full_cl.py --stage fit --cells NPC --work <4Pi work folder> --data <raw 4Pi movies>    # ... and fitter(s)
 ```
-Both read the dcimg files through `simcode/io/movie.py` and run their files through `simcode/io/work.py`
+The dcimg files are read through `simcode/io/movie.py` and the files of an acquisition run through `simcode/io/work.py`
 (skip finished files, atomic outputs, claims). The acquisitions (paths, channel layout, camera, settings):
 `simcode/pipeline/configs/fourpi.py` (`configs(work, data)`: the 4Pi work folder and the raw-movie folder are its
-arguments), read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT', work, data)`).
-Post-processing and comparisons: `analysis/fourpi/post_w4pi.py`, `cmp_full_w4pi.py`, `showcase_real_mt.py`,
-`select_curve_{mt,npc}.py`; `analysis/fourpi_classical/post_cl.py`, `fig_cl.py`.
+arguments), read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT', work, data)`). The 4Pi networks, the
+4Pi PSF and the classical 4Pi-SIMFLUX pipeline it is compared with are on the `paper` branch.
 
 ## Repository layout
 
@@ -242,12 +235,12 @@ and their trainers; `solve/` the explicit pattern solve and z after it; `pattern
 per-chunk fronts and the pattern estimation; `simulate/` the acquisition simulator and the training batches; `benchmark/`
 the gate suite; `calibration/` the in-situ calibration; `pipeline/` the automatic per-acquisition pipeline; `io/` readers and
 work driver; `channels/` multi-channel layout, registration and front end; `setups/` the set-ups of the pipeline (widefield,
-fourpi); `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi networks, PSF and simulators. Besides it: `analysis/` scripts that use
-it (baselines, paper figures and simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks), `models/`
-calibrations and model folders, `tests/`, `docs/`.
+fourpi); `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi networks, PSF and simulators. Besides it: `models/`
+calibrations and model folders, `tests/`, `docs/` (the `paper` branch adds `analysis/`: baselines, paper figures and
+simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks; and `figures/`).
 
-Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=1 python
-tests/test_fast_paths.py` (GPU, ~1 min, needs the m1809 weights), or `pytest tests`.
+Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=0 python
+tests/test_fast_paths.py` (GPU, ~1 min, needs the m1809 weights), or `pytest tests` (the GPU tests fail without a GPU).
 
 ## History
 

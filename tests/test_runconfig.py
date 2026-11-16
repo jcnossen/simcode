@@ -39,8 +39,8 @@ def test_settings_roundtrip():
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
-    S = _settings(['--dataset', '2.5nM_2', '--data-root', DR, '--out', 'x'])                 # defaults: the model's sig_u, both passes
-    assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'm25/calib/sigma_rescale_pass2' in S['sig_u']
+    S = _settings(['--movie', 'm.tif', '--calib', 'g13/calib_gauss1.3.psf.zip', '--model', 'g13', '--crop', '5,5,110', '--out', 'x'])   # defaults: the model's sig_u, both passes
+    assert S['model'] == 'g13' and S['sig_u'].count(',') == 1 and 'g13/calib/sigma_rescale_pass2' in S['sig_u']
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
     # --model is required; a record's settings that are no longer options are not passed on (rerun_argv takes RERUN_KEYS only)

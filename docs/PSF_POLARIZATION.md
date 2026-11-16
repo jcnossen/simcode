@@ -1,5 +1,10 @@
 # Per-pattern-angle PSF: photoselection and the in-situ 3D PSF
 
+Paths under `analysis/`, the model `m25`, the in-situ calibrations of the other movies (`models/insitu/`) and the
+development notes (`docs/RESULTS.md`, `docs/AUTO_PIPELINE.md`, `docs/CLEANUP_LOG.md`, `docs/ARCHIVE.md`) named in this
+document are on the `paper` branch of the repository.
+Results under `out/` are not in the repository.
+
 Note of 2026-11-11 (psf3d work). It covers the model, its derivation in the vectorial PSF, and what the in-situ fits on the paper
 movies show. Numbers come from `out/psf3d/` (tables: `python analysis/psf3d/summary.py`). The log is in `out/WORKLOG.md`.
 
