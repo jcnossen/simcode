@@ -200,6 +200,7 @@ def test_real_table():
     """the production pass-2 table of the 1809 movie (read only): counts of its info json, and the FRC of a subset through
     the class against analysis/paper/frc_fair.py (same rows, same drift)"""
     if not os.path.exists(REAL): return _skip('no ' + REAL)
+    if not os.path.exists(os.path.join(REPO, 'analysis', 'paper', 'frc_fair.py')): return _skip('no analysis/paper/frc_fair.py (paper branch)')
     sys.path.insert(0, os.path.join(REPO, 'analysis', 'paper'))
     import frc_fair as FF
     info = json.load(open(REAL[:-4] + '_info.json'))

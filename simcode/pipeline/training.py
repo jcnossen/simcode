@@ -122,13 +122,12 @@ def run(ds):
         open(os.path.join(FE, 'done'), 'w').close()
     os.makedirs(os.path.join(M, 'calib'), exist_ok=True)
     cals = {k: os.path.join(M, SC.MODEL_FILES[k]) for k in ('cal_sim', 'cal_real', 'cal_sim_pass2', 'cal_real_pass2')}
-    fcs = os.path.join(REPO, 'analysis', 'psfmatch', 'fit_cal_set.py')
     rm = Tc['real_mult_from']
     from simcode import config as SC
     tmpl = SC.model_set(rm)
     fallback = []
     for fr, base, ks, ksr in (('s1', SC.TEMPLATE_CAL_SIM, 'cal_sim', 'cal_real'), ('s2', SC.TEMPLATE_CAL_SIM_PASS2, 'cal_sim_pass2', 'cal_real_pass2')):
-        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', fcs, fr, FE, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
+        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.calibration.fit_cal_set', fr, FE, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
               os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, check=not quick)
         if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
             # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template set's calibrations

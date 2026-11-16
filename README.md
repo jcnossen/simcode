@@ -29,17 +29,19 @@ The repository holds two comparisons and what they need: the SIMCODE preprint ag
 preprint's model and the paper's baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`), and 4Pi-SIMFLUX as published
 (classical, `analysis/fourpi_classical`) against 4Pi-SIMCODE (the network pipeline `simcode/fourpi`, see "4Pi" below).
 
-## Install
-
-The lab server has the conda env `simcode-py311` (Python 3.11, PyTorch 2.13 + CUDA, triton).
+## Installation
 
 ```bash
-conda activate simcode-py311            # or call ~/miniconda3/envs/simcode-py311/bin/python directly
-pip install -e <repo>                   # or: export PYTHONPATH=<repo>
+git clone https://github.com/jcnossen/simcode && cd simcode
+pip install -e .                                     # numpy, scipy, torch, torch-psf, dme, ... (pyproject.toml)
+python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v1)
+python -m simcode.download_models --set pretrain     # only to train a new model: the pretraining networks
 ```
 
-The repository holds source only: network weights are not in git and have to be copied into `models/` (or the directory
-the config key `models` points to); `models/README.md` lists the files of each model.
+Network weights (`*.pt`) are not in git: `simcode.download_models` fetches the release assets
+(`simcode_model_m1809.zip`, `simcode_model_g13.zip`, `simcode_pretrain.zip`), checks their sha256 and unpacks them into
+`models/` (`--dest <dir>` for another folder, `--base-url <url>` for a mirror or a local copy, `file://...`).
+`models/README.md` lists the files of each model. Tested with Python 3.11 and PyTorch 2.13 + CUDA.
 
 Dependencies:
 
@@ -49,14 +51,11 @@ Dependencies:
   convolutional 3D spline, Gaussian), the calibration json reader, the bead and in-situ PSF fits (variable projection)
   and the TIFF movie reader. `simcode/psf/__init__.py` is the only module that imports it (the rest of SIMCODE imports from `simcode.psf`) and holds the SIMCODE-specific glue (per-pattern-angle PSF terms, the
   spline settings of the solve).
+- DME v2 drift: the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml`
+  (installed by `pip install -e .`); the installed package is the only one used, through `simcode/util/drift.py`
 
-Only the baselines need more:
-
-| baseline | needs |
-|---|---|
-| SIMCODE | `smlmtorch` (`~/simcode`) and its paper models (`--smlmtorch_models`, default `~/smlmtorch/scripts/models`) |
-| DECODE | the `decode` fork (`~/decode2`) |
-| DME v2 drift | the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml` (installed by `pip install -e <repo>`, or `pip install -e <drift-estimation checkout>` at that commit); the installed package is the only one used, through `simcode/util/drift.py` |
+The baselines of the paper (`analysis/baselines`, on the `paper` branch) need more: the preprint's SIMCODE needs
+`smlmtorch` and its paper models (`--smlmtorch_models`), DECODE the `decode` fork.
 
 ## Run
 

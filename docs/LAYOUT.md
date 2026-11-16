@@ -35,6 +35,7 @@ per-acquisition pipeline around it (camera, PSF, model training, processing, rep
 ```
 simcode/
   __init__.py                 package marker, version
+  download_models.py          python -m simcode.download_models [--set m1809 g13 pretrain | all] [--dest models/]: the network weights (GitHub release assets, sha256-checked)
   run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2 --data-root …); all stages, finished ones skipped
   config.py                   the models: MODELS = <repo>/models (where model / calibration names are looked up: resolve, model), model_set(name or model folder), production(); no path settings (paths are arguments)
   models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
@@ -96,6 +97,8 @@ simcode/
     extract_tracks.py         isolated emitter tracks (raw regions over consecutive frames)
     camera_maps.py            per-pixel offset and read-noise maps from the movie
     psf_compare.py            several PSF fits compared on the same samples (analysis/psf3d/summary.py)
+    gate_stats.py             statistics of the gate-scene dumps: matching, explicit solve on dumped outputs, sigma-table fit (fit_cal), RMS / CRLB (until 2026-11-16 analysis/calib/plib.py)
+    fit_cal_set.py            python -m simcode.calibration.fit_cal_set: the sim / real solve calibration of a new model from its gate dumps (stage train; until 2026-11-16 analysis/psfmatch/fit_cal_set.py)
   pipeline/
     __init__.py               the automatic per-acquisition pipeline (LocalizationPipeline, ConfigDict)
     __main__.py               python -m simcode.pipeline <config>
