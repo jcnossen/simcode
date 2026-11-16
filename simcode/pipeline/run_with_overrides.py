@@ -45,11 +45,9 @@ def apply(W):
             upd = {**W.get('presets', {}).get('common', {}), **W.get('presets', {}).get(name, {})}
             p.update({k: (tuple(v) if isinstance(v, list) and k != 'k' else v) for k, v in upd.items()})
         if W.get('px_nm'): RS.PX_NM = float(W['px_nm'])
-    if W.get('px_nm'):          # analysis/calib/plib.py (sigma-table fits, gate statistics): PX 108.33
-        import os as _os
-        sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))), 'analysis', 'calib'))
-        import plib
-        plib.PX = float(W['px_nm'])
+    if W.get('px_nm'):          # simcode/calibration/gate_stats.py (sigma-table fits, gate statistics): PX 108.33
+        from simcode.calibration import gate_stats
+        gate_stats.PX = float(W['px_nm'])
 
 
 def main():

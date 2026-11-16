@@ -14,7 +14,7 @@ beads:                                   # the setup's bead z-stacks (fitted by 
 camera:
   gain_e_per_adu: 0.56                   # SIMCODE paper value (camera_gain.py on 0.5 nM: 0.552); the measured value is reported
   offset_adu: 99.3
-  readnoise_from: /home/jc/simcode2/models/insitu/camera_maps_0.5nM.npz   # same sensor (as the reference calibration)
+  readnoise_from: insitu/camera_maps_0.5nM.npz   # same sensor (as the reference calibration)
   map_frames: 20000
 psf:
   init: [zero, f0.1, f0.2, f0.3, beads]   # multi-start (focus-staggered; focus / z gauge), lowest base-fit NLL wins

@@ -18,7 +18,7 @@ config = ConfigDict(
         sign=-1, holdout=7, offset_adu=106.34, gain_e_per_adu=GAIN),
     camera=dict(
         gain_e_per_adu=GAIN, offset_adu=99.3,
-        readnoise_from='/home/jc/simcode2/models/insitu/camera_maps_0.5nM.npz',     # same sensor (as the reference calibration)
+        readnoise_from='insitu/camera_maps_0.5nM.npz',     # same sensor (as the reference calibration)
         map_frames=20000),
     psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads']),   # multi-start (focus-staggered; focus / z gauge), lowest base-fit NLL wins
     process=dict(model='m1809'),

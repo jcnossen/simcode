@@ -103,7 +103,7 @@ def check():
                     elif names:
                         for nm in names:
                             if not mod_path(m + '.' + nm): errs.append(f'{f}:{n.lineno}: {m}.{nm} does not exist')
-                elif top in bybase or top in ('analysis',):
+                elif top in bybase or top in ('analysis',) or (top in PAPER_MODULES and not HAS_ANALYSIS):
                     continue     # sibling analysis script (found through sys.path of the script)
                 else:
                     try: found = importlib.util.find_spec(top) is not None
@@ -116,6 +116,7 @@ def check():
         for i, line in enumerate(open(os.path.join(ROOT, f), encoding='utf-8', errors='replace'), 1):
             for mm in re.finditer(r'(?<![\w~/:-])((?:simcode|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
                 s = mm.group(1)
+                if s.startswith('analysis/') and not HAS_ANALYSIS: continue      # a script of the paper branch
                 if not os.path.exists(os.path.join(ROOT, s)): errs.append(f'{f}:{i}: mentions {s}, which does not exist')
             for mm in re.finditer(r'python\s+(?:-u\s+)?-m\s+(simcode[\w.]*)', line):
                 if mod_path(mm.group(1)) is None: errs.append(f'{f}:{i}: python -m {mm.group(1)}: no such module')
@@ -125,6 +126,10 @@ def check():
 # imports that are optional or come from external checkouts (old code base, DME, DECODE, spline PSF, published 4Pi code)
 OPTIONAL = {'smlmtorch', 'dme', 'decode', 'torch_convspline', 'h5py', 'setproctitle', 'fastpsf', 'photonpy', 'picasso', 'cupy',
             'joblib', 'sklearn', 'pywt', 'napari', 'zarr', 'tqdm', 'yaml', 'pearson_corr'}
+# master has no analysis/ (it is on the paper branch): mentions of analysis/ scripts and the imports of these analysis
+# modules (through sys.path of the analysis folder) are not checked there
+HAS_ANALYSIS = os.path.isdir(os.path.join(ROOT, 'analysis'))
+PAPER_MODULES = {'frc_fair'}
 # historical documents: they describe removed code on purpose (mentions written archive-<date>:<path> name a file of that git tag)
 SKIP_MENTIONS = {'docs/CLEANUP_LOG.md', 'docs/CLEANUP_CANDIDATES.md', 'docs/ARCHIVE.md', 'docs/RESULTS.md', 'analysis/results/README.md'}
 
