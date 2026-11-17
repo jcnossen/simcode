@@ -170,7 +170,7 @@ def parser():
     ap.add_argument('--dens', default=None)
     ap.add_argument('--tau', default=None)
     # pass 1
-    ap.add_argument('--hold', default=None, help='held-out patches (python -m simcode.emitter.heldout; default simcode_out/emitter_heldout/heldout4.pt)')
+    ap.add_argument('--hold', default=None, help='held-out patches (python -m simcode.emitter.heldout; default simcode_out/emitter_heldout/heldout4.pt if it exists, else none)')
     ap.add_argument('--pair_frac', type=float, default=0.25)
     ap.add_argument('--med', default='40,2500')
     ap.add_argument('--nnw', type=int, default=1)
@@ -208,7 +208,7 @@ def train_pass1(a):
     from simcode.emitter.heldout import HOLD, HOLD5_NAME, eval_hold
     from simcode.detector.model import load as load_det
     from simcode.detector.select import select_subpixel
-    a.hold = a.hold or HOLD
+    if a.hold is None and os.path.isfile(HOLD): a.hold = HOLD     # the default set if it exists; else no held-out evaluation
     args = dict(vars(a), arch=ARCH, paper=1, bright_tail=','.join(f'{v:g}' for v in BRIGHT_TAIL))
     args.update(z3d=1, z_range_um=list(Z_RANGE_UM), z_unif=Z_UNIF)
     torch.manual_seed(a.seed)
@@ -221,8 +221,8 @@ def train_pass1(a):
         head.load_state_dict(pad_out(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'], head))
     col = PSFCol(gen.rs['0.5nM'].sim)
     cols = [PSFCol(r['0.5nM'].sim) for r in gen.rsm] if getattr(gen, 'calibs', None) else None
-    Hd = torch.load(a.hold, weights_only=False)
-    sc5 = os.path.basename(a.hold) == HOLD5_NAME
+    Hd = torch.load(a.hold, weights_only=False) if a.hold else None
+    sc5 = bool(a.hold) and os.path.basename(a.hold) == HOLD5_NAME
     tau_r = tuple(float(v) for v in a.tau.split(','))
     dens = tuple(float(v) for v in a.dens.split(',')); med = tuple(float(v) for v in a.med.split(','))
     opt = torch.optim.AdamW(head.parameters(), lr=a.lr, weight_decay=1e-4)
@@ -263,7 +263,7 @@ def train_pass1(a):
         if step % 200 == 0:
             r = log_record(step, t0, sched, acc, IS, GS)
             log.write(json.dumps(r) + '\n'); log.flush(); print(json.dumps(r), flush=True)
-        if step % a.eval_every == 0:
+        if Hd is not None and step % a.eval_every == 0:
             ev = eval_hold(head, Hd, band=(200, 2000), extra=True) if sc5 else eval_hold(head, Hd)
             elog.write(json.dumps(dict(step=step, t=round(time.time() - t0), **ev)) + '\n'); elog.flush()
             print('EVAL', step, json.dumps({s: ev[s].get('all', ev[s].get('nn1.5-2.5')) for s in ev}), flush=True)
