@@ -17,7 +17,8 @@
   },
   "pass2_trainer_chain": "/home/jc/simcode2/out/z3d/runs/chain_gen.sh g13 (logs out/z3d/runs/g13g/)",
   "evaluation": "/home/jc/simcode2/out/z3d/runs/eval.sh g13g (vs the dedicated pass 2: /home/jc/simcode2/out/z3d/eval/g13g/accept_p2_ded.txt)",
-  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (hd/realsim.RealSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)"
+  "note": "pass 1 = the 3D model (unchanged files); pass 2 = GENERIC (2026-11-14: all pass-2 models generic): generic illumination-pattern draw (hd/realsim.RealSim._generic), p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; heads p2head 24k / p2headL 50k p_std 0.25 -> p2headL2 50k p_std 0.5 (models/README.md)",
+  "joint_covariance_2026_11_17": "emitter_pass1.pt / emitter_pass2.pt = the recipe networks fine-tuned with the joint prior / intensity covariance (models/README.md; out/sigma_joint/train/g13/p1, p2 final.pt; paper branch analysis/sigma_joint/train.sh)"
  },
  "_files": {
   "psf": {
@@ -84,34 +85,39 @@
   },
   "emitter": {
    "path": "emitter_pass1.pt",
-   "size": 5519185,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "cbd17c8b098ccb3e0c324e6e3d1ac52b2e3556f2ea638ec3d43c077e984987ff",
+   "size": 5531665,
+   "mtime": "2026-11-17T17:15:01+0100",
+   "sha256": "17be7aa32028e232598b10f70d3bf7f7ba823c8e5ea77d6d4a9888d4e676b5b6",
    "checkpoint": {
-    "step": 18000,
+    "step": 12000,
     "args": {
-     "out": "/home/jc/simcode2/out/z3d/runs/g13/hd",
-     "steps": 18000,
+     "out": "/home/jc/simcode2/out/sigma_joint/train/g13/p1",
+     "illum": 0,
+     "detector": "/home/jc/simcode2/runs/psfmatch/g13/det/final.pt",
+     "init": "models/g13/emitter_pass1.pt",
+     "steps": 12000,
      "batch": 16,
-     "lr": 0.00015,
-     "ch": 96,
-     "det": "/home/jc/simcode2/runs/psfmatch/g13/det/final.pt",
-     "tau": "3,80",
-     "hold": "/home/jc/simcode2/out/sc4/heldout5.pt",
-     "pair_frac": 0.25,
-     "dens": "0.0005,0.06",
-     "med": "40,2500",
-     "nnw": 1,
-     "seed": 1,
+     "lr": 0.0001,
+     "pct": 0.1,
+     "seed": 101,
+     "eval_every": 2000,
+     "ckpt_every": 4000,
      "w_mr": 2.0,
      "w_slope": 50.0,
+     "ch": 96,
      "bf16": 1,
-     "eval_every": 2000,
-     "init": "hd_sc5nb.pt",
-     "pct": 0.1,
-     "ckpt_every": 6000,
-     "calib": "/home/jc/simcode2/models/insitu/calib_gauss1.3.json",
-     "arch": "sc4n",
+     "calib": "models/insitu/calib_gauss1.3.json",
+     "dens": "0.0005,0.06",
+     "tau": "3,80",
+     "hold": "/home/jc/simcode2/out/emitter_heldout/heldout5.pt",
+     "pair_frac": 0.25,
+     "med": "40,2500",
+     "nnw": 1,
+     "no_illum": 0,
+     "pert_model": "real",
+     "hold_v1": 0,
+     "check": 0,
+     "arch": "emitter_net",
      "paper": 1,
      "bright_tail": "0.1,2000,20000",
      "z3d": 1,
@@ -119,24 +125,21 @@
       0.0,
       0.3
      ],
-     "z_unif": 0.5
+     "z_unif": 0.5,
+     "heights": [
+      "presets"
+     ]
     }
    },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/hd_g13.pt"
+   "rewritten": "2026-11-17: joint prior / intensity covariance (fine-tuned network; calibration without the removed scale / sigma factors); the earlier record is in git history"
   },
   "cal_sim": {
    "path": "calib/calib_emitter_pass1_sim.json",
-   "size": 2059,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "cdcf1c456097aa0acb62c03d7f873cb30261e000ec8c9c8aa55bd05f4ed51726",
+   "size": 1077,
+   "mtime": "2026-11-17T16:40:57+0100",
+   "sha256": "4b8fe4ee8d60b31b50d37fbed79acfca3f6087b3dd41f653d02fe18a7be64358",
    "params": {
-    "kap_p": 0.8945592641830444,
-    "kap_I2": 0.7926290588403049,
-    "sig_a": 1.4126241928985401,
-    "sig_g": 0.41589644697367406,
     "n": 32239,
-    "kap_p_raw": 0.8945196270942688,
-    "kap_I2_raw": 0.7926039058284609,
     "box": 1.5,
     "mix_T": 1.0,
     "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json",
@@ -150,9 +153,10 @@
     "prior_off": [
      -0.0009589724941179156,
      0.0012835237430408597
-    ]
+    ],
+    "note_2026_11_17": "the per-photon-bin solve scales kap_p / kap_I2 and the sigma factors sig_a / sig_g / sig_ph were removed: the emitter networks give one joint prior / intensity covariance (simcode/emitter/model.EmitterNet) and the solve reports the posterior sd (analysis/sigma_joint/)"
    },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_sc_hd_g13.json"
+   "rewritten": "2026-11-17: joint prior / intensity covariance (fine-tuned network; calibration without the removed scale / sigma factors); the earlier record is in git history"
   },
   "detector_pass2": {
    "path": "detector_pass2.pt",
@@ -185,48 +189,51 @@
   },
   "emitter_pass2": {
    "path": "emitter_pass2.pt",
-   "size": 5560847,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "7e23fbd57c05e2f24b571facd155c66509ad1e5850d4baea95b5c6e7b353652e",
+   "size": 5573263,
+   "mtime": "2026-11-17T17:20:35+0100",
+   "sha256": "0e23e4a66f8e6e06232a19bdc597446a6eaea65c1ed7eaaed932323a9474d085",
    "checkpoint": {
-    "step": 50000,
+    "step": 20000,
     "args": {
-     "out": "/home/jc/simcode2/out/z3d/runs/g13g/p2headL",
-     "det": "/home/jc/simcode2/out/z3d/runs/g13g/p2det/final.pt",
-     "init": "/home/jc/simcode2/out/z3d/runs/g13g/gp2headL/final.pt",
-     "steps": 50000,
+     "out": "/home/jc/simcode2/out/sigma_joint/train/g13/p2",
+     "illum": 1,
+     "detector": "/home/jc/simcode2/out/z3d/runs/g13g/p2det/final.pt",
+     "init": "models/g13/emitter_pass2.pt",
+     "steps": 20000,
      "batch": 16,
      "lr": 0.0001,
      "pct": 0.05,
+     "seed": 141,
+     "eval_every": 5000,
+     "ckpt_every": 5000,
      "w_mr": 2.0,
      "w_slope": 50.0,
-     "seed": 41,
-     "eval_every": 5000,
-     "ckpt_every": 10000,
+     "ch": 96,
+     "bf16": 1,
+     "calib": "models/insitu/calib_gauss1.3.json",
+     "dens": "0.0005,0.06",
+     "tau": "3,80",
+     "hold": null,
+     "pair_frac": 0.25,
+     "med": "40,2500",
+     "nnw": 1,
      "no_illum": 0,
      "pert_model": "real",
      "hold_v1": 0,
-     "calib": "/home/jc/simcode2/models/insitu/calib_gauss1.3.json",
-     "dens": "0.0005,0.06",
-     "tau": "3,80",
-     "pgen": "/home/jc/simcode2/out/p2generic/presets/pgen_v1s50.json"
+     "check": 0,
+     "p_std": 0.5,
+     "arch": "emitter_net"
     }
    },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/p2headL_g13.pt"
+   "rewritten": "2026-11-17: joint prior / intensity covariance (fine-tuned network; calibration without the removed scale / sigma factors); the earlier record is in git history"
   },
   "cal_sim_pass2": {
    "path": "calib/calib_emitter_pass2_sim.json",
-   "size": 2049,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "0ddbcc27fae3d9ee10e72d3a64d5c86196076cb1cf4eedd8db275cd4a4126a59",
+   "size": 1062,
+   "mtime": "2026-11-17T16:40:57+0100",
+   "sha256": "ba6fed9b2941ee024b06a0e8e1e62b3d7ecd5ffeed1821440705724af4c40b05",
    "params": {
-    "kap_p": 0.8945592641830444,
-    "kap_I2": 0.7926290588403049,
-    "sig_a": 1.4126241928985401,
-    "sig_g": 0.41589644697367406,
     "n": 32239,
-    "kap_p_raw": 0.8945196270942688,
-    "kap_I2_raw": 0.7926039058284609,
     "box": 1.5,
     "mix_T": 1.0,
     "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13g/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13g/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13g/fe); base calib/calib_p2L.json",
@@ -240,9 +247,10 @@
     "prior_off": [
      -0.0006678147474303842,
      0.00018875191744882613
-    ]
+    ],
+    "note_2026_11_17": "the per-photon-bin solve scales kap_p / kap_I2 and the sigma factors sig_a / sig_g / sig_ph were removed: the emitter networks give one joint prior / intensity covariance (simcode/emitter/model.EmitterNet) and the solve reports the posterior sd (analysis/sigma_joint/)"
    },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_p2L_g13.json"
+   "rewritten": "2026-11-17: joint prior / intensity covariance (fine-tuned network; calibration without the removed scale / sigma factors); the earlier record is in git history"
   }
  },
  "_exported": {

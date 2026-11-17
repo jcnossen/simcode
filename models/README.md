@@ -3,7 +3,7 @@
 This directory is where the code looks up the names of networks and calibrations (`simcode/config.py`: `MODELS` =
 `<repo>/models`; there is no setting to move it: give a path, or a model folder with a `model.json`, to use files elsewhere).
 
-**Network weights (`*.pt`) are not in git.** They are assets of the GitHub release `models-v1` of the repository; fetch,
+**Network weights (`*.pt`) are not in git.** They are assets of the GitHub release `models-v2` of the repository (2026-11-17: the emitter networks fine-tuned with the joint prior / intensity covariance; `models-v1` = before); fetch,
 verify (sha256) and unpack them with
 
 ```bash
@@ -47,8 +47,8 @@ One model = four networks, trained on one averaged in-situ PSF, and their calibr
 
 | model | PSF it was trained on | used for | files (sha256, first 16 hex digits) |
 |---|---|---|---|
-| `m1809` (default) | `m1809/calib_1809_2_psf_v2.psf.zip` | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `detector_pass1.pt` 18bd16f99613a67b, `emitter_pass1.pt` ddc965bc5bd5a4a4, `detector_pass2.pt` 92d4487a7fe8ced5, `emitter_pass2.pt` f341ef1d8de22f0f |
-| `g13` | `g13/calib_gauss1.3.psf.zip` | the preprint-condition simulations (Gaussian PSF) | `g13/`: `detector_pass1.pt` 7a6130f3d34ca111, `emitter_pass1.pt` cbd17c8b098ccb3e, `detector_pass2.pt` d1037970932898d3, `emitter_pass2.pt` 7e23fbd57c05e2f2 |
+| `m1809` (default) | `m1809/calib_1809_2_psf_v2.psf.zip` | the 1809/2 movie; the realistic-PSF paper simulations | `m1809/`: `detector_pass1.pt` 18bd16f99613a67b, `emitter_pass1.pt` 92ab26c0fd0799cd, `detector_pass2.pt` 92d4487a7fe8ced5, `emitter_pass2.pt` 5329890b80311d02 |
+| `g13` | `g13/calib_gauss1.3.psf.zip` | the preprint-condition simulations (Gaussian PSF) | `g13/`: `detector_pass1.pt` 7a6130f3d34ca111, `emitter_pass1.pt` 17be7aa32028e232, `detector_pass2.pt` d1037970932898d3, `emitter_pass2.pt` 0e23e4a66f8e6e06 |
 
 Sizes: detector 7.3 MB, emitter network 5.5 MB, pass-2 detector 7.3 MB, pass-2 emitter network 5.6 MB. Both models have the
 pass-1 head with the 3D position prior (z output) and a GENERIC pass 2 (recipe below: accepts any measured two-orientation
@@ -113,6 +113,19 @@ flags whose defaults differ between the passes (lr, seed, steps, ...) take the d
 trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,2500`, `--arch` (the network tag), `--paper 1`,
 `--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.
 Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
+**Joint prior / intensity covariance (2026-11-17).** The shipped emitter networks are the networks of the recipe above fine-tuned
+with the joint (x, y, I_1..6) Gaussian NLL (the 12 new output rows C start at zero, i.e. at the recipe's network; detectors frozen):
+```bash
+# pass 1 (detector of the pass-1 stage; the recipe flags of the pass-1 emitter network)
+python -m simcode.emitter.train --out runs/S/emitter_joint --init runs/S/emitter/final.pt --detector runs/S/detector/final.pt --steps 12000 \
+    --batch 16 --lr 1e-4 --pct 0.1 --ch 96 --tau 15,80 --hold <heldout5.pt> --pair_frac 0.25 --dens 0.0005,0.04 --med 40,2500 --nnw 1 \
+    --seed 101 --w_mr 2.0 --w_slope 50.0 --bf16 1 --eval_every 2000 --ckpt_every 4000 --calib $C
+# pass 2 (the detector the pass-2 emitter network was trained with, runs/S/detector_pass2/final.pt)
+python -m simcode.emitter.train --out runs/S/emitter_pass2_joint --init runs/S/emitter_pass2_final/final.pt --detector runs/S/detector_pass2/final.pt \
+    --steps 20000 --batch 16 --lr 1e-4 --pct 0.05 --w_mr 2.0 --w_slope 50.0 --seed 141 --eval_every 5000 --ckpt_every 5000 --no_illum 0 \
+    --hold_v1 0 --calib $C
+# -> emitter_pass1.pt, emitter_pass2.pt (final.pt); g13: + --dens 0.0005,0.06 --tau 3,80 (pass 2 too). Paper branch: analysis/sigma_joint/train.sh
+```
 Calibrations: `python -m simcode.processing.gate_dump` of the new networks on the gate scenes rendered with the model's PSF
 (`--calib $C --gate_dir <gate npz folder>`), then `python -m simcode.calibration.fit_cal_set` (prior_off; templates: `calib/template_calib_emitter_pass{1,2}_sim.json` above), then the
 sigma rescale on a simulated movie with ground truth (`analysis/psf3d_nets/sigcal.py fit`, paper branch).

@@ -16,23 +16,23 @@ folder, e.g. python -m simcode.run --model <dest>/m1809 (the folder needs the fi
 """
 import argparse, hashlib, os, shutil, sys, tempfile, urllib.request, zipfile
 
-TAG = 'models-v1'
+TAG = 'models-v2'          # 2026-11-17: the emitter networks with the joint prior / intensity covariance (v1: before)
 BASE_URL = f'https://github.com/jcnossen/simcode/releases/download/{TAG}'
 # asset -> sha256 of the zip; members (relative to the models folder) -> sha256 of the file
 ASSETS = {
-    'm1809': ('simcode_model_m1809.zip', '90af461ff3a2998c1651a30a5f5ebf3e87a278e3e71d0f8b623ac4358ecfb593'),
-    'g13': ('simcode_model_g13.zip', '97dace29f2a0f5be44a26fda2c58ef5df18667066c0fcdf038067112c29f0896'),
+    'm1809': ('simcode_model_m1809.zip', 'd0d8da735fa24202f4c5f1e4c8e7cab12f542165e37551f67f78acc992fe2d84'),
+    'g13': ('simcode_model_g13.zip', '66e4abfafbd17af98b2919aed83f64cc2b9f31f9b5dd90ec2a69bbeb78d26d29'),
     'pretrain': ('simcode_pretrain.zip', 'f22fd0e73dbf926d9fe93a8e36a3c00c26b00fe526c1239e8163df07c97fe7d6'),
 }
 MEMBERS = {
     'm1809': {'m1809/detector_pass1.pt': '18bd16f99613a67b3c73d543833397b57deeb278b5568083d15731231428ca04',
-              'm1809/emitter_pass1.pt': 'ddc965bc5bd5a4a4480b7aef2cb2639b5e2592be5011e4cf6de6a265b1e1b4c7',
+              'm1809/emitter_pass1.pt': '92ab26c0fd0799cd0c76088fa9763065199dac3ee00d19a7005b53b4f48514d4',
               'm1809/detector_pass2.pt': '92d4487a7fe8ced56aec492e2972c8a00bd95e4cf43515714517df85bba51a07',
-              'm1809/emitter_pass2.pt': 'f341ef1d8de22f0f38f924e3e9ce430d1afaa909686dbf9386e9dfb8de2d7afd'},
+              'm1809/emitter_pass2.pt': '5329890b80311d0288b9a5e305621fdb0caf7df9297320fe4413a79ce441a1cb'},
     'g13': {'g13/detector_pass1.pt': '7a6130f3d34ca111bd8d79b0be3e7caaf75f4ce41203ac249b43762f5884d30c',
-            'g13/emitter_pass1.pt': 'cbd17c8b098ccb3e0c324e6e3d1ac52b2e3556f2ea638ec3d43c077e984987ff',
+            'g13/emitter_pass1.pt': '17be7aa32028e232598b10f70d3bf7f7ba823c8e5ea77d6d4a9888d4e676b5b6',
             'g13/detector_pass2.pt': 'd1037970932898d304ed7ffbd6867b42928f08e047a96ade0c13d5d52de3e2ea',
-            'g13/emitter_pass2.pt': '7e23fbd57c05e2f24b571facd155c66509ad1e5850d4baea95b5c6e7b353652e'},
+            'g13/emitter_pass2.pt': '0e23e4a66f8e6e06232a19bdc597446a6eaea65c1ed7eaaed932323a9474d085'},
     'pretrain': {'pretrain_detector_pass1.pt': '3bfc6c64a75e63d8c7a7631d07810cb6a285453a6bc7578965ac1213514b756e',
                  'pretrain_emitter_pass1.pt': '238cea16191109f55aa6053f31aa01c9f81b97f4f2e2f08281c478d6c6c9fea6'},
 }
