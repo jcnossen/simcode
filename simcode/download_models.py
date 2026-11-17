@@ -17,7 +17,8 @@ folder, e.g. python -m simcode.run --model <dest>/m1809 (the folder needs the fi
 import argparse, hashlib, os, shutil, sys, tempfile, urllib.request, zipfile
 
 TAG = 'models-v2'          # 2026-11-17: the emitter networks with the joint prior / intensity covariance (v1: before)
-BASE_URL = f'https://github.com/jcnossen/simcode/releases/download/{TAG}'
+BASE_URL = f'https://github.com/qnano/simcode/releases/download/{TAG}'
+MIRROR_URL = f'https://github.com/jcnossen/simcode/releases/download/{TAG}'   # the same files (mirror)
 # asset -> sha256 of the zip; members (relative to the models folder) -> sha256 of the file
 ASSETS = {
     'm1809': ('simcode_model_m1809.zip', 'd0d8da735fa24202f4c5f1e4c8e7cab12f542165e37551f67f78acc992fe2d84'),
@@ -97,7 +98,7 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__)
     ap.add_argument('--set', nargs='+', default=list(DEFAULT_SETS), help=f'sets: {", ".join(ASSETS)} or all (default: {" ".join(DEFAULT_SETS)})')
     ap.add_argument('--dest', default=config.MODELS, help='models folder to unpack into (default: the repository\'s models/)')
-    ap.add_argument('--base-url', default=BASE_URL, help=f'where the assets are (default: the GitHub release {TAG})')
+    ap.add_argument('--base-url', default=BASE_URL, help=f'where the assets are (default: the GitHub release {TAG} of qnano/simcode; the same files are mirrored at {MIRROR_URL})')
     ap.add_argument('--force', action='store_true', help='download even if the files are present')
     a = ap.parse_args(argv)
     sets = list(ASSETS) if 'all' in a.set else a.set

@@ -34,7 +34,7 @@ in-situ calibrations of all paper movies, the development notes in `docs/` and t
 ## Installation
 
 ```bash
-git clone https://github.com/jcnossen/simcode && cd simcode
+git clone https://github.com/qnano/simcode && cd simcode
 pip install -e .                                     # numpy, scipy, torch, torch-psf, dme, ... (pyproject.toml)
 python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v1)
 python -m simcode.download_models --set pretrain     # only to train a new model: the pretraining networks
