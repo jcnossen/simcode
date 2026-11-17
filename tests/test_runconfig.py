@@ -111,15 +111,15 @@ def gpu_rerun(data_root, keep=''):
         A = RC.load(f'{d}/a')
         assert A['status'] == 'done' and A['movie']['chunks'] == [0, 6000] and A['model']['name'] == 'm1809' and A['code']['git_commit']
         assert all(len(v['sha256']) == 64 for v in A['model']['files'].values()) and len(A['calib']['sha256']) == 64 and len(A['movie']['parts'][0]['sha256']) == 64
-        assert A['selection']['locs_p2']['counts']['n_rows'] > 0 and A['pattern']['angles']['0']['pitch_px'] > 0 and A['environment']['torch'] == torch.__version__
+        assert A['selection']['locs_p2_net']['counts']['n_rows'] > 0 and A['pattern']['brightness_noise']['c'] > 0 and A['pattern']['angles']['0']['pitch_px'] > 0 and A['environment']['torch'] == torch.__version__
         subprocess.run(py + ['--config', f'{d}/a/run_config.json', '--out', f'{d}/b'], check=True, env=env, stdout=subprocess.DEVNULL)
         B = RC.load(f'{d}/b')
         assert B['rerun_of']['sha256'] == RC.sha256(f'{d}/a/run_config.json')
         fs = sorted(f for f in os.listdir(f'{d}/a') if f.endswith('.npz'))
-        assert len(fs) >= 8                                  # 8 chunk files
+        assert len(fs) >= 6                                  # 6 chunk files (pass1, pass2_est, pass2_est2 of 2 chunks)
         for f in fs:
             bad = compare_files(f'{d}/a/{f}', f'{d}/b/{f}', skip=('pattern',)); assert not bad, (f, bad)
-        for f in ('locs_p1.hdf5', 'locs_p2.hdf5'):           # the tables
+        for f in ('locs_p1_net.hdf5', 'locs_p1_solve.hdf5', 'locs_p2_net.hdf5', 'locs_p2_solve.hdf5'):           # the four tables
             assert RC.arrays_sha256(f'{d}/a/{f}') == RC.arrays_sha256(f'{d}/b/{f}'), f
         Pa, Pb = torch.load(f'{d}/a/pattern_est.pt'), torch.load(f'{d}/b/pattern_est.pt')
         assert all(np.array_equal(np.asarray(Pa[k]), np.asarray(Pb[k])) for k in Pa)
