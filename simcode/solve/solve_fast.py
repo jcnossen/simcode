@@ -11,9 +11,8 @@ same cmult / cang nuisance covariance and log det, same outputs), restructured f
     explicit inverse + products
   * the final covariance (pinv of J^T J) only for the rows that are returned (best kinetic start per start), by
     Cholesky inverse with an SVD-pinv fallback for ill-conditioned rows
-kin_gate (exact): the kinetic model is only selected if q0 - q1 > thr; q1 >= 0 (chi^2 >= 0 and log det Sigma(p) -
-  log det Sigma >= 0 since Sigma(p) >= Sigma), so rows with min_h q0 <= thr - 1e-3 can never select it -> the kinetic fits
-  are run only for the other rows.
+Both kinetic models are fitted for every row and averaged (solve.model_average; 2026-11-17: the selection threshold and its
+  kin_gate shortcut were removed).
 compile: 'auto' | 'on' | 'off' (simcode/util/compile.py; the compiled LM step is the same code).
 (2026-11-14) The approximate options (per-row early stop tol, covariance freezing freeze_cov, start pruning prune / prune_k,
 cov_mode) were removed: no production or paper run used them.
@@ -209,59 +208,23 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, 
 
 
 @torch.no_grad()
-def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0,
+def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0,
                           cang=0.0, compile='off'):
-    """as solve.fringe_posterior (same outputs); options see the module doc"""
-    from simcode.solve.solve import start_offsets
+    """as solve.fringe_posterior (same outputs; the posterior over the fringe starts and the kinetic model is solve.model_average)"""
+    from simcode.solve.solve import start_offsets, model_average, kin_models
     dr = start_offsets(pt, r0, bases, nf)
-    n, H = dr.shape[:2]; dev = I.device
     kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, compile=compile)
-    o0 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw)
-    ar = torch.arange(n, device=dev)
-    b0 = o0['nll'].argmin(1); q0 = o0['nll'][ar, b0]
-    need = q0 > thr - 1e-3                                                     # kin_gate (module doc)
-    o1 = {k: v.clone() if torch.is_tensor(v) else v for k, v in o0.items()}
-    o1['nll'] = torch.full_like(o0['nll'], float('inf'))
-    o1['dof'] = torch.full_like(o0['dof'], float(T + 2 - 5))
-    if need.any():
-        iN = torch.nonzero(need)[:, 0]
-        s1 = pattern_solve_all_fast(I[iN], Sig[iN], r0[iN], sp[iN], pt[iN], dr[iN], Cj[iN], kinetics=True, **kw)
-        for k in ('r', 's', 'nll', 'mu') + (('chi2',) if 'chi2' in o0 else ()):
-            o1[k][iN] = s1[k]
-    b1 = o1['nll'].argmin(1)
-    q1 = o1['nll'][ar, b1]; use = (q0 - q1) > thr
-    R = torch.where(use[:, None, None], o1['r'], o0['r']); S = torch.where(use[:, None, None], o1['s'], o0['s'])
-    Q = torch.where(use[:, None], o1['nll'], o0['nll'])
-    bm = torch.where(use, b1, b0)
-    r_map = R[ar, bm]; s_map = S[ar, bm]; q = Q[ar, bm]
-    Qs, order = Q.sort(1)
-    Rs = R.gather(1, order[..., None].expand(-1, -1, 2)); Ss = S.gather(1, order[..., None].expand(-1, -1, 2))
-    Dm = ((Rs[:, :, None] - Rs[:, None, :]) ** 2).sum(-1).sqrt()              # cdist without the matmul path
-    lower = torch.tril(torch.ones(H, H, device=dev, dtype=torch.bool), -1)
-    dup = ((Dm < dedup) & lower[None]).any(2)
-    dup |= ~torch.isfinite(Qs)                                                 # pruned starts: weight 0
-    Qm = torch.where(dup, torch.full_like(Qs, float('inf')), Qs)
-    w = torch.exp(-(Qm - Qs[:, :1]) / (2 * temp)); w = w / w.sum(1, keepdim=True)
-    sec = torch.where(dup[:, 1:], torch.full_like(Qs[:, 1:], float('inf')), Qs[:, 1:]).min(1).values
-    dnll = (sec - Qs[:, 0]) / 2
-    Rz = torch.where(w[..., None] > 0, Rs, torch.zeros_like(Rs)); Sz = torch.where(w[..., None] > 0, Ss, torch.zeros_like(Ss))
-    r_pm = (w[..., None] * Rz).sum(1)
-    spread = (w[..., None] * (Rz - r_map[:, None]) ** 2).sum(1).sqrt()
-    spread_pm = (w[..., None] * (Rz - r_pm[:, None]) ** 2).sum(1).sqrt()
-    out = dict(r=r_map, s=s_map, q=q, dof=torch.where(use, o1['dof'], o0['dof']), kin=use, dnll=dnll, R=Rs, S=Ss, w=w,
-               r_pm=r_pm, spread=spread, spread_pm=spread_pm, s_pm=(w[..., None] * Sz ** 2).sum(1).sqrt())
-    out['mu'] = torch.where(use[:, None, None], o1['mu'], o0['mu'])[ar, bm]
-    if cmult > 0 or cang > 0:
-        out['q_nll'] = q
-        out['q'] = torch.where(use[:, None], o1['chi2'], o0['chi2'])[ar, bm]
-    return out
+    o0 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw) if kin != 'kinetic' else None
+    o1 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, **kw) if kin != 'none' else None
+    return model_average(kin_models(kin, o0, o1), temp=temp, dedup=dedup)
 
 
 @torch.no_grad()
-def solve_emitters_fast(o, pt_win, b, cal, nf=1, thr=9.21, **opts):
+def solve_emitters_fast(o, pt_win, b, cal, nf=1, kin='average', **opts):
     """simcode.solve.solve.solve_emitters (same calibration keys, same outputs) with the fast fringe posterior"""
     from simcode.solve import solve as SV
     I, Sig, r0, sp, ph, Cj = SV.solve_inputs(o, cal, mm=_mm)
-    s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
-                              cmult=float(cal['cmult']), cang=float(cal['cmult_ang']), **opts)
+    c, ca = SV.brightness_noise(cal)
+    s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'],
+                              cmult=c, cang=ca, **opts)
     return SV.finish(s, I, Sig, r0, sp)

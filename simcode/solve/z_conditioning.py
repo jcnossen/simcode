@@ -87,3 +87,16 @@ def pass1_z_columns(P1, cal1, ws, xd, yd, r, s):
     Z = z_from_pass1(p1, j, r.float(), s.float())
     Z['p1_row'] = torch.as_tensor(j, device=r.device)
     return Z
+
+
+def network_columns(P1, cal1, cal2, ws, xd, yd, xp, yp, sp):
+    """the pass-2 emitter network's own result (2026-11-17: the pipeline's result table locs_p2_net): x_net, y_net = the network
+    position (global px; the pass-2 calibration's prior_off removed, as the solve's prior centre), sx_net, sy_net = its sd (the
+    position block of the joint (x, y, I_1..6) covariance), z_net, sz_net, cov_xz_net, cov_yz_net = the linked pass-1 candidate's
+    z prior conditioned on x_net, y_net with that sd (pass1_z_columns; NaN without a pass-1 partner). P1, cal1, ws, xd, yd: as
+    pass1_z_columns; cal2 = the pass-2 solve calibration (dict); xp, yp [n2] network x, y (global px), sp [n2,2] = exp(lsxy)."""
+    po = torch.as_tensor(cal2['prior_off'], device=xp.device, dtype=torch.float32)
+    r = torch.stack([xp.float(), yp.float()], 1) - po[None]
+    Z = pass1_z_columns(P1, cal1, ws, xd, yd, r, sp.float())
+    return dict(x_net=r[:, 0], y_net=r[:, 1], sx_net=sp[:, 0].float(), sy_net=sp[:, 1].float(), z_net=Z['z_hy0'], sz_net=Z['sz_cal'],
+                cov_xz_net=Z['cov_xz'], cov_yz_net=Z['cov_yz'])

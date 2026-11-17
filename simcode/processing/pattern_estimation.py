@@ -32,6 +32,10 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
   4. m_a: unbiased cross-cycle estimator on pairs of photon-disjoint consecutive windows (w, w + 6) of the same clean
      emitter: m^2 = sum Re(Z_w conj(Z_w+6) exp(i (eps diff))) / sum A_w A_w+6 (independent noise, position-error free).
   2-4 are iterated (`n_iter`).
+  5. brightness noise (2026-11-17; estimate_brightness_noise): c (relative per-frame scatter) and c_a (shared within each
+     orientation) of the intensity covariance Sigma = Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (per angle) of the solve, from
+     the residuals of the network intensities of the same clean emitter-windows against the estimated pattern
+     (simcode/solve/brightness_noise_fit.py); stored in the pattern (cmult, cmult_ang) and used by every solve of the run.
 """
 import math
 import numpy as np, torch
@@ -273,8 +277,9 @@ def fit_depth(D, sel, K, psi, rel, eps_knots, kf, verbose=print, pbins=(0, 1000,
     return np.array([res[0]['m'], res[1]['m']]), res
 
 
-def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print):
-    """full estimation from pass-1 rows R (dict of concatenated arrays). Returns (pattern dict, info)."""
+def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print, clean_rows=False):
+    """full estimation from pass-1 rows R (dict of concatenated arrays). Returns (pattern dict, info) (+ the indices into R of
+    the clean emitter-windows with clean_rows)."""
     D = select(R, nn_min=nn_min, min_phot=min_phot)
     verbose(f'pattern estimation: {len(D["w"])} localizations, on-through {D["on"].sum()}, clean (nn >= {nn_min}, '
             f'>= {min_phot:.0f} ph) {D["clean"].sum()}')
@@ -306,4 +311,29 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
              note='estimated from pass-1 pattern-free localizations (simcode/processing/pattern_estimation.py)')
     info = dict(k=kinfo, hist=hist, depth=dinfo, depth_vs_nn=nn_diag, eps_se=einfo['se'].tolist(), eps_n=einfo['n'].tolist(),
                 n_clean=int(sel.sum()), n_on=int(D['on'].sum()), n=int(len(D['w'])))
+    if clean_rows: return P, info, np.nonzero(R['out'].astype(bool))[0][sel]
     return P, info
+
+
+BN_NMAX = 120000      # clean emitter-windows used for the brightness-noise fit (evenly subsampled over the movie)
+
+
+def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print):
+    """step 5: brightness noise (c, c_a) of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
+    load_pass1_rows, which carry each row's chunk / row), the estimated pattern P and the model's pass-1 solve calibration cal
+    (path or dict, without c). -> (c, c_a, info)"""
+    import json
+    from simcode.solve import brightness_noise_fit as BN
+    cal = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
+    idx = np.asarray(clean)
+    if len(idx) > nmax: idx = idx[np.linspace(0, len(idx) - 1, nmax).round().astype(np.int64)]
+    if len(idx) < 2000: raise ValueError(f'brightness noise: only {len(idx)} clean emitter-windows (>= 2000 needed)')
+    by = {int(f0): R['row'][idx[R['chunk'][idx] == f0]] for f0 in np.unique(R['chunk'][idx])}
+    rows = BN.chunk_rows(out, P, by)
+    th, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
+    q50 = BN.q_table(rows, BN.with_theta(cal, th))
+    verbose(f'  brightness noise: c {th[0]:.4f}, c_a {th[1]:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
+            + ' '.join(f'{lo:g}:{q:.2f}' for lo, q in q50))
+    return th[0], th[1], dict(c=th[0], c_a=th[1], n_rows=int(len(idx)), n_clean=int(len(clean)), hist=hist, q50_by_photons=q50,
+                              rule='clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), '
+                                   'non-kinetic solve with the estimated pattern; simcode/solve/brightness_noise_fit.py')

@@ -252,7 +252,7 @@ class LocalizationPipeline:
         return self._stage('report', force, redo)
 
     def run_dir(self):
-        """directory of the processing run (simcode.run output: locs_p1 / locs_p2 tables, run_config.json)"""
+        """directory of the processing run (simcode.run output: the four tables locs_p{1,2}_{net,solve}, run_config.json)"""
         S = self.summary('process')
         if S is None: raise FileNotFoundError(f'{self.c["name"]}: not processed yet ({self.out}/process/summary.json is missing); call process() or run()')
         return S['run']
@@ -264,12 +264,14 @@ class LocalizationPipeline:
         return L
 
     def dataset_pass1(self, **kw):
-        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (the paper's selection: ds.select());
-        with process.cycle_aligned_only only the windows that start at a cycle boundary"""
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (kind='net': the emitter network's output,
+        the default; kind='solve': the pattern solve; the paper's selection: ds.select()); with process.cycle_aligned_only only
+        the windows that start at a cycle boundary"""
         return self._dataset(1, **kw)
 
     def dataset_pass2(self, **kw):
-        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset"""
+        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset (kind='net', the
+        default = the result table locs_p2_net; kind='solve': the pattern solve)"""
         return self._dataset(2, **kw)
 
     def _stage(self, name, force=False, redo=False):

@@ -191,7 +191,7 @@ def test_config_names():
     assert S['_default'] in sets and config.model_set()['name'] == S['_default']
     for n in sets:
         N = config.model_set(n)
-        assert all(k in N for k in ('detector', 'emitter', 'cal_sim', 'detector_pass2', 'emitter_pass2', 'cal_sim_pass2', 'sig_u', 'psf'))
+        assert all(k in N for k in ('detector', 'emitter', 'cal_sim', 'detector_pass2', 'emitter_pass2', 'cal_sim_pass2', 'psf')) and 'sig_u' not in N
         assert not set(N) & set(config.REMOVED_KEYS), (n, N)                        # no real-data sigma calibrations (removed 2026-11-17)
         for k in ('cal_sim', 'cal_sim_pass2'):                                       # the calibration json files are in the repository
             assert os.path.exists(os.path.join(config.REPO, 'models', N[k])), (n, N[k])

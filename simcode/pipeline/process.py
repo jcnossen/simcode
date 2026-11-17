@@ -60,7 +60,7 @@ def cycle_subset(out):
     6c + 3 mix two acquisition cycles (assumption 1); the rows are selected at load (LocalizationPipeline.dataset_pass1 / 2)"""
     from simcode.dataset import Dataset
     r = {}
-    for n, p in (('locs_p1', 1), ('locs_p2', 2)):
+    for n, p in (('locs_p1_net', 1), ('locs_p2_net', 2)):
         try: L = Dataset.from_run(out, pass_=p, info=False)
         except FileNotFoundError: continue
         r[n] = int((L['frame'] % 6 == 0).sum())
@@ -87,7 +87,7 @@ def run(ds):
     if pit:
         lo, hi = ds.c['pattern']['pitch_px']
         chk.append(dict(name='estimated pitch inside pattern.pitch_px', value=pit, ok=all(lo < v < hi for v in pit)))
-    n = S.get('locs_p2', S.get('locs_p1', {})).get('n_rows', 0)
+    n = S.get('locs_p2_net', {}).get('n_rows', 0)
     chk.append(dict(name='rows > 0', value=n, ok=n > 0))
     r['pattern_pitch_px'] = pit
     return dict(r, checks=chk)

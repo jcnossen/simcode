@@ -1,9 +1,10 @@
 """
 CPU tests of the localization table and the evaluation helpers on synthetic rows (no GPU, no models, no raw data).
 Run: python tests/test_tables.py (or pytest tests).
-  strict   table columns (no strict_u / strict); select(table) = p >= 0.63, inside the crop, max(sx, sy) * px_nm <= 12 nm
-           (max_precision_nm / min_score / in_region / crop / px_nm); the crop of the run is read from its pass-1 file and
-           moves the selection region and the sigma-rescale tiles; the HDF5 table file round trips and the selection is applied at load
+  tables   the four tables (net / solve x pass 1 / 2): columns, same rows in both kinds, p1_index; select(table) = p >= 0.63,
+           inside the crop, max(sx, sy) * px_nm <= 12 nm (max_precision_nm / min_score / in_region / crop / px_nm); the crop of
+           the run is read from its pass-1 file; the HDF5 table file round trips and the selection is applied at load; the
+           default table of a run directory is locs_p2_net; no sigma rescale
   drift    row selection of the drift estimate (simcode/util/drift.drift_rows; DME itself is not run)
   FRC      identical sets never drop below 1/7; block halves; a blurred point pattern resolves near its blur
 """
@@ -14,70 +15,101 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from simcode import table as SP
 
 
-def _run_dir(d, n=1000, crop=(5, 5, 110), seed=0, lo=0.0, hi=120.0):
-    """a fake pipeline output directory: one pass-1 file (only its crop entry is used) and one pass-2 chunk of n rows"""
+def _run_dir(d, n=1000, crop=(5, 5, 110), seed=0, lo=0.0, hi=120.0, z=False):
+    """a fake pipeline output directory: one pass-1 chunk (pass1_0.npz: crop, out; the pass-1 solve rows pass2_est_0.npz) and
+    one pass-2 chunk of n rows (pass2_est2_0.npz) with the solve and the network columns"""
     r = np.random.default_rng(seed)
-    w = np.sort(r.integers(0, 2000, n)) * 3
-    R = dict(wstart=w, frame=w + r.uniform(1, 4, n), x_hy0=r.uniform(lo, hi, n), y_hy0=r.uniform(lo, hi, n),
-             sx_cal=r.uniform(0.02, 0.2, n).astype(np.float32), sy_cal=r.uniform(0.02, 0.2, n).astype(np.float32),
-             phot=r.uniform(200, 3000, n).astype(np.float32), I_net=r.uniform(0, 500, (n, 6)).astype(np.float32),
-             p=r.uniform(0.3, 1, n).astype(np.float32), q_dof=r.uniform(0.5, 2, n).astype(np.float32), kin_hy=r.random(n) < 0.3,
-             x_prior=r.uniform(lo, hi, n), y_prior=r.uniform(lo, hi, n))
+    def rows(n, p2):
+        w = np.sort(r.integers(0, 2000, n)) * 3
+        R = dict(wstart=w, frame=w + r.uniform(1, 4, n), x_hy0=r.uniform(lo, hi, n), y_hy0=r.uniform(lo, hi, n),
+                 sx_cal=r.uniform(0.02, 0.2, n).astype(np.float32), sy_cal=r.uniform(0.02, 0.2, n).astype(np.float32),
+                 phot=r.uniform(200, 3000, n).astype(np.float32), I_net=r.uniform(0, 500, (n, 6)).astype(np.float32),
+                 p=r.uniform(0.3, 1, n).astype(np.float32), q_dof=r.uniform(0.5, 2, n).astype(np.float32), kin_hy=r.random(n).astype(np.float32),
+                 x_prior=r.uniform(lo, hi, n), y_prior=r.uniform(lo, hi, n))
+        R.update(x_net=R['x_prior'] - 0.01, y_net=R['y_prior'] + 0.01, sx_net=r.uniform(0.02, 0.2, n).astype(np.float32),
+                 sy_net=r.uniform(0.02, 0.2, n).astype(np.float32))
+        if z:      # 3D networks
+            for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_net', 'sz_net', 'cov_xz_net', 'cov_yz_net', 'z_prior'):
+                R[k] = r.normal(0, 1, n).astype(np.float32)
+        if p2: R['p1_row'] = np.where(r.random(n) < 0.9, r.integers(0, 2 * n, n), -1)
+        else: R['dnll'] = r.uniform(0, 10, n).astype(np.float32)
+        return R
+    out = np.zeros(2 * n, bool); out[r.choice(2 * n, n, replace=False)] = True
+    np.savez(f'{d}/pass1_0.npz', crop=np.array(crop), out=out)
+    np.savez(f'{d}/pass2_est_0.npz', **rows(n, False))
+    R = rows(n, True)
     np.savez(f'{d}/pass2_est2_0.npz', **R)
-    np.savez(f'{d}/pass1_0.npz', crop=np.array(crop))
+    R['_out'] = out
     return R
+
+
+SOLVE_ONLY = ('q_dof', 'kin', 'dnll')
+COMMON = ('frame', 't', 'x', 'y', 'sx', 'sy', 'photons', 'I', 'p', 'x_prior', 'y_prior', 'z', 'sz', 'cov_xz', 'cov_yz', 'z_prior',
+          'good', 'sel', 'disjoint')
 
 
 def test_strict_table():
     with tempfile.TemporaryDirectory() as d:
-        _run_dir(d)
+        R = _run_dir(d, z=True)
         assert SP.run_crop(d) == (5.0, 5.0, 110.0)
-        T, info = SP.build_table(d, 'est2')
-        for k in ('frame', 't', 'x', 'y', 'sx', 'sy', 'photons', 'I', 'p', 'q_dof', 'kin', 'dnll', 'x_prior', 'y_prior', 'good', 'sel', 'disjoint'):
+        T, info = SP.build_table(d, 'est2', kind='solve')
+        for k in COMMON + SOLVE_ONLY + ('p1_index',):
             assert k in T and len(T[k]) == 1000, k
-        assert 'strict_u' not in T and 'strict' not in T and 'u_max' not in info      # the u rule and the strict product are gone
+        assert 'strict_u' not in T and 'strict' not in T and 'u_max' not in info and 'sig_u' not in info      # removed rules / rescale
+        assert np.array_equal(T['x'], R['x_hy0']) and np.array_equal(T['sx'], R['sx_cal']) and T['kin'].dtype == np.float32
+        Tn, inn = SP.build_table(d, 'est2')                                             # kind 'net' (the default)
+        assert not [k for k in SOLVE_ONLY if k in Tn] and all(k in Tn for k in COMMON) and inn['kind'] == 'net'
+        assert np.array_equal(Tn['x'], R['x_net']) and np.array_equal(Tn['sy'], R['sy_net']) and np.array_equal(Tn['z'], R['z_net'].astype(np.float64))
+        assert np.array_equal(Tn['frame'], T['frame']) and np.array_equal(Tn['p'], T['p'])                # same rows, same order
+        # p1_index: the linked pass-1 row in the pass-1 tables (the 'out' rows of pass1_0.npz); -1 for none / not stored
+        rank = np.cumsum(R['_out']) - 1
+        exp = np.where((R['p1_row'] >= 0) & R['_out'][np.maximum(R['p1_row'], 0)], rank[np.maximum(R['p1_row'], 0)], -1)
+        assert np.array_equal(T['p1_index'], exp) and np.array_equal(Tn['p1_index'], exp)
         inc = T['good'] & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115)
         assert np.array_equal(T['good'], T['p'] >= SP.P_GOOD) and info['n_good_crop'] == int(inc.sum())
         prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
         main = inc & (prec <= SP.SIGMA_MAX_NM)
         assert np.array_equal(SP.select(T), main) and 'sigma_max' not in info and info['n_main'] == int(main.sum())
+        assert abs(info['median_sigma_nm'] - np.median(prec[main])) < 1e-9
         assert 0 < main.sum() < inc.sum()                                               # the fixture straddles the threshold
         assert np.array_equal(SP.select(T, 8.0), inc & (prec <= 8.0))
         assert np.array_equal(SP.select(T, max_precision_nm=8.0, px_nm=100.0), inc & (prec / SP.PX_NM_DEFAULT * 100 <= 8.0))
         assert np.array_equal(SP.select(T, min_score=0.8), (T['p'] >= 0.8) & (T['x'] >= 5) & (T['x'] < 115) & (T['y'] >= 5) & (T['y'] < 115) & (prec <= 12))
         assert np.array_equal(SP.select(T, in_region=False), T['good'] & (prec <= 12))
         assert SP.select(T, None, None, False).all()
+        # pass 1: no p1_index
+        T1, i1 = SP.build_table(d, 'est', kind='net'); assert 'p1_index' not in T1 and len(T1['x']) == 1000
         # the table file: torch_psf Dataset HDF5; the selection at load
-        fn = SP.write_table(T, info, f'{d}/locs_p2')
-        assert fn == f'{d}/locs_p2.hdf5' and not [f for f in os.listdir(d) if 'sig' in f]       # no selection files
+        fn = SP.write_table(T, info, f'{d}/locs_p2_solve')
+        assert fn == f'{d}/locs_p2_solve.hdf5' and not [f for f in os.listdir(d) if 'sig' in f]       # no selection files
         from simcode.dataset import Dataset
         L = Dataset.load_table(fn, info=False); C = L.columns()
-        assert L.meta['crop'] == [5.0, 5.0, 110.0] and L.pixel_nm == SP.PX_NM_DEFAULT and L.meta['tag'] == 'est2'
+        assert L.meta['crop'] == [5.0, 5.0, 110.0] and L.pixel_nm == SP.PX_NM_DEFAULT and L.meta['tag'] == 'est2' and L.meta['kind'] == 'solve'
         eq = lambda k: np.array_equal(C[k], T[k], equal_nan=T[k].dtype.kind == 'f')
         assert all(eq(k) for k in T), [k for k in T if not eq(k)]
         assert np.array_equal(SP.select(C), main) and np.array_equal(L.mask().numpy(), main)
-    print('  ok table: columns, select (max_precision_nm, min_score, in_region), HDF5 table file, selection at load')
+        # the four tables of a run; the result table is locs_p2_net
+        res = SP.write_tables(d)
+        assert set(res) == set(SP.TABLES) and SP.DEFAULT_TABLE == 'locs_p2_net' and res['locs_p2_net'][0]['default']
+        assert all(os.path.exists(f'{d}/{n}.hdf5') and os.path.exists(f'{d}/{n}_info.json') for n in SP.TABLES)
+        L = Dataset.load(d)
+        assert L.meta['table'] == 'locs_p2_net' and L.meta['kind'] == 'net' and L.meta['pass'] == 2 and np.array_equal(L.columns()['x'], Tn['x'])
+        assert Dataset.from_run(d, pass_=1, kind='solve').meta['table'] == 'locs_p1_solve'
+    print('  ok table: net / solve columns, p1_index, select (max_precision_nm, min_score, in_region), HDF5 table file, the four tables')
 
 
 def test_strict_crop():
     with tempfile.TemporaryDirectory() as d:
-        R = _run_dir(d, crop=(0, 0, 40), lo=0.0, hi=60.0)                               # a simulation-like field, crop from the run
+        _run_dir(d, crop=(0, 0, 40), lo=0.0, hi=60.0)                                   # a simulation-like field, crop from the run
         assert SP.run_crop(d) == (0.0, 0.0, 40.0)
-        T, info = SP.build_table(d, 'est2')
-        inc = T['good'] & (T['x'] >= 0) & (T['x'] < 40) & (T['y'] >= 0) & (T['y'] < 40)
-        assert info['crop'] == [0.0, 0.0, 40.0] and info['n_good_crop'] == int(inc.sum())
-        prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
-        assert np.array_equal(SP.select(T, crop=(0.0, 0.0, 40.0)), inc & (prec <= 12)) and info['n_main'] == int((inc & (prec <= 12)).sum())
-        # per-tile rank (the sigma rescale's u): within one 10-px tile the rank follows sigma
-        ii = np.nonzero(inc)[0]; sig = 0.5 * (T['sx'] + T['sy']).astype(np.float64)
-        u = SP.tile_rank(T['x'][ii], T['y'][ii], sig[ii], (0.0, 0.0, 40.0))
-        t = SP.tile_of(T['x'][ii], T['y'][ii], (0.0, 0.0, 40.0)); k = np.nonzero(t == np.bincount(t).argmax())[0]
-        assert np.array_equal(np.argsort(u[k], kind='stable'), np.argsort(sig[ii][k], kind='stable')) and 0 < u.min() and u.max() < 1
-        # sigma rescale: only the ranked rows, by g(u)
-        with open(f'{d}/sigu.json', 'w') as f: f.write('{"u_mid": [0.0, 1.0], "g": [1.0, 2.0]}')
-        Tg, ig = SP.build_table(d, 'est2', sig_u=f'{d}/sigu.json')
-        assert np.allclose(Tg['sx'][ii], T['sx'][ii] * (1 + u).astype(np.float32)) and np.array_equal(Tg['sx'][~inc], T['sx'][~inc])
-    print('  ok strict crop: read from the run, selection region, tile ranks and the sigma rescale follow it')
+        for kind in ('net', 'solve'):
+            T, info = SP.build_table(d, 'est2', kind=kind)
+            inc = T['good'] & (T['x'] >= 0) & (T['x'] < 40) & (T['y'] >= 0) & (T['y'] < 40)
+            assert info['crop'] == [0.0, 0.0, 40.0] and info['n_good_crop'] == int(inc.sum())
+            prec = np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT
+            assert np.array_equal(SP.select(T, crop=(0.0, 0.0, 40.0)), inc & (prec <= 12)) and info['n_main'] == int((inc & (prec <= 12)).sum())
+        assert not hasattr(SP, 'tile_rank') and not hasattr(SP, 'model_sig_u')          # the sigma rescale g(u) is gone
+    print('  ok strict crop: read from the run, the selection region follows it')
 
 
 def test_drift_rows():

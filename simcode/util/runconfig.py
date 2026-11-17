@@ -5,8 +5,9 @@ directory were calculated. Written by simcode.run at the start (status 'running'
   format        'simcode.run_config/1'
   status        'running' | 'done' | 'failed' | 'reconstructed' (written afterwards for a run made before this record existed)
   settings      every argument of simcode.run after the defaults (movie, calibration, model, single files, crop, chunking,
-                selection thresholds, sigma rescale, table formats); file arguments as absolute paths
-  fixed         what is not an option: pass 2, window 6 / step 3, stored-candidate cut, p_good, fixed c, code path, compile
+                selection thresholds); file arguments as absolute paths
+  fixed         what is not an option: pass 2, window 6 / step 3, stored-candidate cut, p_good, the tables, the kinetic model
+                averaging, the brightness-noise estimate, code path, compile
                 mode, batch sizes, margin, pattern search range, strict crop / density anchors
   overrides     the in-memory overrides of simcode.pipeline.run_with_overrides (AUTO_WRAP), if any
   model         name, its definition (models.json entry), and per file: absolute path, size, sha256, modification time; for
@@ -16,8 +17,10 @@ directory were calculated. Written by simcode.run at the start (status 'running'
   code          package version, git commit, dirty flag, modified files, DME version / commit
   environment   python / numpy / torch / CUDA versions, GPU, host, platform (no user name, no e-mail)
   invocations   one entry per process that worked on the directory (resumed runs, one copy per GPU with --claim 1)
-  pattern       summary of the estimated pattern (pitch, angle, depth, phases, drift range) + sha256 of pattern_est.pt
-  selection     per table (locs_p1, locs_p2): the rule and the counts per rule
+  pattern       summary of the estimated pattern (pitch, angle, depth, phases, drift range, the brightness noise c / c_a used by
+                every solve of the run) + sha256 of pattern_est.pt
+  tables        the four tables of the run (simcode/table.py TABLES): name -> what it is; 'default' = the result table
+  selection     per table (locs_p1_net, locs_p1_solve, locs_p2_net, locs_p2_solve): the rule and the counts per rule
   counts, timing
   outputs       table files: size, arrays_sha256 (hash of the array contents: an .npz holds zip time stamps, so
                 the file hash differs between identical runs), written_by ('run' or 'steps[i]')
@@ -218,9 +221,9 @@ def model_file(path):
 
 def model_record(name, definition, files):
     """files: {role: absolute path} of the files actually used (detector, emitter, cal, detector_pass2, emitter_pass2, cal_pass2,
-    sig_u_pass1, sig_u_pass2)"""
+    )"""
     F = {k: model_file(v) for k, v in files.items() if v}
-    d = {k: config.resolve(v) for k, v in (definition or {}).items() if isinstance(v, str) and k not in ('name', 'psf', 'sig_u')}
+    d = {k: config.resolve(v) for k, v in (definition or {}).items() if isinstance(v, str) and k not in ('name', 'psf')}
     used = ('detector', 'emitter', 'detector_pass2', 'emitter_pass2')
     same = all(os.path.abspath(files[r]) == os.path.abspath(d[r]) for r in used if r in files and r in d)
     r = dict(name=name, definition=definition, files_are_the_models=bool(same), files=F)
@@ -278,6 +281,9 @@ def pattern_summary(out):
         r['angles'] = {a: dict(pitch_px=J['k'][a].get('pitch_px'), angle_deg=J['k'][a].get('angle_deg'), n=J['k'][a].get('n'),
                                depth=J.get('depth', {}).get(a, {}).get('m'), depth_se=J.get('depth', {}).get(a, {}).get('se')) for a in J.get('k', {})}
         r.update({k: J[k] for k in ('n', 'n_on', 'n_clean') if k in J})
+        if 'brightness_noise' in J:
+            B = J['brightness_noise']
+            r['brightness_noise'] = dict(c=B.get('c'), c_a=B.get('c_a'), n_rows=B.get('n_rows'), rule=B.get('rule'))
     except Exception as e:
         r['error'] = f'pattern_est.json: {type(e).__name__}: {e}'
     pt = os.path.join(out, 'pattern_est.pt')
@@ -302,15 +308,16 @@ def selection_summary(info):
                 main=dict(rule='p >= 0.63, inside the crop, max(sx, sy) * px_nm <= 12 nm (applied at load: Dataset.select)',
                           sigma_max_nm=g('sigma_max', 12.0), n=g('n_main')),
                 sel=dict(rule='phase-calibrated detection selection', n=g('n_sel')),
-                counts=dict(n_rows=g('n_rows'), n_good=g('n_good'), n_good_crop=g('n_good_crop')),
-                sig_u=g('sig_u') or '', drift=g('drift') or '', tag=g('tag'))
+                counts=dict(n_rows=g('n_rows'), n_good=g('n_good'), n_good_crop=g('n_good_crop')), median_sigma_nm=g('median_sigma_nm'),
+                drift=g('drift') or '', tag=g('tag'), kind=g('kind'))
 
 
 def results(out, written_by='run'):
     """pattern, selection, counts and outputs of a finished run directory (from the files on disk)"""
-    R = dict(pattern=pattern_summary(out), selection={}, counts={}, outputs={})
+    from simcode import table as SP
+    R = dict(pattern=pattern_summary(out), tables=dict(SP.TABLE_DOC, default=SP.DEFAULT_TABLE), selection={}, counts={}, outputs={})
     import glob
-    for name in ('locs_p1', 'locs_p2'):
+    for name in SP.TABLES:
         f = os.path.join(out, name + '_info.json')
         if os.path.exists(f): R['selection'][name] = selection_summary(json.load(open(f)))
         for q in sorted(glob.glob(os.path.join(out, name + '.hdf5'))):
@@ -324,7 +331,7 @@ def results(out, written_by='run'):
         R['chunk_seconds'] = {k: float(sum(v.get('total', 0) for v in RT.get(k, {}).values())) for k in ('pass1', 'pass2_est', 'pass2_est2')}
     except Exception:
         pass
-    for name in ('locs_p1', 'locs_p2'):
+    for name in SP.TABLES:
         if name in R['selection']: R['counts'][name + '_rows'] = R['selection'][name]['counts']['n_rows']
     return R
 
@@ -430,7 +437,7 @@ def start(out, settings, fixed, model, calib, movie, overrides=None, rerun_of=No
 def finish(out, timing=None, error=None, extra=None):
     """complete the record: this invocation's end time; with the tables on disk: pattern, selection, counts, outputs, 'done'"""
     res = None
-    if error is None and os.path.exists(os.path.join(out, 'locs_p2_info.json')): res = results(out)
+    if error is None and os.path.exists(os.path.join(out, 'locs_p2_net_info.json')): res = results(out)
 
     def fn(R):
         R = R or dict(format=FORMAT, invocations=[], steps=[])
@@ -514,7 +521,7 @@ def show(R):
          f'calib   {(R.get("calib") or {}).get("path")}  sha256 {str((R.get("calib") or {}).get("sha256"))[:12]}',
          f'model   {M.get("name")}' + ('' if M.get('files_are_the_models', True) else '  (files overridden)')]
     L += [f'  {k:9s} {v.get("path")}  sha256 {str(v.get("sha256"))[:12]}' for k, v in M.get('files', {}).items()]
-    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")} sig_u {S.get("sig_u")!r}',
+    L += [f'settings crop {S.get("crop")} chunk {S.get("chunk")}',
           f'code    {c.get("package")} {c.get("version")} git {str(c.get("git_commit") or c.get("git_commit_inferred"))[:10]} dirty {c.get("git_dirty")}; '
           f'torch {e.get("torch")} cuda {e.get("cuda")} gpu {e.get("gpu")} host {e.get("host")}']
     for n, s in (R.get('selection') or {}).items():

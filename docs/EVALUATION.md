@@ -16,8 +16,16 @@ on punctate repeated-site sims.
 ## Rows and grids
 
 - **Ours**
-  - Detector p ≥ 0.63 (`good`), positions = the pattern-solve output.
-  - σ = mean of the two calibrated axes.
+  - Detector p ≥ 0.63 (`good`). Positions and σ: the protocol below was built on the pattern-solve output (the tables
+    before 2026-11-17); since then a run's result is the pass-2 emitter network's own output (`locs_p2_net`: its position
+    and the sd of its joint covariance, no factor), the solve tables (`locs_p{1,2}_solve`) are written next to it. Which
+    table a statement uses must be said with it.
+  - σ = mean of the two reported axes.
+- **Uncertainty checks (2026-11-17, held-out simulated movies, `analysis/sigma_joint/net_vs_solve.py`, paper branch).**
+  Per photon bin: robust sd of the GT error, z = rms(error / reported σ), CRLBs (SMLM on the 6-frame sum; SIMFLUX with a
+  background per frame at the true pattern). The pass-2 network's σ is calibrated (z 0.85-1.05); the solve was
+  overconfident with the fixed c = 0.1 (z 1.3-1.4); the brightness noise c, c_a is now estimated per dataset with the
+  pattern (METHOD.md stage 3) and the kinetic model averaged per row (stage 4).
   - Window start f; windows start every 3 frames.
 - **SIMCODE (b)**
   - The paper networks and pipeline (MovieProcessor, eq.-2 NDI fit, filters), with the phase-drift sign fixed

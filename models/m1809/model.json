@@ -6,8 +6,7 @@
   "cal_sim": "calib/calib_emitter_pass1_sim.json",
   "detector_pass2": "detector_pass2.pt",
   "emitter_pass2": "emitter_pass2.pt",
-  "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
-  "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
+  "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json"
  },
  "_recipe": {
   "trainer_chain": "/home/jc/simcode2/out/psf_v2/train/chain.sh m1809v2 (logs out/psf_v2/train/m1809v2/; frozen source src_da9fe7d, branch rename)",

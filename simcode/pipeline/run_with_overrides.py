@@ -1,7 +1,7 @@
 """Run a simcode module (simcode.run, a trainer, gate, dump) with the instrument overrides of the automatic pipeline applied
 IN MEMORY (docs/AUTO_PIPELINE.md section 7; no package file is edited). The overrides come from a json file (env AUTO_WRAP):
   pitch_px [lo, hi]   default of processing.pattern_estimation.estimate_k(pitch_px=...)           (assumption 3)
-  crop [x0, y0, S]    table.CROP and the bound defaults of table.tile_of / table.tile_rank / table.in_crop (assumption 4)
+  crop [x0, y0, S]    table.CROP and the bound defaults of table.tile_of / table.in_crop (assumption 4)
   det_batch n         argparse default of run_uncalibrated --det_batch                              (assumption 5)
   model {name: {...}} added to simcode.config.model_sets() (a model of this dataset, absolute paths) (P8)
   presets {preset: {key: value}} merged into simcode.simulate.acquisition.PRESETS (pattern k, spacing, camera maps, bg, brightness) (7)
@@ -23,11 +23,10 @@ def apply(W):
     if W.get('crop'):
         from simcode import table as SP
         crop = tuple(float(v) for v in W['crop'])
-        assert SP.tile_of.__defaults__[0] == SP.CROP and SP.tile_rank.__defaults__[-1] == SP.CROP and SP.in_crop.__defaults__[-1] == SP.CROP, \
+        assert SP.tile_of.__defaults__[0] == SP.CROP and SP.in_crop.__defaults__[-1] == SP.CROP, \
             'table.py signature changed'
         SP.CROP = crop
         SP.tile_of.__defaults__ = (crop,) + SP.tile_of.__defaults__[1:]
-        SP.tile_rank.__defaults__ = SP.tile_rank.__defaults__[:-1] + (crop,)
         SP.in_crop.__defaults__ = SP.in_crop.__defaults__[:-1] + (crop,)
     if W.get('det_batch'):
         import argparse as _ap

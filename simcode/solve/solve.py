@@ -8,6 +8,7 @@ outputs (intensities with their full covariance, prior position, calibration) th
 Start sets: base points (r_net = the prior centre, x_det = the detector point, ...) each with the (2 nf + 1)^2 fringe
 shifts; box = per-start position box half-width (px).
 """
+import math
 import torch
 from simcode.solve import pattern as C
 
@@ -132,60 +133,88 @@ def start_offsets(pt, r0, bases, nf=1):
     return torch.cat([(b - r0)[:, None] + fs for b in bases], 1)
 
 
-@torch.no_grad()
-def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
-    """posterior over the fringe starts (iteration 31, critic 30 #1): kinetic model selection (kinetics only if it lowers the
-    cost by > thr), MAP = best start of the selected kinetic model, plus the per-start solutions of that model, deduplicated (a start whose solution lies within `dedup`
-    px of a lower-cost start is the same mode), weighted w_m ~ exp(-(cost_m - cost_min) / (2 temp)) (cost = chi^2 incl.
-    the prior = -2 log L). Returns dict(r, s, q, dof, kin: the MAP; dnll = (cost_2nd - cost_min) / 2 of the
-    best distinct competitor (inf if none); R [n,H,2], S [n,H,2], w [n,H] (0 for duplicates); r_pm posterior mean,
-    spread [n,2] = sqrt(sum w (R - r_map)^2) per axis, spread_pm = sqrt(sum w (R - r_pm)^2))"""
-    dr = start_offsets(pt, r0, bases, nf)
-    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, iters=iters, box=box, cmult=cmult, cang=cang)
-    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=iters, box=box, cmult=cmult, cang=cang)
-    n = len(I); ar = torch.arange(n, device=I.device)
-    b0 = o0['nll'].argmin(1); b1 = o1['nll'].argmin(1)
-    q0 = o0['nll'][ar, b0]; q1 = o1['nll'][ar, b1]; use = (q0 - q1) > thr
-    R = torch.where(use[:, None, None], o1['r'], o0['r']); S = torch.where(use[:, None, None], o1['s'], o0['s'])
-    Q = torch.where(use[:, None], o1['nll'], o0['nll'])
-    bm = torch.where(use, b1, b0)
-    r_map = R[ar, bm]; s_map = S[ar, bm]; q = Q[ar, bm]
-    # dedup: sort by cost; a start is a duplicate if a lower-cost start's solution is within dedup px
-    Qs, order = Q.sort(1)
-    Rs = R.gather(1, order[..., None].expand(-1, -1, 2)); Ss = S.gather(1, order[..., None].expand(-1, -1, 2))
-    Dm = torch.cdist(Rs, Rs)
-    H = Q.shape[1]
-    lower = torch.tril(torch.ones(H, H, device=I.device, dtype=torch.bool), -1)        # [h, h'] h' < h
-    dup = ((Dm < dedup) & lower[None]).any(2)
-    Qm = torch.where(dup, torch.full_like(Qs, float('inf')), Qs)
-    w = torch.exp(-(Qm - Qs[:, :1]) / (2 * temp)); w = w / w.sum(1, keepdim=True)
-    sec = torch.where(dup[:, 1:], torch.full_like(Qs[:, 1:], float('inf')), Qs[:, 1:]).min(1).values
-    dnll = (sec - Qs[:, 0]) / 2
-    r_pm = (w[..., None] * Rs).sum(1)
-    spread = (w[..., None] * (Rs - r_map[:, None]) ** 2).sum(1).sqrt()
-    spread_pm = (w[..., None] * (Rs - r_pm[:, None]) ** 2).sum(1).sqrt()
-    out = dict(r=r_map, s=s_map, q=q, dof=torch.where(use, o1['dof'], o0['dof']), kin=use, dnll=dnll, R=Rs, S=Ss, w=w,
-               r_pm=r_pm, spread=spread, spread_pm=spread_pm, s_pm=(w[..., None] * Ss ** 2).sum(1).sqrt())
-    out['mu'] = torch.where(use[:, None, None], o1['mu'], o0['mu'])[ar, bm]      # model mean at the MAP (automatic c)
-    if cmult > 0 or cang > 0:     # q = the chi2 part at the MAP start (the nll used for selection / weights includes log det)
-        out['q_nll'] = q
-        out['q'] = torch.where(use[:, None], o1['chi2'], o0['chi2'])[ar, bm]
+# kinetic model (2026-11-17): the SAME procedure for every row: the non-kinetic model (x, y, B) and the kinetic model (+ t_on, t_off)
+# are both fitted and averaged by their posterior weights (Bayesian model averaging; no selection threshold). The evidence of a
+# model is the sum of its fringe modes' weights exp(-cost / 2) (cost = -2 log of likelihood x position prior, as the posterior over
+# the fringe starts); the kinetic model's 2 extra parameters are penalised by the BIC term k ln n = 2 ln T (n = the T = 6 network
+# intensities of the window): cost_kinetic + KIN_PENALTY. The table column kin = the kinetic model's posterior weight.
+KIN_MODES = ('average', 'none', 'kinetic')       # 'none' / 'kinetic': one model only (analysis comparisons)
+KIN_PENALTY = 2 * math.log(T)
+
+
+def model_average(models, temp=1.0, dedup=0.15):
+    """posterior over the fringe modes of one or more models. models: list of (o, penalty, kinetic) with o = pattern_solve_all
+    output (nll [n,H], r, s [n,H,2], mu [n,H,T], chi2 [n,H] when the nuisance covariance c is on, dof [n]). Per model the starts
+    are sorted by cost and deduplicated (a start whose solution lies within `dedup` px of a lower-cost start of the same model is
+    the same mode, weight 0); the modes of all models are pooled with cost + penalty and weighted w ~ exp(-(cost - cost_min) /
+    (2 temp)). Returns dict(r, s, q, dof, kin_map: the MAP mode (lowest penalised cost); kin = the summed weight of the kinetic
+    modes; dnll = (cost of the best mode >= dedup px from the MAP - MAP cost) / 2 (inf if none); R, S [n,M,2], w [n,M] (M = all
+    starts of all models); r_pm posterior mean, spread [n,2] = sqrt(sum w (R - r_map)^2), spread_pm = sqrt(sum w (R - r_pm)^2),
+    s_pm = sqrt(sum w S^2); mu = the model mean at the MAP; q_nll / q (nll / chi2 part at the MAP, chi2 only with c on))"""
+    Q, Qr, R, S, MU, CH, KN, DF = [], [], [], [], [], [], [], []
+    for o, pen, kin in models:
+        q_, order = o['nll'].sort(1)
+        n, H = q_.shape; dev = q_.device
+        g2 = lambda v: v.gather(1, order[..., None].expand(-1, -1, v.shape[-1]))
+        r_, s_, mu_ = g2(o['r']), g2(o['s']), g2(o['mu'])
+        Dm = ((r_[:, :, None] - r_[:, None, :]) ** 2).sum(-1).sqrt()
+        lower = torch.tril(torch.ones(H, H, device=dev, dtype=torch.bool), -1)
+        dup = ((Dm < dedup) & lower[None]).any(2) | ~torch.isfinite(q_)
+        Q.append(torch.where(dup, torch.full_like(q_, float('inf')), q_ + pen)); Qr.append(q_)
+        R.append(r_); S.append(s_); MU.append(mu_)
+        CH.append(o['chi2'].gather(1, order) if 'chi2' in o else q_)
+        KN.append(torch.full_like(q_, float(kin))); DF.append(o['dof'][:, None].expand(-1, H))
+    Q, Qr, R, S, MU, CH, KN, DF = (torch.cat(v, 1) for v in (Q, Qr, R, S, MU, CH, KN, DF))
+    n = Q.shape[0]; ar = torch.arange(n, device=Q.device)
+    q0, bm = Q.min(1)
+    w = torch.exp(-(Q - q0[:, None]) / (2 * temp)); w = torch.where(torch.isfinite(Q), w, torch.zeros_like(w))
+    w = w / w.sum(1, keepdim=True)
+    r_map = R[ar, bm]
+    far = ((R - r_map[:, None]) ** 2).sum(-1).sqrt() >= dedup
+    sec = torch.where(far, Q, torch.full_like(Q, float('inf'))).min(1).values
+    Rz = torch.where(w[..., None] > 0, R, torch.zeros_like(R)); Sz = torch.where(w[..., None] > 0, S, torch.zeros_like(S))
+    r_pm = (w[..., None] * Rz).sum(1)
+    out = dict(r=r_map, s=S[ar, bm], q=Qr[ar, bm], dof=DF[ar, bm], kin=(w * KN).sum(1), kin_map=KN[ar, bm] > 0.5, dnll=(sec - q0) / 2,
+               R=R, S=S, w=w, r_pm=r_pm, spread=(w[..., None] * (Rz - r_map[:, None]) ** 2).sum(1).sqrt(),
+               spread_pm=(w[..., None] * (Rz - r_pm[:, None]) ** 2).sum(1).sqrt(), s_pm=(w[..., None] * Sz ** 2).sum(1).sqrt(),
+               mu=MU[ar, bm])
+    if 'chi2' in models[0][0]:
+        out['q_nll'] = out['q']; out['q'] = CH[ar, bm]
     return out
+
+
+def kin_models(kin, o0, o1):
+    """the model list of model_average for a kinetic mode ('average', 'none', 'kinetic')"""
+    if kin not in KIN_MODES: raise ValueError(f'kin {kin!r}: one of {KIN_MODES}')
+    return ([(o0, 0.0, False)] if kin != 'kinetic' else []) + ([(o1, KIN_PENALTY, True)] if kin != 'none' else [])
+
+
+@torch.no_grad()
+def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
+    """posterior over the fringe starts and the kinetic model (model_average): both models fitted for every row (kin
+    'average'), or one of them ('none', 'kinetic'). Outputs: model_average"""
+    dr = start_offsets(pt, r0, bases, nf)
+    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang)
+    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw) if kin != 'kinetic' else None
+    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, **kw) if kin != 'none' else None
+    return model_average(kin_models(kin, o0, o1), temp=temp, dedup=dedup)
 
 
 # ------------------------------------------------------------------------------------------------ solve of the emitter-network outputs
 @torch.no_grad()
-def solve_emitters(o, pt_win, b, cal, nf=1, thr=9.21):
+def solve_emitters(o, pt_win, b, cal, nf=1, kin='average'):
     """explicit pattern solve on the emitter network's outputs with their joint covariance (prior position, per-frame intensities;
-    pattern_solve_all): fringe-start posterior (posterior-mean position), kinetic model selection, nuisance covariance c.
+    pattern_solve_all): posterior over the fringe starts and the kinetic model (model_average; posterior-mean position), nuisance
+    covariance c (brightness noise; solve_cal).
     Returns r [n,2] (posterior mean), s [n,2] (Fisher sd of the MAP start), s_cal [n,2] = the posterior sd sqrt(s_pm^2 +
     spread_pm^2) (mixture Fisher sd over the fringe starts + their spread; no calibration factor), q / dof, p, ...
     Reference implementation (test oracle of simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
-    o: the emitter network's outputs I, L, C, x, y, lsxy. Calibration keys: prior_off (constant prior-position bias, px,
-    removed), cmult / cmult_ang (nuisance covariance c, c_a), box (start box half-width, px), mix_T (posterior temperature)."""
+    o: the emitter network's outputs I, L, C, x, y, lsxy. cal = solve_cal(...): prior_off (constant prior-position bias, px,
+    removed), box (start box half-width, px), mix_T (posterior temperature) of the model's calibration + cmult / cmult_ang (the
+    brightness noise c, c_a of the dataset, estimated with the pattern)."""
     I, Sig, r0, sp, ph, Cj = solve_inputs(o, cal)
-    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
-                         cmult=float(cal['cmult']), cang=float(cal['cmult_ang']))
+    c, ca = brightness_noise(cal)
+    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'], cmult=c, cang=ca)
     return finish(s, I, Sig, r0, sp)
 
 
@@ -194,8 +223,40 @@ def finish(s, I, Sig, r0, sp):
     qd = s['q'] / s['dof'].clamp(min=1)
     s_cal = (s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt()
     return dict(R_starts=s['R'], w_starts=s['w'], r=s['r_pm'], s=s['s'], s_cal=s_cal, s_pm=s['s_pm'], spread_pm=s['spread_pm'], q=qd,
-                p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'], dnll=s['dnll'], r_prior=r0, s_prior=sp, mu=s['mu'],
-                Sig=Sig, dof=s['dof'], chi2=s['q'])
+                p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], kin_map=s['kin_map'], r_map=s['r'], dnll=s['dnll'], r_prior=r0, s_prior=sp,
+                mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
+
+
+BN_KEYS = ('cmult', 'cmult_ang')
+
+
+def solve_cal(cal, c, c_a):
+    """the solve calibration of a dataset: the model's calibration (path or dict: prior_off, box, mix_T) + the brightness noise
+    c (cmult, relative per-frame scatter) and c_a (cmult_ang, shared within each pattern orientation) of the dataset, estimated
+    with its pattern (processing/pattern_estimation.estimate_pattern -> pattern_est.pt 'cmult' / 'cmult_ang'; 2026-11-17).
+    A model calibration that still holds a fixed c is refused (removed 2026-11-17)."""
+    import json
+    d = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
+    old = [k for k in BN_KEYS if k in d]
+    if old: raise ValueError(f'solve calibration {cal if isinstance(cal, str) else ""}: {old} is a fixed brightness noise, removed '
+                             '2026-11-17 (c, c_a are estimated per dataset with the pattern); delete these keys')
+    d['cmult'] = float(c); d['cmult_ang'] = float(c_a)
+    return d
+
+
+def pattern_cal(cal, pattern):
+    """solve_cal with the brightness noise stored in a pattern (pattern_est.pt dict: 'cmult', 'cmult_ang')"""
+    if 'cmult' not in pattern or 'cmult_ang' not in pattern:
+        raise KeyError('the pattern has no brightness noise (cmult / cmult_ang): pattern_est.pt of a run before 2026-11-17; '
+                       're-run the pattern stage')
+    return solve_cal(cal, float(pattern['cmult']), float(pattern['cmult_ang']))
+
+
+def brightness_noise(cal):
+    """(c, c_a) of a solve calibration made by solve_cal / pattern_cal"""
+    if any(k not in cal for k in BN_KEYS):
+        raise KeyError('solve calibration without the brightness noise c, c_a: build it with simcode.solve.solve.solve_cal / pattern_cal')
+    return float(cal['cmult']), float(cal['cmult_ang'])
 
 
 def solve_inputs(o, cal, mm=torch.matmul):

@@ -20,13 +20,15 @@ the repository's `models/` folder.
 ```python
 from simcode.dataset import Dataset
 
-ds = Dataset.from_run('out/run1', pass_=2)      # locs_p2.hdf5 + its info json (+ run_config.json when the run has one)
-ds = Dataset.load('out/run1')                   # the same (pass 2 if it exists, else pass 1); also takes a table file
+ds = Dataset.from_run('out/run1')               # the result table locs_p2_net.hdf5 + its info json (+ run_config.json)
+ds = Dataset.load('out/run1')                   # the same; also takes a table file
+sv = Dataset.from_run('out/run1', pass_=2, kind='solve')   # the pass-2 pattern solve (same rows); pass_=1: the pass-1 tables
 print(ds)                                       # rows, frames, pixel size, median precision and photons, drift, fields
 ds.pos, ds.crlb, ds['score'], ds.keys()         # fields (tensors); ds.meta holds the metadata; ds.numpy(): dict of arrays
 ```
 
-With the automatic pipeline (`simcode.pipeline`): `ds = pipe.dataset_pass2()` (or `pipe.dataset_pass1()`) gives the same object.
+With the automatic pipeline (`simcode.pipeline`): `ds = pipe.dataset_pass2()` (or `pipe.dataset_pass1()`; `kind='solve'` for the
+solve tables) gives the same object.
 `Dataset.from_run(d, columns=('sx', 'sy', 'p'))` loads only those table columns (x, y, frame always).
 
 ## Select and filter

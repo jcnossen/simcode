@@ -11,7 +11,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
                                 torch-psf format), .npz (load_npz: a table of a run before 2026-11-15, a subset file of
                                 that time, or the paper's DECODE table: from_decode), .npy (load_npy: the preprint code's Dataset / SFDataset file), else
                                 torch_psf's load (.hdf5: this format or Picasso, e.g. the paper's sf.hdf5; .csv: ThunderSTORM)
-            from_run(run_dir, pass_=2), load_table, from_columns, load_npz, from_decode, from_smlmtorch(ds), load_npy
+            from_run(run_dir, pass_=2, kind='net'), load_table, from_columns, load_npz, from_decode, from_smlmtorch(ds), load_npy
             window=<frames>: frames per localization (the n_frames field) for files that do not record it (the paper's
             SMLM / SIMFLUX tables of summed 6-frame windows: window=6)
   select    select(max_precision_nm=12, min_score=0.63, in_region=True) = simcode.table.select on this table: the paper's
@@ -20,7 +20,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
             mask(...) is the boolean row mask.
 
     from simcode.dataset import Dataset
-    ds = Dataset.load('out/run1')                     # a run directory (locs_p2.hdf5, else locs_p1.hdf5) or a table file
+    ds = Dataset.load('out/run1')                     # a run directory (its result table locs_p2_net.hdf5) or a table file
     sel = ds.select()                                 # the paper's selection
     ds.estimate_drift(rows=ds.good & ds.disjoint)     # DME v2 (the dme package: simcode.util.drift.dme_package())
     sel = ds.select().apply_drift(ds.drift)
@@ -31,9 +31,9 @@ Fields of a v2 table (simcode/table.py) in this layout (docs/DATASET_FORMAT.md o
   pos [n, 2] = (x, y) px, crlb [n, 2] = (sx, sy) px (calibrated sigma); tables of 3D heads (columns z, sz, cov_xz, cov_yz):
   pos [n, 3] = (x, y, z) with z in px of the lateral pixel relative to the PSF calibration's focal plane, crlb [n, 3], cov
   [n, 3] = (xy, xz, yz) px^2; frame = window start, n_frames = 6 (window length), photons, score = p (detector probability), intensities [n, 6] = I (network per-frame intensities), and the other
-  columns under their names (t, q_dof, kin, dnll, x_prior, y_prior, good, sel, disjoint, x_dc, y_dc, strict_u, strict).
-  Metadata: pixel_nm (px_nm of the table), crop, tag, info (the table's info json), run_config, model, n_frames,
-  image_size, pass, source, format.
+  columns under their names (t, q_dof, kin, dnll (solve tables), x_prior, y_prior, good, sel, disjoint, p1_index, x_dc, y_dc).
+  Metadata: pixel_nm (px_nm of the table), crop, tag, kind ('net' | 'solve'), table, info (the table's info json), run_config,
+  model, n_frames, image_size, pass, source, format.
 Other sources: DECODE phot -> photons, sphot -> crlb_photons, prob -> score, z (nm) kept as the field z; the preprint code's
 estim.pos / crlb.pos -> pos / crlb, estim.ibg -> intensities, intensities_bg, chisq, group, roi_id, roipos as fields (a z
 column becomes the field z, crlb_z: its own unit, not part of pos).
@@ -157,22 +157,26 @@ class Dataset(_TorchPSFDataset):
         return L
 
     @classmethod
-    def from_run(cls, run_dir, pass_=2, table=None, **kw):
-        """The localization table of a run directory of simcode.run: pass_ = 2 (locs_p2.hdf5, the pattern-aware pass, the
-        default) or 1 (locs_p1.hdf5); pass_ None: pass 2 if it exists, else pass 1; table: another base name instead.
-        Runs made before 2026-11-15 have locs_p<pass>.npz instead (load_npz; keywords columns=, info=). meta['pass'] records the
-        pass. This is what the pipeline's dataset_pass1() / dataset_pass2() return; the paper's selection: ds.select()."""
-        names = [table] if table else [f'locs_p{int(pass_)}'] if pass_ is not None else ['locs_p2', 'locs_p1']
-        for n in names:
-            n = os.path.splitext(n)[0] if n.endswith(('.npz', '.hdf5')) else n
-            for ext in ('.hdf5', '.npz'):
-                f = os.path.join(run_dir, n + ext)
-                if not os.path.exists(f): continue
-                L = cls.load_table(f, info=kw.get('info', True)) if ext == '.hdf5' else cls.load_npz(f, **kw)
-                b = os.path.basename(f)
-                if b.startswith('locs_p') and b[6:7].isdigit(): L.meta.setdefault('pass', int(b[6]))
-                return L
-        raise FileNotFoundError(f'no {" / ".join(names)} (.hdf5 / .npz) in {run_dir}')
+    def from_run(cls, run_dir, pass_=2, kind='net', table=None, **kw):
+        """A localization table of a run directory of simcode.run (four tables per run, simcode/table.py TABLES): pass_ = 2 (the
+        pattern-aware pass, the default) or 1, kind = 'net' (the emitter network's own output, the default: locs_p2_net = the
+        result table) or 'solve' (the pattern solve: locs_p<pass>_solve); table: another base name instead (e.g. 'locs_p2' of
+        a run before 2026-11-17, whose locs_p<pass> tables were the solve with the removed sigma rescale). meta['pass'] and
+        meta['kind'] record which table it is. This is what the pipeline's dataset_pass1() / dataset_pass2() return; the
+        paper's selection: ds.select()."""
+        n = table or SP.table_name(pass_, kind)
+        n = os.path.splitext(n)[0] if n.endswith(('.npz', '.hdf5')) else n
+        for ext in ('.hdf5', '.npz'):
+            f = os.path.join(run_dir, n + ext)
+            if not os.path.exists(f): continue
+            L = cls.load_table(f, info=kw.get('info', True)) if ext == '.hdf5' else cls.load_npz(f, **kw)
+            b = os.path.basename(f)
+            if b.startswith('locs_p') and b[6:7].isdigit(): L.meta.setdefault('pass', int(b[6]))
+            if n in SP.TABLES: L.meta.setdefault('kind', SP.TABLES[n][1])
+            return L
+        old = [t for t in ('locs_p2', 'locs_p1') if any(os.path.exists(os.path.join(run_dir, t + e)) for e in ('.hdf5', '.npz'))]
+        raise FileNotFoundError(f'no {n} (.hdf5 / .npz) in {run_dir}' + (f' (a run before 2026-11-17 with {old}: give table=..., or '
+                                'rebuild the tables of a re-run)' if old else ''))
 
     @classmethod
     def from_decode(cls, path, window=6):
@@ -224,7 +228,7 @@ class Dataset(_TorchPSFDataset):
         Picasso; .csv: ThunderSTORM, needs pixel_nm=). window: frames per localization (the n_frames field) when the file
         does not record it (the paper's SMLM / SIMFLUX tables: 6); keywords go to that reader."""
         path = str(path)
-        if os.path.isdir(path): return cls.from_run(path, **{'pass_': None, **kw})
+        if os.path.isdir(path): return cls.from_run(path, **kw)
         ext = os.path.splitext(path)[1].lower()
         if ext == '.npz': return cls.load_npz(path, window=window or 6, **kw)
         if ext == '.npy': return cls.load_npy(path, window=window or 1, **kw)

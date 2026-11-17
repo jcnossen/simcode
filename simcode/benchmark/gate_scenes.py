@@ -175,7 +175,9 @@ def main():
     from simcode.emitter import model as EM
     from simcode.detector import model as DM
     det_, _ = DM.load(a.detector)
-    SC = (det_, EM.load(config.resolve(a.emitter)), EM.PSFCol(sim), json.load(open(config.resolve(a.cal))) if a.cal else {})
+    from simcode.solve.solve import solve_cal
+    from simcode.simulate.crlb import BRIGHTNESS_NOISE        # the gate scenes' constant emitter brightness: c = c_a = 0
+    SC = (det_, EM.load(config.resolve(a.emitter)), EM.PSFCol(sim), solve_cal(config.resolve(a.cal), *BRIGHTNESS_NOISE) if a.cal else {})
     for sc in a.scen.split(','):
         for seed in [int(s_) for s_ in a.seeds.split(',')]:
             t0 = time.time(); GT, OUTS = [], {f: [] for f in fronts}; need = a.ntarget; it = 0; fov0 = 0
