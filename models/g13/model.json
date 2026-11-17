@@ -4,11 +4,9 @@
   "detector": "detector_pass1.pt",
   "emitter": "emitter_pass1.pt",
   "cal_sim": "calib/calib_emitter_pass1_sim.json",
-  "cal_real": "calib/calib_emitter_pass1_real.json",
   "detector_pass2": "detector_pass2.pt",
   "emitter_pass2": "emitter_pass2.pt",
   "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
-  "cal_real_pass2": "calib/calib_emitter_pass2_real.json",
   "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
  },
  "_recipe": {
@@ -156,36 +154,6 @@
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_sc_hd_g13.json"
   },
-  "cal_real": {
-   "path": "calib/calib_emitter_pass1_real.json",
-   "size": 3385,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "542082057919d39c5fe86497d1c504b9d8c78825926a9a1986344bdacddd9005",
-   "params": {
-    "kap_p": 0.8945592641830444,
-    "kap_I2": 0.7926290588403049,
-    "sig_a": 1.4126241928985401,
-    "sig_g": 0.41589644697367406,
-    "n": 32239,
-    "kap_p_raw": 0.8945196270942688,
-    "kap_I2_raw": 0.7926039058284609,
-    "box": 1.5,
-    "mix_T": 1.0,
-    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n1 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13/fe); base calib/calib_sc_hd_sc5nbb15_pm_bright.json | _real: sig_ph_real_mult copied from calib/calib_sc_hd_sc5nbb15_pm_bright_real.json (not re-measured for the new networks)",
-    "cmult": 0.1,
-    "cmult_ang": 0.1,
-    "fit_scenes": [
-     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs05qm",
-     "/home/jc/simcode2/out/z3d/eval/g13/fe:rs25qm"
-    ],
-    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
-    "prior_off": [
-     -0.0009589724941179156,
-     0.0012835237430408597
-    ]
-   },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_sc_hd_g13_real.json"
-  },
   "detector_pass2": {
    "path": "detector_pass2.pt",
    "size": 7293667,
@@ -275,36 +243,6 @@
     ]
    },
    "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_p2L_g13.json"
-  },
-  "cal_real_pass2": {
-   "path": "calib/calib_emitter_pass2_real.json",
-   "size": 3244,
-   "mtime": "2026-11-15T05:38:40+0100",
-   "sha256": "ebaaffab5b3953fc521c0c4478cf79f77f2f3e2d95260f83f2cc150b01042ae3",
-   "params": {
-    "kap_p": 0.8945592641830444,
-    "kap_I2": 0.7926290588403049,
-    "sig_a": 1.4126241928985401,
-    "sig_g": 0.41589644697367406,
-    "n": 32239,
-    "kap_p_raw": 0.8945196270942688,
-    "kap_I2_raw": 0.7926039058284609,
-    "box": 1.5,
-    "mix_T": 1.0,
-    "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/z3d/eval/g13g/fe:rs05qm', '/home/jc/simcode2/out/z3d/eval/g13g/fe:rs25qm'], prior_off from iso (/home/jc/simcode2/out/z3d/eval/g13g/fe); base calib/calib_p2L.json | _real: sig_ph_real_mult copied from calib/calib_p2L_b10_real.json (not re-measured for the new networks)",
-    "cmult": 0.1,
-    "cmult_ang": 0.1,
-    "fit_scenes": [
-     "/home/jc/simcode2/out/z3d/eval/g13g/fe:rs05qm",
-     "/home/jc/simcode2/out/z3d/eval/g13g/fe:rs25qm"
-    ],
-    "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
-    "prior_off": [
-     -0.0006678147474303842,
-     0.00018875191744882613
-    ]
-   },
-   "copied_from": "/home/jc/simcode2/out/z3d/eval/g13g/model_files_g13/calib_p2L_g13_real.json"
   }
  },
  "_exported": {

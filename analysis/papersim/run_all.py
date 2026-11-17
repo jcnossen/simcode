@@ -1,7 +1,7 @@
 """One command per papersim movie: all methods + metrics, resumable (a finished step is skipped; --redo <step> forces it).
 
   CUDA_VISIBLE_DEVICES=1 python analysis/papersim/run_all.py <movie dir> [--nframes N] [--run <run dir>]
-        [--steps base,decode,v2,metrics] [--model m1809] [--cal_kind sim] [--decode_name dec_1809_2] [--redo v2]
+        [--steps base,decode,v2,metrics] [--model m1809] [--decode_name dec_1809_2] [--redo v2]
 Run dir default: <movie dir>/full (all frames) or <movie dir>/cut<N> (first N frames). Steps:
   base     run_baselines.py: SMLM, SIMFLUX (estimated pattern), SIMFLUX (GT pattern)   -> <run>/base/{smlm,sf,sf_gtp}
   decode   run_decode.py                                                               -> <run>/decode/locs.npz
@@ -25,7 +25,6 @@ def main():
     ap.add_argument('--run', default=None)
     ap.add_argument('--steps', default='base,decode,v2,metrics')
     ap.add_argument('--model', default='m1809')
-    ap.add_argument('--cal_kind', default='sim')
     ap.add_argument('--decode_name', default='dec_1809_2')
     ap.add_argument('--redo', default='')
     ap.add_argument('--psf', default=None, help="baselines' PSF spec (run_baselines --psf), e.g. gauss:1.3 for the preprint reproduction")
@@ -49,7 +48,7 @@ def main():
     os.makedirs(os.path.join(run, 'logs'), exist_ok=True)
     nm = a.name or a.model
     psf_z = (f"{float(g['z_um']):.6f}" if a.psf_z == 'gt' else a.psf_z)
-    v2dir = os.path.join(run, f'v2_{nm}' + ('' if a.cal_kind == 'sim' else f'_{a.cal_kind}') + a.tag)
+    v2dir = os.path.join(run, f'v2_{nm}' + a.tag)
     mname = nm + a.tag                 # name of the metrics / hollow outputs (metrics.py reads <run>/v2_<mname>)
     py = sys.executable; S = os.path.join(HERE, '{}')
     mf = [] if nf == g['nframes'] else ['--maxframes', str(nf)]
@@ -63,7 +62,7 @@ def main():
                        os.path.join(run, 'decode_sim', 'locs.npz')),
         'v1': ([py, S.format('run_simcode_v1.py'), md, '--out', os.path.join(run, 'v1', 'locs.npz')] + mf, os.path.join(run, 'v1', 'v1_info.json')),
         'v1gt': ([py, S.format('run_simcode_v1.py'), md, '--pattern', 'gt', '--out', os.path.join(run, 'v1gt', 'locs.npz')] + mf, os.path.join(run, 'v1gt', 'v1_info.json')),
-        'v2': ([py, S.format('run_simcode.py'), md, '--model', a.model, '--cal_kind', a.cal_kind, '--out', v2dir, '--gt_diag', str(a.gt_diag)]
+        'v2': ([py, S.format('run_simcode.py'), md, '--model', a.model, '--out', v2dir, '--gt_diag', str(a.gt_diag)]
                + ([] if nf == g['nframes'] else ['--nframes', str(nf)]), os.path.join(v2dir, 'papersim_run.json')),
         'metrics': ([py, S.format('metrics.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname], None),
         'gtfrc': ([py, S.format('gtfrc_run.py'), run, '--movie', md, '--nframes', str(nf), '--model', mname] + (['--ref', a.ref] if a.ref else []), None),

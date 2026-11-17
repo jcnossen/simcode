@@ -46,9 +46,10 @@ def test_settings_roundtrip():
     # --model is required; a record's settings that are no longer options are not passed on (rerun_argv takes RERUN_KEYS only)
     try: _settings(['--movie', 'm.tif', '--calib', 'c.json', '--out', 'x']); raise AssertionError('--model is required')
     except SystemExit: pass
-    old = dict(settings=dict(S, subset='main,u,strict', sigma_max=12.0, format='npz', prefetch=1, sig_u='', u_max=0.45, strict_q=None, det='/x/det.pt'))
+    old = dict(settings=dict(S, subset='main,u,strict', sigma_max=12.0, format='npz', prefetch=1, sig_u='', u_max=0.45, strict_q=None, det='/x/det.pt', cal_kind='real'))
     av = RC.rerun_argv(old)
-    assert not {'--subset', '--sigma_max', '--format', '--prefetch', '--sig_u', '--u_max', '--det'} & set(av) and av[av.index('--crop') + 1] == '5,5,110'
+    assert not {'--subset', '--sigma_max', '--format', '--prefetch', '--sig_u', '--u_max', '--det', '--cal_kind'} & set(av) and av[av.index('--crop') + 1] == '5,5,110'
+    assert 'cal_kind' not in S and '_sim' in S['cal'] and '_sim' in S['cal_pass2']                  # one calibration per pass (2026-11-17)
     # a record of format 1 (file keys det / head / p2_* before 2026-11-15) is read with the present names
     R1 = dict(format='simcode.run_config/1', settings=dict(det='/a.pt', head='/b.pt', p2_det='/c.pt', p2_head='/d.pt', p2_cal='/e.json'),
               fixed=dict(head_batch=1024), model=dict(name='m', definition=dict(det='/a.pt', p2_cal_real='/e.json'), files=dict(det={}, sig_u_p1={})))

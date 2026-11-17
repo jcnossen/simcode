@@ -38,8 +38,8 @@ simcode/
   download_models.py          python -m simcode.download_models [--set m1809 g13 pretrain | all] [--dest models/]: the network weights (GitHub release assets, sha256-checked)
   run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2 --data-root …); all stages, finished ones skipped
   config.py                   the models: MODELS = <repo>/models (where model / calibration names are looked up: resolve, model), model_set(name or model folder), production(); no path settings (paths are arguments)
-  models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2,
-                              cal_sim_pass2, cal_real_pass2, sig_u, psf), the default model, the paper's datasets (_production)
+  models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, detector_pass2, emitter_pass2,
+                              cal_sim_pass2, sig_u, psf), the default model, the paper's datasets (_production)
   dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
   table.py                    localization table of a run directory (with the model's sigma rescale), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
   detector/
@@ -177,10 +177,18 @@ heads give bit-identical outputs with the code before and after the 2026-11-15 r
 
 A model folder (`models/<name>/`, written by `simcode.pipeline.training`; names in `config.MODEL_FILES`):
 `detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt`, `calib/calib_emitter_pass1_sim.json`,
-`calib/calib_emitter_pass1_real.json`, `calib/calib_emitter_pass2_sim.json`, `calib/calib_emitter_pass2_real.json`,
+`calib/calib_emitter_pass2_sim.json`,
 `calib/sigma_rescale_pass1.json`, `calib/sigma_rescale_pass2.json`, the PSF it was trained on, `model.json`. The networks
 a new model starts from: `models/pretrain_detector_pass1.pt`, `models/pretrain_emitter_pass1.pt`; the calibration templates
-of a new model: `models/calib/template_calib_emitter_pass{1,2}_{sim,real}.json` (`models/README.md`).
+of a new model: `models/calib/template_calib_emitter_pass{1,2}_sim.json` (`models/README.md`).
+
+Removed 2026-11-17: the real-data sigma calibrations `calib/calib_emitter_pass{1,2}_real.json` of every model, the templates
+`calib/template_calib_emitter_pass{1,2}_real.json`, the model keys `cal_real` / `cal_real_pass2` (a definition that still has
+them is refused, `config.REMOVED_KEYS`), `config.CAL_REAL` / `CAL_REAL_PASS2` / `TEMPLATE_CAL_REAL*`, `simcode.run --cal_kind`
+(`--config` of an older record drops it with a warning), the `_real` outputs of `simcode.calibration.fit_cal_set` and the
+pipeline key `train.real_mult_from` (now `train.template_model`: the shipped model a quick run starts from). The archived
+model folders (`models/archive_*/`, not referenced by any config) keep their `_real` files as a record; their `model.json`
+files name `cal_real` and are refused by `config.model_set`.
 
 ## Outside the package
 

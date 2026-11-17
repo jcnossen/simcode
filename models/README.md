@@ -13,10 +13,10 @@ The small calibration json files are in git.
 
 | path | what |
 |---|---|
-| `<set>/calib/calib_emitter_pass1_sim.json`, `calib_emitter_pass1_real.json` | pass-1 solve calibration of a model: sigma table from the gate scenes (`_real`: with the real-data mismatch multiplier); the same names in every model folder (`m1809/`, `m25/`, `g13/`, `archive_*/<set>/`) |
-| `<set>/calib/calib_emitter_pass2_sim.json`, `calib_emitter_pass2_real.json` | the same for pass 2 |
+| `<set>/calib/calib_emitter_pass1_sim.json` | pass-1 solve calibration of a model: sigma table from the simulated gate scenes, used for real and simulated movies (the `_real` variant with a real-data sigma multiplier was removed on 2026-11-17; the archived folders `archive_*/<set>/` keep theirs as a record); the same names in every model folder (`m1809/`, `m25/`, `g13/`, `archive_*/<set>/`) |
+| `<set>/calib/calib_emitter_pass2_sim.json` | the same for pass 2 |
 | `<set>/calib/sigma_rescale_pass1.json`, `sigma_rescale_pass2.json` | selection-aware sigma rescale per pass (the model's `sig_u`; applied by `simcode.run` / `simcode.table`; fitted by `analysis/psf3d_nets/sigcal.py`) |
-| `calib/template_calib_emitter_pass1_sim.json`, `template_calib_emitter_pass1_real.json`, `template_calib_emitter_pass2_sim.json`, `template_calib_emitter_pass2_real.json` | calibrations of the earlier default networks (`pretrain_detector_pass1.pt` + `pretrain_emitter_pass1.pt`; pass 2 `archive_superseded/previous_default/`): the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`, `simcode.pipeline.training`; `config.TEMPLATE_CAL_*`); the pass-1 sim one is also the start of the automatic-c fit |
+| `calib/template_calib_emitter_pass1_sim.json`, `template_calib_emitter_pass2_sim.json` | calibrations of the earlier default networks (`pretrain_detector_pass1.pt` + `pretrain_emitter_pass1.pt`; pass 2 `archive_superseded/previous_default/`): the templates from which the calibration of a new model is fitted (`analysis/psfmatch/fit_cal_set.py`, `simcode.pipeline.training`; `config.TEMPLATE_CAL_*`); the pass-1 one is also the start of the automatic-c fit |
 | `calib/template_calib_emitter_pass1_brightness_noise_fit.json`, `template_calib_emitter_pass1_base.json` | the sigma table of the automatic-c estimator `simcode/solve/brightness_noise_fit.py` (analysis only; `config.CAL_BRIGHTNESS_NOISE_FIT`); the base calibration from which the pass-1 templates were fitted (`analysis/calib/fit_cal.py`) |
 | `archive_superseded/previous_default/calib/`, `archive_pass2_generic/g2ss/calib/` | calibrations of superseded networks, not used by the code: the first automatic-c table, the pass-2 movie-benchmark sim calibration, the automatic-c calibrations of the full real 0.5 / 2.5 / 20 nM runs, the earlier sigma rescale; the generic pass-2 study set g2ss |
 | `insitu/calib_<movie>*.json` | in-situ PSF + camera calibration per movie (`_psf3d`: per-axis PSF; `_psf3d_avg`: averaged over the two pattern axes = the PSF the pre-v2 models were trained on (archive_psf_v1; the current models use `_psf_v2`); `calib_gauss1.3.json`: Gaussian sigma 1.3 px, the preprint's simulation PSF) |
@@ -130,5 +130,5 @@ trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,25
 `--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.
 Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
 Calibrations: `python -m simcode.processing.gate_dump` of the new networks on the gate scenes rendered with the model's PSF
-(`--calib $C --gate_dir <gate npz folder>`), then `analysis/psfmatch/fit_cal_set.py` (templates: `calib/template_calib_emitter_pass{1,2}_{sim,real}.json` above), then the
+(`--calib $C --gate_dir <gate npz folder>`), then `python -m simcode.calibration.fit_cal_set` (templates: `calib/template_calib_emitter_pass{1,2}_sim.json` above), then the
 sigma rescale `analysis/psf3d_nets/sigcal.py fit` on a simulated movie with ground truth.

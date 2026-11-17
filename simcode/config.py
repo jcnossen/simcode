@@ -48,17 +48,23 @@ def model_sets():
 
 # file keys of a model definition before 2026-11-15 (det / head / p2_*): refused with the name of the migration script
 OLD_KEYS = ('det', 'head', 'p2_det', 'p2_head', 'p2_cal_sim', 'p2_cal_real')
+# calibrations with the real-data sigma multiplier (sig_ph_real_mult), removed 2026-11-17: a model has one solve calibration per
+# pass (cal_sim, cal_sim_pass2), fitted on simulation only; a definition that still names cal_real / cal_real_pass2 is refused
+REMOVED_KEYS = ('cal_real', 'cal_real_pass2')
 
 
 def _check_keys(name, M, where):
     old = [k for k in M if k in OLD_KEYS]
     if old: raise ValueError(f'{where}: model {name!r} uses the key names before 2026-11-15 {old}; rewrite the file with '
                              'analysis/maintenance/rename_model_keys.py')
+    rem = [k for k in M if k in REMOVED_KEYS]
+    if rem: raise ValueError(f'{where}: model {name!r} names {rem}, the real-data sigma calibrations removed on 2026-11-17 '
+                             '(real movies use the simulation-fitted cal_sim / cal_sim_pass2); delete these keys')
 
 
 def model_folder(path):
     """a model folder (or its model.json) -> model dict with absolute file paths, 'name' and 'folder'. model.json holds one
-    entry {name: {detector, emitter, cal_sim, cal_real, detector_pass2, emitter_pass2, cal_sim_pass2, cal_real_pass2, sig_u, psf}}
+    entry {name: {detector, emitter, cal_sim, detector_pass2, emitter_pass2, cal_sim_pass2, sig_u, psf}}
     with paths relative to
     the folder (absolute paths are kept), plus '_recipe' / '_files' (training record, hashes)."""
     f = os.path.join(path, MODEL_JSON) if os.path.isdir(path) else path
@@ -84,8 +90,8 @@ def is_model_folder(p):
 
 
 def model_set(name=None):
-    """model -> dict with the files detector, emitter (pass-1 networks), cal_sim, cal_real (their solve calibrations),
-    detector_pass2, emitter_pass2, cal_sim_pass2, cal_real_pass2 (pass 2), sig_u ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
+    """model -> dict with the files detector, emitter (pass-1 networks), cal_sim (their solve calibration, fitted on simulation),
+    detector_pass2, emitter_pass2, cal_sim_pass2 (pass 2), sig_u ('<pass 1 json>,<pass 2 json>'), psf, and name. `name`: a model of models.json (file names relative to the models
     folder), or the path of a model folder / model.json (absolute file names; also 'folder'). None: '_default' of models.json (the default is for the package's own gate scenes and trainers; simcode.run and the
     pipeline require an explicit model)."""
     S = model_sets()
@@ -100,7 +106,7 @@ def model_set(name=None):
 
 
 def production():
-    """the paper's production recipe ('_production' of models.json): calibration kind, selection, datasets (movie, calib, model)"""
+    """the paper's production recipe ('_production' of models.json): selection, datasets (movie, calib, model)"""
     return model_sets()['_production']
 
 
@@ -110,24 +116,19 @@ DETECTOR = _S['detector']                                      # pass-1 detector
 EMITTER = _S['emitter']                                        # pass-1 emitter network
 DETECTOR_PASS2 = _S['detector_pass2']                          # pass-2 (pattern-aware) detector
 EMITTER_PASS2 = _S['emitter_pass2']                            # pass-2 emitter network
-CAL_REAL = _S['cal_real']                                      # pass-1 solve calibration, real-data sigma (fixed c)
-CAL_SIM = _S['cal_sim']                                        # same, sim sigma table (gate scenes)
-CAL_REAL_PASS2 = _S['cal_real_pass2']                          # pass-2 solve calibration, real-data sigma
-CAL_SIM_PASS2 = _S['cal_sim_pass2']                            # pass-2, sim sigma (gate scenes)
+CAL_SIM = _S['cal_sim']                                        # pass-1 solve calibration (fixed c; sigma table fitted on the gate scenes)
+CAL_SIM_PASS2 = _S['cal_sim_pass2']                            # pass-2 solve calibration (the same for pass 2)
 # calibrations of the pretraining networks (pretrain_detector_pass1 + pretrain_emitter_pass1): the sigma table of the opt-in automatic
 # (s, c, c_a) fit (solve/brightness_noise_fit.py) and its start; the templates from which the calibration of a new model is fitted
 # (analysis/psfmatch/fit_cal_set.py) are TEMPLATE_CAL_*
 CAL_BRIGHTNESS_NOISE_FIT = 'calib/template_calib_emitter_pass1_brightness_noise_fit.json'
-TEMPLATE_CAL_SIM = 'calib/template_calib_emitter_pass1_sim.json'           # pass 1, sim sigma
-TEMPLATE_CAL_REAL = 'calib/template_calib_emitter_pass1_real.json'         # pass 1, real-data sigma multiplier
-TEMPLATE_CAL_SIM_PASS2 = 'calib/template_calib_emitter_pass2_sim.json'     # pass 2, sim sigma
-TEMPLATE_CAL_REAL_PASS2 = 'calib/template_calib_emitter_pass2_real.json'   # pass 2, real-data sigma multiplier
+TEMPLATE_CAL_SIM = 'calib/template_calib_emitter_pass1_sim.json'           # pass 1
+TEMPLATE_CAL_SIM_PASS2 = 'calib/template_calib_emitter_pass2_sim.json'     # pass 2
 PRETRAIN_DETECTOR = 'pretrain_detector_pass1.pt'                         # start of a new pass-1 detector (4Pi) / default detector of the emitter trainer
 PRETRAIN_EMITTER = 'pretrain_emitter_pass1.pt'                           # start of a new pass-1 emitter network
 CAL_BRIGHTNESS_NOISE_FIT_START = TEMPLATE_CAL_SIM
 # file names inside a model folder (model.json; simcode.pipeline.training writes them)
 MODEL_FILES = dict(detector='detector_pass1.pt', emitter='emitter_pass1.pt', detector_pass2='detector_pass2.pt', emitter_pass2='emitter_pass2.pt',
-                   cal_sim='calib/calib_emitter_pass1_sim.json', cal_real='calib/calib_emitter_pass1_real.json',
-                   cal_sim_pass2='calib/calib_emitter_pass2_sim.json', cal_real_pass2='calib/calib_emitter_pass2_real.json',
+                   cal_sim='calib/calib_emitter_pass1_sim.json', cal_sim_pass2='calib/calib_emitter_pass2_sim.json',
                    sig_u='calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json')
 INSITU_05 = 'insitu/calib_0.5nM.json'                          # in-situ PSF + camera calibration, 0.5 nM movie (default PSF of the gate scenes)

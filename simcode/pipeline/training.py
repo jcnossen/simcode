@@ -12,7 +12,8 @@ directory 'quick/'):
   pattern only in detector_pass2, half own / half generic in every other pass-2 stage (models/README.md)
   gate scenes (simcode.benchmark.gate_scenes, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (detector + emitter) and pass 2
   (detector_pass2_cont + emitter_pass2_final)
-  -> sim-sigma solve calibrations (analysis/psfmatch/fit_cal_set.py; the _real multiplier copied from the m1809 templates)
+  -> the solve calibrations of pass 1 and pass 2 (simcode.calibration.fit_cal_set, fitted on the gate scenes; used for real and
+     simulated movies)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
   -> <dir>/model.json (format of simcode/models.json, absolute paths)
 Not in this wrapper (reported): the selection-aware sigma rescale sig_u (needs a simulated movie with ground truth,
@@ -90,7 +91,7 @@ def run(ds):
         return os.path.join(d, 'final.pt')
 
     from simcode import config as SC
-    det_init = Tc['init']['detector'] or (SC.resolve(SC.model_set(Tc['real_mult_from'])['detector']) if quick else None)   # quick: a few steps on top of the template detector
+    det_init = Tc['init']['detector'] or (SC.resolve(SC.model_set(Tc['template_model'])['detector']) if quick else None)   # quick: a few steps on top of the template detector
     det = stage('detector', ['--init', det_init] if det_init else [])
     emitter = stage('emitter', ['--detector', det, '--init', Tc['init']['emitter']] + (['--hold', hold] if hold else []))
     det2 = stage('detector_pass2', ['--illum', '1', '--init', det])
@@ -121,18 +122,17 @@ def run(ds):
                f's1={files["detector"]}:{files["emitter"]},s2={files["detector_pass2"]}:{files["emitter_pass2"]}'], os.path.join(D, 'dump.log'), gpu=ds.gpu(8), wrap=W)
         open(os.path.join(FE, 'done'), 'w').close()
     os.makedirs(os.path.join(M, 'calib'), exist_ok=True)
-    cals = {k: os.path.join(M, SC.MODEL_FILES[k]) for k in ('cal_sim', 'cal_real', 'cal_sim_pass2', 'cal_real_pass2')}
-    rm = Tc['real_mult_from']
-    from simcode import config as SC
+    cals = {k: os.path.join(M, SC.MODEL_FILES[k]) for k in ('cal_sim', 'cal_sim_pass2')}
+    rm = Tc['template_model']
     tmpl = SC.model_set(rm)
     fallback = []
-    for fr, base, ks, ksr in (('s1', SC.TEMPLATE_CAL_SIM, 'cal_sim', 'cal_real'), ('s2', SC.TEMPLATE_CAL_SIM_PASS2, 'cal_sim_pass2', 'cal_real_pass2')):
-        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.calibration.fit_cal_set', fr, FE, SCEN_FIT, base, cals[ks], cals[ksr], tmpl[ksr]],
+    for fr, base, ks in (('s1', SC.TEMPLATE_CAL_SIM, 'cal_sim'), ('s2', SC.TEMPLATE_CAL_SIM_PASS2, 'cal_sim_pass2')):
+        sh('fitcal_' + fr, ['-m', 'simcode.pipeline.run_with_overrides', 'simcode.calibration.fit_cal_set', fr, FE, SCEN_FIT, base, cals[ks]],
               os.path.join(D, f'fitcal_{fr}.log'), gpu=ds.gpu(4), wrap=W, check=not quick)
-        if quick and not (os.path.exists(cals[ks]) and os.path.exists(cals[ksr])):
-            # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template set's calibrations
-            shutil.copyfile(SC.resolve(tmpl[ks]), cals[ks]); shutil.copyfile(SC.resolve(tmpl[ksr]), cals[ksr]); fallback.append(fr)
-            ds.log(f'train (quick): calibration fit of {fr} failed (no matched targets), copied the {rm} calibrations')
+        if quick and not os.path.exists(cals[ks]):
+            # quick plumbing: networks after a few steps detect nothing -> the fit has no targets; copy the template model's calibration
+            shutil.copyfile(SC.resolve(tmpl[ks]), cals[ks]); fallback.append(fr)
+            ds.log(f'train (quick): calibration fit of {fr} failed (no matched targets), copied the {rm} calibration')
     # ---- acceptance (held-out seed 301)
     acc_js = os.path.join(D, 'accept.json')
     sh('accept', ['-m', 'simcode.pipeline.run_with_overrides', os.path.join(REPO, 'simcode', 'pipeline', 'acceptance.py'), FE, cals['cal_sim'], cals['cal_sim_pass2'],
@@ -161,7 +161,7 @@ def run(ds):
                   written=RC.now(), config_file=RC.file_record(c['_file']) if c.get('_file') else None, config=c,
                   code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),
                   steps=steps, trainer_base_args=T_BASE, eval_ckpt_every=EVERY, init=dict(Tc['init'], det_used=det_init), extra_args=Tc['extra'],
-                  gate=dict(scenes=scen, seeds=seeds, ntarget=nt, fit_scene=SCEN_FIT, heldout_seed=301), real_mult_from=rm, calib_fallback=fallback,
+                  gate=dict(scenes=scen, seeds=seeds, ntarget=nt, fit_scene=SCEN_FIT, heldout_seed=301), template_model=rm, calib_fallback=fallback,
                   overrides=json.load(open(W)), commands=cmds, trained_files=trained, accept=A, gates=gates,
                   not_included='sig_u (selection-aware sigma rescale) is not fitted by this stage')
     S['_recipe'] = recipe; S['_files'] = recs

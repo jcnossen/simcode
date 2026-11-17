@@ -41,7 +41,7 @@ REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
                'windows of 6 frames starting every 3 frames')
 # arguments of simcode.run that define the results (the others: out, claim, redo, config)
-RERUN_KEYS = ('movie', 'calib', 'model', 'cal_kind', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb')
+RERUN_KEYS = ('movie', 'calib', 'model', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb')
 
 
 def now():
@@ -471,7 +471,8 @@ def rerun_argv(R):
     """the simcode.run arguments that reproduce a record (without --out, --claim, --redo)"""
     S = dict(R['settings']); a = []
     # settings of earlier records that are no longer options (2026-11-15: format, subset, sigma_max, prefetch, sig_u = the
-    # model's) are not passed; an earlier record's crop is (its default 5,5,110 was written into the record)
+    # model's; 2026-11-17: cal_kind, see simcode.run._from_config) are not passed; an earlier record's crop is (its default
+    # 5,5,110 was written into the record)
     for k in RERUN_KEYS:
         v = S.get(k)
         if v is None or v == '' or (k in ('nframes',) and not v): continue

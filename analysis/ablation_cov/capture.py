@@ -46,7 +46,7 @@ def main():
         if os.path.exists(fn): continue
         t0 = time.time(); tm = {}
         P1 = dict(np.load(f'{a.run}/pass1_{f0}.npz'))       # pass-1 rows: the z of the pass-2 rows (not stored here)
-        R, H = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, scal, P1, config.resolve(N['cal_real']), crop=crop, margin=5, timing=tm,
+        R, H = p2.run_chunk(movie, cal, f0, min(f0 + a.chunk, nf), Pt, scal, P1, config.resolve(N['cal_sim']), crop=crop, margin=5, timing=tm,
                             return_head=True)
         o = {k: v.float().cpu().numpy() for k, v in H['o'].items() if k in ('I', 'L', 'x', 'y', 'lsxy', 'x_det', 'y_det', 'bg')}
         bw = H['bw'].cpu().numpy(); uw, inv = np.unique(bw, return_inverse=True)
