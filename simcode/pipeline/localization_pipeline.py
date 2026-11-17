@@ -1,7 +1,7 @@
 """SIMCODE v2 automatic per-dataset pipeline (docs/AUTO_PIPELINE.md): one config file -> camera calibration, optional bead
 fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
-  python -m simcode.pipeline <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
+  python -m simcode.pipeline <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 0,1] [--force]
 
   python -m simcode.pipeline <setup.py> [--only name1,name2] [--show]      a Python file that defines `config` or a list `configs`
 
@@ -443,7 +443,7 @@ def main(argv=None):
     ap.add_argument('--stages', default='all', help='comma list of ' + ','.join(STAGES) + ' or all')
     ap.add_argument('--redo', default='', help='comma list: redo these stages and every later one')
     ap.add_argument('--quick', action='store_true', help='stage e: few steps per trainer (plumbing test)')
-    ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 1,2')
+    ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 0,1')
     ap.add_argument('--force', action='store_true', help='continue after failed checks')
     ap.add_argument('--only', default='', help='comma list of acquisition names (a Python file with several `configs`)')
     ap.add_argument('--show', action='store_true', help='print the resolved config(s) and exit (nothing is written)')

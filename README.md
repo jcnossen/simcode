@@ -64,7 +64,7 @@ The baselines of the paper (`analysis/baselines`, on the `paper_figures` branch)
 ## Run
 
 ```bash
-export CUDA_VISIBLE_DEVICES=1           # GPU 1 or 2 on the lab server (keep GPU 0 free)
+export CUDA_VISIBLE_DEVICES=0
 python -m simcode.run --movie /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif \
     --calib m1809/calib_1809_2_psf_v2.psf.zip --model m1809 --crop 5,5,110 --out out_1809_2
 python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out out_1809_2   # the same: a paper dataset
@@ -103,7 +103,7 @@ on 2026-11-17 (`--cal_kind`; the model key `sig_u`) no longer exist.
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
 ```bash
-python -m simcode.io.launch --gpus 1,2 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint \
+python -m simcode.io.launch --gpus 0,1 --log out_1809_2/run -- python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint \
     --out out_1809_2 --claim 1
 ```
 
@@ -230,7 +230,7 @@ files with checksums, the recipe of a model). The models are defined in `simcode
 
 ```bash
 python -m simcode.pipeline simcode/pipeline/configs/fourpi.py --work <4Pi work folder> --data <raw 4Pi movies> \
-    --only fourpi_MT --gpus 1,2                                                         # 4Pi-SIMCODE (network): registration, every file, report
+    --only fourpi_MT --gpus 0,1                                                         # 4Pi-SIMCODE (network): registration, every file, report
 python -m simcode.processing.fourpi <out>/config_resolved.json --files 10              # one file of an acquisition (the process stage's worker)
 ```
 The dcimg files are read through `simcode/io/movie.py` and the files of an acquisition run through `simcode/io/work.py`

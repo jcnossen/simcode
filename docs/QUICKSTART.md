@@ -33,7 +33,6 @@ Write one YAML file per movie. A key you leave out takes the default of our setu
 name: "my_movie"           # quote it if it looks like a number
 movie: /data/my_movie.tif
 out: /data/simcode_out/my_movie
-gpus: [0]                  # GPUs the pipeline may use (the default [1, 2] is our lab server)
 optics:
   pixel_um: 0.10833        # pixel size in the sample
   NA: 1.49
@@ -46,12 +45,9 @@ camera:
 pattern:
   frame_order: blocked     # blocked: 3 steps of orientation 1, then 3 of orientation 2; interleaved: orientations alternate
   pitch_px: [1.6, 2.8]     # search range of the pattern period (camera pixels)
-beads:                     # optional: bead z-stacks of the same setup, as a start for the PSF fit
-  stacks: [/data/beads/zstack1.tif, /data/beads/zstack2.tif]
-  dz_um: 0.010             # z step of the stacks
-  sign: 1                  # stage direction (+1 or -1; ours is -1)
-  offset_adu: 99.3         # only if the stacks were recorded with another camera offset / gain than the movie
 ```
+
+No bead z-stack is needed: the PSF is estimated from the movie itself (section 3). Bead stacks are optional, as an extra starting point for the PSF fit (`beads:`, see `simcode/pipeline/configs/1809_2.yaml`).
 
 To see the settings the pipeline will use, without running anything or writing any file, run `python -m simcode.pipeline my_movie.yaml --show`. A worked example of our own setup is in `simcode/pipeline/configs/1809_2.yaml`.
 
@@ -67,10 +63,17 @@ The stages run in this order. Each stage writes its own folder under `out`.
 
 1. **order, camera:** the frame order of the pattern, and the camera gain, offset and read noise.
 2. **spots, cammaps, tracks:** finds the isolated emitters in the movie and makes the per-pixel camera maps.
-3. **beads** (only with bead stacks) and **psf:** fit the in-situ PSF of your microscope. Steps 1–3 took about 20 minutes on our movie.
+3. **psf:** estimates the PSF of your microscope from the movie itself (below). Steps 1–3 took about 20 minutes on our movie.
 4. **train:** trains the detector and emitter networks on simulations of your PSF and camera. This takes by far the longest: about 7 hours on one RTX 3090.
 5. **process:** localizes the movie. Our 120000-frame movie took about 1 hour on one RTX 3090. The tables go to `out/process/run_<id>/`.
 6. **report:** writes `out/report/report.html`, with the checks of every stage, the PSF, the pattern and the FRC.
+
+How the PSF is estimated, without a z-stack:
+
+- The spots and tracks stages find isolated emitters in the movie and cut out their blinking events over consecutive frames.
+- The psf stage fits a vectorial PSF model to those events with torch-psf's in-situ fit: Zernike aberrations plus focus, then a blur term, then the polarization (photoselection) terms. It starts from several focus guesses and keeps the best fit.
+- The same fit gives the first estimate of the illumination pattern.
+- A held-out check refits on half of the events and tests on the other half. The result, `out/psf/calib.json`, is the PSF the networks are trained on. `docs/PSF_POLARIZATION.md` has the details.
 
 Useful to know:
 
@@ -78,7 +81,7 @@ Useful to know:
 - You can stop a run at any time. When you run the same command again, it skips the finished stages (and, in the train stage, the networks that are already trained).
 - `--redo psf` redoes that stage and every stage after it.
 - `--stages` runs only some stages, for example `--stages order,camera`.
-- `--gpus 0` overrides the GPU list of the config.
+- The pipeline uses GPU 0. `--gpus 0,1` (or `gpus: [0, 1]` in the config) lets it use several GPUs.
 - `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then start the real run with `--redo train`, because the train stage of the quick run counts as finished.
 - Already have a model for this microscope? Put `train: {model: <model folder>}` in the config to skip the training. For example, use the `out/train` folder of an earlier run. The other stages still run, so the movie gets its own camera and PSF calibration. The models we ship (`m1809`, `g13`) only fit our own setup.
 - To localize more movies with a model you already have, there are two ways:

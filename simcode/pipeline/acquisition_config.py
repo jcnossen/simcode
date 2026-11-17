@@ -43,7 +43,7 @@ DEFAULTS = {
                   gates=dict(sigma_zcal=[0.9, 1.15], rms_ratio_max=1.05), template_model='m1809'),
     'process': dict(model=None, calib=None, crop=None, chunk=6000, nframes=0, chunk_list='', det_batch=64,
                     cycle_aligned_only=False, extra=[]),
-    'gpus': [1, 2],
+    'gpus': [0],
 }
 BEAD_DEFAULTS = dict(stacks=[], dz_um=0.010, sign=1.0, offset_adu=None, gain_e_per_adu=None, holdout=0, iters=300, roi=26)
 ORDERS = {'blocked': [0, 1, 2, 3, 4, 5], 'interleaved': [0, 3, 1, 4, 2, 5]}   # acquisition frame j of a cycle -> slot
