@@ -81,7 +81,7 @@ Useful to know:
 - You can stop a run at any time. When you run the same command again, it skips the finished stages (and, in the train stage, the networks that are already trained).
 - `--redo psf` redoes that stage and every stage after it.
 - `--stages` runs only some stages, for example `--stages order,camera`.
-- The pipeline uses GPU 0. `--gpus 0,1` (or `gpus: [0, 1]` in the config) lets it use several GPUs.
+- The pipeline uses GPU 0. With `--gpus 1,0` (or `gpus: [1, 0]` in the config) each stage takes the first GPU in that list with enough free memory.
 - `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then start the real run with `--redo train`, because the train stage of the quick run counts as finished.
 - Already have a model for this microscope? Put `train: {model: <model folder>}` in the config to skip the training. For example, use the `out/train` folder of an earlier run. The other stages still run, so the movie gets its own camera and PSF calibration. The models we ship (`m1809`, `g13`) only fit our own setup.
 - To localize more movies with a model you already have, there are two ways:
