@@ -16,8 +16,11 @@ def model_of(ds):
         except KeyError:
             pass
     f = name if name and os.path.exists(str(name)) else os.path.join(ds.out, 'train', 'model.json')
-    S = json.load(open(f))
+    if os.path.isdir(f): f = os.path.join(f, config.MODEL_JSON)          # a model folder
+    S = json.load(open(f)); base = os.path.dirname(os.path.abspath(f))
     (n, s), = [(k, v) for k, v in S.items() if not k.startswith('_')]
+    # file names relative to the folder (an exported model, models/<set>/model.json) -> absolute, as simcode.config.model_folder
+    s = {k: os.path.join(base, v) if isinstance(v, str) and v and not k.startswith('_') and not os.path.isabs(v) else v for k, v in s.items()}
     return n, s
 
 
