@@ -32,7 +32,7 @@ si_phase_decouple (CPU only):
   Panel A uses 3000-frame blocks (readability), panel B and the numbers 150-frame blocks (= the eps knot spacing).
 
 si_pattern_plots_extended:
-  locs_p1.hdf5 of the run (pass-1 rows: per-frame network intensities I [n, 6] of pass 1 and the position of the explicit
+  locs_p1_net.hdf5 of the run (pass-1 rows: per-frame network intensities I [n, 6] of pass 1 and the position of the explicit
   pattern solve with the estimated pattern; simcode.dataset.Dataset). Phase of frame j of a row: k_a.r - psi_s - eps_a(t),
   t = window start + j, wrapped to [0, 2 pi). Selection = Dataset.mask() (the paper's: score p >= 0.63, calibrated
   max(sigma_x, sigma_y) <= 12 nm, inside the crop); the comparison set = the other rows inside the crop. A random subsample of
@@ -54,7 +54,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import paper_common  # noqa: F401  (paper matplotlib settings)
 import matplotlib.pyplot as plt
 
-RUN = '/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115'
+RUN = '/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_final_20261117'
 OUT = '/home/jc/simcode2/out/paper_figs_v2'
 T6 = 6
 STEP_COLORS = ['tab:blue', 'tab:orange', 'tab:green']
@@ -265,7 +265,7 @@ def fig_pattern_plots_extended(run, outdir, n_show=700, seed=1, name='si_pattern
     import torch
     from simcode.dataset import Dataset
     pat = load_pattern(run)
-    L = Dataset.load(f'{run}/locs_p1.hdf5')
+    L = Dataset.load(f'{run}/locs_p1_net.hdf5')
     sel = L.mask().numpy()
     inreg = L.mask(max_precision_nm=None, min_score=None).numpy()
     F = L.numpy()
@@ -277,7 +277,7 @@ def fig_pattern_plots_extended(run, outdir, n_show=700, seed=1, name='si_pattern
     K, psi, m, rel = pat['K'], pat['psi'], pat['m'], pat['rel']
     rng = np.random.default_rng(seed)
     fig, axs = plt.subplots(1, 2, figsize=(12, 5.2), sharey=True, gridspec_kw=dict(wspace=0.12))
-    V = dict(run=run, table=f'{run}/locs_p1.hdf5', n_in_crop=int(good.sum()), n_selected=int(sets['sel'].sum()),
+    V = dict(run=run, table=f'{run}/locs_p1_net.hdf5', n_in_crop=int(good.sum()), n_selected=int(sets['sel'].sum()),
              n_rest=int(sets['rest'].sum()), n_show_rows=n_show, seed=seed, depth=m.tolist(),
              pitch_nm=[2 * np.pi / np.hypot(*K[a]) * 108.33 for a in (0, 1)],
              angle_deg=[float(np.degrees(np.arctan2(K[a, 1], K[a, 0]))) for a in (0, 1)], rel=rel.tolist(), fits={})
@@ -458,7 +458,7 @@ def caption_pattern(V, D=None):
 # consistent with SIMCODE and Figs 3 / 4); the pre-refit tables were out/paper2/<ds>
 DS = {'1809_2': dict(title='Low density DNA-PAINT (1809/2)', run=RUN, base='/home/jc/simcode2/out/paper2/1809_2/baselines_psfv2'),
       '2.5nM_2': dict(title='Medium density DNA-PAINT (2.5 nM/2)',
-                      run='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final',
+                      run='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_final_20261117',
                       base='/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2')}
 CROP = (5.0, 5.0, 110.0)
 NN_MIN = 3.0             # px: the pattern estimation's isolation (run_config fixed.nn_min; pattern_estimation.select)
@@ -467,7 +467,7 @@ INC_COLOR, EXC_COLOR = 'b', 'r'          # the preprint's colours (included blue
 
 def run_ready(run):
     try:
-        return (json.load(open(f'{run}/run_config.json')).get('status') == 'done' and os.path.exists(f'{run}/locs_p1.hdf5')
+        return (json.load(open(f'{run}/run_config.json')).get('status') == 'done' and os.path.exists(f'{run}/locs_p1_net.hdf5')
                 and os.path.exists(f'{run}/pattern_est.pt'))
     except Exception:
         return False
@@ -524,7 +524,7 @@ def simflux_pattern_rows(base, ep=0, me_thr=0.1, chunk=500000):
 
 
 def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
-    """SIMCODE: locs_p1.hdf5 (pass-1 network intensities and the pattern-free pass-1 head position (x_prior, y_prior)),
+    """SIMCODE: locs_p1_net.hdf5 (pass-1 network intensities and the pattern-free pass-1 head position (x_prior, y_prior)),
     pattern_est.pt (its own estimated pattern). Base population = the detections p >= 0.63 (the detection threshold of the
     paper's selection, no precision cut) inside the crop with finite, positive-sum intensities and finite positions. Included =
     modulation error gamma < me_thr, the SIMFLUX input rule applied to SIMCODE's own data: gamma = max over the 6 frames t of
@@ -534,7 +534,7 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
     paper_sel = the paper's selection (p >= 0.63, max(sigma) <= 12 nm), reference only."""
     from simcode.dataset import Dataset
     pat = load_pattern(run); K, psi, m, rel = pat['K'], pat['psi'], pat['m'], pat['rel']
-    L = Dataset.load(f'{run}/locs_p1.hdf5')
+    L = Dataset.load(f'{run}/locs_p1_net.hdf5')
     sel = L.mask().numpy(); base = L.mask(max_precision_nm=None).numpy()          # p >= 0.63, crop
     F = L.numpy(); del L
     I = F['intensities']
@@ -582,7 +582,7 @@ def simcode_pattern_rows(run, ep=0, me_thr=0.1, chunk=4000000):
                 sin_conv=False, relint=float(r0), depth=float(m[a]), pitch_nm=float(2 * np.pi / np.hypot(*K[a]) * 108.33), n=int(n),
                 n_inc=int(inc.sum()), rule=f'modulation error < {me_thr} (own pattern, pass-1 intensities at the pass-1 head position)',
                 base='detections p >= 0.63 in the crop (no precision cut), finite positive intensities',
-                files=[f'{run}/locs_p1.hdf5', f'{run}/pattern_est.pt'])
+                files=[f'{run}/locs_p1_net.hdf5', f'{run}/pattern_est.pt'])
 
 
 def cached_rows(meth, ds, ep, outdir):
@@ -789,7 +789,7 @@ def caption_pattern_preprint(V):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[0])
-    ap.add_argument('--run', default=RUN, help='simcode.run output directory (pattern_est.pt, pass1_*.npz, locs_p1.hdf5)')
+    ap.add_argument('--run', default=RUN, help='simcode.run output directory (pattern_est.pt, pass1_*.npz, locs_p1_net.hdf5)')
     ap.add_argument('--outdir', default=OUT)
     ap.add_argument('--which', default='all', choices=['all', 'decouple', 'pattern', 'pattern_ext'])
     ap.add_argument('--datasets', default='auto', help="comma list of DS keys for si_pattern_plots; auto = 1809_2 (+ 2.5nM_2 once done)")

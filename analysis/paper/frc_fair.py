@@ -33,6 +33,19 @@ BLK = 300                 # FRC halves: alternating 300-frame blocks
 CROP = EP.CROP            # (x0, y0, size) px
 
 
+# the SIMCODE table of a run directory used by the paper (user decision 2026-11-17: the pass-2 pattern solve, locs_p2_solve; the
+# run's default result table locs_p2_net is not used for the paper figures)
+V2_TABLE = 'locs_p2_solve'
+
+
+def v2_dataset(path):
+    """a SIMCODE run directory (-> its V2_TABLE; a run before 2026-11-17: locs_p2) or a table file -> simcode.dataset.Dataset"""
+    from simcode.dataset import Dataset
+    if os.path.isdir(path):
+        return Dataset.from_run(path, table=V2_TABLE if os.path.exists(os.path.join(path, V2_TABLE + '.hdf5')) else 'locs_p2')
+    return Dataset.load(path)
+
+
 def load(kind, path, v2_sigma_max=None):
     """-> dict x, y (px, sensor, pixel centre = integer, x = column), f (window start), sx, sy (px), photons.
     Files are read with simcode.dataset.Dataset (smlm.npy / sf.hdf5 without the preprint package). v2: a run directory or table
@@ -44,7 +57,7 @@ def load(kind, path, v2_sigma_max=None):
         from simcode.dataset import decode_table      # <dir>/locs_fixed.npz: the frame-label fix of a pre-2026-11-15 table
         L = Dataset.from_decode(decode_table(path), window=GRID)
     elif kind == 'v2':
-        L = Dataset.load(path)
+        L = v2_dataset(path)
         L = L.select(v2_sigma_max) if v2_sigma_max is not None else L[L.sel]
     else:
         raise ValueError(kind)

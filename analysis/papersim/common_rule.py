@@ -2,8 +2,8 @@
 ground truth. Each method's own basic quality filters (those of its pipeline: SMLM chi-square, SIMFLUX modulation-error and
 |SIMFLUX - SMLM| < 0.5 px, DECODE's detection threshold, SIMCODE's detection threshold p >= 0.63) plus ONE common precision cut on
 the method's own reported uncertainty, max(sigma_x, sigma_y) < 0.15 px (16.25 nm): SMLM / SIMFLUX = CRLB, DECODE = its predicted
-sigma, SIMCODE = its reported sigma (the result table locs_p2_net: the pass-2 emitter network's sd, frcopt.v2_rows; until
-2026-11-17 the solve's calibrated sigma with the selection-aware rescale).
+sigma, SIMCODE = the posterior sigma of its pass-2 pattern solve (locs_p2_solve, frcopt.v2_rows; until 2026-11-17 with the
+selection-aware rescale).
 Rows = disjoint 6-frame windows inside the field [0, W) (= metrics.frc_set, the rows of the real-data FRC). Same rule as the
 real data's base set.
 Per method (smlm, sf, decode, v2; internal extra rows: sf_gtp = SIMFLUX with the GT pattern, v1 = the preprint SIMCODE when run):

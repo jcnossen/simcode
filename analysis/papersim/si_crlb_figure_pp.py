@@ -17,9 +17,9 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C
 
 
-# the SIMCODE row (2026-11-17): the pass-2 emitter network's output (s10 'nn_p2'), the paper's SIMCODE result (locs_p2_net); until
-# then the pass-2 solve ('v2_p2', kept in the s10 json)
-SC = 'nn_p2'
+# the SIMCODE row: the pass-2 pattern solve (s10 'v2_p2' = locs_p2_solve, the paper's SIMCODE; user decision 2026-11-17); the
+# pass-2 network output 'nn_p2' is kept in the values json
+SC = 'v2_p2'
 
 def example_stack(tag_json, bi, psf):
     """re-render the U(1, 6) scene of bin bi exactly as s10.py did (same rng / generator seeds) -> ROI [6,16,16] of emitter 0, gt x / y
@@ -116,7 +116,7 @@ def main():
                           for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg') for f in ('rmsd_trim2', 'rmsd')})
     for cond in ('const1', 'unif16'):            # network rows (s10 --tag json) + their ratio to the SIMCODE bound, both trims
         q = [R['cond'][cond][b] for b in sorted(R['cond'][cond], key=int)]
-        for k in ('nn_p1', SC, 'v2_p2'):
+        for k in ('nn_p1', SC, 'nn_p2'):
             for f in ('rmsd', 'rmsd_trim2'):
                 ext['rmsd_x_px'][f'{cond}_{k}_{f}'] = [x[k][f][0] for x in q]
                 ext.setdefault('ratio_to_simcode_bound_x', {})[f'{cond}_{k}_{f}'] = [x[k][f][0] / x['crlb_sf_pfbg'][0] for x in q]

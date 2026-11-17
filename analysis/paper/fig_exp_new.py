@@ -134,7 +134,7 @@ def raw_grid_count(kind, path, F, smlm_path=None, cache=None):
         from simcode.dataset import decode_table
         L = Dataset.from_decode(decode_table(src), window=6).numpy()
     elif kind == 'v2':
-        L = Dataset.load(src)
+        L = FF.v2_dataset(src)
         L = L[L.mask(max_precision_nm=None, in_region=False)].numpy()        # p >= P_GOOD only
     else:
         return None
@@ -150,7 +150,7 @@ REMOVED = dict(smlm='SMLM: chi^2 > 4 x ROI^2 or max(sigma_x, sigma_y) >= 0.15 px
                sf='SIMFLUX: the SMLM chi^2 filter, modulation error >= 0.1, SIMFLUX fit at a parameter limit or > 0.5 px from its '
                   'SMLM fit, or max(sigma_x, sigma_y) >= 0.15 px',
                decode='DECODE: its predicted max(sigma_x, sigma_y) >= 0.15 px',
-               v2='SIMCODE: max(sigma_x, sigma_y) > 12 nm')
+               v2='SIMCODE: posterior max(sigma_x, sigma_y) > 12 nm')
 
 
 def paper_text(s):
@@ -173,13 +173,13 @@ REMOVED_WORDS = dict(
        'at a parameter bound or more than 0.5 px from its SMLM position, or a precision of 0.15 px or worse',
     decode='DECODE: a network uncertainty of 0.15 px or worse',
     v1='SIMCODE (preprint): a precision of 0.15 px or worse',
-    v2='SIMCODE: an uncertainty above 12 nm')
+    v2='SIMCODE: a posterior uncertainty above 12 nm')
 
 
 def removed_words(k, v2s=12.0):
     if k == 'v2':
-        return ('SIMCODE: an uncertainty of 0.15 px or worse' if common_cut(v2s)
-                else f'SIMCODE: an uncertainty above {v2s:g} nm')
+        return ('SIMCODE: a posterior uncertainty of 0.15 px or worse' if common_cut(v2s)
+                else f'SIMCODE: a posterior uncertainty above {v2s:g} nm')
     return REMOVED_WORDS[k]
 
 
@@ -264,10 +264,10 @@ def common_cut(v2s):
 def sel_words(v2s):
     if common_cut(v2s):
         return (f"All methods: precision < 0.15 px ({FF.SIGMA_MAX * FF.PX:.2f} nm) on their own reported uncertainty: CRLB for SMLM / "
-                "SIMFLUX, network uncertainty for DECODE and for SIMCODE (the larger of the x and y values), after "
+                "SIMFLUX, network uncertainty for DECODE, the posterior uncertainty of the pattern solve for SIMCODE (the larger of the x and y values), after "
                 "each method's own quality filters (k); SIMCODE keeps only detections with a detection probability of at least 0.63.")
     return ("Localizations shown and counted per method: precision < 0.15 px (CRLB for SMLM / SIMFLUX, network uncertainty for "
-            f"DECODE), network uncertainty <= {v2s:g} nm for SIMCODE (in both cases the larger of the x and y values; SIMCODE also "
+            f"DECODE), posterior uncertainty of the pattern solve <= {v2s:g} nm for SIMCODE (in both cases the larger of the x and y values; SIMCODE also "
             "keeps only detections with a detection probability of at least 0.63).")
 
 
@@ -357,7 +357,7 @@ def compute(a, S, F, LABELS, KINDS, SEL, paths, out, od):
     if a.psf:
         import psfdata
         from simcode.dataset import Dataset as SD
-        V = SD.load(paths['v2']); V = V.select(a.v2_sigma_max) if a.v2_sigma_max is not None else V[V.sel]
+        V = FF.v2_dataset(paths['v2']); V = V.select(a.v2_sigma_max) if a.v2_sigma_max is not None else V[V.sel]
         keep, m2 = v2_rows
         V = V[torch_mask(keep)][torch_mask(m2)]       # the plotted set (= the FRC rows, after the --select cut)
         assert len(V) == res[KINDS.index('v2')]['n_frc'], (len(V), res[KINDS.index('v2')]['n_frc'])
@@ -425,7 +425,7 @@ def main():
                + f' ({SEL_RULE}; drift of the uncut sets).' if SEL else '')
             + ' K: accepted / removed counted on the windows with start f % 6 == 0 and the FRC crop. Raw: SMLM / SIMFLUX every detected '
               'ROI with an SMLM fit (summed-fit cache, before the chi^2 filter), DECODE every row, SIMCODE every row with p >= 0.63. Removed: '
-            + '; '.join(REMOVED[k] if k != 'v2' else f'SIMCODE: max(sigma_x, sigma_y) > {a.v2_sigma_max:g} nm (and >= 0.15 px)'
+            + '; '.join(REMOVED[k] if k != 'v2' else f'SIMCODE: posterior max(sigma_x, sigma_y) > {a.v2_sigma_max:g} nm (and >= 0.15 px)'
                         for k in KINDS if k in REMOVED) + '.'
             + (f" {S['fit_note']} SMLM raw = its own run's detected ROIs, SIMFLUX raw = those of the SIMFLUX table's run." if S.get('fit_note') else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))

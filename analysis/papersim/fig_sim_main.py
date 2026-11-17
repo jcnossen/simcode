@@ -134,7 +134,7 @@ def main():
             (f"preprint condition ({g0['intensity_per_6frames']:.0f} photons per 6-frame window, background {g0['bg']:g} photons/px/frame)" if a.internal else
              f"{g0['intensity_per_6frames']:.0f} detected photons per 6-frame window, background {g0['bg']:g} photons/px/frame"))
     md = [f"# Simulation table ({cond}; 60 000 frames)" if not a.internal else f'# Simulation table ({a.prefix}{a.suffix}, {SC} = {a.model}; 60 000 frames)', '',
-          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px' + ('; SIMCODE p >= 0.63, network σ' if a.v2key == 'v2c' else '') + '); GT-FRC = FRC(reconstruction, ground truth), 1/7; '
+          'n = localizations in the FRC set (disjoint 6-frame windows, σ < 0.15 px' + ('; SIMCODE p >= 0.63, posterior σ' if a.v2key == 'v2c' else '') + '); GT-FRC = FRC(reconstruction, ground truth), 1/7; '
           'frames to 30 nm GT-FRC ("-" = not reached in 60 000 frames, values <= 250 = reached in the first 250 frames); fair FRC = half-split FRC; '
           'Jaccard at 10 nm; false positive = a localization with no emitter ON in its window within 3 own σ. '
           'GT-FRC, frames to 30 nm and fair FRC: ' + GR.RULE_CAPTION, '',
@@ -152,7 +152,7 @@ def main():
     cap = [f"Simulated {gt_desc(runs[0], paper=not a.internal)}, 60 000 frames, {psfs}; {cond}; the same 2 x 3-step pattern for all densities.",
            f"(A) Renders of the same {w * C.PX_NM / 1000:.2f} µm crop for every method and emitter density (emitters/µm²/frame), same rendering in every "
            "tile; each tile gives the GT-FRC (FRC between the rendered reconstruction and the rendered ground truth of all labelling sites; 5 nm pixels, 1/7) "
-           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px" + ("; SIMCODE: detection probability >= 0.63 and its network σ < 0.15 px, "
+           "and the number of localizations (disjoint 6-frame windows, σ < 0.15 px" + ("; SIMCODE: detection probability >= 0.63 and its posterior σ (pattern solve) < 0.15 px, "
            "the same precision cut as every method" if a.v2key == 'v2c' else "") + "). "
            + ("SIMFLUX and the preprint SIMCODE use the pattern estimated from the data, as SIMCODE v2 does; " if a.internal else
               "SIMFLUX uses the pattern estimated from the data, as SIMCODE does; ") + "DECODE was retrained for this PSF following its published training settings (Supplementary Note: DECODE training), with the emitter heights and these photon / background / density ranges. "

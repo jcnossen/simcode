@@ -44,9 +44,9 @@ OUTD = os.path.join(C.OUT, 'frcopt')
 
 
 # ------------------------------------------------------------------------------------------------ loading
-def v2_rows(d, W, pagg_file=None, crop=None, table='locs_p2_net'):
-    """the rows of a SIMCODE run's result table (2026-11-17: locs_p2_net = the pass-2 emitter network, its position and sd; the
-    selection-aware rescale g(u) of the earlier tables was removed) -> dict with x, y, f, p, sx0, sy0, p_agg (nan without the
+def v2_rows(d, W, pagg_file=None, crop=None, table='locs_p2_solve'):
+    """the rows of a SIMCODE run's table (default the paper's: locs_p2_solve = the pass-2 pattern solve, its posterior mean and sd,
+    2026-11-17; the selection-aware rescale g(u) of the earlier tables was removed) -> dict with x, y, f, p, sx0, sy0, p_agg (nan without the
     stage file) and sigma(base) -> (sx, sy) (no rescale: the reported sd for every row)"""
     from simcode.dataset import Dataset
     C_ = Dataset.from_run(d, table=table, info=False).columns()

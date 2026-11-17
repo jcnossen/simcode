@@ -18,7 +18,7 @@ Methods:
   SIMFLUX bg per frame  (not in the preprint) the same with one bg per frame (x, y, I, bg_1..6; start bg_t = ROI-border median):
             the MLE of the U(1, 6) data-generating model
   NN        SIMCODE v2 network output before the pattern solve: the head's pattern-free position prior (pass 1 head; and the
-            pass-2 head's prior = nn_p2, the SIMCODE result since 2026-11-17: the pass-2 network table locs_p2_net);
+            pass-2 head's prior = nn_p2 = the pass-2 network table locs_p2_net);
             predicted precision = the head's sigma
   SIMCODE v2  explicit pattern solve on the network intensities with the GT pattern (pass 1 = pattern-free networks + solve;
             pass 2 = pattern-aware networks fed the GT pattern + solve, the production final output); predicted = calibrated sigma
