@@ -112,11 +112,11 @@ def check():
     # mentions of scripts in shell scripts and docs
     allb = {os.path.basename(f) for f in files}
     for f in files:
-        if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS or f.startswith('figures/'): continue   # figures/ (paper branch): copies of figure outputs
+        if not f.endswith(('.sh', '.md')) or f in SKIP_MENTIONS or f.startswith('figures/'): continue   # figures/ (paper_figures branch): copies of figure outputs
         for i, line in enumerate(open(os.path.join(ROOT, f), encoding='utf-8', errors='replace'), 1):
             for mm in re.finditer(r'(?<![\w~/:-])((?:simcode|analysis|tests)/[\w/.-]+\.(?:py|sh))\b', line):
                 s = mm.group(1)
-                if s.startswith('analysis/') and not HAS_ANALYSIS: continue      # a script of the paper branch
+                if s.startswith('analysis/') and not HAS_ANALYSIS: continue      # a script of the paper_figures branch
                 if not os.path.exists(os.path.join(ROOT, s)): errs.append(f'{f}:{i}: mentions {s}, which does not exist')
             for mm in re.finditer(r'python\s+(?:-u\s+)?-m\s+(simcode[\w.]*)', line):
                 if mod_path(mm.group(1)) is None: errs.append(f'{f}:{i}: python -m {mm.group(1)}: no such module')
@@ -126,7 +126,7 @@ def check():
 # imports that are optional or come from external checkouts (old code base, DME, DECODE, spline PSF, published 4Pi code)
 OPTIONAL = {'smlmtorch', 'dme', 'decode', 'torch_convspline', 'h5py', 'setproctitle', 'fastpsf', 'photonpy', 'picasso', 'cupy',
             'joblib', 'sklearn', 'pywt', 'napari', 'zarr', 'tqdm', 'yaml', 'pearson_corr'}
-# master has no analysis/ (it is on the paper branch): mentions of analysis/ scripts and the imports of these analysis
+# master has no analysis/ (it is on the paper_figures branch): mentions of analysis/ scripts and the imports of these analysis
 # modules (through sys.path of the analysis folder) are not checked there
 HAS_ANALYSIS = os.path.isdir(os.path.join(ROOT, 'analysis'))
 PAPER_MODULES = {'frc_fair'}

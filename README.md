@@ -57,7 +57,7 @@ Dependencies:
 - DME v2 drift: the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml`
   (installed by `pip install -e .`); the installed package is the only one used, through `simcode/util/drift.py`
 
-The baselines of the paper (`analysis/baselines`, on the `paper` branch) need more: the preprint's SIMCODE needs
+The baselines of the paper (`analysis/baselines`, on the `paper_figures` branch) need more: the preprint's SIMCODE needs
 `smlmtorch` and its paper models (`--smlmtorch_models`), DECODE the `decode` fork.
 
 ## Run
