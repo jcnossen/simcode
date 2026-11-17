@@ -1,9 +1,8 @@
 """
 Minimal example data for docs/QUICKSTART.md: a small simulated DMD-SIMFLUX DNA-PAINT movie plus a matching pipeline config.
 
-    python examples/simulate_movie.py /data/simcode_example            # writes movie.tif and quickstart.yaml there
-    python -m simcode.pipeline /data/simcode_example/quickstart.yaml --quick   # the whole chain in a few steps (plumbing test)
-    python -m simcode.pipeline /data/simcode_example/quickstart.yaml           # the real run
+    python examples/simulate_movie.py /data/simcode_example            # writes movie.tif and quickstart.yaml there (~10 s)
+    python -m simcode.pipeline /data/simcode_example/quickstart.yaml   # calibration, in-situ PSF, localization with m1809
 
 The movie uses the simulator the networks are trained with (simcode/simulate/acquisition.py, preset '0.5nM': the PSF of our
 setup, blinking DNA-PAINT emitters on filaments, the SIMCODE pattern of 2 orientations x 3 phase steps, fluctuating
@@ -71,7 +70,9 @@ def main():
         f.write(f'name: "example"\nmovie: {out}/movie.tif\nout: {out}/simcode_out\n'
                 f'camera:\n  gain_e_per_adu: {GAIN}\n  offset_adu: {OFFSET}\n'
                 f'psf:                       # a short movie has fewer isolated emitters than the default PSF fit uses (8000)\n'
-                f'  nsamples: 2000\n  heldout_nsamples: 2000\n')
+                f'  nsamples: 2000\n  heldout_nsamples: 2000\n'
+                f'train:                     # the shipped model fits this simulated setup: no training. For your own\n'
+                f'  model: m1809             # microscope leave this out, and the pipeline trains a model for its PSF.\n')
     print(f'{out}/movie.tif: {movie.shape[0]} frames of {movie.shape[1]} x {movie.shape[2]} px, {len(gt["x"])} emitter events;'
           f' config {out}/quickstart.yaml')
 

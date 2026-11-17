@@ -82,7 +82,7 @@ class FourPiSetup(Setup):
             raise ValueError('setup fourpi: four channels (the interference channels) are required in channels')
         if f['delta_deg'] is None: raise ValueError('setup fourpi: fourpi.delta_deg is required')
         if not f['emitter']: raise ValueError('setup fourpi: fourpi.emitter (the emitter-network checkpoint) is required')
-        if c['pattern']['orientations'] * c['pattern']['steps'] != 6 or f['window'] != 6 or not f['pattern']:
+        if f['window'] != 6 or not f['pattern']:
             raise ValueError('setup fourpi: 6-frame windows (2 angles x 3 steps) with the SIM pattern (plain 4Pi: setup fourpi_plain)')
 
     def stages(self, c):

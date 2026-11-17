@@ -9,6 +9,10 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   registration  of the channels to channel 0 (simcode/channels/registration.py): mode insitu (per file, from the
                 movie itself; no beads) | file (one map json for every file: map) | none; order of the polynomial; the
                 settings of the in-situ chain (frames per file, frames per sum, detection / fit / matching)
+  pattern.pattern_frames  which frame of a pattern cycle has which pattern: one row per pattern orientation, its frames in
+                phase-step order (the preprint code's pattern_frames). [[0, 1, 2], [3, 4, 5]]: the 3 steps of orientation 1,
+                then the 3 of orientation 2; [[0, 2, 4], [1, 3, 5]]: the orientations alternate. The networks of this package
+                are trained for 2 orientations x 3 steps, so only that shape is accepted (in any frame order).
   camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)
   train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
                 recipe's set); null: the trainer runs without it
@@ -30,7 +34,7 @@ DEFAULTS = {
                          d_um=0.27, z_range=[-0.6, 0.6], z_range_sym=[0.03, 0.8], k_dev=3.0, max_crlb=0.15, zlim=[-0.5, 0.5],
                          zlim_sym=[0.0, 0.75], flips=['none', 'lr', 'ud', 'both'], r1=2.0, k_sigma=4.0, kfold=5),
     'optics': dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
-    'pattern': dict(orientations=2, steps=3, frame_order='blocked', cache=None, pitch_px=[1.6, 2.8]),
+    'pattern': dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], cache=None, pitch_px=[1.6, 2.8]),
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
     'spots': dict(maxframe=30000, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
@@ -46,7 +50,6 @@ DEFAULTS = {
     'gpus': [0],
 }
 BEAD_DEFAULTS = dict(stacks=[], dz_um=0.010, sign=1.0, offset_adu=None, gain_e_per_adu=None, holdout=0, iters=300, roi=26)
-ORDERS = {'blocked': [0, 1, 2, 3, 4, 5], 'interleaved': [0, 3, 1, 4, 2, 5]}   # acquisition frame j of a cycle -> slot
 
 
 def _merge(d, u, path=''):
@@ -130,19 +133,21 @@ def _resolve(u, src=None):
 
 
 def slot_of_frame(c):
-    """acquisition frame j of a cycle -> slot (orientation * steps + step)"""
-    fo = c['pattern']['frame_order']
-    return list(ORDERS[fo]) if isinstance(fo, str) else [int(v) for v in fo]
+    """acquisition frame j of a cycle -> slot (orientation * steps + step), from pattern.pattern_frames"""
+    PF = c['pattern']['pattern_frames']
+    slot = [None] * sum(len(r) for r in PF)
+    for a, row in enumerate(PF):
+        for s, j in enumerate(row): slot[int(j)] = a * len(row) + s
+    return slot
 
 
 def validate(c):
-    P = c['pattern']
-    if P['orientations'] != 2 or P['steps'] != 3:
-        raise ValueError('pattern: only 2 orientations x 3 steps (6-frame cycle) are supported by the pipeline '
-                         '(docs/AUTO_PIPELINE.md section 7, proposals P1 / P2)')
-    s = slot_of_frame(c)
-    if sorted(s) != list(range(6)):
-        raise ValueError(f'pattern.frame_order {P["frame_order"]!r} is not a permutation of the 6 slots')
+    P = c['pattern']; PF = P['pattern_frames']
+    if not (isinstance(PF, (list, tuple)) and len(PF) == 2 and all(isinstance(r, (list, tuple)) and len(r) == 3 for r in PF)):
+        raise ValueError(f'pattern.pattern_frames {PF!r}: the networks are trained for 2 orientations x 3 phase steps, '
+                         'so 2 rows of 3 frame indices are needed, e.g. [[0, 1, 2], [3, 4, 5]]')
+    if sorted(int(j) for r in PF for j in r) != list(range(6)):
+        raise ValueError(f'pattern.pattern_frames {PF!r} must use each of the frames 0-5 of a cycle once')
     if not (0 < P['pitch_px'][0] < P['pitch_px'][1]):
         raise ValueError('pattern.pitch_px must be [lo, hi] with 0 < lo < hi')
     if c['camera']['type'] not in ('scmos', 'emccd'):
