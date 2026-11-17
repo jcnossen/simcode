@@ -1,5 +1,7 @@
 # simcode
 
+Using SIMCODE on your own microscope: `docs/QUICKSTART.md`.
+
 SIMCODE v2 localizes emitters in DMD-SIMFLUX DNA-PAINT data, where the illumination pattern is modulated and stepped every
 frame. It is a per-window deep-learning method:
 
@@ -35,7 +37,7 @@ preprint's model and the paper's baselines SMLM / SIMFLUX / DECODE under `analys
 ```bash
 git clone https://github.com/qnano/simcode && cd simcode
 pip install -e .                                     # numpy, scipy, torch, torch-psf, dme, ... (pyproject.toml)
-python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v1)
+python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v2)
 python -m simcode.download_models --set pretrain     # only to train a new model: the pretraining networks
 ```
 
@@ -257,7 +259,7 @@ it (baselines, paper figures and simulations, 4Pi calibration / classical pipeli
 calibrations and model folders, `tests/`, `docs/`.
 
 Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=1 python
-tests/test_fast_paths.py` (GPU, ~1 min, needs the m1809 weights), or `pytest tests`.
+tests/test_fast_paths.py` (GPU, ~3 min, needs the m1809 weights), or `pytest tests`.
 
 ## History
 

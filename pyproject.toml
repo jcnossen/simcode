@@ -8,7 +8,7 @@ version = "2.0.0"
 description = "SIMCODE v2: per-window deep-learning localization for DMD-SIMFLUX DNA-PAINT data"
 requires-python = ">=3.10"
 dependencies = [
-    "numpy", "scipy", "tifffile", "torch>=2.1",
+    "numpy", "scipy", "tifffile", "torch>=2.1", "pyyaml",
     # DME v2 drift estimation (MIT), pinned to the commit the paper results were made with
     "dme @ git+https://github.com/jcnossen/drift-estimation.git@374300f12b893a934067703c34a0097c6659bdc1",
     # torch-psf (MIT): PSF models, PSF files (psf.zip, calibration json), bead / in-situ PSF fits, TIFF reader
