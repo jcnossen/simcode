@@ -1,5 +1,5 @@
 """Offline evaluation of the pass-2 benchmark dumps (simcode/processing/gate_dump.py --out <dir>); until 2026-11-16 analysis/calib/plib.py
-(the paper branch keeps that name as an alias of this module):
+(the paper_figures branch keeps that name as an alias of this module):
   load(scene, front, d=<dir>)   seeds pooled, FOV ids made unique
   targets(R)                    gate_scenes_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det

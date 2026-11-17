@@ -1,5 +1,7 @@
 # simcode
 
+Using SIMCODE on your own microscope: `docs/QUICKSTART.md`.
+
 SIMCODE v2 localizes emitters in DMD-SIMFLUX DNA-PAINT data, where the illumination pattern is modulated and stepped every
 frame. It is a per-window deep-learning method:
 
@@ -33,9 +35,9 @@ preprint's model and the paper's baselines SMLM / SIMFLUX / DECODE under `analys
 ## Installation
 
 ```bash
-git clone https://github.com/jcnossen/simcode && cd simcode
+git clone https://github.com/qnano/simcode && cd simcode
 pip install -e .                                     # numpy, scipy, torch, torch-psf, dme, ... (pyproject.toml)
-python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v1)
+python -m simcode.download_models                    # network weights of the example models m1809, g13 (GitHub release models-v2)
 python -m simcode.download_models --set pretrain     # only to train a new model: the pretraining networks
 ```
 
@@ -55,7 +57,7 @@ Dependencies:
 - DME v2 drift: the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml`
   (installed by `pip install -e .`); the installed package is the only one used, through `simcode/util/drift.py`
 
-The baselines of the paper (`analysis/baselines`, on the `paper` branch) need more: the preprint's SIMCODE needs
+The baselines of the paper (`analysis/baselines`, on the `paper_figures` branch) need more: the preprint's SIMCODE needs
 `smlmtorch` and its paper models (`--smlmtorch_models`), DECODE the `decode` fork.
 
 ## Run
@@ -257,7 +259,7 @@ it (baselines, paper figures and simulations, 4Pi calibration / classical pipeli
 calibrations and model folders, `tests/`, `docs/`.
 
 Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=1 python
-tests/test_fast_paths.py` (GPU, ~1 min, needs the m1809 weights), or `pytest tests`.
+tests/test_fast_paths.py` (GPU, ~3 min, needs the m1809 weights), or `pytest tests`.
 
 ## History
 
