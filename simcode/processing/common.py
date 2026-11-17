@@ -28,11 +28,14 @@ def load_pass1_rows(out, chunks, crop=None, prior_off=None, cols=('wstart', 'x',
     """the pass-1 rows of the chunk files pass1_<f0>.npz of a run, each window once: windows loaded by two chunks (padding)
     are taken from one chunk only (start in [own0 - 3, own1 - 3); the last chunk keeps its tail). prior_off (px): the
     constant prior-position bias of the head, subtracted from x, y. crop (x0, y0, size): adds 'out' = central half (time
-    centroid) & inside the crop, recomputed globally."""
+    centroid) & inside the crop, recomputed globally. Also chunk, row: the chunk start and row index of each row in its file."""
     Ls = [np.load(f'{out}/pass1_{f0}.npz') for f0 in chunks]
     keep = np.concatenate([(L['wstart'] >= int(L['own'][0]) - 3) & ((L['wstart'] < int(L['own'][1]) - 3) | (f0 == chunks[-1]))
                            for L, f0 in zip(Ls, chunks)])
     R = {c: np.concatenate([L[c] for L in Ls])[keep] for c in cols}
+    # the source of each row: chunk start f0 and row index in pass1_<f0>.npz (the brightness-noise fit reads the rows' covariances)
+    R['chunk'] = np.concatenate([np.full(len(L['wstart']), f0, np.int64) for L, f0 in zip(Ls, chunks)])[keep]
+    R['row'] = np.concatenate([np.arange(len(L['wstart'])) for L in Ls])[keep]
     if prior_off is not None:
         R['x'] = R['x'] - prior_off[0]; R['y'] = R['y'] - prior_off[1]
     if crop is not None:

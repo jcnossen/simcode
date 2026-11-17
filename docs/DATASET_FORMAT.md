@@ -8,18 +8,19 @@ px (pixel centres at integers, x = column; z in px of the lateral pixel size), `
 `n_frames`, ...; `ds.save('x.hdf5')` / `Dataset.load('x.hdf5')`.
 
 `simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories; the tables of `simcode.run` / `simcode.table` are files of
-this format, `locs_p*.hdf5`, with the metadata `pixel_nm`, `crop`, `tag`, `info`; the `.npz` tables of runs before 2026-11-15, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
+this format, `locs_p{1,2}_{net,solve}.hdf5`, with the metadata `pixel_nm`, `crop`, `tag`, `kind`, `table`, `info`; the `.npz` tables of runs before 2026-11-15, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
 selection `select()` (docs/USAGE.md). A selection is not stored: it is computed when needed.
 
 ## SIMCODE's fields and metadata
 
-A v2 table (SIMCODE v2, `simcode/table.py`) in this layout:
+A v2 table (SIMCODE v2, `simcode/table.py`; four per run: `locs_p1_net`, `locs_p1_solve`, `locs_p2_net` = the result,
+`locs_p2_solve`) in this layout:
 
 | field | dtype | shape | meaning |
 |---|---|---|---|
-| `pos` | float64 | [n, 2] or [n, 3] | final position (x, y) of the explicit pattern solve, px, sensor coordinates, not drift corrected; 3D heads (2026-11-14): + z = the head's z prior conditioned on the solved x, y (px of the lateral pixel size, relative to the focal plane of the model's PSF calibration: z = (height above the coverslip - focus_um) / pixel size) |
-| `crlb` | float32 | [n, 2] or [n, 3] | calibrated sigma of x, y (px; after the model's selection-aware rescale), not a CRLB; z: sd of z after the conditioning (network sd, not recalibrated); pass-2 tables: z, its sd and cov are the pass-1 head's prior conditioned on the pass-2 x, y (NaN for rows without a linked pass-1 candidate) |
-| `cov` | float32 | [n, 3] | 3D heads: covariances (xy, xz, yz) px^2 of the position (xy = 0: the solve's x, y are uncorrelated) |
+| `pos` | float64 | [n, 2] or [n, 3] | position (x, y), px, sensor coordinates, not drift corrected: net tables = the emitter network's position (the calibration's prior_off removed), solve tables = the posterior mean of the explicit pattern solve; 3D heads (2026-11-14): + z = the network's z prior conditioned on the table's x, y (px of the lateral pixel size, relative to the focal plane of the model's PSF calibration: z = (height above the coverslip - focus_um) / pixel size) |
+| `crlb` | float32 | [n, 2] or [n, 3] | sigma of x, y (px), not a CRLB: net tables = the network's sd (position block of its joint (x, y, I_1..6) covariance), solve tables = the solve's posterior sd; no factor (the selection-aware rescale was removed 2026-11-17); z: sd of z after the conditioning; pass-2 tables: z, its sd and cov are the pass-1 network's prior conditioned on the table's x, y (NaN for rows without a linked pass-1 candidate) |
+| `cov` | float32 | [n, 3] | 3D heads: covariances (xy, xz, yz) px^2 of the position (xy = 0: x, y uncorrelated) |
 | `z_prior` | float64 | [n] | 3D heads: the head's pattern-free z (px) before the conditioning |
 | `frame` | int32 | [n] | window start (absolute movie frame); windows start every 3 frames |
 | `n_frames` | int32 | [n] | 6: the window length (drift time = window centre, frame + 3) |
@@ -27,15 +28,17 @@ A v2 table (SIMCODE v2, `simcode/table.py`) in this layout:
 | `score` | float32 | [n] | detector probability (`p` of the table; `select(min_score=)`) |
 | `intensities` | float32 | [n, 6] | network per-frame intensities (`I` of the table) |
 | `t` | float64 | [n] | time centroid of the window's intensities (absolute frame, fractional) |
-| `q_dof`, `dnll` | float32 | [n] | intensity-domain chi2 / dof of the solve; NLL gap to the best competing fringe (pass 1) |
-| `kin` | bool | [n] | on/off-kinetics model chosen |
+| `q_dof`, `dnll` | float32 | [n] | solve tables: intensity-domain chi2 / dof of the solve at its MAP mode; NLL gap to the best competing fringe (pass 1) |
+| `kin` | float32 | [n] | solve tables: posterior weight of the on/off-kinetics model (0-1; both models are fitted and averaged, 2026-11-17; bool before) |
+| `p1_index` | int64 | [n] | pass-2 tables: row of the linked pass-1 candidate in the pass-1 tables (-1: none) |
 | `x_prior`, `y_prior` | float64 | [n] | pattern-free network position (px) |
 | `good`, `sel`, `disjoint` | bool | [n] | p >= 0.63; the phase-calibrated detection selection; frame % 6 == 0 |
 | `x_dc`, `y_dc` | float64 | [n] | only for runs with `--drift`: drift-corrected x, y |
 | `strict_u`, `strict` | | [n] | tables before 2026-11-14 only; unused |
 
 Metadata added by the loaders: `pixel_nm` (the table's px_nm), `crop` [x0, y0, size] (output region of the run; the
-selection's region), `sigma_max` (npz tables before 2026-11-15: the run's selection threshold, nm), `tag` (est / est2), `info` (the table's info json), `run_config` (the run
+selection's region), `sigma_max` (npz tables before 2026-11-15: the run's selection threshold, nm), `tag` (est / est2), `kind` (net /
+solve), `table` (its name), `info` (the table's info json), `run_config` (the run
 record), `model`, `pass` (1 / 2), `n_frames`, `image_size`, `source`, `format`; `selection` after `select()`.
 
 Other sources:

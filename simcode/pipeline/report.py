@@ -92,10 +92,11 @@ def run(ds):
     if pr:
         S = pr['summary']; px = c['optics']['pixel_um'] * 1e3
         rows = [['model', pr.get('model')], ['estimated pitch px', pr.get('pattern_pitch_px')], ['timing', S.get('timing')]]
-        for n in ('locs_p1', 'locs_p2'):
-            if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_sel', 'median_photons')}])
+        from simcode import table as SP
+        for n in SP.TABLES:
+            if n in S: rows.append([n, {k: S[n].get(k) for k in ('n_rows', 'n_main', 'n_sel', 'median_photons', 'median_sigma_nm')}])
         parts.append('<h2>Processing</h2>' + _tab(rows))
-        last = 'locs_p2' if 'locs_p2' in S else 'locs_p1'
+        last = SP.DEFAULT_TABLE
         f = os.path.join(pr['run'], last + '.hdf5')
         if os.path.exists(f):
             from simcode.dataset import Dataset

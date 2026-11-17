@@ -34,13 +34,13 @@ def test_settings_roundtrip():
     try: _settings(['--dataset', '1809_2', '--out', 'x']); raise AssertionError('--dataset needs --data-root')
     except SystemExit: pass
     assert not set(S) & {'sigma_max', 'subset', 'format', 'prefetch', 'u_max', 'strict_q'} and os.path.isabs(S['detector']) and os.path.isabs(S['cal'])
-    assert S['crop'] == '5,5,110' and 'm1809/calib/sigma_rescale_pass2' in S['sig_u']                   # the dataset's crop; the model's sigma rescale
+    assert S['crop'] == '5,5,110' and 'sig_u' not in S                                                 # the dataset's crop; no sigma rescale
     assert _settings(['--movie', 'm.tif', '--calib', 'c.json', '--model', 'm1809', '--out', 'x'])['crop'] == ''   # the whole frame
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y'])
     for k in S:
         if k not in ('out', 'dataset'): assert S[k] == S2[k], (k, S[k], S2[k])
-    S = _settings(['--dataset', '2.5nM_2', '--data-root', DR, '--out', 'x'])                 # defaults: the model's sig_u, both passes
-    assert S['model'] == 'm25' and S['sig_u'].count(',') == 1 and 'm25/calib/sigma_rescale_pass2' in S['sig_u']
+    S = _settings(['--dataset', '2.5nM_2', '--data-root', DR, '--out', 'x'])
+    assert S['model'] == 'm25' and 'sig_u' not in S
     S2 = _settings(RC.rerun_argv(dict(settings=S)) + ['--out', 'y', '--chunk', '3000'])      # an argument after the record overrides
     assert S2['chunk'] == 3000 and all(S[k] == S2[k] for k in S if k not in ('out', 'dataset', 'chunk'))
     # --model is required; a record's settings that are no longer options are not passed on (rerun_argv takes RERUN_KEYS only)
@@ -83,20 +83,20 @@ def test_steps_and_start():
         assert len(R['invocations']) == 2 and 'earlier_settings' not in R                    # resumed / second copy
         R = RC.start(d, dict(S, crop='0,0,120'), dict(cand_pmin=0.3), dict(name='m', files={}), dict(path=''), dict(path=''), argv=['--out', d])
         assert len(R['invocations']) == 3 and R['earlier_settings'][0]['settings']['crop'] == '5,5,110'
-        SP.main([d, '--tag', 'est2'])
+        SP.main([d])
         R = RC.load(d); st = R['steps'][-1]
-        assert st['step'] == 'table' and st['settings']['tag'] == 'est2' and st['settings']['crop'] == [5.0, 5.0, 110.0]
-        assert 'm1809/calib/sigma_rescale_pass2' in st['settings']['sig_u']                          # the model's own sigma rescale (the record's model)
-        assert R['outputs']['locs_p2.hdf5']['written_by'] == 'steps[0]' and not [k for k in R['outputs'] if 'sig' in k]
-        assert R['selection']['locs_p2']['main']['n'] == st['result']['n_main']
-        assert R['outputs']['locs_p2.hdf5']['arrays_sha256'] == RC.arrays_sha256(f'{d}/locs_p2.hdf5')
+        assert st['step'] == 'table' and st['settings']['tables'] == list(SP.TABLES) and st['settings']['crop'] == [5.0, 5.0, 110.0]
+        assert 'sig_u' not in st['settings']                                                            # no sigma rescale
+        assert R['outputs']['locs_p2_net.hdf5']['written_by'] == 'steps[0]' and not [k for k in R['outputs'] if 'sig' in k]
+        assert R['selection']['locs_p2_net']['main']['n'] == st['result']['locs_p2_net']['n_main'] and set(R['selection']) == set(SP.TABLES)
+        assert R['outputs']['locs_p2_net.hdf5']['arrays_sha256'] == RC.arrays_sha256(f'{d}/locs_p2_net.hdf5')
         assert 'simcode.table' in open(f'{d}/command.txt').read()
         R = RC.finish(d, error='X: test'); assert R['status'] == 'failed'
         if os.path.exists(f'{d}/run_config.yaml'):
             import yaml
             assert yaml.safe_load(open(f'{d}/run_config.yaml'))['steps'][0]['step'] == 'table'
     with tempfile.TemporaryDirectory() as d:                                             # a directory without a record
-        _run_dir(d); SP.main([d, '--tag', 'est2'])
+        _run_dir(d); SP.main([d, '--table', 'locs_p2_net'])
         R = RC.load(d); assert R['status'] == 'no run record' and len(R['steps']) == 1
     print('  ok start (invocations, earlier_settings), table step (settings, outputs, selection), command.txt, failed status')
 

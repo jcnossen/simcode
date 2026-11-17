@@ -110,8 +110,7 @@ class Pass2Front:
             r = dict(wstart=ws[k_], x_hy0=so['r'][:, 0] + X0, y_hy0=so['r'][:, 1] + Y0, sx_cal=so['s_cal'][:, 0], sy_cal=so['s_cal'][:, 1],
                      sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                      x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
-                     x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
-                     frame=fabs[k_], I_net=I[k_])
+                     sx_prior=sp[:, 0], sy_prior=sp[:, 1], frame=fabs[k_], I_net=I[k_])
             rows.append({kk: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for kk, v in r.items()})
         R = {kk: np.concatenate([r_[kk] for r_ in rows]) for kk in rows[0]}
         R['wstart'] = R['wstart'].astype(np.int64)
@@ -119,12 +118,8 @@ class Pass2Front:
         Z = ZC.pass1_z_columns(p1, p1_cal, R['wstart'], R['x_det'], R['y_det'], torch.stack([tt(R['x_hy0']), tt(R['y_hy0'])], 1),
                                 torch.stack([tt(R['sx_cal']), tt(R['sy_cal'])], 1))
         R.update({k: v.cpu().numpy() for k, v in Z.items()})
+        Zn = ZC.network_columns(p1, p1_cal, scal, R['wstart'], R['x_det'], R['y_det'], tt(R['x_prior']), tt(R['y_prior']),
+                                torch.stack([tt(R.pop('sx_prior')), tt(R.pop('sy_prior'))], 1))
+        R.update({k: v.cpu().numpy() for k, v in Zn.items()})
         return R
 
-
-def direct_view(O):
-    """variant b as a pass-2 file: the pass-2 head prior as the final position"""
-    D = dict(O)
-    D['x_hy0'], D['y_hy0'], D['sx_cal'], D['sy_cal'] = O['x_dir'], O['y_dir'], O['sx_dir'], O['sy_dir']
-    D['sig_hy0'] = 0.5 * (O['sx_dir'] + O['sy_dir'])
-    return D

@@ -11,9 +11,10 @@ frame. It is a per-window deep-learning method:
     - a pattern-free position prior
 - **The pattern-encoded position is then solved explicitly from those intensities.**
   - The illumination pattern is estimated from the data.
-  - The intensity-domain solve has fringe hypotheses with a posterior mean, on/off kinetics, an automatically estimated
-    intensity-noise term c, and a calibrated σ.
-- **An optional pass 2** reruns pattern-aware networks with the estimated pattern as input.
+  - The intensity-domain solve has fringe hypotheses and on/off kinetics, both averaged by their posterior weights, a
+    brightness-noise term c estimated from each dataset with the pattern, and the posterior σ.
+- **Pass 2** reruns pattern-aware networks with the estimated pattern as input. Their own output (position and σ from the
+  emitter network's joint position / intensity covariance, no factor) is the result table; the solve tables are written too.
 - **No pixel-level linear intensity fit** is used anywhere.
 
 More in the docs:
@@ -70,20 +71,22 @@ What every run does (= the paper's settings; the options that switched these wer
 
 - the model (`--model`, required unless `--dataset` / `--config` gives it): a name of `simcode/models.json` (`m1809`,
   `m25`, `g13`) or the path of a model folder with a `model.json` (as written by the automatic pipeline's training
-  stage / `simcode.pipeline.training.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
-  calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
-- pass 1, pattern estimation, the pattern solve, and pass 2
-- the fixed-c solve calibrations of the model (`cal_sim`, `cal_sim_pass2`: fitted on simulated gate scenes, used as they are for
-  real and simulated movies; the real-data σ multiplier of the earlier `cal_real` calibrations and the option `--cal_kind`
-  were removed on 2026-11-17)
+  stage / `simcode.pipeline.training.export_model`); one model = pass-1 detector + head, pass-2 detector + head and their solve
+  calibrations. There are no single-file overrides: other files = another model folder
+- pass 1, pattern estimation with the dataset's brightness noise c, c_a, the pattern solve, and pass 2
+- the solve calibrations of the model (`cal_sim`, `cal_sim_pass2`: prior_off from simulated gate scenes, start box, posterior
+  temperature; used as they are for real and simulated movies) + the brightness noise estimated from the run's own data
+  (the fixed c = c_a = 0.1, the σ factors, the real-data σ multiplier and `--cal_kind` were removed on 2026-11-17)
+- the kinetic model: every row is fitted with and without on/off kinetics, the two fits are averaged by their posterior
+  weights (BIC penalty 2 ln 6 for the 2 kinetic parameters)
 - stored-candidate cut p ≥ 0.3 (`simcode/processing/common.CAND_PMIN`)
 - the fast code path, with a compiled solve step when available
-- the model's selection-aware sigma rescale (always; a model without one has an empty `sig_u`)
 - the output region: `--crop x0,y0,size` (px); default the whole frame (square sensors; else the largest top-left square);
   the paper datasets carry their crop (5,5,110) in `models.json` `_production`
-- the tables `locs_p1.hdf5`, `locs_p2.hdf5` in the torch_psf Dataset format (CSV / Picasso: exports of the loaded Dataset)
-- the paper's selection (since 2026-11-13) is applied when a table is loaded, nothing is stored for it: a global threshold
-  on the calibrated precision, max(σx, σy) ≤ 12 nm on the rows with score p ≥ 0.63 inside the crop
+- four tables in the torch_psf Dataset format (CSV / Picasso: exports of the loaded Dataset): `locs_p1_net`, `locs_p1_solve`,
+  `locs_p2_net` (**the result**: the pass-2 emitter network's position and σ; `Dataset.from_run(<out>)`), `locs_p2_solve`
+- the selection (since 2026-11-13) is applied when a table is loaded, nothing is stored for it: a global threshold
+  on the reported precision, max(σx, σy) ≤ 12 nm on the rows with score p ≥ 0.63 inside the crop
   (`Dataset.from_run(<out>).select()` = `simcode.table.select(table, max_precision_nm=12, min_score=0.63, in_region=True)`;
   another threshold: `select(14)`); the column `sel` (phase-calibrated detection selection) is the recommended full output
   for renders and drift. (The per-tile rule "u ≤ 0.45" and the strict product were removed on 2026-11-14.)
@@ -91,8 +94,8 @@ What every run does (= the paper's settings; the options that switched these wer
 `--dataset <name>` takes movie, calibration, model and crop of a paper dataset from the `_production` entry of `models.json`;
 its movie path is relative to `--data-root` (the folder of the DMD-SIMFLUX DNA-PAINT data, `/mnt/data/dmdsf/bn_dnapaint` on qnano1).
 The options removed on 2026-11-14 (`--pass2`, `--autoc`, `--cand_pmin`, `--fast`, `--compile`, `--netset`, `--det` ...,
-`--u_max`, `--strict_q`) and on 2026-11-15 (`--format`, `--subset`, `--sigma_max`, `--prefetch` (always on), `--sig_u`
-(always the model's)) no longer exist (`docs/CLEANUP_LOG.md`).
+`--u_max`, `--strict_q`), on 2026-11-15 (`--format`, `--subset`, `--sigma_max`, `--prefetch` (always on), `--sig_u`) and
+on 2026-11-17 (`--cal_kind`; the model key `sig_u`) no longer exist (`docs/CLEANUP_LOG.md`).
 
 Several GPUs: start the same command once per GPU with `--claim 1`; the copies share the chunks of pass 1 and pass 2:
 
@@ -109,35 +112,41 @@ Other options:
 
 - `--chunk_list 12000` processes only the chunk of frames 12000–18000.
 - `--drift drift.npy` (DME output, [F, 2] px, or a DME v2 result npz; `analysis/baselines/dme_drift.py`) adds the
-  drift-corrected columns `x_dc, y_dc`; the selection region and the tiles of the sigma rescale then use them.
+  drift-corrected columns `x_dc, y_dc`; the selection region then uses them.
 
 Outputs in `--out`:
 
 | file | content |
 |---|---|
-| `locs_p1.hdf5`, `locs_p2.hdf5` | the localization table (one row per 6-frame window of an emitter; windows start every 3 frames), torch_psf Dataset format (`docs/DATASET_FORMAT.md`), see below |
-| `locs_p*_info.json` | counts, crop and the size of the paper's selection (`n_main`), column list |
+| `locs_p2_net.hdf5` | **the result**: pass-2 emitter network output (one row per 6-frame window of an emitter; windows start every 3 frames), torch_psf Dataset format (`docs/DATASET_FORMAT.md`), see below |
+| `locs_p2_solve.hdf5`, `locs_p1_net.hdf5`, `locs_p1_solve.hdf5` | the pass-2 pattern solve (same rows as `locs_p2_net`), the pass-1 emitter network and the pass-1 solve (same rows as each other) |
+| `locs_p*_info.json` | counts, crop, the size of the selection (`n_main`) and its median σ, column list, which table it is |
 | `run_config.json`, `run_config.yaml` | the complete record of the run: fully resolved settings, file hashes, code and environment, pattern and selection outcome (section "Run record") |
 | `summary.json` | settings, model, per-stage timing |
 | `command.txt` | plain log of the commands run on the directory |
-| `pass1_<f0>.npz`, `pattern_est.pt/.json`, `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
+| `pass1_<f0>.npz`, `pattern_est.pt/.json` (pattern + brightness noise), `pass2_est_<f0>.npz`, `pass2_est2_<f0>.npz`, `runtime.json`, `log.txt` | stage outputs; a re-run skips chunks whose files exist (`--redo 1` recomputes). Each chunk also leaves a small record `pass1_<f0>.json` … (timing, counts); `runtime.json` is merged from them |
 
 Table columns (as built by `simcode.table`; in the file as Dataset fields: `pos` = (x, y), `crlb` = (sx, sy), `score` = p,
 `intensities` = I, the others under their names; `Dataset.columns()` gives them back under these names):
 
 - `frame` (window start), `t` (time centroid)
-- `x, y` (final, sensor px, not drift corrected), `sx, sy` (calibrated σ, px)
+- `x, y` (sensor px, not drift corrected), `sx, sy` (σ, px): net tables = the emitter network's position (prior_off
+  removed) and its sd; solve tables = the solve's posterior mean and sd; no factor in either
+- `z, sz, cov_xz, cov_yz, z_prior`: z (px) of the network's 3D prior conditioned on the table's x, y (pass 2: of the linked
+  pass-1 candidate; NaN without one)
 - `photons`, `I[6]` (network per-frame intensities)
-- `p` (detector), `q_dof`, `kin`, `dnll`, `x_prior, y_prior`
+- `p` (detector), `x_prior, y_prior` (raw network position); solve tables also `q_dof`, `kin` (posterior weight of the
+  kinetic model), `dnll`
 - `good` (p ≥ 0.63), `sel` (phase-calibrated selection: the recommended full output for renders and drift), `disjoint`
-  (frame % 6 == 0)
-- the metadata `pixel_nm`, `crop`, `tag`, `info`; with `--drift`: `x_dc, y_dc`
-- runs made before 2026-11-15 have `.npz` tables (and subset files `locs_p*_sig12.npz`); `Dataset.from_run` reads them too;
-  `python -m simcode.table <out> --tag est / est2` writes the `.hdf5` tables of such a run from its chunk files
+  (frame % 6 == 0), pass 2: `p1_index` (row of the linked pass-1 candidate in the pass-1 tables, -1 none)
+- the metadata `pixel_nm`, `crop`, `tag`, `kind`, `table`, `info`; with `--drift`: `x_dc, y_dc`
+- runs made before 2026-11-17 have `locs_p1` / `locs_p2` (the solve, with the removed σ rescale; before 2026-11-15 `.npz`):
+  `Dataset.from_run(<out>, table='locs_p2')` reads them; their chunk files lack the network columns, so their four tables
+  need a re-run
 
-The table can be rebuilt at any time with
-`python -m simcode.table <out> [--tag est2] [--drift drift.npy] [--crop x0,y0,size]` (the sigma rescale of the run's model).
-The crop of the selection and of the sigma-rescale tiles is the output region of the run (`--crop` of the run; read from its chunk files).
+The tables can be rebuilt at any time with
+`python -m simcode.table <out> [--table locs_p2_net | ... | all] [--drift drift.npy] [--crop x0,y0,size]`.
+The crop of the selection is the output region of the run (`--crop` of the run; read from its chunk files).
 
 Which settings produced the numbers in `docs/RESULTS.md` (options of the time: stored-candidate cut 0.5, fixed c, calibrations, SIMCODE model per
 movie, DME, grid) is listed in its section 7, "Reproduce".
@@ -156,14 +165,14 @@ for reading. It holds (`simcode/util/runconfig.py`):
 
 | entry | content |
 |---|---|
-| `settings` | every argument after the defaults: movie, calibration, model and its files, crop, chunking, frames, σ_max, sigma rescale, subsets, formats; files as absolute paths |
-| `fixed` | what is not an option: pass 2, 6-frame windows every 3 frames, stored-candidate cut 0.3, p ≥ 0.63, fixed c, code path, compile mode, batch sizes, margin, pattern search range, default crop |
-| `model` | name and definition; per file the absolute path, size, sha256; for a network the trainer arguments and step stored in its checkpoint; for a calibration its scalar parameters (`cmult` = the fixed c, `prior_off`, ...) |
+| `settings` | every argument after the defaults: movie, calibration, model and its files, crop, chunking, frames; files as absolute paths |
+| `fixed` | what is not an option: pass 2, 6-frame windows every 3 frames, stored-candidate cut 0.3, p ≥ 0.63, the brightness-noise estimate, the kinetic model averaging, the four tables and which is the result, code path, compile mode, batch sizes, margin, pattern search range, default crop |
+| `model` | name and definition; per file the absolute path, size, sha256; for a network the trainer arguments and step stored in its checkpoint; for a calibration its scalar parameters (`prior_off`, ...) |
 | `calib` | in-situ PSF / camera calibration: path, sha256, camera maps + sha256, the PSF parameters (NA, wavelength, indices, pixel size, focus, Zernike coefficients, extra terms) and the camera gain / offset / read noise |
 | `movie` | path, parts with size and sha256, frame count and size, frames and chunks processed, frame order / pattern scheme |
 | `code`, `environment` | package version, git commit, dirty flag with the modified files, DME version and commit; python / numpy / torch / CUDA versions, GPU, host (no user name or e-mail) |
 | `invocations` | one entry per process: command line, GPU, start / end, timing (a resumed run or one copy per GPU with `--claim 1` adds entries) |
-| `pattern`, `selection`, `counts`, `timing` | the pattern estimate (pitch, angle, depth, phases, drift range), the counts per selection rule and table, detections, per-stage time |
+| `pattern`, `tables`, `selection`, `counts`, `timing` | the pattern estimate (pitch, angle, depth, phases, drift range) and the brightness noise c, c_a used by every solve, the four tables (which is the result), the counts per selection rule and table, detections, per-stage time |
 | `outputs` | every table / subset file with its size and `arrays_sha256` (hash of the array contents; the file hash of an `.npz` changes with its zip time stamps) |
 | `steps` | later work on the directory: `python -m simcode.table` appends its settings, input hashes, counts and outputs here and marks the files it replaced (`written_by: steps[i]`) |
 

@@ -5,10 +5,12 @@ is `python -m simcode.run`, which calls this module's stages with the production
   pass1    detector + per-candidate head: network per-frame intensities with covariance, per-frame bg,
            pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/pass1_inference.py, inference_fast.py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
-           network intensities alone                                                (simcode/processing/pattern_estimation.py)
+           network intensities alone, and the brightness noise c, c_a of the solve on the same clean emitter-windows
+           (simcode/processing/pattern_estimation.py; stored in pattern_est.pt, used by every solve of the run)
   pass1_solve  the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz, table tag est)
   pass2    the pattern-aware pass 2 (pass-2 detector + emitter network fed the estimated pattern, then the same solve;
-           pass2_est2_<f0>.npz, table tag est2; network-prior variant pass2_est2b_<f0>.npz)
+           pass2_est2_<f0>.npz, table tag est2: the solve's columns and the pass-2 network's own (x_net, y_net, sx_net, sy_net,
+           z_net, ...))
 The stages run in this order (--stages, default all); each uses the files of the earlier ones (pattern_est.pt: the pattern of
 pass1_solve and pass2).
 Only the camera maps and the PSF are taken from --calib (in-situ calibration json).
@@ -56,8 +58,7 @@ def build_parser():
     ap.add_argument('--detector', default=config.DETECTOR)
     ap.add_argument('--cal', default=config.CAL_SIM)
     # stage pass2 (simcode/processing/pass2_inference.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter network
-    # fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve) and pass2_est2b_<f0>.npz (variant b: the
-    # pass-2 network prior)
+    # fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve + network columns)
     ap.add_argument('--detector_pass2', default=config.DETECTOR_PASS2)
     ap.add_argument('--emitter_pass2', default=config.EMITTER_PASS2)
     ap.add_argument('--cal_pass2', default=config.CAL_SIM_PASS2)
@@ -145,8 +146,14 @@ def main(argv=None):
             if po is not None: say(f'pattern: prior_off {po} px removed from the pass-1 priors')
             t_load = time.time() - t0
             t0 = time.time()
-            P, info = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say)
-            RT['pattern'] = dict(load_s=t_load, estimate_s=time.time() - t0)
+            P, info, clean = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say, clean_rows=True)
+            t_pat = time.time() - t0; t0 = time.time()
+            # the dataset's brightness noise c, c_a on the same clean emitter-windows (pattern_estimation step 5); every solve
+            # of the run (pass 1, pass 2) uses it (solve.pattern_cal)
+            from simcode.processing.pattern_estimation import estimate_brightness_noise
+            c, ca, binfo = estimate_brightness_noise(a.out, R, clean, P, a.cal, verbose=say)
+            P['cmult'] = float(c); P['cmult_ang'] = float(ca); info['brightness_noise'] = binfo
+            RT['pattern'] = dict(load_s=t_load, estimate_s=t_pat, brightness_noise_s=time.time() - t0, cmult=float(c), cmult_ang=float(ca))
             atomic_json(f'{a.out}/pattern_est.json', info, indent=1, default=float)
             atomic_torch_save(P, f'{a.out}/pattern_est.pt')
             save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
@@ -156,6 +163,8 @@ def main(argv=None):
         pats = [('est', f'{a.out}/pattern_est.pt')]
         for tag, pf in pats:
             Pt = torch.load(pf)
+            from simcode.solve.solve import pattern_cal
+            scal1 = pattern_cal(a.cal, Pt)                 # the model's calibration + the run's brightness noise c, c_a
             RT.setdefault(f'pass2_{tag}', {})
             U = units(f'pass2_{tag}')
             for f0 in U.todo(chunks):
@@ -163,13 +172,12 @@ def main(argv=None):
                 info = dict(X0=int(L['X0']), Y0=int(L['Y0']), S=int(L['S']), loaded=tuple(int(v) for v in L['loaded']))
                 tm = {}; t0 = time.time()
                 from simcode.processing.inference_fast import run_chunk_pattern_solve_fast
-                O = run_chunk_pattern_solve_fast(L, info, Pt, a.cal, timing=tm, solve_batch=a.solve_batch, compile=COMPILE)
+                O = run_chunk_pattern_solve_fast(L, info, Pt, scal1, timing=tm, solve_batch=a.solve_batch, compile=COMPILE)
                 tm['total'] = time.time() - t0
                 U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: ' + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))
     if 'pass2' in stages:
-        from simcode.processing.pass2_inference import direct_view
         from simcode.processing.inference_fast import Pass2FrontFast
         t0 = time.time()
         p2 = Pass2FrontFast(a.calib, emitter=a.emitter_pass2, detector=a.detector_pass2, compile=COMPILE)
@@ -178,19 +186,20 @@ def main(argv=None):
         pats = [('est2', f'{a.out}/pattern_est.pt')]
         for tag, pf in pats:
             Pt = torch.load(pf)
+            from simcode.solve.solve import pattern_cal
+            scal2 = pattern_cal(a.cal_pass2, Pt)           # the pass-2 model calibration + the run's brightness noise c, c_a
             RT.setdefault(f'pass2_{tag}', {})
-            U = units(f'pass2_{tag}'); Ub = Units(a.out, f'pass2_{tag}b', log=say)
+            U = units(f'pass2_{tag}')
             mv2 = movie
             if prefetch:
                 mv2 = Prefetch(movie, chunk_read_plan(movie, [f0 for f0 in chunks if not U.done(f0)], a.chunk, nf, crop, a.margin))
             for f0 in U.todo(chunks):
                 tm = {}; t0 = time.time()
                 P1 = dict(np.load(f'{a.out}/pass1_{f0}.npz'))       # z of the pass-2 rows from pass 1 (z_conditioning.pass1_z_columns)
-                O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, a.cal_pass2, P1, a.cal, crop=crop, margin=a.margin, timing=tm,
+                O = p2.run_chunk(mv2, cal, f0, min(f0 + a.chunk, nf), Pt, scal2, P1, a.cal, crop=crop, margin=a.margin, timing=tm,
                                  det_batch=a.det_batch, emitter_batch=a.emitter_batch, solve_batch=a.solve_batch)
                 tm['total'] = time.time() - t0
-                Ub.save(f0, **direct_view(O), pattern=pf)       # the head-prior variant first: the chunk counts as done by the
-                U.save(f0, **O, pattern=pf)                      # main file, so a run killed in between repeats both
+                U.save(f0, **O, pattern=pf)
                 U.record(f0, tm); save_rt(f'pass2_{tag}', U)
                 say(f'pass2 [{tag}] f0={f0}: {len(O["x_hy0"])} localizations ({int((O["p1_row"] < 0).sum())} without a pass-1 partner: z NaN); '
                     + ' '.join(f'{k} {v:.1f}s' for k, v in tm.items()))

@@ -1,8 +1,8 @@
 {
- "_doc": "SIMCODE v2 models (the shipped models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = the solve calibrations of pass 1 / pass 2 (prior_off from simulated gate scenes rendered with the model's PSF, the fixed c; no sigma factors: the emitter networks' joint prior / intensity covariance), used for simulated and real movies alike (nothing in them is measured on real data); sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
+ "_doc": "SIMCODE v2 models (the shipped models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), and their solve calibrations. cal_sim / cal_sim_pass2 = the solve calibrations of pass 1 / pass 2 (prior_off from simulated gate scenes rendered with the model's PSF, the fixed c; no sigma factors: the emitter networks' joint prior / intensity covariance), used for simulated and real movies alike (nothing in them is measured on real data); All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
  "_default": "m1809",
  "_production": {
-  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root (on qnano1 /mnt/data/dmdsf/bn_dnapaint).",
+  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, and the run.py defaults). Every run writes four tables: locs_p1_net / locs_p1_solve / locs_p2_net / locs_p2_solve (.hdf5; simcode/table.py); the result table (and the paper's) is locs_p2_net, the pass-2 emitter network's output; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root.",
   "_selection_doc": "main selection (user decision 2026-11-13): rows with p >= 0.63 inside the crop and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select, Dataset.select, SIGMA_MAX_NM; since 2026-11-15 applied when a table is loaded, no subset files). Until 2026-11-13 it was the per-tile rule u <= 0.45. Study: analysis/selection_global, out/selection_global.",
   "datasets": {
    "1809_2": {
@@ -34,8 +34,7 @@
   "cal_sim": "m1809/calib/calib_emitter_pass1_sim.json",
   "detector_pass2": "m1809/detector_pass2.pt",
   "emitter_pass2": "m1809/emitter_pass2.pt",
-  "cal_sim_pass2": "m1809/calib/calib_emitter_pass2_sim.json",
-  "sig_u": "m1809/calib/sigma_rescale_pass1.json,m1809/calib/sigma_rescale_pass2.json"
+  "cal_sim_pass2": "m1809/calib/calib_emitter_pass2_sim.json"
  },
  "m25": {
   "_doc": "PSF-matched model for the 2.5 nM / 2 movie (averaged 2.5 nM in-situ PSF; production out/paper2/2.5nM_2/v2_matched) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in m25/; the previous 2D model is the folder archive_2d/m25/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_pass2_dedicated/m25/ (not referenced by any config) | 2026-11-15: retrained on the in-situ PSF + camera v2 (out/psf_v2: gain 0.4256 e/ADU, vectorial PSF v2, training heights from the calibration); pass-2 detector = generic fine-tuned from a dedicated (SIMCODE-pattern) detector (out/generic_mix, out/psf_v2/eval/m25v2/det2); also the model of the 20 nM / 2 movie; the previous model is the folder archive_psf_v1/m25/ (not referenced)",
@@ -45,8 +44,7 @@
   "cal_sim": "m25/calib/calib_emitter_pass1_sim.json",
   "detector_pass2": "m25/detector_pass2.pt",
   "emitter_pass2": "m25/emitter_pass2.pt",
-  "cal_sim_pass2": "m25/calib/calib_emitter_pass2_sim.json",
-  "sig_u": "m25/calib/sigma_rescale_pass1.json,m25/calib/sigma_rescale_pass2.json"
+  "cal_sim_pass2": "m25/calib/calib_emitter_pass2_sim.json"
  },
  "g13": {
   "_doc": "PSF-matched model for the Gaussian sigma 1.3 px PSF (preprint-condition simulations; m1809 recipe + --dens 0.0005,0.06, --tau 3,80; 2026-11-12) | 2026-11-14: retrained with the 3D head (z output; out/z3d), files in g13/; the previous 2D model is the folder archive_2d/g13/ (not referenced by any config) | 2026-11-14: GENERIC pass 2 (generic illumination-pattern training; accepts any measured two-orientation pattern), pass 1 unchanged; the dedicated pass 2 is the folder archive_pass2_dedicated/g13/ (not referenced by any config)",
@@ -56,7 +54,6 @@
   "cal_sim": "g13/calib/calib_emitter_pass1_sim.json",
   "detector_pass2": "g13/detector_pass2.pt",
   "emitter_pass2": "g13/emitter_pass2.pt",
-  "cal_sim_pass2": "g13/calib/calib_emitter_pass2_sim.json",
-  "sig_u": "g13/calib/sigma_rescale_pass1.json,g13/calib/sigma_rescale_pass2.json"
+  "cal_sim_pass2": "g13/calib/calib_emitter_pass2_sim.json"
  }
 }

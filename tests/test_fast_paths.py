@@ -137,9 +137,9 @@ def test_pass1_bf16():
 def _solve_cmp(a, c, tag, med_tol=1e-5):
     d = (a['r'] - c['r']).abs().amax(1)
     med, p99 = float(d.median()), float(d.quantile(0.99))
-    kin = float((a['kin'] == c['kin']).float().mean())
+    kin = float(((a['kin'] - c['kin']).abs() < 1e-2).float().mean())          # kinetic-model posterior weight
     assert med < med_tol and p99 < 2e-3 and kin >= 0.999, f'{tag}: median {med:.2e} p99 {p99:.2e} kin {kin:.4f}'
-    print(f'  ok {tag}: n {len(d)} median|dr| {med:.1e} p99 {p99:.1e} max {float(d.max()):.1e} kin-equal {kin:.4f}')
+    print(f'  ok {tag}: n {len(d)} median|dr| {med:.1e} p99 {p99:.1e} max {float(d.max()):.1e} kin-weight equal {kin:.4f}')
 
 
 def test_pattern_solve():
@@ -147,7 +147,7 @@ def test_pattern_solve():
     from simcode.solve import solve as SV
     from simcode.processing.common import pattern_frames
     Ra, _, _ = _pass1(False)
-    cal = json.load(open(CAL))
+    cal = SV.solve_cal(CAL, 0.1, 0.1)                     # a nonzero brightness noise (the c path of the solve)
     pat = torch.load(PATT, weights_only=False)
     keep = np.nonzero(Ra['out'])[0][:8192]
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
@@ -177,8 +177,10 @@ def test_pass2_p2_fp32():
     P1, _ = Pass1FrontFast(CALIB, emitter=EMITTER, detector=DETECTOR).run_chunk(mov, cal, 0, mov.n)    # the stored pass-1 rows (z of pass 2)
     A.emitter.bf16 = False
     with fp32_mode():
-        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, CAL_PASS2, P1, CAL)
-        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, CAL_PASS2, P1, CAL)
+        from simcode.solve.solve import solve_cal
+        c2 = solve_cal(CAL_PASS2, 0.1, 0.1)
+        Ra = A.run_chunk(mov, cal, 0, mov.n, pat, c2, P1, CAL)
+        Rb = B.run_chunk(mov, cal, 0, mov.n, pat, c2, P1, CAL)
     A.emitter.bf16 = True
     Ra, Rb = canon(Ra), canon(Rb)
     ok, dd = same_cands(Ra, Rb, 1e-4)
@@ -201,6 +203,12 @@ def test_pass2_p2_fp32():
     assert np.array_equal(Ra['z_prior'][lk], P1['z'][Ra['p1_row'][lk]])
     dz = np.abs(Ra['z_hy0'] - Rb['z_hy0'])[lk]
     assert np.median(dz) < 1e-5 and np.quantile(dz, 0.99) < 2e-3, f'pass-2 z median {np.median(dz):.2e} p99 {np.quantile(dz, 0.99):.2e}'
+    # the network columns (result table locs_p2_net): the network position - prior_off, its sd, z | that position
+    po = np.array(json.load(open(CAL_PASS2))['prior_off'])
+    for R_ in (Ra, Rb):
+        assert np.allclose(R_['x_net'], R_['x_prior'] - po[0], atol=1e-5) and np.allclose(R_['y_net'], R_['y_prior'] - po[1], atol=1e-5)
+        assert np.isnan(R_['z_net'][~lk]).all() and np.isfinite(R_['z_net'][lk]).all() == np.isfinite(P1['z']).all()
+    assert np.abs(Ra['sx_net'] - Rb['sx_net']).max() < 1e-4 and np.nanmax(np.abs(Ra['z_net'] - Rb['z_net'])) < 1e-3
     print(f'  ok pass2 (p2) fp32: n {len(d)} prior max|d| {dp:.1e} solve median {np.median(d):.1e} p99 {np.quantile(d, 0.99):.1e}; '
           f'linked to pass 1 {lk.mean():.3f} (selection {lk[s12].mean():.3f}), z median |d| {np.median(dz):.1e}')
 

@@ -3,7 +3,7 @@
   load(scene, front, d=<dir>)   seeds pooled, FOV ids made unique
   targets(R)                    gate_scenes_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
-  solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe posterior / cmult per cal) on
+  solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe / kinetic posterior; c = c_a = 0: the gate scenes' constant brightness) on
                                 the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free prior of pretrain_emitter_pass1 on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
                                 sigma = s_prior
@@ -49,9 +49,12 @@ def targets(R, thr=0.5):
 
 @torch.no_grad()
 def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
+    """(cal: the model's solve calibration; the gate scenes' brightness noise c = c_a = 0 of simcode.simulate.crlb is added)"""
     from simcode.emitter import model as SCM
     from simcode.solve import solve as SV
     from simcode.solve import z_conditioning as ZC
+    from simcode.simulate.crlb import BRIGHTNESS_NOISE
+    cal = SV.solve_cal(cal, *BRIGHTNESS_NOISE)
     ph = R['sc_I'][oi].sum(1)
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     if prior == 'direct':
@@ -80,11 +83,12 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
 
 def fit_cal(Rs, base, prior='own', iso=None, verbose=True):
     """solve calibration of a pass except its sigma layer: prior_off (the constant prior-position bias) from the iso dump
-    (exact pattern, 700-2000 ph); the other keys (cmult, box, mix_T, ...) from base. Rs (tuning-seed dumps of the fit scenes) are
+    (exact pattern, 700-2000 ph); box, mix_T from base (a fixed brightness noise cmult / cmult_ang of base is dropped: it is
+    estimated per dataset with the pattern since 2026-11-17). Rs (tuning-seed dumps of the fit scenes) are
     no longer used for a fit since the per-photon-bin solve weights kap_p / kap_I2 were removed (2026-11-17; the solve uses the
     network's own covariances); kept in the signature for the callers. The reported sigma is the solve's posterior sd with the
     emitter network's joint prior / intensity covariance (no sigma factor)."""
-    cal = {k: v for k, v in base.items() if k not in ('kap_bins', 'prior_off')}
+    cal = {k: v for k, v in base.items() if k not in ('kap_bins', 'prior_off', 'cmult', 'cmult_ang')}
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     po = np.zeros(2)
     if iso is not None:

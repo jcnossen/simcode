@@ -318,6 +318,14 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
     out['dnll'] = A['dnll'].astype(np.float32)
     out['x_map'] = A['r_map'][:, 0] + X0; out['y_map'] = A['r_map'][:, 1] + Y0
     for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior'): out[k] = A[k]
+    # the pass-1 emitter network's own result (table locs_p1_net): position with the calibration's prior_off removed (the solve's
+    # prior centre), its sd, z = the network's 3D prior at that position (z_given_xy at r = r0: z prior, sd incl. b^2 s^2)
+    r0 = torch.stack([G['x'], G['y']], 1) - torch.tensor(cal['prior_off'], device=dev, dtype=torch.float32)[None]
+    sp = torch.stack([G['sx'], G['sy']], 1)
+    zn, szn, cvn = ZC.z_given_xy(dict(z=G['z'], lsz=G['lsz'], bz=G['bz']), r0, r0, sp)
+    for k, v in dict(x_net=r0[:, 0], y_net=r0[:, 1], sx_net=sp[:, 0], sy_net=sp[:, 1], z_net=zn, sz_net=szn, cov_xz_net=cvn[:, 1],
+                     cov_yz_net=cvn[:, 2]).items():
+        out[k] = v.float().cpu().numpy()
     out = {k: np.asarray(v, np.float32) for k, v in out.items()}
     torch.cuda.synchronize(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
     out.update(wstart=ws, frame=R['frame'][keep], p=R['p'][keep], I_net=R['I'][keep])
@@ -391,10 +399,10 @@ class Pass2FrontFast:
         r = dict(wstart=ws[k_], x_hy0=so['r'][:, 0] + X0, y_hy0=so['r'][:, 1] + Y0, sx_cal=so['s_cal'][:, 0], sy_cal=so['s_cal'][:, 1],
                  sig_hy0=so['s_cal'].mean(1), q_dof=so['q'], kin_hy=so['kin'].float(), phot=ph, p=p[k_],
                  x_prior=oh['x'][k_] + X0, y_prior=oh['y'][k_] + Y0, x_det=oh['x_det'][k_] + X0, y_det=oh['y_det'][k_] + Y0,
-                 x_dir=oh['x'][k_] + X0, y_dir=oh['y'][k_] + Y0, sx_dir=sp[:, 0], sy_dir=sp[:, 1],
                  frame=fabs[k_], I_net=I[k_])
         r.update(self.ZC.pass1_z_columns(p1, p1_cal, r['wstart'], r['x_det'], r['y_det'], torch.stack([r['x_hy0'], r['y_hy0']], 1),
                                           torch.stack([r['sx_cal'], r['sy_cal']], 1)))      # z from pass 1 (the pass-2 head's z is not used)
+        r.update(self.ZC.network_columns(p1, p1_cal, scal, r['wstart'], r['x_det'], r['y_det'], r['x_prior'], r['y_prior'], sp))
         R = _np(r); R['wstart'] = R['wstart'].astype(np.int64)
         for k, v in ev.totals().items(): timing[k] = timing.get(k, 0) + v
         timing['wall'] = timing.get('wall', 0) + time.time() - tw

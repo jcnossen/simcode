@@ -10,14 +10,16 @@ Stages (each skipped if its outputs exist, unless --redo):
                  with covariance, bg, pattern-free position prior; candidates with detector p >= 0.3 are stored
                  (simcode/processing/common.CAND_PMIN)
   2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift) estimated from
-                 the pass-1 network intensities
-  3  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
-                 with the model's fixed-c solve calibration (cal_sim: fitted on simulated gate scenes; the same for real and
-                 simulated movies)
+                 the pass-1 network intensities, and the dataset's brightness noise c, c_a (the solve's relative intensity
+                 scatter per frame / per orientation) from the same clean emitter-windows
+  3  solve       explicit intensity-domain pattern solve of the pass-1 rows (posterior over the fringe starts and the
+                 non-kinetic / kinetic models, posterior sd) with the model's solve calibration (cal_sim: prior_off from
+                 simulated gate scenes) and the estimated c, c_a
   4  pass 2      pattern-aware pass-2 detector + emitter network fed the estimated pattern, then the same solve
-  5  table       localization tables locs_p1.hdf5 and locs_p2.hdf5 (simcode/table.py; the torch_psf Dataset format) with
-                 the model's selection-aware sigma rescale; summary.json. The paper's selection (max(sx, sy) <= 12 nm on the
-                 rows with p >= 0.63 inside the crop) is applied when a table is loaded: simcode.dataset.Dataset.select.
+  5  tables      the four localization tables (simcode/table.py; the torch_psf Dataset format): locs_p1_net, locs_p1_solve,
+                 locs_p2_net (THE RESULT: the pass-2 emitter network's position and sd), locs_p2_solve; summary.json. The
+                 paper's selection (max(sx, sy) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied when a table
+                 is loaded: simcode.dataset.Dataset.select.
 Output region: --crop x0,y0,size (px); default the whole frame (square sensors; else the largest top-left square). The
 paper datasets (--dataset) carry their crop in models.json '_production'.
 Networks and calibrations come from the model (--model, required): a name of simcode/models.json (m1809, m25, g13;
@@ -68,7 +70,7 @@ def build_parser():
     ap.add_argument('--chunk_list', default='', help="process only these chunk starts, e.g. '12000'")
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
-                    'selection region / sigma-rescale tiles use the corrected positions')
+                    'selection region uses the corrected positions')
     ap.add_argument('--redo', type=int, default=0)
     return ap
 
@@ -90,7 +92,6 @@ def resolve(ap, argv):
         ap.error(str(e))
     a.detector, a.emitter, a.detector_pass2, a.emitter_pass2 = N['detector'], N['emitter'], N['detector_pass2'], N['emitter_pass2']
     a.cal_pass2 = N['cal_sim_pass2']
-    a.sig_u = N['sig_u']                     # the model's selection-aware sigma rescale, "<pass 1 json>,<pass 2 json>"
     cal = N['cal_sim']
     return a, N, cal
 
@@ -101,7 +102,6 @@ def settings_of(a, cal):
     return dict(dataset=a.dataset, movie=os.path.abspath(os.path.expanduser(a.movie)), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model),
                 detector=r(a.detector), emitter=r(a.emitter), cal=r(cal), detector_pass2=r(a.detector_pass2), emitter_pass2=r(a.emitter_pass2),
                 cal_pass2=r(a.cal_pass2),
-                sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',
                 crop=a.crop, chunk=a.chunk, chunk_list=a.chunk_list, nframes=a.nframes,
                 drift=os.path.abspath(a.drift) if a.drift else '', claim=a.claim, min_free_gb=a.min_free_gb, redo=a.redo)
 
@@ -111,17 +111,20 @@ def fixed_values():
     from simcode.processing import run_uncalibrated as RU, pattern_estimation as PE
     from simcode.processing.common import CAND_PMIN
     from simcode import table as SP
+    from simcode.solve import solve as SV
     d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
-    return dict(stages='pass 1, pattern estimation, pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
-                window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD, brightness_noise_fit=0,
-                solve_c='fixed c: cmult / cmult_ang of the solve calibrations (model.files.cal / cal_pass2, params)',
+    return dict(stages='pass 1, pattern estimation (+ brightness noise), pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
+                window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD,
+                solve_c='estimated per run with the pattern (pattern_estimation.estimate_brightness_noise; pattern_est.pt cmult / cmult_ang; run_config pattern.brightness_noise)',
+                kinetic_model=f'posterior average of the non-kinetic and kinetic fits for every row, BIC penalty {SV.KIN_PENALTY:.3f} = 2 ln 6 (solve.model_average)',
+                brightness_noise_rows=PE.BN_NMAX,
                 code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_emitter='off',
                 margin=d['margin'], nn_min=d['nn_min'], min_phot=d['min_phot'], det_batch=d['det_batch'], emitter_batch=d['emitter_batch'],
                 solve_batch=d['solve_batch'], pattern_pitch_search_px=list(PE.estimate_k.__defaults__[0]),
                 crop_default='the whole frame (square sensors)',
-                table_files='locs_p1.hdf5 = tag est (sig_u pass 1), locs_p2.hdf5 = tag est2 (sig_u pass 2); torch_psf Dataset format',
-                selection='applied at load (Dataset.select: max(sx, sy) <= 12 nm, p >= 0.63, inside the crop)', prefetch=True,
-                sig_u='the model\'s')
+                tables={k: f'{v} (tag {SP.TABLES[k][0]}, {SP.TABLES[k][1]})' for k, v in SP.TABLE_DOC.items()}, default_table=SP.DEFAULT_TABLE,
+                table_format='torch_psf Dataset HDF5',
+                selection='applied at load (Dataset.select: max(sx, sy) <= 12 nm, p >= 0.63, inside the crop)', prefetch=True)
 
 
 def _from_config(path, rest):
@@ -160,9 +163,8 @@ def main(argv=None):
     os.makedirs(a.out, exist_ok=True)
     # ---- the run record (run_config.json): written now with status 'running', completed at the end
     S = settings_of(a, cal); FX = fixed_values()
-    su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
     files = dict(detector=S['detector'], emitter=S['emitter'], cal=S['cal'], detector_pass2=S['detector_pass2'], emitter_pass2=S['emitter_pass2'],
-                 cal_pass2=S['cal_pass2'], sig_u_pass1=config.resolve(su[0]) if su[0] else '', sig_u_pass2=config.resolve(su[1]) if su[1] else '')
+                 cal_pass2=S['cal_pass2'])
     rerun_of = None
     if REC is not None:
         warn = RC.verify(REC, fixed=FX)
@@ -211,17 +213,14 @@ def _stages(a, N, cal, Units, atomic_json):
     from simcode.processing.common import CAND_PMIN
     summ = dict(movie=a.movie, calib=a.calib, model=N['name'], cal_pass1=cal, cal_pass2=a.cal_pass2, cand_pmin=CAND_PMIN,
                 run_config='run_config.json (the complete, resolved settings of this run)')
-    tags = [('est', 'locs_p1'), ('est2', 'locs_p2')]
-    su = (a.sig_u.split(',') + [''])[:2] if a.sig_u else ['', '']
     wrote = False
-    for (tag, name), su_ in zip(tags, su):
-        for _ in Units(a.out, 'table', pattern=name + '.hdf5', claim=a.claim, redo=not a.claim, title=False).todo(['']):
-            T, info = SP.build_table(a.out, tag, px, a.drift or None, sig_u=config.resolve(su_) if su_ else None, crop=crop)
-            files = [SP.write_table(T, info, os.path.join(a.out, name))]
-            atomic_json(os.path.join(a.out, name + '_info.json'), info, indent=1, default=str)
+    for _ in Units(a.out, 'table', pattern=SP.DEFAULT_TABLE + '.hdf5', claim=a.claim, redo=not a.claim, title=False).todo(['']):
+        for name, (info, files) in SP.write_tables(a.out, px, a.drift or None, crop).items():
             summ[name] = {k: v for k, v in info.items() if k != 'columns'}; summ[name]['files'] = files
-            summ['columns'] = info['columns']; wrote = True
-            print(f'{name}: {info["n_rows"]} rows (the paper\'s selection: {info["n_main"]}), sel {info["n_sel"]} -> {files}', flush=True)
+            summ.setdefault('columns', {})[name] = info['columns']; wrote = True
+            print(f'{name}: {info["n_rows"]} rows (the paper\'s selection: {info["n_main"]}, median sigma {info["median_sigma_nm"]:.2f} nm), '
+                  f'sel {info["n_sel"]} -> {files}', flush=True)
+        summ['default_table'] = SP.DEFAULT_TABLE
     ST['total_s'] = time.time() - t00
     summ['timing'] = ST
     if wrote or not os.path.exists(os.path.join(a.out, 'summary.json')):

@@ -164,7 +164,10 @@ def _pass2_files(d, n, rng, p1_row=True):
     if p1_row:
         R['p1_row'] = np.arange(n); R['p1_row'][::10] = -1
         for k in ('z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior'): R[k][::10] = np.nan
+    R.update(x_net=R['x_hy0'], y_net=R['y_hy0'], sx_net=R['sx_cal'], sy_net=R['sy_cal'], z_net=R['z_hy0'], sz_net=R['sz_cal'],
+             cov_xz_net=R['cov_xz'], cov_yz_net=R['cov_yz'])
     np.savez(os.path.join(d, 'pass2_est2_0.npz'), **R)
+    np.savez(os.path.join(d, 'pass1_0.npz'), out=np.ones(n, bool), crop=np.array([0, 0, 128]))
     return R
 
 
@@ -180,7 +183,8 @@ def test_table_pass2_z(tmp_path=None):
     T, info = SP.build_table(d, 'est2', crop=(0, 0, 128))
     assert np.isnan(T['z'][::10]).all() and np.isfinite(np.delete(T['z'], np.s_[::10])).all()
     assert info['n_no_p1'] == n // 10 and 'p1_row' not in T and 'linked pass-1' in info['z']
-    ds = Dataset.load_table(SP.write_table(T, info, os.path.join(d, 'locs_p2')), info=False)
+    assert np.array_equal(T['p1_index'], R['p1_row'])                                  # all pass-1 rows stored: the same index
+    ds = Dataset.load_table(SP.write_table(T, info, os.path.join(d, 'locs_p2_net')), info=False)
     assert ds['pos'].shape == (n, 3) and torch.isnan(ds['pos'][::10, 2]).all()
     img = ds.select(12, 0.63, False).render(pixel_nm=20)
     assert np.isfinite(np.asarray(img)).all()

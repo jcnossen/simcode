@@ -16,8 +16,8 @@ directory 'quick/'):
      simulated movies)
   -> acceptance on the held-out seed: sigma zcal of pass 1 and pass 2, pass-2 vs pass-1 RMS / CRLB on the realistic scene
   -> <dir>/model.json (format of simcode/models.json, absolute paths)
-Not in this wrapper (reported): the selection-aware sigma rescale sig_u (needs a simulated movie with ground truth,
-analysis/psf3d_nets/sigcal.py) and the sim-movie GT sanity gate of runs/psfmatch/eval.sh."""
+Not in this wrapper (reported): the sim-movie GT sanity gate of runs/psfmatch/eval.sh. (The selection-aware sigma rescale
+sig_u was removed from SIMCODE on 2026-11-17.)"""
 import json, os, shutil
 from simcode import config
 import numpy as np
@@ -150,7 +150,7 @@ def run(ds):
         chk.append(dict(name=f'pass-2 / pass-1 RMS/CRLB on {SCEN_FIT} (200-2000 ph) <= 1', value=A['p2_over_p1'], ok=A['p2_over_p1'] <= 1.0, warn_only=quick))
     gates = 'NOT EVALUATED' if not chk else 'PASS' if all(k['ok'] for k in chk) else 'FAIL'
     S = {name: dict(_doc=f'simcode.pipeline model of dataset {c["name"]} ({"QUICK plumbing test, not usable" if quick else "PSF-matched recipe"}); '
-                         f'PSF {cal}; sig_u not fitted', _gates=gates, psf=cal, **files, **cals, sig_u='')}
+                         f'PSF {cal}', _gates=gates, psf=cal, **files, **cals)}
     # ---- how the model was made: the recipe (config, commands, steps, code) and the hash of every file; the trainer arguments
     # stored in each checkpoint are part of the file records
     from simcode.util import runconfig as RC
@@ -162,8 +162,7 @@ def run(ds):
                   code=RC.code_record(), environment=RC.env_record(gpu=False), psf_calib=RC.file_record(cal),
                   steps=steps, trainer_base_args=T_BASE, eval_ckpt_every=EVERY, init=dict(Tc['init'], det_used=det_init), extra_args=Tc['extra'],
                   gate=dict(scenes=scen, seeds=seeds, ntarget=nt, fit_scene=SCEN_FIT, heldout_seed=301), template_model=rm, calib_fallback=fallback,
-                  overrides=json.load(open(W)), commands=cmds, trained_files=trained, accept=A, gates=gates,
-                  not_included='sig_u (selection-aware sigma rescale) is not fitted by this stage')
+                  overrides=json.load(open(W)), commands=cmds, trained_files=trained, accept=A, gates=gates)
     S['_recipe'] = recipe; S['_files'] = recs
     json.dump(S, open(os.path.join(ds.dir('train'), 'model.json'), 'w'), indent=1, default=str)
     return dict(recipe=recipe, file_records=recs, model=name, quick=quick, calib_fallback=fallback, steps=steps, dir=D, files=files, calibs=cals, accept=A, gates=gates,

@@ -39,9 +39,9 @@ simcode/
   run.py                      user entry point: python -m simcode.run --movie … --calib … --model m1809 --out … (or --dataset 1809_2 --data-root …); all stages, finished ones skipped
   config.py                   the models: MODELS = <repo>/models (where model / calibration names are looked up: resolve, model), model_set(name or model folder), production(); no path settings (paths are arguments)
   models.json                 the shipped models (m1809, m25, g13: detector, emitter, cal_sim, detector_pass2, emitter_pass2,
-                              cal_sim_pass2, sig_u, psf), the default model, the paper's datasets (_production)
+                              cal_sim_pass2, psf), the default model, the paper's datasets (_production)
   dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
-  table.py                    localization table of a run directory (with the model's sigma rescale), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
+  table.py                    the four localization tables of a run directory (pass 1 / 2 x network / solve; locs_p2_net = the result), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
   detector/
     __init__.py               package doc
     model.py                  Detector: the U-Net detector of pass 1 and pass 2 (illum=True: + illumination inputs, zero-initialised from pass 1); load() of every detector checkpoint
@@ -59,7 +59,7 @@ simcode/
     solve_fast.py             the same solve, fast (production; solve_emitters_fast, optional compiled LM step)
     pattern.py                pattern geometry of the solve (illumination at a position, angle index, fringe shifts, kinetics starts, chi2 p-value)
     z_conditioning.py         z after the solve: the network's 3D prior conditioned on the solved x, y; pass-2 rows linked to pass-1 candidates for their z
-    brightness_noise_fit.py   opt-in automatic noise scale (s, c, c_a) of the network intensities from the solve's own residuals (analysis only)
+    brightness_noise_fit.py   the dataset's brightness noise (c, c_a) from the solve's own residuals on the clean emitter-windows (a step of the pattern estimation)
     fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background; T frames, k None = no pattern), kinetics starts
   pattern/
     __init__.py               package doc
@@ -177,8 +177,7 @@ heads give bit-identical outputs with the code before and after the 2026-11-15 r
 
 A model folder (`models/<name>/`, written by `simcode.pipeline.training`; names in `config.MODEL_FILES`):
 `detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt`, `calib/calib_emitter_pass1_sim.json`,
-`calib/calib_emitter_pass2_sim.json`,
-`calib/sigma_rescale_pass1.json`, `calib/sigma_rescale_pass2.json`, the PSF it was trained on, `model.json`. The networks
+`calib/calib_emitter_pass2_sim.json`, the PSF it was trained on, `model.json`. The networks
 a new model starts from: `models/pretrain_detector_pass1.pt`, `models/pretrain_emitter_pass1.pt`; the calibration templates
 of a new model: `models/calib/template_calib_emitter_pass{1,2}_sim.json` (`models/README.md`).
 
@@ -189,6 +188,13 @@ them is refused, `config.REMOVED_KEYS`), `config.CAL_REAL` / `CAL_REAL_PASS2` / 
 pipeline key `train.real_mult_from` (now `train.template_model`: the shipped model a quick run starts from). The archived
 model folders (`models/archive_*/`, not referenced by any config) keep their `_real` files as a record; their `model.json`
 files name `cal_real` and are refused by `config.model_set`.
+Removed 2026-11-17 (later): the selection-aware sigma rescale (`<set>/calib/sigma_rescale_pass{1,2}.json`, model key `sig_u`
+(refused), `table.tile_rank` / `model_sig_u`, `build_table(sig_u=)`), the fixed brightness noise `cmult` / `cmult_ang` of
+the solve calibrations (estimated per run with the pattern; a calibration that still holds it is refused by
+`solve.solve_cal`), `calib/template_calib_emitter_pass1_brightness_noise_fit.json` and `config.CAL_BRIGHTNESS_NOISE_FIT*`, the
+kinetic selection threshold 9.21 and the kin_gate of the fast solve (both models are fitted and averaged), the pass-2
+network-prior variant files `pass2_est2b_<f0>.npz` (`pass2_inference.direct_view`; replaced by the network columns
+x_net, ... of `pass2_est2_<f0>.npz`), the tables `locs_p1` / `locs_p2` (now `locs_p{1,2}_{net,solve}`).
 
 ## Outside the package
 
