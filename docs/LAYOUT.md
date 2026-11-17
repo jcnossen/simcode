@@ -97,8 +97,8 @@ simcode/
     extract_tracks.py         isolated emitter tracks (raw regions over consecutive frames)
     camera_maps.py            per-pixel offset and read-noise maps from the movie
     psf_compare.py            several PSF fits compared on the same samples (analysis/psf3d/summary.py)
-    gate_stats.py             statistics of the gate-scene dumps: matching, explicit solve on dumped outputs, sigma-table fit (fit_cal), RMS / CRLB (until 2026-11-16 analysis/calib/plib.py)
-    fit_cal_set.py            python -m simcode.calibration.fit_cal_set: the sim / real solve calibration of a new model from its gate dumps (stage train; until 2026-11-16 analysis/psfmatch/fit_cal_set.py)
+    gate_stats.py             statistics of the gate-scene dumps: matching, explicit solve on dumped outputs, prior_off fit (fit_cal), RMS / CRLB (until 2026-11-16 analysis/calib/plib.py)
+    fit_cal_set.py            python -m simcode.calibration.fit_cal_set: the solve calibration (prior_off) of a new model from its gate dumps (stage train; until 2026-11-16 analysis/psfmatch/fit_cal_set.py)
   pipeline/
     __init__.py               the automatic per-acquisition pipeline (LocalizationPipeline, ConfigDict)
     __main__.py               python -m simcode.pipeline <config>
@@ -199,13 +199,13 @@ files name `cal_real` and are refused by `config.model_set`.
   - `fourpi/`: 4Pi calibration chain, the v10 trainers and gates, post-processing, real-data comparisons, the simulated showcase.
   - `fourpi_classical/`: the classical 4Pi-SIMFLUX pipeline (published-style detection and fits, pixel MLE).
   - `fourpi_plain/`: plain 4Pi on the Li & Ries data: `psf_astig.py` (astigmatism scale of the bead-fitted PSF), `compare_published.py` (counts, z relation, precision on the same emitters, Nup96 radius / two-layer z vs their localizations), `sim_bench.py` (simulated movie through the real driver vs GT, sigma calibration), `quick_eval.py` (no-GT metrics of a table); training: `fourpi/train_det4pi.py --acq`, `fourpi/train_head4pi_w.py --acq`
-  - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma tables, sigma rescale, PSF files).
+  - `calib/`, `psfmatch/`, `psf3d/`, `psf3d_nets/sigcal.py`: calibration of a model (sigma rescale, PSF files); `sigma_joint/`: the sigma study of 2026-11-17 (joint prior / intensity covariance fine-tunes, full-sim acceptance, movie diagnosis, kap = 1 precision, Figs 3 / 4 reruns).
   - `pixbias/`, `crlbcmp/`, `ablation_cov/`, `p2generic/`, `selection_global/`: the pixel-bias, CRLB, ablation, generic-pass-2 and selection analyses of the paper / SI; `simreal/`: the benchmark sim movies (sigma-rescale fits); `z3d/`: 3D models (acceptance, model-folder swap); `figures/`: zoom picking and skeletons of the figures; `auto/`: calibration comparison of the automatic pipeline; `results/`: text snapshots cited by docs/RESULTS.md
   - `fourpi_sim/`: 4Pi-SIMCODE simulations on microtubule cell fields (`mt_cells.py`: port of the inSiliScope world model, BSD-3-Clause, notice in the file), density sweeps, the hd-head experiment (`hd_run.sh`); `solvegap/`: the paper's solve-gap analysis (pattern solve vs the SIMFLUX fit on the same frames)
   - `maintenance/`: `rename_model_keys.py` (model.json key names), `cleanup_outputs.py` (out/ + models/ clean-up, dry run by default)
   - archived on 2026-11-15 (git tag `archive-2026-11-15`, `docs/ARCHIVE.md`): nanoruler, tput, hd_compare, evalproto, gate, dme, psfshape, most of figures, the development parts of baselines / papersim / simreal / psf3d / z3d / fourpi; deleted: zimflux.
 - `models/`: calibrations (`calib/`, `insitu/`), model folders (`model.json`, calibrations, README); network weights are not in git (`models/README.md`).
-- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_config_dict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
+- `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior, layouts), `test_joint_solve.py` (joint prior / intensity covariance in the solve), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_config_dict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
 - `docs/`: this file, method, evaluation, results (development phase), usage, dataset format, automatic pipeline, PSF polarization note, the cleanup log, the cleanup candidate list and the archive index (`ARCHIVE.md`).
 
 ## Renamed (2026-11-16)

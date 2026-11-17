@@ -84,7 +84,7 @@ class Pass1Front:
             for c0 in range(0, len(b), 4096):
                 sl = slice(c0, c0 + 4096)
                 oh = EM.apply_to_candidates(self.emitter, self.col, x, None, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr=nbr, p=torch.sigmoid(lg[sl]))
-                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy')}, **EM.emitter_z(self.emitter, oh)))
+                outs.append(dict({k: oh[k].float() for k in ('I', 'L', 'C', 'bg', 'x', 'y', 'lsxy')}, **EM.emitter_z(self.emitter, oh)))
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_
             I = oh['I']; Ip = I.clamp(min=0)
@@ -102,7 +102,7 @@ class Pass1Front:
             sI = (oh['L'] ** 2).sum(-1).sqrt()
             r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=oh['z'], sz=oh['lsz'].exp(), bzx=oh['bz'][:, 0], bzy=oh['bz'][:, 1],
                      p=torch.sigmoid(lg.float()),
-                     phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], out=out, tc=tc, frame=fabs,
+                     phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], C=oh['C'], out=out, tc=tc, frame=fabs,
                      x_det=xs + X0, y_det=ys + Y0)
             rows.append({k_: v.float().cpu().numpy() if v.is_floating_point() else v.cpu().numpy() for k_, v in r.items()})
         R = {k_: np.concatenate([r_[k_] for r_ in rows]) for k_ in rows[0]}

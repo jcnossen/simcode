@@ -1,7 +1,8 @@
 """
 3D position prior of the emitter network (EmitterNet, pass 1 and pass 2, 2026-11-14): layout, 2D checkpoints, the 3D NLL and the z conditioning
 of the solve. CPU / GPU, no model files needed except where marked. Run: python tests/test_z3d.py (or pytest tests)
-  - a 2D state dict loads with zero z rows (pad_out) and the 2D outputs do not depend on the z rows
+  - a 2D state dict loads with zero z rows (pad_out) and the 2D outputs do not depend on the z rows; a 3D one without the
+    joint-covariance rows loads with C = 0 and its outputs do not depend on the C rows
   - nll_p (x, y) + nll_z (z | x, y) = the full 3D Gaussian NLL of prior_cov (up to the constant 1.5 log 2 pi)
   - z_given_xy = generic Gaussian conditioning of the joint (x, y, z) prior on a measurement of x, y
   - z_target_px: (z_um - focus_um) / pixelsize_um
@@ -36,21 +37,29 @@ def _inputs(n=7, p2=False):
 
 
 def test_pad_out_and_layout():
-    from simcode.emitter.model import pad_out, is_3d, EmitterNet
+    from simcode.emitter.model import pad_out, is_3d, is_joint, EmitterNet
     for p2 in (False, True):
         h = _head(p2); pt, off, nb, il = _inputs(p2=p2)
-        sd = h.state_dict()
+        sd = {k: v.clone() for k, v in h.state_dict().items()}
         assert is_3d(sd)
-        sd2 = dict(sd); sd2['out.weight'] = sd['out.weight'][:-EmitterNet.NZ]; sd2['out.bias'] = sd['out.bias'][:-EmitterNet.NZ]
+        nzc = EmitterNet.NZ + EmitterNet.NC
+        sd2 = dict(sd); sd2['out.weight'] = sd['out.weight'][:-nzc]; sd2['out.bias'] = sd['out.bias'][:-nzc]       # 2D layout
         assert not is_3d(sd2)
+        sd3 = dict(sd); sd3['out.weight'] = sd['out.weight'][:-EmitterNet.NC]; sd3['out.bias'] = sd['out.bias'][:-EmitterNet.NC]   # 3D, no C
+        assert is_3d(sd3) and not is_joint(sd3) and is_joint(sd)
         with torch.no_grad():
             a = h(pt, None, off, None, nb, il)
             h.load_state_dict(pad_out(sd2, h))
             b = h(pt, None, off, None, nb, il)
+            h.load_state_dict(pad_out(sd3, h))
+            c = h(pt, None, off, None, nb, il)
         for k in ('I', 'L', 'dxy', 'lsxy', 'bg', 'I_lin'):
-            assert torch.equal(a[k], b[k]), k          # the 2D outputs do not see the z rows
+            assert torch.equal(a[k], b[k]), k          # the 2D outputs do not see the z / C rows
+        for k in ('I', 'L', 'dxy', 'lsxy', 'bg', 'I_lin', 'z', 'lsz', 'bz'):
+            assert torch.equal(a[k], c[k]), k          # the 3D outputs do not see the C rows
         assert a['bg'].shape == (len(pt), 6)
         assert torch.all(b['z'] == 0) and torch.all(b['bz'] == 0) and torch.allclose(b['lsz'], torch.full_like(b['lsz'], -1.25))
+        assert torch.all(b['C'] == 0) and torch.all(c['C'] == 0) and c['C'].shape == (len(pt), 6, 2)
 
 
 def test_nll_3d():

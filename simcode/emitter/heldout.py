@@ -11,7 +11,7 @@ import argparse, os, time
 import numpy as np, torch
 from simcode import config
 from simcode.layers.blocks import extract_patches
-from simcode.emitter.model import PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, mod_slope
+from simcode.emitter.model import PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_joint, mod_slope
 
 dev = 'cuda'
 HOLD = os.path.join('simcode_out', 'emitter_heldout', 'heldout4.pt')      # default file of set 4 (stage 'prep' output; not shipped: 0.2-0.3 GB)
@@ -113,8 +113,10 @@ def eval_hold(head, H, chunk=4096, band=(500, 5000), extra=False):
             sl = slice(c0, c0 + chunk)
             pt = D['pt'][sl].to(dev).float(); off = D['off'][sl].to(dev); psf = D['psf'][sl].to(dev)
             o = head(pt, None, off, psf, D['nbr'][sl].to(dev).float())
-            nll, _ = nll_full(D['Ig'][sl].to(dev), o['I'].float(), o['L'].float())
-            outs['I'].append(o['I'].float()); outs['Ilin'].append(o['I_lin'].float()); outs['Sn'].append(o['L'].float() @ o['L'].float().transpose(1, 2))
+            zp = torch.stack([D['tx'][sl].to(dev) - D['x'][sl].to(dev) - o['dxy'][:, 0], D['ty'][sl].to(dev) - D['y'][sl].to(dev) - o['dxy'][:, 1]], 1) / o['lsxy'].exp()
+            nll, _ = nll_joint(D['Ig'][sl].to(dev), o['I'].float(), o['L'].float(), o['C'].float(), zp)   # given the prior error
+            Lf, Cf = o['L'].float(), o['C'].float()
+            outs['I'].append(o['I'].float()); outs['Ilin'].append(o['I_lin'].float()); outs['Sn'].append(Lf @ Lf.transpose(1, 2) + Cf @ Cf.transpose(1, 2))
             outs['px'].append(D['x'][sl].to(dev) + o['dxy'][:, 0]); outs['py'].append(D['y'][sl].to(dev) + o['dxy'][:, 1])
             outs['sp'].append(o['lsxy'].exp()); outs['nll'].append(nll)
         A = {k: torch.cat(v) for k, v in outs.items()}

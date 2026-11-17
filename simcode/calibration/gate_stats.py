@@ -6,9 +6,8 @@
   solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe posterior / cmult per cal) on
                                 the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free prior of pretrain_emitter_pass1 on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
-                                sigma = s_prior * kap_p(bin) * f(bin)
-  fit_cal(...)                  per-network-photon-bin kap_p / kap_I2 / sigma factor on the tuning seed (<out>/
-                                bright/fit_cal.py logic), + prior_off from iso (700-2000 ph)
+                                sigma = s_prior
+  fit_cal(...)                  prior_off from iso (700-2000 ph)
   prec(...)                     RMS / CRLB_SF_multi, trimmed, zcal, gross, per photon / nn bin; paired diff with FOV bootstrap
   detect(...)                   recall / FP / JI on the final positions (0.5 px, gate_scenes_report.detection rule), matched-FP sweep
 """
@@ -48,11 +47,6 @@ def targets(R, thr=0.5):
     return ti[k], oi[k]
 
 
-def _binval(tab, key, ph):
-    xp = np.log(np.array(tab['ph'])); fp = np.array(tab[key])
-    return np.interp(np.log(np.maximum(ph, 1.0)), xp, fp)
-
-
 @torch.no_grad()
 def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
     from simcode.emitter import model as SCM
@@ -64,9 +58,6 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
         x, y = R['sc_x'][oi], R['sc_y'][oi]
         po = np.array(cal.get('prior_off', [0.0, 0.0]))
         s = np.exp(R['sc_lsxy'][oi])
-        f = (_binval(cal['kap_bins'], 'kap_p', ph) if 'kap_bins' in cal else cal.get('kap_p', 1.0))
-        f = f * (_binval(cal['sig_ph'], 'f', ph) if 'sig_ph' in cal else 1.0)
-        s = s * np.asarray(f).reshape(-1, 1)
         return dict(x=x - po[0], y=y - po[1], sx=s[:, 0], sy=s[:, 1], q=np.zeros(len(oi)), xp=x - po[0], yp=y - po[1])
     P = torch.tensor(R['patt_est' if patt == 'est' else 'patt_true'], device=dev, dtype=torch.float32)
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
@@ -74,7 +65,7 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
     res = {k: [] for k in ('x', 'y', 'sx', 'sy', 'q', 'xp', 'yp') + (('z', 'sz', 'zp') if z3 else ())}
     for c0 in range(0, len(oi), chunk):
         j = oi[c0:c0 + chunk]
-        o = dict(I=tt(R['sc_I'][j]), L=tt(R['sc_L'][j]), x=tt(R[pre + 'x'][j]), y=tt(R[pre + 'y'][j]), lsxy=tt(R[pre + 'lsxy'][j]),
+        o = dict(I=tt(R['sc_I'][j]), L=tt(R['sc_L'][j]), C=tt(R['sc_C'][j]), x=tt(R[pre + 'x'][j]), y=tt(R[pre + 'y'][j]), lsxy=tt(R[pre + 'lsxy'][j]),
                  x_det=tt(R['sc_x_det'][j]), y_det=tt(R['sc_y_det'][j]))
         if z3: o.update(z=tt(R['sc_z'][j]), lsz=tt(R['sc_lsz'][j]), bz=tt(R['sc_bz'][j]))
         b = torch.tensor(R['sc_b'][j], device=dev).long()
@@ -88,11 +79,12 @@ def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
 
 
 def fit_cal(Rs, base, prior='own', iso=None, verbose=True):
-    """Rs: list of tuning-seed dumps; base: dict (cmult etc.); iso: tuning iso dump for prior_off (exact pattern, 700-2000)"""
-    cal = {k: v for k, v in base.items() if k not in ('kap_bins', 'sig_ph', 'prior_off')}
-    # (2026-11-14) solve_emitters requires 'sig_ph' since the options clean-up; the intermediate solves of this fit run before
-    # sig_ph is fitted, so they use the neutral factor 1 (as the code did implicitly before); replaced by the fitted one below
-    cal['sig_ph'] = dict(ph=[1.0, 1e6], f=[1.0, 1.0])
+    """solve calibration of a pass except its sigma layer: prior_off (the constant prior-position bias) from the iso dump
+    (exact pattern, 700-2000 ph); the other keys (cmult, box, mix_T, ...) from base. Rs (tuning-seed dumps of the fit scenes) are
+    no longer used for a fit since the per-photon-bin solve weights kap_p / kap_I2 were removed (2026-11-17; the solve uses the
+    network's own covariances); kept in the signature for the callers. The reported sigma is the solve's posterior sd with the
+    emitter network's joint prior / intensity covariance (no sigma factor)."""
+    cal = {k: v for k, v in base.items() if k not in ('kap_bins', 'prior_off')}
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     po = np.zeros(2)
     if iso is not None:
@@ -101,34 +93,8 @@ def fit_cal(Rs, base, prior='own', iso=None, verbose=True):
         e = np.c_[iso[pre + 'x'][oi], iso[pre + 'y'][oi]] - np.c_[iso['gt_x'][ti], iso['gt_y'][ti]]
         po = np.mean(e[m], 0)
     cal['prior_off'] = po.tolist()
-    TI = [targets(R) for R in Rs]
-    zp, zI, ph = [], [], []
-    for R, (ti, oi) in zip(Rs, TI):
-        tr = np.c_[R['gt_x'][ti], R['gt_y'][ti]]
-        zp.append((np.c_[R[pre + 'x'][oi], R[pre + 'y'][oi]] - po - tr) / np.exp(R[pre + 'lsxy'][oi]))
-        zI.append(np.linalg.solve(R['sc_L'][oi], (R['sc_I'][oi] - R['gt_I'][ti])[..., None])[..., 0])
-        ph.append(R['sc_I'][oi].sum(1))
-    zp, zI, ph = np.concatenate(zp), np.concatenate(zI), np.concatenate(ph)
-    C, KP, KI = [], [], []
-    for lo, hi in zip(EDG[:-1], EDG[1:]):
-        m = (ph >= lo) & (ph < hi)
-        if m.sum() < 100: continue
-        C.append(float(np.median(ph[m]))); KP.append(rob(zp[m])); KI.append(rob(zI[m]) ** 2)
-    cal['kap_bins'] = dict(ph=C, kap_p=KP, kap_I2=KI)
-    zs, ph2 = [], []
-    for R, (ti, oi) in zip(Rs, TI):
-        sol = solve(R, oi, cal, prior)
-        tr = np.c_[R['gt_x'][ti], R['gt_y'][ti]]
-        zs.append((np.c_[sol['x'], sol['y']] - tr) / np.c_[sol['sx'], sol['sy']]); ph2.append(R['sc_I'][oi].sum(1))
-    zs, ph2 = np.concatenate(zs), np.concatenate(ph2)
-    C2, F = [], []
-    for lo, hi in zip(EDG[:-1], EDG[1:]):
-        m = (ph2 >= lo) & (ph2 < hi)
-        if m.sum() < 100: continue
-        C2.append(float(np.median(ph2[m]))); F.append(rob(zs[m]))
-    cal['sig_ph'] = dict(ph=C2, f=F)
     if verbose:
-        print('  prior_off nm', (po * PX).round(2), '| kap_p', np.round(KP, 3), '| kap_I2', np.round(KI, 3), '| sig_f', np.round(F, 3), flush=True)
+        print('  prior_off nm', (po * PX).round(2), flush=True)
     return cal
 
 

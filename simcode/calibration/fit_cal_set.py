@@ -1,4 +1,4 @@
-"""PSF-matched retrain (2026-11-11): sim-sigma solve calibration of a front-end on the tuning seed 202 of ONE PSF's averaged-PSF
+"""PSF-matched retrain (2026-11-11): solve calibration of a front-end (since 2026-11-17 only prior_off from the iso scene) from ONE PSF's averaged-PSF
 gate scenes (as the earlier fit of the mixture set, which pooled the 3 per-axis PSFs; same plib.fit_cal procedure, prior_off from iso
 of the same PSF; until 2026-11-16 analysis/psfmatch/fit_cal_set.py). This is the model's only solve calibration of that pass: it
 is used for real and simulated movies alike (the real-data sigma multiplier of the earlier _real variant was removed 2026-11-17).

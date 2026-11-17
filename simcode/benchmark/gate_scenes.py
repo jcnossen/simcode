@@ -12,7 +12,7 @@ Scenes (64 x 64 FOVs, T = 6):
               seeds) with the full rs05 / rs25 mismatch (iteration 31)
 Each scene x eval seed (301, 302, 303; tuning used 202 / 5202) stores the GT table (all active emitters: visible
 targets = interior, >= 1 on-frame, >= 100 photons, with their multi-emitter / isolated CRLBs; dim emitters are
-'don't care') and every front-end's FULL output list (position, sigma, chi2-aware sigma, detection score, q / dof) at
+'don't care') and every front-end's FULL output list (position, sigma, posterior sigma, detection score, q / dof) at
 a low detection threshold (0.2), so precision / recall curves are swept offline (simcode/benchmark/gate_scenes_report.py).
 Front-end: sc = detector (--detector) + emitter network (--emitter) + the explicit pattern solve with the calibration --cal (defaults: the default
 model of simcode/models.json, its sim-sigma calibration cal_sim). PSF of the scenes, the CRLB and the head's PSF template: --calib
@@ -127,7 +127,7 @@ def psf_rows(psS, rpsf, G, ai, focus):
 @torch.no_grad()
 def out_sc(SC, o, zmax):
     """the SIMCODE v2 front end: detector (sub-pixel NMS + top-k, p > THR0) -> emitter network (I_t, full covariance, bg_t,
-    position prior) -> explicit intensity-domain pattern solve (fringe hypotheses, kinetic selection, chi2-aware sigma)."""
+    position prior) -> explicit intensity-domain pattern solve (fringe hypotheses, kinetic selection, posterior sigma)."""
     from simcode.detector.select import select_subpixel
     from simcode.emitter import model as EM
     from simcode.solve import solve as SV

@@ -83,7 +83,7 @@ class Pass2Front:
                 sl = slice(c0, c0 + 4096)
                 args = (x, il, b[sl], iy[sl], ix[sl], xs[sl], ys[sl], nbr, p[sl])
                 oh = EM.apply_to_candidates(self.emitter, self.col, *args)
-                r = {k: oh[k].float() for k in ('I', 'L', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
+                r = {k: oh[k].float() for k in ('I', 'L', 'C', 'bg', 'x', 'y', 'lsxy', 'x_det', 'y_det')}
                 outs.append(r)
             oh = {k: torch.cat([q[k] for q in outs]) for k in outs[0]}
             sync(); timing['head'] = timing.get('head', 0) + time.time() - t_

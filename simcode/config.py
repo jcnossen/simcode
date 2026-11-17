@@ -116,9 +116,9 @@ DETECTOR = _S['detector']                                      # pass-1 detector
 EMITTER = _S['emitter']                                        # pass-1 emitter network
 DETECTOR_PASS2 = _S['detector_pass2']                          # pass-2 (pattern-aware) detector
 EMITTER_PASS2 = _S['emitter_pass2']                            # pass-2 emitter network
-CAL_SIM = _S['cal_sim']                                        # pass-1 solve calibration (fixed c; sigma table fitted on the gate scenes)
+CAL_SIM = _S['cal_sim']                                        # pass-1 solve calibration (fixed c, prior_off from the gate scenes)
 CAL_SIM_PASS2 = _S['cal_sim_pass2']                            # pass-2 solve calibration (the same for pass 2)
-# calibrations of the pretraining networks (pretrain_detector_pass1 + pretrain_emitter_pass1): the sigma table of the opt-in automatic
+# calibrations of the pretraining networks (pretrain_detector_pass1 + pretrain_emitter_pass1): the solve calibration of the opt-in automatic
 # (s, c, c_a) fit (solve/brightness_noise_fit.py) and its start; the templates from which the calibration of a new model is fitted
 # (analysis/psfmatch/fit_cal_set.py) are TEMPLATE_CAL_*
 CAL_BRIGHTNESS_NOISE_FIT = 'calib/template_calib_emitter_pass1_brightness_noise_fit.json'

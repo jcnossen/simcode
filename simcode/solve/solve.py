@@ -14,8 +14,13 @@ from simcode.solve import pattern as C
 T = 6
 
 
-def pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
+def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0.75,
                       kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0):
+    # (2026-11-17) joint prior / intensity covariance of the emitter network (EmitterNet: L_J = [[diag(sp), 0], [Cj, L]]):
+    # Sig = L L^T is the intensity covariance GIVEN the prior error, Cj [n,T,2] the coupling. The joint Gaussian cost
+    # e_J^T Sigma_J^-1 e_J (e_J = [p_xy - r0; mu - I]) = |(p_xy - r0) / sp|^2 + |L^-1 (I + Cj z_p - mu)|^2, z_p = (p_xy - r0) / sp:
+    # the intensity residual uses I shifted by Cj z_p(p) (its x, y Jacobian gets - Cj / sp). The nuisance term c adds to the
+    # intensity block of Sigma_J, i.e. to the conditional covariance Sig as before (the conditional mean shift is unchanged).
     # cmult (2026-11-09, critic 32 #5): nuisance-aware intensity covariance Sigma(p) = Sig + diag((cmult mu_t(p))^2) with the
     # CURRENT model mean mu_t (multiplicative per-frame emitter-brightness noise; not the observed I_t), re-whitened at every
     # LM evaluation; cang: + a per-angle common factor, Sigma += cang^2 mu mu^T within each angle's frames (GLS Jacobian: d Sigma / d p ignored; the cost is the exact Gaussian NLL incl. log det Sigma(p) - log det
@@ -32,7 +37,7 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
     Linv = torch.linalg.solve_triangular(Lc, torch.eye(T_, device=dev).expand(n, T_, T_), upper=False)
     rep = lambda t_: t_.repeat_interleave(ns, 0)
     st = (r0[:, None] + dr).repeat_interleave(nk, 1).reshape(-1, 2)
-    Ir, r0r, spr, ptr, Lr, angr = (rep(t_) for t_ in (I, r0, sp, pt, Linv, ang))
+    Ir, r0r, spr, ptr, Lr, angr, Cr = (rep(t_) for t_ in (I, r0, sp, pt, Linv, ang, Cj))
     cmult = float(cmult); cang = float(cang)
     if cang > 0 and cmult <= 0: cmult = 1e-6
     if cmult > 0:
@@ -81,9 +86,12 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
             ldx = 2 * torch.log(Lp.diagonal(dim1=1, dim2=2).clamp(min=1e-12)).sum(1) - ld0
         else:
             Lri = Lr
-        rI = (Lri @ (Ir - mu)[..., None])[..., 0]
+        zp = (p[:, :2] - r0r) / spr
+        Ie = Ir + (Cr * zp[:, None, :]).sum(-1)
+        Jm = torch.cat([Jm[..., :2] - Cr / spr[:, None, :], Jm[..., 2:]], -1)
+        rI = (Lri @ (Ie - mu)[..., None])[..., 0]
         JI = -(Lri @ Jm)
-        rp = (p[:, :2] - r0r) / spr
+        rp = zp
         Jp = torch.zeros(M, 2, NP, device=dev); Jp[:, 0, 0] = 1 / spr[:, 0]; Jp[:, 1, 1] = 1 / spr[:, 1]
         r = torch.cat([rI, rp], 1); J = torch.cat([JI, Jp], 1)
         return r, J, (r ** 2).sum(1) + ldx, rI
@@ -125,7 +133,7 @@ def start_offsets(pt, r0, bases, nf=1):
 
 
 @torch.no_grad()
-def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
+def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
     """posterior over the fringe starts (iteration 31, critic 30 #1): kinetic model selection (kinetics only if it lowers the
     cost by > thr), MAP = best start of the selected kinetic model, plus the per-start solutions of that model, deduplicated (a start whose solution lies within `dedup`
     px of a lower-cost start is the same mode), weighted w_m ~ exp(-(cost_m - cost_min) / (2 temp)) (cost = chi^2 incl.
@@ -133,8 +141,8 @@ def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=3
     best distinct competitor (inf if none); R [n,H,2], S [n,H,2], w [n,H] (0 for duplicates); r_pm posterior mean,
     spread [n,2] = sqrt(sum w (R - r_map)^2) per axis, spread_pm = sqrt(sum w (R - r_pm)^2))"""
     dr = start_offsets(pt, r0, bases, nf)
-    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=False, iters=iters, box=box, cmult=cmult, cang=cang)
-    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, kinetics=True, iters=iters, box=box, cmult=cmult, cang=cang)
+    o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, iters=iters, box=box, cmult=cmult, cang=cang)
+    o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=iters, box=box, cmult=cmult, cang=cang)
     n = len(I); ar = torch.arange(n, device=I.device)
     b0 = o0['nll'].argmin(1); b1 = o1['nll'].argmin(1)
     q0 = o0['nll'][ar, b0]; q1 = o1['nll'][ar, b1]; use = (q0 - q1) > thr
@@ -168,44 +176,36 @@ def fringe_posterior(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=3
 # ------------------------------------------------------------------------------------------------ solve of the emitter-network outputs
 @torch.no_grad()
 def solve_emitters(o, pt_win, b, cal, nf=1, thr=9.21):
-    """explicit pattern solve on the emitter network's intensities with their full covariance (simcode/solve/solve.py): fringe-start
-    posterior (posterior-mean position with the mixture sigma), kinetic model selection, nuisance covariance Sigma(mu).
-    Returns r [n,2], s [n,2] (Fisher), s_cal (chi2-aware, calibrated), q / dof, p. Reference implementation (test oracle of
-    simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
-    Calibration keys (all required): kap_bins {'ph', 'kap_p', 'kap_I2'} (per-photon-bin prior / intensity covariance scales,
-    log-photon interpolation, constant outside), prior_off (constant prior-position bias, px, removed), cmult / cmult_ang
-    (nuisance covariance c, c_a), box (start box half-width, px), mix_T (posterior temperature), sig_a / sig_g (chi2-aware
-    sigma), sig_ph {'ph', 'f'} (per-photon-bin sigma factor)."""
-    I, Sig, r0, sp, ph = solve_inputs(o, cal)
-    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
-                            cmult=float(cal['cmult']), cang=float(cal['cmult_ang']))
+    """explicit pattern solve on the emitter network's outputs with their joint covariance (prior position, per-frame intensities;
+    pattern_solve_all): fringe-start posterior (posterior-mean position), kinetic model selection, nuisance covariance c.
+    Returns r [n,2] (posterior mean), s [n,2] (Fisher sd of the MAP start), s_cal [n,2] = the posterior sd sqrt(s_pm^2 +
+    spread_pm^2) (mixture Fisher sd over the fringe starts + their spread; no calibration factor), q / dof, p, ...
+    Reference implementation (test oracle of simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
+    o: the emitter network's outputs I, L, C, x, y, lsxy. Calibration keys: prior_off (constant prior-position bias, px,
+    removed), cmult / cmult_ang (nuisance covariance c, c_a), box (start box half-width, px), mix_T (posterior temperature)."""
+    I, Sig, r0, sp, ph, Cj = solve_inputs(o, cal)
+    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
+                         cmult=float(cal['cmult']), cang=float(cal['cmult_ang']))
+    return finish(s, I, Sig, r0, sp)
+
+
+def finish(s, I, Sig, r0, sp):
+    """the outputs of solve_emitters / solve_fast.solve_emitters_fast from the fringe posterior s"""
     qd = s['q'] / s['dof'].clamp(min=1)
-    f = (cal['sig_a'] * qd.clamp(min=1.0) ** cal['sig_g'])[:, None]
-    s_cal = (f * s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt() * _binval(cal['sig_ph'], 'f', ph)[:, None]
-    return dict(r=s['r_pm'], s=s['s'], s_cal=s_cal, q=qd, p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'],
-                s_map_cal=s['s'] * f.sqrt(), dnll=s['dnll'], r_prior=r0, s_prior=sp,
-                mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
+    s_cal = (s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt()
+    return dict(R_starts=s['R'], w_starts=s['w'], r=s['r_pm'], s=s['s'], s_cal=s_cal, s_pm=s['s_pm'], spread_pm=s['spread_pm'], q=qd,
+                p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'], dnll=s['dnll'], r_prior=r0, s_prior=sp, mu=s['mu'],
+                Sig=Sig, dof=s['dof'], chi2=s['q'])
 
 
 def solve_inputs(o, cal, mm=torch.matmul):
-    """head outputs + calibration -> (I [n,T], Sig [n,T,T] = L L^T kap_I2 + 1e-3, prior position r0 [n,2] (prior_off removed),
-    prior sigma sp [n,2] = exp(lsxy) kap_p, window photons ph [n]); shared by solve_emitters and solve_fast.solve_emitters_fast"""
+    """emitter-network outputs + calibration -> (I [n,T], Sig [n,T,T] = L L^T + 1e-3 (the intensity covariance given the prior
+    error), prior position r0 [n,2] (prior_off removed), prior sd sp [n,2] = exp(lsxy), window photons ph [n], Cj [n,T,2]
+    (the joint covariance block, EmitterNet)); shared by solve_emitters and solve_fast.solve_emitters_fast. The network's own
+    covariances, no scale factors (the per-photon-bin kap_p / kap_I2 were removed 2026-11-17)."""
     I = o['I'].float(); L = o['L'].float()
     ph = I.sum(1)
-    kI2 = _binval(cal['kap_bins'], 'kap_I2', ph)[:, None, None]
-    kp = _binval(cal['kap_bins'], 'kap_p', ph)[:, None]
-    Sig = mm(L, L.transpose(1, 2)) * kI2 + 1e-3 * torch.eye(I.shape[1], device=I.device)
+    Sig = mm(L, L.transpose(1, 2)) + 1e-3 * torch.eye(I.shape[1], device=I.device)
     r0 = torch.stack([o['x'], o['y']], 1).float() - torch.tensor(cal['prior_off'], device=I.device, dtype=torch.float32)[None]
-    sp = o['lsxy'].float().exp() * kp
-    return I, Sig, r0, sp, ph
-
-
-def _binval(tab, key, ph):
-    """per-photon-bin calibration value: tab['ph'] bin centres (network window photons), tab[key] values; piecewise
-    linear in log photons, constant beyond the end bins -> tensor [n]"""
-    xp = torch.log(torch.tensor(tab['ph'], device=ph.device, dtype=torch.float32))
-    fp = torch.tensor(tab[key], device=ph.device, dtype=torch.float32)
-    x = torch.log(ph.float().clamp(min=1.0)).clamp(xp[0], xp[-1])
-    i = torch.searchsorted(xp, x).clamp(1, len(xp) - 1)
-    w = (x - xp[i - 1]) / (xp[i] - xp[i - 1]).clamp(min=1e-9)
-    return fp[i - 1] + w * (fp[i] - fp[i - 1])
+    sp = o['lsxy'].float().exp()
+    return I, Sig, r0, sp, ph, o['C'].float()

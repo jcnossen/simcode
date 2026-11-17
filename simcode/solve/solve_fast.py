@@ -48,10 +48,14 @@ def _model(p, ptr, oh, kin, Tn):
     return mu, torch.stack(cols, -1)
 
 
-def _eval(p, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn):
-    """residual / Jacobian / cost at p (as solve.pattern_solve_all.rj): returns rI [M,T], JI [M,T,K], rp [M,2], cost [M]"""
+def _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn):
+    """residual / Jacobian / cost at p (as solve.pattern_solve_all.rj; joint prior / intensity covariance: the intensities shifted
+    by Cr z_p, z_p = (p_xy - r0) / sp): returns rI [M,T], JI [M,T,K], rp [M,2] (= z_p), cost [M]"""
     mu, Jm = _model(p, ptr, oh, kin, Tn)
-    rhs = torch.cat([(Ir - mu)[..., None], Jm], -1)                          # [M,T,1+K]
+    rp = (p[:, :2] - r0r) / spr
+    Ie = Ir + (Cr * rp[:, None, :]).sum(-1)
+    Jm = torch.cat([Jm[..., :2] - Cr / spr[:, None, :], Jm[..., 2:]], -1)
+    rhs = torch.cat([(Ie - mu)[..., None], Jm], -1)                          # [M,T,1+K]
     ldx = 0.0
     if cmult > 0:
         mup = mu.clamp(min=0)
@@ -64,7 +68,6 @@ def _eval(p, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn):
     else:
         W = _mm(Lfix, rhs)                                                    # Lfix = Sigma^-1/2 (lower), as the original
     rI = W[..., 0]; JI = -W[..., 1:]
-    rp = (p[:, :2] - r0r) / spr
     cost = (rI ** 2).sum(1) + (rp ** 2).sum(1) + ldx
     return rI, JI, rp, cost
 
@@ -86,7 +89,7 @@ def _clamp(p, lo_xy, hi_xy, Tn):
     return torch.cat([x, B, B, t_on[:, None], t_off[:, None]], 1)
 
 
-def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy,
+def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy,
              cmult: float, cang: float, kin: bool, Tn: int):
     """one LM iteration of solve.pattern_solve_all (accept if the cost decreases; lam / 3 or x 4)"""
     Hm, gr = _normal(JI, rI, rp, spr)
@@ -95,7 +98,7 @@ def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A
     z = torch.zeros_like(dpf[:, :1])
     dp = torch.cat([dpf[:, :3], z, dpf[:, 3:]] if kin else [dpf, z, z, z], 1)
     pn = _clamp(p + dp, lo_xy, hi_xy, Tn)
-    rIn, JIn, rpn, cn = _eval(pn, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
+    rIn, JIn, rpn, cn = _eval(pn, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
     acc = cn < cost
     p = torch.where(acc[:, None], pn, p); rI = torch.where(acc[:, None], rIn, rI)
     JI = torch.where(acc[:, None, None], JIn, JI); rp = torch.where(acc[:, None], rpn, rp)
@@ -113,7 +116,7 @@ def _get_step(compile_mode):
 
 
 # ------------------------------------------------------------------------------------------------ solve
-def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=0.75,
+def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0.75,
                            kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, compile='off'):
     """as solve.pattern_solve_all (nu = None)"""
     n, Tn = I.shape; dev = I.device
@@ -132,7 +135,7 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=
     ri = rows // ns; hk = rows % ns; hi_ = hk // nk; kidx = hk % nk
     M = len(rows)
     st = (r0[:, None] + dr)[ri, hi_]
-    Ir, r0r, spr, ptr, angr = I[ri], r0[ri], sp[ri], pt[ri], ang[ri]
+    Ir, r0r, spr, ptr, angr, Cr = I[ri], r0[ri], sp[ri], pt[ri], ang[ri], Cj[ri]
     oh = torch.nn.functional.one_hot(angr, 2).float()
     A2 = oh @ oh.transpose(1, 2) if cang > 0 else None
     if cmult > 0:
@@ -156,9 +159,9 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=
     lo_xy, hi_xy = st - box, st + box
     kin = bool(kinetics)
     p = _clamp(p, lo_xy, hi_xy, Tn); lam = torch.full((M,), 1e-2, device=dev)
-    rI, JI, rp, cost = _eval(p, ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
+    rI, JI, rp, cost = _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
     step_fn = _get_step(compile)
-    cc = [ptr, oh, Ir, r0r, spr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy]
+    cc = [ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy]
     for it in range(iters):
         p, rI, JI, rp, cost, lam = step_fn(p, rI, JI, rp, cost, lam, *cc, cmult, cang, kin, Tn)
     chi2 = (rI ** 2).sum(1) + (rp ** 2).sum(1)
@@ -206,14 +209,14 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=True, iters=30, box=
 
 
 @torch.no_grad()
-def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0,
+def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, thr=9.21, iters=30, temp=1.0, dedup=0.15, cmult=0.0,
                           cang=0.0, compile='off'):
     """as solve.fringe_posterior (same outputs); options see the module doc"""
     from simcode.solve.solve import start_offsets
     dr = start_offsets(pt, r0, bases, nf)
     n, H = dr.shape[:2]; dev = I.device
     kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, compile=compile)
-    o0 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, kinetics=False, **kw)
+    o0 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw)
     ar = torch.arange(n, device=dev)
     b0 = o0['nll'].argmin(1); q0 = o0['nll'][ar, b0]
     need = q0 > thr - 1e-3                                                     # kin_gate (module doc)
@@ -222,7 +225,7 @@ def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, it
     o1['dof'] = torch.full_like(o0['dof'], float(T + 2 - 5))
     if need.any():
         iN = torch.nonzero(need)[:, 0]
-        s1 = pattern_solve_all_fast(I[iN], Sig[iN], r0[iN], sp[iN], pt[iN], dr[iN], kinetics=True, **kw)
+        s1 = pattern_solve_all_fast(I[iN], Sig[iN], r0[iN], sp[iN], pt[iN], dr[iN], Cj[iN], kinetics=True, **kw)
         for k in ('r', 's', 'nll', 'mu') + (('chi2',) if 'chi2' in o0 else ()):
             o1[k][iN] = s1[k]
     b1 = o1['nll'].argmin(1)
@@ -258,12 +261,7 @@ def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, nf=1, box=1.5, thr=9.21, it
 def solve_emitters_fast(o, pt_win, b, cal, nf=1, thr=9.21, **opts):
     """simcode.solve.solve.solve_emitters (same calibration keys, same outputs) with the fast fringe posterior"""
     from simcode.solve import solve as SV
-    I, Sig, r0, sp, ph = SV.solve_inputs(o, cal, mm=_mm)
-    s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
+    I, Sig, r0, sp, ph, Cj = SV.solve_inputs(o, cal, mm=_mm)
+    s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], thr=thr, temp=cal['mix_T'],
                               cmult=float(cal['cmult']), cang=float(cal['cmult_ang']), **opts)
-    qd = s['q'] / s['dof'].clamp(min=1)
-    f = (cal['sig_a'] * qd.clamp(min=1.0) ** cal['sig_g'])[:, None]
-    s_cal = (f * s['s_pm'] ** 2 + s['spread_pm'] ** 2).sqrt() * SV._binval(cal['sig_ph'], 'f', ph)[:, None]
-    return dict(R_starts=s['R'], w_starts=s['w'], r=s['r_pm'], s=s['s'], s_cal=s_cal, q=qd, p=C.chi2_sf(s['q'], s['dof']), kin=s['kin'], r_map=s['r'],
-                s_map_cal=s['s'] * f.sqrt(), dnll=s['dnll'], r_prior=r0, s_prior=sp,
-                mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
+    return SV.finish(s, I, Sig, r0, sp)
