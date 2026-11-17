@@ -12,6 +12,7 @@
  "_recipe": {
   "trainer_chain": "/home/jc/simcode2/out/psf_v2/train/chain.sh m1809v2 (logs out/psf_v2/train/m1809v2/; frozen source src_da9fe7d, branch rename)",
   "evaluation": "/home/jc/simcode2/out/psf_v2/eval/eval.sh m1809v2 (out/psf_v2/eval/m1809v2/accept_p*.txt, simcmp_*.txt, sigu_test_p*.txt)",
-  "note": "in-situ PSF + camera v2 (out/psf_v2/STATUS.md): full chain det 40k, hd 18k (3D), generic pass 2 (p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; p2head 24k -> p2headL 50k -> p2headL2 50k); training heights from the calibration (non-pinned fitted heights, clipped 0-0.40 um), no TIRF brightness factor, the calibration camera read-noise map"
+  "note": "in-situ PSF + camera v2 (out/psf_v2/STATUS.md): full chain det 40k, hd 18k (3D), generic pass 2 (p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; p2head 24k -> p2headL 50k -> p2headL2 50k); training heights from the calibration (non-pinned fitted heights, clipped 0-0.40 um), no TIRF brightness factor, the calibration camera read-noise map",
+  "joint_covariance_2026_11_17": "emitter_pass1.pt / emitter_pass2.pt = the recipe networks fine-tuned with the joint prior / intensity covariance (models/README.md; out/sigma_joint/train/m1809/p1, p2 final.pt; paper branch analysis/sigma_joint/train.sh)"
  }
 }
