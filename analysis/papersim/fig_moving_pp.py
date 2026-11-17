@@ -6,8 +6,9 @@ A  one reconstructed 1000-frame block, 2 x 3: Input frame | SMLM | SIMFLUX / Gro
    sigma 1 render pixel at zoom 10 (10.8 nm pixels), clipped at the 99th percentile, inferno, 500 nm scale bar (Dataset.renderFigure);
    input frame = the block's first frame (gray); ground truth = all trajectory points of the block splatted bilinearly at zoom 30
    (render_frames_to_bitmaps; here the trajectory stored every 10 frames, clipped at the 99.5th percentile instead of uint8).
-   SIMCODE = SIMCODE v2 with its paper selection (p >= 0.63, calibrated max(sigma) <= 12 nm); the other methods = all their output
-   rows (= the rows the Jaccard scores; metrics.py moving).
+   SIMCODE = the run's result table (pass-2 emitter network, locs_p2_net) with p >= 0.63 and max(sigma) < 0.15 px on its own sigma
+   (metrics 'v2c', the common precision cut; until 2026-11-17 the solve with its calibrated max(sigma) <= 12 nm, 'v2sig'); the other
+   methods = all their output rows (= the rows the Jaccard scores; metrics.py moving).
 B  mean Jaccard over the blocks at 10 / 20 / 40 nm, bars red / green / blue (alpha 0.7), legend 'Jaccard distance threshold = ...'.
 --internal 1: also the preprint SIMCODE (extra column in A, extra group in B) -> <name>_internal.*
 Numbers: the json written by metrics.py (metrics_<model>.json) and fig_moving_main.py's GT-matched errors (moving_gterr_<model>.json).
@@ -64,7 +65,7 @@ def write_table(out, md, model, meth, R):
         Wr = csv.DictWriter(fh, fieldnames=list(rows[0])); Wr.writeheader(); Wr.writerows(rows)
     f = lambda v, fmt='{:.1f}': '-' if v != v else fmt.format(v)
     note = (f'Moving-microtubule simulation ({os.path.basename(md)}; {nf} frames, {nb} blocks of {bs} frames; SIMCODE = model '
-            f'{model} with its selection p >= 0.63, max(sigma) <= 12 nm; the other methods all output rows; SIMFLUX with its own '
+            f'{model}, its result table (pass-2 emitter network) with p >= 0.63 and max(sigma) < 0.15 px on its own sigma; the other methods all output rows; SIMFLUX with its own '
             'pattern estimate). Jaccard = mean over the blocks (GT = all trajectory points of the block), as Fig. B. FRC = median over the '
             'blocks of the half-split FRC within each block, on the FRC set (disjoint 6-frame windows, sigma < 0.15 px); "-" = too few '
             'localizations per block. RMS error = GT-matched error of the FRC-set localizations (nearest emitter ON in the window, within '
@@ -103,8 +104,8 @@ def main():
     R = json.load(open(os.path.join(run, f'metrics_{a.model}.json'))); g0 = json.load(open(os.path.join(md, 'gen.json')))
     W, bs = g0['W'], R['block']; b = a.block; f0, f1 = b * bs, (b + 1) * bs
     traj = np.load(os.path.join(md, 'traj.npy'), mmap_mode='r'); ts = int(g0['traj_step'])
-    meth = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v2sig', 'SIMCODE')]
-    if a.internal: meth = meth[:3] + [('v1', 'SIMCODE (preprint)'), ('v2sig', 'SIMCODE v2')]
+    meth = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v2c', 'SIMCODE')]
+    if a.internal: meth = meth[:3] + [('v1', 'SIMCODE (preprint)'), ('v2c', 'SIMCODE v2')]
     ncol = 3 if not a.internal else 4
     out = os.path.join(a.outdir, a.name + ('_internal' if a.internal else ''))
     os.makedirs(a.outdir, exist_ok=True); write_table(out, md, a.model, meth, R)

@@ -1,6 +1,6 @@
 """Main-text Fig 2 (\\label{fig:simulation}) with ONE predefined selection rule for every method (common_rule.py; user decision
 2026-11-15: no threshold tuned on the ground truth): each method's own quality filters + max(σx, σy) < 0.15 px (16.25 nm) on its
-own reported precision (SIMCODE: p >= 0.63 and its calibrated σ), disjoint 6-frame windows. GT-FRC = sustained 1/7 crossing.
+own reported precision (SIMCODE: p >= 0.63 and its network σ), disjoint 6-frame windows. GT-FRC = sustained 1/7 crossing.
 Ground truth of the *_wsm3d sets: webSMLM labels at their own 3D positions, panel a (and the zoom b) colour-coded by height.
 Layout:
   a GT (z) | b GT zoom (z) | c SMLM | d SIMFLUX
@@ -161,7 +161,7 @@ def main():
            "every method, the rule used for the experimental data, set before the analysis and without the ground truth: each method's "
            "localizations on disjoint 6-frame windows (one localization per window and emitter, no photon used twice) that pass the "
            "method's own quality filters and have a reported precision below 0.15 px (16.25 nm; the larger of the x and y values; "
-           "SMLM / SIMFLUX: CRLB; DECODE: its network uncertainty; SIMCODE: its calibrated uncertainty, with its detection probability of "
+           "SMLM / SIMFLUX: CRLB; DECODE: its network uncertainty; SIMCODE: its network uncertainty, with its detection probability of "
            "at least 0.63). Titles: GT-FRC resolution and the number of localizations. SIMFLUX uses the pattern estimated from the data, "
            "as SIMCODE does. SMLM and DECODE get the sum of the 6 frames; SMLM and SIMFLUX fit a 2D model of the PSF at the median "
            f"emitter height ({g0['z_um'] * 1e3:.0f} nm); DECODE was retrained for this PSF following its published training settings (Supplementary "
@@ -191,7 +191,7 @@ def main():
     notes = [f"Internal notes to {name} (not for the caption).",
              f"Set {a.set}: GT {g0.get('gt')}, heights {g0.get('z_rule')}; raw webSMLM z {wz}; height quantiles {zd}.",
              f"Selection: common_rule.py (out/papersim/common_rule/{a.set}.json): disjoint windows, own filters, max(sx, sy) < 0.15 px; "
-             "SIMCODE p >= 0.63 + calibrated sigma (no GT-tuned threshold, frcopt not used).",
+             "SIMCODE p >= 0.63 + its network sigma (no GT-tuned threshold, frcopt not used).",
              f"SIMCODE at the previous 12 nm cut: n {v12.get('n')} GT-FRC {v12.get(GR.GT_KEY, float('nan')):.2f} nm (common rule: n "
              f"{Mt['v2']['n']} GT-FRC {Mt['v2'][GR.GT_KEY]:.2f} nm).",
              f"SMLM / SIMFLUX fit plane {g0['z_um']:.4f} um (median GT height); zoom box (x0, y0, w) = ({cx}, {cy}, {w}) px; z colour range {a.zr} nm.",

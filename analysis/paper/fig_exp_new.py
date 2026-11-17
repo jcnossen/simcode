@@ -150,7 +150,7 @@ REMOVED = dict(smlm='SMLM: chi^2 > 4 x ROI^2 or max(sigma_x, sigma_y) >= 0.15 px
                sf='SIMFLUX: the SMLM chi^2 filter, modulation error >= 0.1, SIMFLUX fit at a parameter limit or > 0.5 px from its '
                   'SMLM fit, or max(sigma_x, sigma_y) >= 0.15 px',
                decode='DECODE: its predicted max(sigma_x, sigma_y) >= 0.15 px',
-               v2='SIMCODE: calibrated max(sigma_x, sigma_y) > 12 nm')
+               v2='SIMCODE: max(sigma_x, sigma_y) > 12 nm')
 
 
 def paper_text(s):
@@ -173,13 +173,13 @@ REMOVED_WORDS = dict(
        'at a parameter bound or more than 0.5 px from its SMLM position, or a precision of 0.15 px or worse',
     decode='DECODE: a network uncertainty of 0.15 px or worse',
     v1='SIMCODE (preprint): a precision of 0.15 px or worse',
-    v2='SIMCODE: a calibrated uncertainty above 12 nm')
+    v2='SIMCODE: an uncertainty above 12 nm')
 
 
 def removed_words(k, v2s=12.0):
     if k == 'v2':
-        return ('SIMCODE: a calibrated uncertainty of 0.15 px or worse' if common_cut(v2s)
-                else f'SIMCODE: a calibrated uncertainty above {v2s:g} nm')
+        return ('SIMCODE: an uncertainty of 0.15 px or worse' if common_cut(v2s)
+                else f'SIMCODE: an uncertainty above {v2s:g} nm')
     return REMOVED_WORDS[k]
 
 
@@ -264,10 +264,10 @@ def common_cut(v2s):
 def sel_words(v2s):
     if common_cut(v2s):
         return (f"All methods: precision < 0.15 px ({FF.SIGMA_MAX * FF.PX:.2f} nm) on their own reported uncertainty: CRLB for SMLM / "
-                "SIMFLUX, network uncertainty for DECODE, calibrated uncertainty for SIMCODE (the larger of the x and y values), after "
+                "SIMFLUX, network uncertainty for DECODE and for SIMCODE (the larger of the x and y values), after "
                 "each method's own quality filters (k); SIMCODE keeps only detections with a detection probability of at least 0.63.")
     return ("Localizations shown and counted per method: precision < 0.15 px (CRLB for SMLM / SIMFLUX, network uncertainty for "
-            f"DECODE), calibrated uncertainty <= {v2s:g} nm for SIMCODE (in both cases the larger of the x and y values; SIMCODE also "
+            f"DECODE), network uncertainty <= {v2s:g} nm for SIMCODE (in both cases the larger of the x and y values; SIMCODE also "
             "keeps only detections with a detection probability of at least 0.63).")
 
 
@@ -425,7 +425,7 @@ def main():
                + f' ({SEL_RULE}; drift of the uncut sets).' if SEL else '')
             + ' K: accepted / removed counted on the windows with start f % 6 == 0 and the FRC crop. Raw: SMLM / SIMFLUX every detected '
               'ROI with an SMLM fit (summed-fit cache, before the chi^2 filter), DECODE every row, SIMCODE every row with p >= 0.63. Removed: '
-            + '; '.join(REMOVED[k] if k != 'v2' else f'SIMCODE: calibrated max(sigma_x, sigma_y) > {a.v2_sigma_max:g} nm (and >= 0.15 px)'
+            + '; '.join(REMOVED[k] if k != 'v2' else f'SIMCODE: max(sigma_x, sigma_y) > {a.v2_sigma_max:g} nm (and >= 0.15 px)'
                         for k in KINDS if k in REMOVED) + '.'
             + (f" {S['fit_note']} SMLM raw = its own run's detected ROIs, SIMFLUX raw = those of the SIMFLUX table's run." if S.get('fit_note') else '')
             + (f' Frames 0-{F}.' if a.nframes else '') + (f'\n{a.note}' if a.note else ''))

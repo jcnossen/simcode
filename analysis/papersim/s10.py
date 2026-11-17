@@ -18,7 +18,8 @@ Methods:
   SIMFLUX bg per frame  (not in the preprint) the same with one bg per frame (x, y, I, bg_1..6; start bg_t = ROI-border median):
             the MLE of the U(1, 6) data-generating model
   NN        SIMCODE v2 network output before the pattern solve: the head's pattern-free position prior (pass 1 head; and the
-            pass-2 head's prior); predicted precision = the head's sigma
+            pass-2 head's prior = nn_p2, the SIMCODE result since 2026-11-17: the pass-2 network table locs_p2_net);
+            predicted precision = the head's sigma
   SIMCODE v2  explicit pattern solve on the network intensities with the GT pattern (pass 1 = pattern-free networks + solve;
             pass 2 = pattern-aware networks fed the GT pattern + solve, the production final output); predicted = calibrated sigma
             Detection is the network's own (detector p >= 0.5, matched to the GT within 1 px); SMLM / SIMFLUX fit every emitter.
@@ -162,11 +163,13 @@ class Nets:
         sim = Simulator(psf_calib or ns.get('psf_calib', C.PSF_CALIB), H=FOV, W=FOV, T=6)
         self.col = SCM.PSFCol(sim)
         det, _ = DM.load(ns['detector'])
-        self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col,
-                   json.load(open(config.resolve(ns['cal_sim']))))
+        # brightness noise of the solve (2026-11-17: no longer in the model calibrations): these scenes have a constant emitter
+        # brightness (pure Poisson), c = c_a = 0 (simcode.simulate.crlb.BRIGHTNESS_NOISE, as the gate scenes)
+        from simcode.simulate.crlb import BRIGHTNESS_NOISE
+        self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col, SV.solve_cal(config.resolve(ns['cal_sim']), *BRIGHTNESS_NOISE))
         d2, _ = DM.load(ns['detector_pass2'])
         self.p2 = (d2, SCM.load(config.resolve(ns['emitter_pass2'])), True)
-        self.p2cal = json.load(open(config.resolve(ns['cal_sim_pass2'])))
+        self.p2cal = SV.solve_cal(config.resolve(ns['cal_sim_pass2']), *BRIGHTNESS_NOISE)
 
     @torch.no_grad()
     def run(self, frames, patt):

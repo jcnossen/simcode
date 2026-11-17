@@ -17,6 +17,10 @@ HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import common as C
 
 
+# the SIMCODE row (2026-11-17): the pass-2 emitter network's output (s10 'nn_p2'), the paper's SIMCODE result (locs_p2_net); until
+# then the pass-2 solve ('v2_p2', kept in the s10 json)
+SC = 'nn_p2'
+
 def example_stack(tag_json, bi, psf):
     """re-render the U(1, 6) scene of bin bi exactly as s10.py did (same rng / generator seeds) -> ROI [6,16,16] of emitter 0, gt x / y
     in the ROI, bg [6]"""
@@ -62,8 +66,8 @@ def main():
     hA = []
     for k, c, lab in (('crlb_smlm', 'k', 'SMLM CRLB'), ('crlb_sf', 'green', 'SIMFLUX CRLB'), ('crlb_sf_pfbg', 'grey', 'SIMCODE bound')):
         ph, y, _ = ser('const1', k); hA += A.plot(ph, y, '--', color=c, lw=1.2, label=lab)
-    for k, c, mk, lab in (('smlm', 'k', 'o', 'SMLM MLE'), ('sf', 'green', 's', 'SIMFLUX MLE'), ('nn_p1', 'tab:blue', '^', 'NN Output'), ('v2_p2', 'red', 'v', 'SIMCODE')):
-        ph, y, rec = ser('const1', k); low = rec < 0.5 if k in ('nn_p1', 'v2_p2') else np.zeros(len(ph), bool)
+    for k, c, mk, lab in (('smlm', 'k', 'o', 'SMLM MLE'), ('sf', 'green', 's', 'SIMFLUX MLE'), ('nn_p1', 'tab:blue', '^', 'NN Output'), (SC, 'red', 'v', 'SIMCODE')):
+        ph, y, rec = ser('const1', k); low = rec < 0.5 if k in ('nn_p1', SC) else np.zeros(len(ph), bool)
         hA += A.plot(ph, y, '-', color=c, marker=mk, ms=5, label=lab, markevery=list(np.nonzero(~low)[0]))
         if low.any(): A.plot(ph[low], y[low], mk, color=c, ms=5, mfc='white', ls='none')
     A.set_title('Localization precision vs signal photons (X axis)')
@@ -75,10 +79,10 @@ def main():
     if low.any(): B.plot(ph[low], y[low], 'o', color='tab:blue', ms=5, mfc='white', ls='none')
     ph, y, _ = ser('unif16', 'nn_p1', 'pred_mean'); hB += B.plot(ph, y, ':', color='tab:blue', marker='x', ms=5, lw=1.5, label='NN Output predicted precision')
     ph, y, _ = ser('unif16', 'crlb_sf_pfbg'); hB += B.plot(ph, y, '--', color='red', lw=1, alpha=0.6, label='SIMCODE bound')
-    ph, y, rec = ser('unif16', 'v2_p2'); low = rec < 0.5
+    ph, y, rec = ser('unif16', SC); low = rec < 0.5
     hB += B.plot(ph, y, '-', color='red', marker='v', ms=5, label='SIMCODE RMSD', markevery=list(np.nonzero(~low)[0]))
     if low.any(): B.plot(ph[low], y[low], 'v', color='red', ms=5, mfc='white', ls='none')
-    ph, y, _ = ser('unif16', 'v2_p2', 'pred_mean'); hB += B.plot(ph, y, ':', color='red', marker='x', ms=5, lw=1.5, label='SIMCODE predicted precision')
+    ph, y, _ = ser('unif16', SC, 'pred_mean'); hB += B.plot(ph, y, ':', color='red', marker='x', ms=5, lw=1.5, label='SIMCODE predicted precision')
     B.set_title('Localization precision for fluctuating fluorescence background')
     for X, h, L in ((A, hA, 'A'), (B, hB, 'B')):
         X.set_xscale('log'); X.set_yscale('log'); X.grid(True, which='both', alpha=0.3)
@@ -112,7 +116,7 @@ def main():
                           for cond in ('const1', 'unif16') for k in ('smlm', 'sf', 'sf_pfbg') for f in ('rmsd_trim2', 'rmsd')})
     for cond in ('const1', 'unif16'):            # network rows (s10 --tag json) + their ratio to the SIMCODE bound, both trims
         q = [R['cond'][cond][b] for b in sorted(R['cond'][cond], key=int)]
-        for k in ('nn_p1', 'v2_p2'):
+        for k in ('nn_p1', SC, 'v2_p2'):
             for f in ('rmsd', 'rmsd_trim2'):
                 ext['rmsd_x_px'][f'{cond}_{k}_{f}'] = [x[k][f][0] for x in q]
                 ext.setdefault('ratio_to_simcode_bound_x', {})[f'{cond}_{k}_{f}'] = [x[k][f][0] / x['crlb_sf_pfbg'][0] for x in q]

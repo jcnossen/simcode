@@ -9,9 +9,8 @@ the pass-2 front is re-run (return_head) and the pass-2 solve repeated with
 and compared with the pass-2 network (net_p2; locs_p2_net). Per photon bin (detected photons of the window), always-on GT rows
 (ON through the window) and blinking rows separately: robust sd nm (1.4826 MAD, x and y pooled, errors minus the per-movie
 median), z = rms(err / reported sigma) (|z| < 4), as analysis/sigma_joint/net_vs_solve.py.
-True brightness variation of the sim: from the GT per-frame photons of the always-on matched windows against B il_t(x) of the
-true (global) pattern with B fitted per window: c_true^2 = 3/2 var(within-angle relative residual), c_a,true^2 =
-2 var(angle mean) - c_true^2 / 3; also the simulator's knobs (frame_sd, step_sd, ang_sd).
+True brightness variation of the sim: gt_brightness.py (GT photons vs B il_t(x) with the true illumination incl. the pattern
+field, B per window; and the simulator's knobs frame_sd, step_sd, ang_sd).
 usage: python kin_c_compare.py <out json> <model>:<sim> [...]"""
 import json, os, sys
 import numpy as np, torch
@@ -25,7 +24,6 @@ from scipy.spatial import cKDTree
 
 RUNS = os.path.expanduser('~/simcode2/out/sigadopt/runs')
 dev = 'cuda'
-ANG_SD = {'0.5nM': 0.14, '2.5nM': 0.2}      # simcode/simulate/acquisition.PRESETS (the sims do not override it)
 
 
 @torch.no_grad()
@@ -98,14 +96,6 @@ def collect(model, sim, psf):
     bg = o['bg'][torch.as_tensor(r2, device=dev)].float().cpu().numpy().clip(min=0.05)
     _, csf, coll = crlbs(psf, tx, ty, tz, Ig, bg, il, dd * pt[..., 0], dd * pt[..., 1])
     onthru = (t0[ev] <= w) & (t1[ev] >= w + 6)
-    # true brightness variation (always-on windows): GT photons vs B il (global true pattern), B per window
-    B = (Ig * il).sum(1) / (il ** 2).sum(1).clip(min=1e-9)
-    rel = Ig / (B[:, None] * il).clip(min=1e-9) - 1
-    ang = (fr % 6) // 3
-    m_a = np.stack([np.where(ang == a, rel, 0).sum(1) / (ang == a).sum(1) for a in (0, 1)], 1)
-    within = rel - np.take_along_axis(m_a, ang, 1)
-    ok = onthru & (Ig.sum(1) > 300)
-    c_true2 = 1.5 * np.var(within[ok]); ca_true2 = 2 * np.var(m_a[ok]) - c_true2 / 3
     po2 = np.array(c2['prior_off']); sel = torch.as_tensor(r2, device=dev)
     E = dict(net_p2=(np.c_[o['x'][sel].cpu().numpy() + X0 - po2[0], o['y'][sel].cpu().numpy() + Y0 - po2[1]], o['lsxy'][sel].exp().cpu().numpy()))
     for k, (r, s, kw_) in V.items():
@@ -114,13 +104,9 @@ def collect(model, sim, psf):
     for k, (r, s) in E.items():
         err = r - np.c_[tx, ty]; err -= np.median(err, 0)
         out['e_' + k] = err; out['s_' + k] = s
-    info = dict(sim=sim, model=model, c_est=cE, c_a_est=caE, c_true=float(np.sqrt(max(c_true2, 0))), c_a_true=float(np.sqrt(max(ca_true2, 0))),
-                frame_sd=float(G['frame_sd']) if 'frame_sd' in G.files else None, step_sd=float(G['step_sd']) if 'step_sd' in G.files else None,
-                ang_sd_preset=ANG_SD.get(str(G['preset'])) if 'preset' in G.files else None, n_matched=int(len(r2)), n_rows=int(len(R['x_hy0'])),
-                max_dx_avg_vs_run_px=dx)
-    if info['frame_sd'] is not None and info['step_sd'] is not None:
-        info['c_knobs'] = float(np.hypot(info['frame_sd'], info['step_sd']))
-        if info['ang_sd_preset']: info['c_a_knobs'] = info['ang_sd_preset'] / np.sqrt(2)
+    import gt_brightness as GB
+    info = dict(sim=sim, model=model, c_est=cE, c_a_est=caE, n_matched=int(len(r2)), n_rows=int(len(R['x_hy0'])), max_dx_avg_vs_run_px=dx)
+    info.update({k: v for k, v in GB.one(sim).items() if k != 'sim'})
     return out, info
 
 
@@ -146,7 +132,7 @@ def main():
         pr(f'\n# {model}: held-out sims {sims}; matched GT windows {len(D["ph"])}')
         for s in sims:
             i = res['sims'][s]
-            pr(f'  {s}: estimated c {i["c_est"]:.3f}, c_a {i["c_a_est"]:.3f} | true (GT photons vs B il) c {i["c_true"]:.3f}, c_a {i["c_a_true"]:.3f}'
+            pr(f'  {s}: estimated c {i["c_est"]:.3f}, c_a {i["c_a_est"]:.3f} | GT (gt_brightness.py) c {i["c_gt"]:.3f}, c_a {i["c_a_gt"]:.3f}'
                + (f' | simulator knobs sqrt(frame_sd^2 + step_sd^2) {i["c_knobs"]:.3f}, ang_sd/sqrt2 {i.get("c_a_knobs", float("nan")):.3f}' if 'c_knobs' in i else ''))
         rows = []
         for sub, m0 in (('always_on', D['onthru']), ('blinking', ~D['onthru'])):

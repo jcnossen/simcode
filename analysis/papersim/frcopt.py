@@ -44,29 +44,21 @@ OUTD = os.path.join(C.OUT, 'frcopt')
 
 
 # ------------------------------------------------------------------------------------------------ loading
-def v2_rows(d, W, pagg_file=None, crop=None):
-    """pass-2 rows of a SIMCODE run (simcode.table.load_rows of est2 = the row order of locs_p2.hdf5) -> dict with x, y, f, p,
-    sx0, sy0 (calibrated, before the selection-aware rescale), p_agg (nan without the stage file) and the rescale g(u) helper"""
-    from simcode.table import load_rows, tile_rank, model_sig_u
-    R = load_rows(d, 'est2')
-    T = dict(x=R['x_hy0'].astype(np.float64), y=R['y_hy0'].astype(np.float64), f=R['wstart'].astype(np.int64),
-             p=R['p'].astype(np.float64), sx0=R['sx_cal'].astype(np.float32), sy0=R['sy_cal'].astype(np.float32))
+def v2_rows(d, W, pagg_file=None, crop=None, table='locs_p2_net'):
+    """the rows of a SIMCODE run's result table (2026-11-17: locs_p2_net = the pass-2 emitter network, its position and sd; the
+    selection-aware rescale g(u) of the earlier tables was removed) -> dict with x, y, f, p, sx0, sy0, p_agg (nan without the
+    stage file) and sigma(base) -> (sx, sy) (no rescale: the reported sd for every row)"""
+    from simcode.dataset import Dataset
+    C_ = Dataset.from_run(d, table=table, info=False).columns()
+    T = dict(x=C_['x'].astype(np.float64), y=C_['y'].astype(np.float64), f=C_['frame'].astype(np.int64),
+             p=C_['p'].astype(np.float64), sx0=C_['sx'].astype(np.float32), sy0=C_['sy'].astype(np.float32))
     T['p_agg'] = np.full(len(T['x']), np.nan)
     if pagg_file and os.path.exists(pagg_file):
         S = np.load(pagg_file)
         assert len(S['p2_p_agg']) == len(T['x']), (len(S['p2_p_agg']), len(T['x']))
         assert np.array_equal(S['p2_wstart'].astype(np.int64), T['f'])
         T['p_agg'] = S['p2_p_agg'].astype(np.float64)
-    su = json.load(open(model_sig_u(d, 'est2')))
-    crop = (0.0, 0.0, float(W)) if crop is None else tuple(float(v) for v in crop)
-
-    def sigma(base):
-        """sx, sy rescaled by g(u), u = per-tile rank within base (only base rows are rescaled, as build_table)"""
-        sx = T['sx0'].copy(); sy = T['sy0'].copy(); ii = np.nonzero(base)[0]
-        u = tile_rank(T['x'][ii], T['y'][ii], 0.5 * (sx[ii] + sy[ii]).astype(np.float64), crop)
-        g = np.interp(u, su['u_mid'], su['g']).astype(np.float32); sx[ii] *= g; sy[ii] *= g
-        return sx.astype(np.float64), sy.astype(np.float64)
-    T['sigma'] = sigma
+    T['sigma'] = lambda base: (T['sx0'].astype(np.float64), T['sy0'].astype(np.float64))
     return T
 
 

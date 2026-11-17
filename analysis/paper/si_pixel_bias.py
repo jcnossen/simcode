@@ -4,7 +4,7 @@ SMLM and SIMFLUX as references, and the ground-truth floor.
 
 Rows of every method = the paper's common rule (analysis/papersim/common_rule.py; metrics.frc_set): each method's own filters,
 disjoint 6-frame windows, inside the field, max(sigma_x, sigma_y) < 0.15 px (16.25 nm) on its own reported uncertainty
-(SMLM / SIMFLUX CRLB, DECODE predicted sigma, SIMCODE calibrated sigma with p >= 0.63 = metrics 'v2c'); the sub-pixel statistics
+(SMLM / SIMFLUX CRLB, DECODE predicted sigma, SIMCODE network sigma (locs_p2_net) with p >= 0.63 = metrics 'v2c'); the sub-pixel statistics
 use the rows inside [0.5, W - 0.5) (analysis/decode_checks/pixlock.py logic).
   |c1|    first harmonic of the sub-pixel histogram of f = x - round(x) (pixel centre = 0), analysis/pixbias/pblib.ustats
   A_bias  GT bias: e = est - GT of rows with an isolated GT emitter (>= 100 window photons, no other ON emitter within 2 px) within
@@ -207,7 +207,7 @@ def caption(V, a):
              '(astigmatic PSF, EMCCD, 127 x 117 nm pixels, photons per frame). (d, e) Bias and |c1| vs density (emitters ON per um^2 per '
              'window), DECODE\'s published model at 10 and 50 emitters per frame.')
     L.append('Rows: the common rule for every method (own filters, disjoint 6-frame windows, max(sigma_x, sigma_y) < 0.15 px on its own '
-             'reported uncertainty; SIMCODE p >= 0.63 with calibrated sigma). Bias: rows matched within 1 px to a ground-truth emitter with '
+             'reported uncertainty; SIMCODE p >= 0.63 with its network sigma). Bias: rows matched within 1 px to a ground-truth emitter with '
              'no other emitter ON within 2 px. SIMFLUX uses the true pattern throughout; on the isolated-emitter movie SIMCODE also uses the '
              'true pattern (its pattern estimate fails on this sparse movie).')
     L.append('DECODE training: DECODE was retrained on our conditions following the training settings published with DECODE '

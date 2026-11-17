@@ -27,7 +27,7 @@ from matplotlib.gridspec import GridSpec
 
 METH = [('smlm', 'SMLM'), ('sf', 'SIMFLUX'), ('decode', 'DECODE'), ('v1', 'SIMCODE\n(preprint)'), ('v2sig', 'SIMCODE v2')]
 TABLE = [('smlm', 'SMLM'), ('sf', 'SIMFLUX (estimated pattern)'), ('sf_gtp', 'SIMFLUX (true pattern)'), ('decode', 'DECODE (retrained)'),
-         ('v1', 'SIMCODE preprint (estimated pattern)'), ('v2sig', 'SIMCODE v2')]
+         ('v1', 'SIMCODE preprint (estimated pattern)'), ('v2sig', 'SIMCODE v2'), ('v2c', 'SIMCODE (common rule)')]
 RMAX_NM, BAD_NM = 100.0, 30.0
 TICK = dict(smlm='SMLM', sf='SIMFLUX', decode='DECODE', v1='SIMCODE\n(preprint)', v2sig='SIMCODE\nv2')
 
