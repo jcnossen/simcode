@@ -9,7 +9,7 @@ torch-psf `docs/API.md`) with SIMCODE's loaders and the paper's selection. Field
 ## Run a movie, load the result
 
 ```bash
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 python -m simcode.run --movie /path/to/movie.tif --calib insitu/calib_1809_2_psf_v2.psf.zip --model m1809 --out out/run1
 python -m simcode.run --dataset 1809_2 --data-root /mnt/data/dmdsf/bn_dnapaint --out out/run1   # a paper dataset
 ```
