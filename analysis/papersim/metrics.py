@@ -3,9 +3,10 @@
 Rows per method ('full' = what each method outputs, as the preprint scored it):
   smlm    <run>/base/smlm/smlm.npy (chi^2-filtered, a window at every frame)
   sf      <run>/base/sf/sf.hdf5 (pattern estimated from SMLM)      sf_gtp  <run>/base/sf_gtp/sf.hdf5 (ground-truth pattern)
-  decode  <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6; its locs_fixed.npz when it exists: the
+  decode  <run>/decode/locs_v3.npz when it exists (DECODE v3 = dec_m1809v3, 2026-11-16), else <run>/decode/locs.npz (all rows; 6-frame sums at window starts 0, 3 mod 6; its locs_fixed.npz when it exists: the
           frame-label fix of the tables written before 2026-11-15, simcode.dataset.decode_table)
-  v2sig   <run>/v2_<model>/locs_p2.hdf5, 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
+  v2sig   <run>/v2_<model>/locs_p2_net.hdf5 (the result table of the run: the pass-2 emitter network, 2026-11-17; locs_p2.hdf5 of
+          earlier runs), 'SIMCODE v2, sigma <= 12 nm' = the v2 row (user decision 2026-11-13): rows with
           p >= 0.63 inside the simulated field (the run's crop (0, 0, W)) and calibrated max(sx, sy) <= simcode.table.SIGMA_MAX_NM
           (simcode.table.select); v2siggt = the same rule on the diagnostic pass 2 with the ground-truth pattern
           (run_simcode.py --gt_diag, gt_pattern/locs_p2.hdf5; not the method); v2sel = 'SIMCODE v2 all' = rows `sel` (loader only).
@@ -116,15 +117,22 @@ def u_all(x, y, sig, base, tile=10.0):
 def method_paths(run, model='m1809'):
     P = dict(smlm=f'{run}/base/smlm/smlm.npy', sf=f'{run}/base/sf/sf.hdf5', sf_gtp=f'{run}/base/sf_gtp/sf.hdf5',
              decode=f'{run}/decode/locs.npz')
-    P['v2sig'] = f'{run}/v2_{model}/locs_p2.hdf5'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
+    # DECODE = the v3 model (dec_m1809v3, published training settings, PSF v2; user decision 2026-11-16) wherever its table exists
+    # (<run>/decode/locs_v3.npz, fixed frame labels); the earlier model's numbers are in the metrics files of the earlier runs
+    v3 = f'{run}/decode/locs_v3.npz'
+    # SIMCODE = the run's result table locs_p2_net (the pass-2 emitter network, 2026-11-17); runs before 2026-11-17: locs_p2
+    v2t = f'{run}/v2_{model}/locs_p2_net.hdf5'
+    P['v2sig'] = v2t if os.path.exists(v2t) else f'{run}/v2_{model}/locs_p2.hdf5'      # 'SIMCODE v2, sigma <= 12 nm' (the v2 row since 2026-11-13)
     P['v2c'] = P['v2sig']                              # 'SIMCODE, common rule' (2026-11-15): p >= 0.63, calibrated sigma < 0.15 px as every method
     P['v1'] = f'{run}/v1/locs.npz'
     P['decode_sim'] = f'{run}/decode_sim/locs.npz'
     P['decode_pre'] = f'{run}/decode_pre/locs.npz'      # the preprint's own DECODE model (decode-3f-g1.3), Gaussian-PSF reproduction      # DECODE retrained for the simulation ranges (dec_sim1809)
     P['v1gt'] = f'{run}/v1gt/locs.npz'           # diagnostic: preprint SIMCODE given the GT pattern
-    P['v2siggt'] = f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
+    gtt = f'{run}/v2_{model}/gt_pattern/locs_p2_net.hdf5'
+    P['v2siggt'] = gtt if os.path.exists(gtt) else f'{run}/v2_{model}/gt_pattern/locs_p2.hdf5'      # diagnostic: pass 2 on the ground-truth pattern
     from simcode.dataset import decode_table      # DECODE: locs_fixed.npz (frame-label fix, 2026-11-15) when it exists
     for k in ('decode', 'decode_sim', 'decode_pre'): P[k] = decode_table(P[k])
+    if os.path.exists(v3): P['decode'] = v3
     # preprint SIMCODE (internal only): only when its step finished (v1_info.json, written last), so a crashed / running v1
     # step neither blocks nor half-loads
     for k in ('v1', 'v1gt'):
