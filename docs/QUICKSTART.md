@@ -25,6 +25,13 @@ Check the install. The test takes about 3 minutes on an RTX 3090:
 CUDA_VISIBLE_DEVICES=0 python tests/test_fast_paths.py
 ```
 
+To try the whole chain before using your own data, simulate a small example movie (6000 frames of 120 x 120 px, about 10 s) with a matching config, and run the pipeline on it with `--quick` (sections 2 and 3 explain the config and the stages):
+
+```bash
+python examples/simulate_movie.py /data/simcode_example
+python -m simcode.pipeline /data/simcode_example/quickstart.yaml --quick
+```
+
 ## 2. Describe your setup
 
 Write one YAML file per movie. A key you leave out takes the default of our setup: NA 1.49 oil, 700 nm emission, 108.33 nm pixels, sCMOS camera, blocked frame order. The camera gain and offset are the exception: left out, they are taken from the movie. A misspelled key is reported as an error.
