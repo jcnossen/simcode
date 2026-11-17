@@ -23,7 +23,7 @@ base = ConfigDict(
     camera=dict(type='scmos', gain_e_per_adu=GAIN, offset_adu=99.3,
                 readnoise_from=f'{REPO}/models/insitu/camera_maps_0.5nM.npz'),       # read-noise map of the same sensor
     optics=dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
-    pattern=dict(orientations=2, steps=3, frame_order='blocked', pitch_px=[1.6, 2.8]),
+    pattern=dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], pitch_px=[1.6, 2.8]),
     beads=dict(stacks=[f'{DATA}/PSF_calib/raw/zstack{i}-1.tif' for i in range(2, 8)],   # the setup's bead z-stacks
                sign=-1, holdout=7, offset_adu=106.34, gain_e_per_adu=GAIN),
     psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads']),

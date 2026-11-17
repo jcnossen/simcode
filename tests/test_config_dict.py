@@ -143,7 +143,7 @@ def test_python_loader_and_schema():
 
 
 def test_schema_of_derived_config():
-    base = ConfigDict(movie='m.tif', out='o', optics=dict(pixel_um=0.065), pattern=dict(frame_order='interleaved'))
+    base = ConfigDict(movie='m.tif', out='o', optics=dict(pixel_um=0.065), pattern=dict(pattern_frames=[[0, 2, 4], [1, 3, 5]]))
     c = base.updated(name='x', train=dict(steps=dict(detector=5)), camera=dict(offset_adu=np.float32(100.0)), process=dict(crop=(5, 5, 390)))
     r = AC.load(c)
     assert type(r) is dict and r['optics']['pixel_um'] == 0.065 and r['optics']['NA'] == 1.49 and r['_file'] is None
@@ -159,7 +159,7 @@ def test_schema_of_derived_config():
     assert 'spots.thrr' in str(e)
     raises(KeyError, AC.load, c.updated(colour=1))
     raises(ValueError, AC.load, base)                                     # name is required
-    raises(ValueError, AC.load, c.updated(pattern=dict(steps=4)))         # validate()
+    raises(ValueError, AC.load, c.updated(pattern=dict(pattern_frames=[[0, 1, 2, 3], [4, 5, 6, 7]])))   # validate(): 2 x 3 only
     raises(ValueError, AC.load, c.updated(name=1809))
 
 
