@@ -12,7 +12,8 @@ Stages (each skipped if its outputs exist, unless --redo):
   2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift) estimated from
                  the pass-1 network intensities
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (fringe posterior, kinetics, calibrated sigma)
-                 with the model's fixed-c solve calibration
+                 with the model's fixed-c solve calibration (cal_sim: fitted on simulated gate scenes; the same for real and
+                 simulated movies)
   4  pass 2      pattern-aware pass-2 detector + emitter network fed the estimated pattern, then the same solve
   5  table       localization tables locs_p1.hdf5 and locs_p2.hdf5 (simcode/table.py; the torch_psf Dataset format) with
                  the model's selection-aware sigma rescale; summary.json. The paper's selection (max(sx, sy) <= 12 nm on the
@@ -60,7 +61,6 @@ def build_parser():
     ap.add_argument('--out', required=True)
     ap.add_argument('--model', default='', help='the model (required, or from --dataset / --config): a name of simcode/models.json '
                     '(m1809, m25, g13) or the path of a model folder with a model.json')
-    ap.add_argument('--cal_kind', default=PROD['cal_kind'], choices=['real', 'sim'], help="solve calibrations of the model: 'real' (real movies; default) or 'sim' (simulated movies)")
     ap.add_argument('--claim', type=int, default=0, help='1: several copies of this command share the chunks (one copy per GPU)')
     ap.add_argument('--min_free_gb', type=float, default=2.0, help='a chunk is not started with less free space on the output file system')
     ap.add_argument('--crop', default='', help='output region x0,y0,size (px); default: the whole frame (a --dataset: its crop)')
@@ -89,16 +89,16 @@ def resolve(ap, argv):
     except (KeyError, ValueError, OSError) as e:
         ap.error(str(e))
     a.detector, a.emitter, a.detector_pass2, a.emitter_pass2 = N['detector'], N['emitter'], N['detector_pass2'], N['emitter_pass2']
-    a.cal_pass2 = N[f'cal_{a.cal_kind}_pass2']
+    a.cal_pass2 = N['cal_sim_pass2']
     a.sig_u = N['sig_u']                     # the model's selection-aware sigma rescale, "<pass 1 json>,<pass 2 json>"
-    cal = N[f'cal_{a.cal_kind}']
+    cal = N['cal_sim']
     return a, N, cal
 
 
 def settings_of(a, cal):
     """the fully resolved settings of a run (run_config.json 'settings'): every argument after the defaults, files as absolute paths"""
     r = config.resolve
-    return dict(dataset=a.dataset, movie=os.path.abspath(os.path.expanduser(a.movie)), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model), cal_kind=a.cal_kind,
+    return dict(dataset=a.dataset, movie=os.path.abspath(os.path.expanduser(a.movie)), calib=r(a.calib), out=os.path.abspath(a.out), model=getattr(a, 'model_name', a.model),
                 detector=r(a.detector), emitter=r(a.emitter), cal=r(cal), detector_pass2=r(a.detector_pass2), emitter_pass2=r(a.emitter_pass2),
                 cal_pass2=r(a.cal_pass2),
                 sig_u=','.join(r(s) if s else '' for s in a.sig_u.split(',')) if a.sig_u else '',
@@ -131,7 +131,11 @@ def _from_config(path, rest):
     if not REC.get('settings'): raise SystemExit(f'--config {path}: no settings in this record (status {REC.get("status")!r})')
     M = REC.get('model') or {}
     if M.get('name') and M.get('definition') and M['name'] not in config.model_sets():        # e.g. the model of an automatic-pipeline dataset
-        config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k not in ('name', 'folder')}
+        config.model_sets()[M['name']] = {k: v for k, v in M['definition'].items() if k not in ('name', 'folder') + config.REMOVED_KEYS}
+    if (REC.get('settings') or {}).get('cal_kind') == 'real':
+        print(f'simcode.run --config: WARNING {path} was made with the real-data sigma calibrations (cal_kind real, removed '
+              '2026-11-17); this run uses the simulation-fitted ones (cal_sim), so its sigma columns (and the sigma selection) differ',
+              file=sys.stderr, flush=True)
     W = REC.get('overrides')
     if W and not os.environ.get('AUTO_WRAP'):
         from simcode.pipeline import run_with_overrides

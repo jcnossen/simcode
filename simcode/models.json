@@ -1,9 +1,8 @@
 {
- "_doc": "SIMCODE v2 example models (m1809, g13; network weights: python -m simcode.download_models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = simulation sigma calibrations (no real-data mismatch multiplier); cal_real / cal_real_pass2 = the ones used on real movies; sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
+ "_doc": "SIMCODE v2 example models (m1809, g13; network weights: python -m simcode.download_models; read through simcode.config.model_set(name), which also takes the path of a model folder with a model.json). File names are relative to the models directory. One model = detector + emitter network of pass 1 (detector, emitter), of pass 2 (detector_pass2, emitter_pass2), their solve calibrations and the selection-aware sigma rescale. cal_sim / cal_sim_pass2 = the solve calibrations of pass 1 / pass 2, fitted on simulated gate scenes rendered with the model's PSF and used for simulated and real movies alike (nothing in them is measured on real data); sig_u = sigma rescale per pass (table.build_table sig_u), pass 1 then pass 2. All models are PSF-matched: trained on one averaged in-situ PSF (psf).",
  "_default": "m1809",
  "_production": {
-  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, the calibration kind below (cal_real), and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root.",
-  "cal_kind": "real",
+  "_doc": "How the paper's SIMCODE v2 tables are made: python -m simcode.run --dataset <name> --data-root <dir> (= --movie under --data-root, --calib, --model and --crop of the entry, and the run.py defaults: pass 2, the model's sigma rescale). The tables are locs_p1.hdf5 / locs_p2.hdf5; the paper's selection (max(sigma_x, sigma_y) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied at load: simcode.dataset.Dataset.select. Movies are relative to the data root given with --data-root.",
   "_selection_doc": "main selection: rows with p >= 0.63 inside the crop and calibrated max(sigma_x, sigma_y) <= 12 nm (simcode.table.select, Dataset.select, SIGMA_MAX_NM), applied when a table is loaded.",
   "datasets": {
    "1809_2": {
@@ -21,11 +20,9 @@
   "detector": "m1809/detector_pass1.pt",
   "emitter": "m1809/emitter_pass1.pt",
   "cal_sim": "m1809/calib/calib_emitter_pass1_sim.json",
-  "cal_real": "m1809/calib/calib_emitter_pass1_real.json",
   "detector_pass2": "m1809/detector_pass2.pt",
   "emitter_pass2": "m1809/emitter_pass2.pt",
   "cal_sim_pass2": "m1809/calib/calib_emitter_pass2_sim.json",
-  "cal_real_pass2": "m1809/calib/calib_emitter_pass2_real.json",
   "sig_u": "m1809/calib/sigma_rescale_pass1.json,m1809/calib/sigma_rescale_pass2.json"
  },
  "g13": {
@@ -34,11 +31,9 @@
   "detector": "g13/detector_pass1.pt",
   "emitter": "g13/emitter_pass1.pt",
   "cal_sim": "g13/calib/calib_emitter_pass1_sim.json",
-  "cal_real": "g13/calib/calib_emitter_pass1_real.json",
   "detector_pass2": "g13/detector_pass2.pt",
   "emitter_pass2": "g13/emitter_pass2.pt",
   "cal_sim_pass2": "g13/calib/calib_emitter_pass2_sim.json",
-  "cal_real_pass2": "g13/calib/calib_emitter_pass2_real.json",
   "sig_u": "g13/calib/sigma_rescale_pass1.json,g13/calib/sigma_rescale_pass2.json"
  }
 }

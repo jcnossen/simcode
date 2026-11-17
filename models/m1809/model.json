@@ -4,11 +4,9 @@
   "detector": "detector_pass1.pt",
   "emitter": "emitter_pass1.pt",
   "cal_sim": "calib/calib_emitter_pass1_sim.json",
-  "cal_real": "calib/calib_emitter_pass1_real.json",
   "detector_pass2": "detector_pass2.pt",
   "emitter_pass2": "emitter_pass2.pt",
   "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json",
-  "cal_real_pass2": "calib/calib_emitter_pass2_real.json",
   "sig_u": "calib/sigma_rescale_pass1.json,calib/sigma_rescale_pass2.json"
  },
  "_recipe": {

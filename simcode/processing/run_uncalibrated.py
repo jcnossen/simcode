@@ -54,13 +54,13 @@ def build_parser():
     ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
     ap.add_argument('--emitter', default=config.EMITTER)         # pass-1 networks and their solve calibration
     ap.add_argument('--detector', default=config.DETECTOR)
-    ap.add_argument('--cal', default=config.CAL_REAL)
+    ap.add_argument('--cal', default=config.CAL_SIM)
     # stage pass2 (simcode/processing/pass2_inference.py): pass 2 with the pattern-aware networks (pass-2 detector + emitter network
     # fed the estimated pattern) and the explicit solve -> pass2_est2_<f0>.npz (solve) and pass2_est2b_<f0>.npz (variant b: the
     # pass-2 network prior)
     ap.add_argument('--detector_pass2', default=config.DETECTOR_PASS2)
     ap.add_argument('--emitter_pass2', default=config.EMITTER_PASS2)
-    ap.add_argument('--cal_pass2', default=config.CAL_REAL_PASS2)
+    ap.add_argument('--cal_pass2', default=config.CAL_SIM_PASS2)
     ap.add_argument('--chunk_list', default='')         # explicit chunk starts, e.g. '12000,60000' (default: all)
     ap.add_argument('--det_batch', type=int, default=64)
     ap.add_argument('--emitter_batch', type=int, default=1024)

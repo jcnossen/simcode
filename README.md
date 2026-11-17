@@ -74,7 +74,9 @@ What every run does (= the paper's settings; the options that switched these wer
   stage / `simcode.pipeline.training.export_model`); one model = pass-1 detector + head, pass-2 detector + head, their solve
   calibrations and the sigma rescale. There are no single-file overrides: other files = another model folder
 - pass 1, pattern estimation, the pattern solve, and pass 2
-- the fixed-c real-data solve calibrations of the model (`--cal_kind sim` for simulated movies)
+- the fixed-c solve calibrations of the model (`cal_sim`, `cal_sim_pass2`: fitted on simulated gate scenes, used as they are for
+  real and simulated movies; the real-data σ multiplier of the earlier `cal_real` calibrations and the option `--cal_kind`
+  were removed on 2026-11-17)
 - stored-candidate cut p ≥ 0.3 (`simcode/processing/common.CAND_PMIN`)
 - the fast code path, with a compiled solve step when available
 - the model's selection-aware sigma rescale (always; a model without one has an empty `sig_u`)
