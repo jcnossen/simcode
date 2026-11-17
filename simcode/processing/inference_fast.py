@@ -118,7 +118,7 @@ class QueuedFront:
         return h(pt, None, off, psf, nbp)
 
     @torch.no_grad()
-    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, emitter_batch=1024, streams=True, outs=('I', 'L', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
+    def run(self, frames, starts, k_cand, PWall=None, det_batch=64, emitter_batch=1024, streams=True, outs=('I', 'L', 'C', 'bg', 'x', 'y', 'lsxy', 'z', 'lsz', 'bz'),
             ev=None):
         """frames [F,S,S] (photons, chunk), starts: window starts (relative frame index), PWall [nW,T,5] (pass 2) ->
         dict of per-candidate GPU tensors (queue order = window order, top-k order within a window, as the originals):
@@ -261,7 +261,7 @@ class Pass1FrontFast:
         sI = (oh['L'] ** 2).sum(-1).sqrt()
         r = dict(wstart=ws, x=gx, y=gy, sx=sp[:, 0], sy=sp[:, 1], z=oh['z'], sz=oh['lsz'].exp(), bzx=oh['bz'][:, 0], bzy=oh['bz'][:, 1],
                  p=torch.sigmoid(q['lg'].float()),
-                 phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], out=out, tc=tc, frame=fabs,
+                 phot=I.sum(1), phot_t=I, I=I, sI=sI, bg=oh['bg'], L=oh['L'], C=oh['C'], out=out, tc=tc, frame=fabs,
                  x_det=q['x'] + X0, y_det=q['y'] + Y0)
         R = r if keep_gpu else _np(r)
         if not keep_gpu: R['wstart'] = R['wstart'].astype(np.int64)
@@ -289,7 +289,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
     tt = lambda a: torch.tensor(np.asarray(a), device=dev, dtype=torch.float32)
     uw, inv = np.unique(ws, return_inverse=True)
     PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
-    G = {k: tt(R[k][idx_all]) for k in ('I', 'L', 'x', 'y', 'sx', 'sy', 'x_det', 'y_det')}
+    G = {k: tt(R[k][idx_all]) for k in ('I', 'L', 'C', 'x', 'y', 'sx', 'sy', 'x_det', 'y_det')}
     from simcode.processing.pass1_inference import z_inputs
     from simcode.solve import z_conditioning as ZC
     G.update(z_inputs(R, idx_all, tt))
@@ -297,7 +297,7 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
     acc = {k: [] for k in ('r', 's_cal', 'kin', 'p', 'q', 'dnll', 'r_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
     for c0 in range(0, n, solve_batch):
         sl = slice(c0, c0 + solve_batch)
-        o = dict(I=G['I'][sl], L=G['L'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
+        o = dict(I=G['I'][sl], L=G['L'][sl], C=G['C'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
                  x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0, z=G['z'][sl], lsz=G['lsz'][sl], bz=G['bz'][sl])
         so = MF.solve_emitters_fast(o, PW, binv[sl], cal, compile=compile)
         so.update(ZC.z_columns(o, so))
@@ -367,7 +367,7 @@ class Pass2FrontFast:
         PWall = torch.stack([PF[s0:s0 + T] for s0 in starts])                   # [nW,T,5]
         k_cand = int(640 * S * S / 64 ** 2)
         ev = _Ev()
-        outs = ('I', 'L', 'bg', 'x', 'y', 'lsxy')
+        outs = ('I', 'L', 'C', 'bg', 'x', 'y', 'lsxy')
         q = front.run(frames, starts, k_cand, PWall=PWall, det_batch=det_batch, emitter_batch=emitter_batch, streams=streams, outs=outs, ev=ev)
         oh = dict(q['emitters']['h']); oh['x_det'] = q['x']; oh['y_det'] = q['y']
         I = oh['I']

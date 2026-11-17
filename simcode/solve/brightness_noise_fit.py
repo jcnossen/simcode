@@ -3,7 +3,7 @@ GT-free, and pattern-free beyond the pattern the solve already uses; the same co
 
 Noise model of a window's network intensities around the model mean mu(p) (T = 6 frames):
     Sigma(theta) = s * Sigma_net + c^2 diag(mu^2) + c_a^2 (mu mu^T within each angle)            theta = (s, c, c_a)
-(s = global scale of the network covariance incl. the kap_I2 bins, applied here as L -> sqrt(s) L; c = cal 'cmult', c_a = cal
+(s = global scale of the network covariance, applied here as L -> sqrt(s) L; c = cal 'cmult', c_a = cal
 'cmult_ang': exactly the Sigma(p) of solve.pattern_solve_all.)
 Residuals e = I_net - mu(p_hat) at the solve's MAP. Non-kinetic, isolated rows (no other pass-1 detection within R_ISO px in the
 same window). For a GLS fit of p = (x, y, B) with the Gaussian position prior (precision P = diag(1/s_p^2), 0 for B) the
@@ -62,7 +62,7 @@ def pipeline_rows(d, chunks=None, nmax=120000, seed=0, pattern=None):
         ws = R['wstart'][keep]
         uw, inv = np.unique(ws, return_inverse=True)
         PW = pattern_frames(Pt, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
-        o = dict(I=tt(R['I'][keep]), L=tt(R['L'][keep]), x=tt(R['x'][keep] - X0), y=tt(R['y'][keep] - Y0),
+        o = dict(I=tt(R['I'][keep]), L=tt(R['L'][keep]), C=tt(R['C'][keep]), x=tt(R['x'][keep] - X0), y=tt(R['y'][keep] - Y0),
                  lsxy=torch.log(tt(np.c_[R['sx'][keep], R['sy'][keep]])), x_det=tt(R['x_det'][keep] - X0), y_det=tt(R['y_det'][keep] - Y0))
         out.append((o, PW, torch.tensor(inv, device=dev), R['I'][keep].sum(1), iso_all[keep]))
     return out
@@ -92,7 +92,7 @@ def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True):
             oo = {k: v[sl] for k, v in o.items()}
             sc_ = float(cal.get('_s', 1.0))                          # covariance scale s: L -> sqrt(s) L
             s = solve(dict(oo, L=oo['L'] * sc_ ** 0.5), PW, b[sl], cal)
-            Sn = s['Sig'] / sc_                                       # network part at scale 1 (incl. the kap_I2 bins)
+            Sn = s['Sig'] / sc_                                       # network part at scale 1
             pt = PW[b[sl]]
             il, dx, dy = C.illum_at(pt, s['r_map'][:, 0], s['r_map'][:, 1])
             Bh = s['mu'].sum(1) / il.sum(1).clamp(min=1e-6)

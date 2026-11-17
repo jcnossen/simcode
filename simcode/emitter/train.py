@@ -5,7 +5,8 @@ checkpoints, see --illum).
 Common: candidates of a given detector (--detector) on simulated batches (simulate/batches.TrainingBatches), matched one-to-one to
 the ground truth (simulate/targets.match_gt, < 1 px, detector p >= 0.5); losses with the nn-bin weights
 (simulate/targets.nn_weights: < 1.5 / 1.5-2.5 / 2.5-4 / > 4 px carry 0.15 / 0.25 / 0.25 / 0.35 of each window's weight):
-  full-covariance NLL of the GT per-frame photons (nll_full) / 6 + the position-prior NLL vs the TRUE position (x, y) + the
+  NLL of the GT per-frame photons given the prior position error (nll_joint: the joint (x, y, I_1..6) covariance of the
+  network, 2026-11-17; = nll_full when C = 0) / 6 + the position-prior NLL vs the TRUE position (x, y) + the
   z | x, y NLL (nll_z; 3D prior, 2026-11-14) + 0.1 bg + w_mr x the anti-shrinkage Huber of the mean-removed intensities +
   w_slope x (1 - slope of the mean-removed intensities on the isolated targets)^2. bf16 autocast for the CNN trunk.
   Training emitters over the TIRF height range (simulate/batches.Z_RANGE_UM); a 2D checkpoint as --init gets the zero z rows
@@ -32,7 +33,7 @@ import torch.nn.functional as F
 from simcode.util.checkpoint import save as ckpt_save     # atomic checkpoint write with a disk guard
 from simcode import config
 from simcode.layers.blocks import extract_patches
-from simcode.emitter.model import (EmitterNet, ARCH, PP, PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, nll_z, pad_out,
+from simcode.emitter.model import (EmitterNet, ARCH, PP, PSFCol, NBR_PMIN, nbr_map, nbr_patches, nll_full, nll_joint, nll_z, pad_out,
                                    mod_slope, detect_candidates, apply_to_candidates, is_pass2)
 from simcode.simulate.targets import nn_weights, match_gt, emitter_targets
 
@@ -80,9 +81,10 @@ def loss_terms(out, t, m, wt, tz, w_mr, w_slope):
     """the training loss (module doc) and its parts"""
     Ig, tx, ty = t['Ig'], t['tx'], t['ty']
     iso_w = (m['nn'] >= 2.0).float()
-    nll_i, z = nll_full(Ig, out['I'], out['L'])
-    nll_I = (wt * nll_i).mean()
     ex = tx - out['x']; ey = ty - out['y']; ls = out['lsxy']
+    zp = torch.stack([ex / ls[:, 0].exp(), ey / ls[:, 1].exp()], 1)
+    nll_i, z = nll_joint(Ig, out['I'], out['L'], out['C'], zp)          # intensities given the prior error (joint covariance)
+    nll_I = (wt * nll_i).mean()
     nll_p = (wt * (0.5 * (ex / ls[:, 0].exp()) ** 2 + ls[:, 0] + 0.5 * (ey / ls[:, 1].exp()) ** 2 + ls[:, 1])).mean()
     l_z = (wt * nll_z(out, tx, ty, tz)).mean()
     cn = (Ig.clamp(min=0).sum(1, keepdim=True) / 6 + 30).sqrt()
@@ -95,7 +97,8 @@ def loss_terms(out, t, m, wt, tz, w_mr, w_slope):
     l_bg = (wt[:, None] * ((out['bg'] - bgt) ** 2) / (bgt + 1.0)).mean()
     loss = nll_I / 6 + nll_p + l_z + 0.1 * l_bg + w_mr * l_mr + w_slope * l_sl
     rec = dict(slope_iso=slope_b.item(), mr=l_mr.item(), nll_I=nll_I.item(), nll_p=nll_p.item(), bg=l_bg.item(), n=len(Ig),
-               zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2)))
+               zI=float((z ** 2).mean().sqrt()), pos_rmse=float(torch.sqrt((ex ** 2 + ey ** 2).mean() / 2)),
+               zp_rms=float((zp ** 2).mean().sqrt()), C_rms=float((out['C'] ** 2).mean().sqrt()))
     return loss, rec
 
 
@@ -123,9 +126,9 @@ def eval_pattern_hold(det, head, col, H, il_on=True):
         p_own = torch.sigmoid(lgm[m['b'], m['iy'], m['ix']])
         out = apply_to_candidates(head, col[o['calib_i']] if isinstance(col, list) else col, o['frames'], il, m['b'], m['iy'], m['ix'], m['x'], m['y'], nbr, p_own)
         G = o['gt']; g = m['g']; Ig = G['phot'][g]
-        nll, _ = nll_full(Ig, out['I'].float(), out['L'].float())
         ep = torch.stack([out['x'] - G['x'][g], out['y'] - G['y'][g]], 1)
         z = ep / out['lsxy'].exp()
+        nll, _ = nll_joint(Ig, out['I'].float(), out['L'].float(), out['C'].float(), -z)
         ph = Ig.sum(1); nnd = m['nn']
         eI = ((out['I'] - Ig).abs().sum(1) / Ig.sum(1).clamp(min=1))
         for nm, (a, b) in (('nn<1.5', (0, 1.5)), ('nn1.5-2.5', (1.5, 2.5)), ('nn>2.5', (2.5, 1e9))):

@@ -153,7 +153,7 @@ def test_pattern_solve():
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
     uw, inv = np.unique(Ra['wstart'][keep], return_inverse=True)
     PW = pattern_frames(pat, (uw[:, None] + np.arange(6)[None]).reshape(-1), 0, 0).reshape(len(uw), 6, 5)
-    o = dict(I=tt(Ra['I'][keep]), L=tt(Ra['L'][keep]), x=tt(Ra['x'][keep]), y=tt(Ra['y'][keep]),
+    o = dict(I=tt(Ra['I'][keep]), L=tt(Ra['L'][keep]), C=tt(Ra['C'][keep]), x=tt(Ra['x'][keep]), y=tt(Ra['y'][keep]),
              lsxy=torch.log(tt(np.c_[Ra['sx'][keep], Ra['sy'][keep]])), x_det=tt(Ra['x_det'][keep]), y_det=tt(Ra['y_det'][keep]))
     b = torch.tensor(inv, device='cuda')
     a = SV.solve_emitters(o, PW, b, cal)
@@ -186,7 +186,9 @@ def test_pass2_p2_fp32():
     dp = max(np.abs(Ra['x_prior'] - Rb['x_prior']).max(), np.abs(Ra['y_prior'] - Rb['y_prior']).max())
     assert dp < 1e-4, f'pass-2 prior |d| {dp:.2e}'
     d = np.abs(np.c_[Ra['x_hy0'] - Rb['x_hy0'], Ra['y_hy0'] - Rb['y_hy0']]).max(1)
-    assert np.median(d) < 1e-5 and np.quantile(d, 0.99) < 2e-3, f'pass-2 solve median {np.median(d):.2e} p99 {np.quantile(d, 0.99):.2e}'
+    # median 1.1e-5 px since the solve uses the network's covariances without the kap scales (2026-11-17; < 1e-5 before): about
+    # 1.5 float32 ulp of a global coordinate of ~100 px (7.6e-6)
+    assert np.median(d) < 2e-5 and np.quantile(d, 0.99) < 2e-3, f'pass-2 solve median {np.median(d):.2e} p99 {np.quantile(d, 0.99):.2e}'
     # z from pass 1: the same links, z of the linked pass-1 candidate | pass-2 solved x, y (differences = the solve's)
     assert np.array_equal(Ra['p1_row'], Rb['p1_row']), 'pass-1 links differ'
     lk = Ra['p1_row'] >= 0

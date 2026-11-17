@@ -46,7 +46,7 @@ def front_out(F, o, il, col, pf_head=None):
         sl = slice(c0, c0 + 4096)
         args = (fr, ilx, c['b'][sl], c['iy'][sl], c['ix'][sl], c['x'][sl], c['y'][sl], nbr, p[sl])
         oh = EM.apply_to_candidates(head, col, *args)
-        r = {k: oh[k].float() for k in ('I', 'L', 'x', 'y', 'lsxy', 'bg')}
+        r = {k: oh[k].float() for k in ('I', 'L', 'C', 'x', 'y', 'lsxy', 'bg')}
         r.update(EM.emitter_z(head, oh))           # 3D networks: z, lsz, bz (NaN for 2D checkpoints)
         if pf_head is not None:
             oa = EM.apply_to_candidates(pf_head, col, *args)

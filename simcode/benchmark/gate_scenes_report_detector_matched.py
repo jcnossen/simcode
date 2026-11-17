@@ -23,7 +23,7 @@ NNS = {'all': (0, 1e9), 'nn<1.5': (0, 1.5), 'nn1.5-2.5': (1.5, 2.5), 'nn2.5-4': 
 
 
 def prec_stats(e, c, scal=None, ep=None, w=None):
-    """e, c [n,2] px (error, CRLB_SF_multi); scal [n,2] chi2-aware sigma; ep [n,2] prior error. w: bootstrap counts."""
+    """e, c [n,2] px (error, CRLB_SF_multi); scal [n,2] posterior sigma; ep [n,2] prior error. w: bootstrap counts."""
     if w is not None:
         e, c = np.repeat(e, w, 0), np.repeat(c, w, 0)
         scal = np.repeat(scal, w, 0) if scal is not None else None

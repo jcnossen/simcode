@@ -25,13 +25,13 @@ The sha256 of every asset and file are in `simcode/download_models.py`.
 | path | what |
 |---|---|
 | `<set>/model.json` | the model (format of `simcode/models.json`, paths relative to the folder) with its training record |
-| `<set>/calib/calib_emitter_pass1_sim.json` | pass-1 solve calibration of a model: sigma table from the simulated gate scenes; used for real and simulated movies (the `_real` variant with a real-data sigma multiplier was removed on 2026-11-17) |
+| `<set>/calib/calib_emitter_pass1_sim.json` | pass-1 solve calibration of a model: prior_off (simulated gate scenes), the fixed c, start box and posterior temperature (no sigma factors since 2026-11-17: the networks' joint prior / intensity covariance); used for real and simulated movies (the `_real` variant with a real-data sigma multiplier was removed on 2026-11-17) |
 | `<set>/calib/calib_emitter_pass2_sim.json` | the same for pass 2 |
 | `<set>/calib/sigma_rescale_pass1.json`, `sigma_rescale_pass2.json` | selection-aware sigma rescale per pass (the model's `sig_u`; applied by `simcode.run` / `simcode.table`) |
 | `m1809/calib_1809_2_psf_v2.psf.zip` (+ `.json`, `camera_maps_1809_2_v2.npz`) | the PSF + camera m1809 was trained on: in-situ vectorial PSF v2 of the 1809/2 movie (Zernike Noll 5-21, focus 0.20 um, gain 0.4256 e/ADU, offset / read-noise maps, fitted emitter heights) as psf.zip (torch-psf PSF_FORMAT 0.2.0: PSF, camera with its per-pixel maps, pattern, heights, provenance, z-stack TIFF, preview, fit report); the json + npz give identical results (`tests/test_psfzip.py`) |
 | `g13/calib_gauss1.3.psf.zip` (+ `.json`) | Gaussian PSF sigma 1.3 px (the preprint's simulation PSF), the PSF of g13 |
 | `calib/template_calib_emitter_pass{1,2}_sim.json` | calibrations of the pretraining networks: the templates from which the calibration of a new model is fitted (`simcode.pipeline.training`, `simcode.calibration.fit_cal_set`; `config.TEMPLATE_CAL_*`); the pass-1 one is also the start of the automatic-c fit |
-| `calib/template_calib_emitter_pass1_brightness_noise_fit.json`, `template_calib_emitter_pass1_base.json` | the sigma table of the automatic-c estimator `simcode/solve/brightness_noise_fit.py` (`config.CAL_BRIGHTNESS_NOISE_FIT`); the base calibration of the pass-1 templates |
+| `calib/template_calib_emitter_pass1_brightness_noise_fit.json`, `template_calib_emitter_pass1_base.json` | the solve calibration of the automatic-c estimator `simcode/solve/brightness_noise_fit.py` (`config.CAL_BRIGHTNESS_NOISE_FIT`); the base calibration of the pass-1 templates |
 | `insitu/calib_0.5nM.json`, `camera_maps_0.5nM.npz`, `camera_maps_2p5nM_m2.npz` | in-situ PSF + camera of the 0.5 nM movie and the camera maps of the 2.5 nM movie: the two acquisition presets of the training simulator (`simcode/simulate/acquisition.PRESETS`), the default PSF of the gate scenes / CRLB / held-out sets (`config.INSITU_05`), the read-noise map of the example pipeline configs |
 | `insitu/camera_maps_1809_2.npz`, `calib_gauss1.3.json` | camera maps of the 1809/2 movie (referred to by `g13/calib_gauss1.3.json` and the psf3d calibrations) and the Gaussian PSF json (`tests/test_psfzip.py`) |
 | `insitu/calib_1809_2_psf3d.json`, `calib_1809_2_psf3d_avg.json`, `calib_2p5nM_m2_psf_v2.json`, `camera_maps_2p5nM_m2_v2.npz` | in-situ calibrations used by the tests (`tests/test_fast_paths.py`, `tests/test_heights.py`) |
@@ -114,7 +114,7 @@ trainers' defaults are this recipe's former flags (`--up 1`, `--em_photons 40,25
 `--bright_tail 0.1,2000,20000`, `--pert_model real`). `--calib` is required.
 Model g13 adds `--dens 0.0005,0.06` to the detector and `--tau 3,80 --dens 0.0005,0.06` to the other trainers.
 Calibrations: `python -m simcode.processing.gate_dump` of the new networks on the gate scenes rendered with the model's PSF
-(`--calib $C --gate_dir <gate npz folder>`), then `python -m simcode.calibration.fit_cal_set` (templates: `calib/template_calib_emitter_pass{1,2}_sim.json` above), then the
+(`--calib $C --gate_dir <gate npz folder>`), then `python -m simcode.calibration.fit_cal_set` (prior_off; templates: `calib/template_calib_emitter_pass{1,2}_sim.json` above), then the
 sigma rescale on a simulated movie with ground truth (`analysis/psf3d_nets/sigcal.py fit`, paper branch).
 The automatic pipeline (`python -m simcode.pipeline`, stage e: `simcode/pipeline/training.py`) runs this recipe for a new
 acquisition (without the sigma rescale).

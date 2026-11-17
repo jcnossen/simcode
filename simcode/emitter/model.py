@@ -82,8 +82,17 @@ class EmitterNet(nn.Module):
         L_p = [[sx, 0, 0], [0, sy, 0], [b_x sx, b_y sy, s_z|xy]]      Sigma_p = L_p L_p^T
     i.e. x and y uncorrelated (as the 2D prior and the solve's prior), z | x, y = z + b_x (x' - x) + b_y (y' - y) with sd
     s_z|xy. z in px of the lateral pixel size relative to the focal plane of the PSF calibration (simulate/batches.z_target_px).
-    The NLL of the 3D Gaussian factorizes into the 2D x, y prior NLL (unchanged) + the NLL of z | x, y (nll_z)."""
+    The NLL of the 3D Gaussian factorizes into the 2D x, y prior NLL (unchanged) + the NLL of z | x, y (nll_z).
+    Joint covariance of the position prior and the intensities (2026-11-17): the 12 rows appended after the z rows give C [n,T,2]
+    (intensity units, scaled like L), the Cholesky of the joint (x, y, I_1..T) covariance being
+        L_J = [[diag(sx, sy), 0], [C, L]]       Sigma_J = L_J L_J^T:  Sigma_pp = diag(sx^2, sy^2), Sigma_Ip = C diag(sx, sy),
+                                                                      Sigma_II = C C^T + L L^T
+    i.e. L is the Cholesky of the intensity covariance GIVEN the prior position error e_p = (true - prior): E[I_true - I | e_p] =
+    C z_p, z_p = e_p / (sx, sy). The NLL factorizes into the x, y prior NLL + the conditional intensity NLL (nll_joint). A
+    checkpoint without these rows loads with zero rows (pad_out): C = 0 = the independent prior / intensity model it was trained
+    with. z | x, y as above."""
     NZ = 4      # appended z outputs
+    NC = 12     # appended joint-covariance outputs (C, T x 2, row-major)
 
     def __init__(self, T=6, ch=96, nblk=4, P=21, bf16=True, illum=False):
         super().__init__()
@@ -100,7 +109,7 @@ class EmitterNet(nn.Module):
         nsc = 2 * T + 2
         self.mlp = nn.Sequential(nn.Linear(ch * 16 + nsc, 256), nn.GELU(), nn.Linear(256, 256), nn.GELU())
         nt = T * (T + 1) // 2
-        self.out = nn.Linear(256, T + nt + 4 + T + self.NZ)
+        self.out = nn.Linear(256, T + nt + 4 + T + self.NZ + self.NC)
         nn.init.zeros_(self.out.weight); nn.init.zeros_(self.out.bias)
         self.tril = torch.tril_indices(T, T, -1)
         if illum:      # pass 2 (created last: the same construction order as the pass-1 layers above)
@@ -175,29 +184,48 @@ class EmitterNet(nn.Module):
         z = qz[:, 0]                                                    # px, relative to the calibration's focal plane
         lsz = -4.0 + 5.5 * torch.sigmoid(qz[:, 1])                      # log sd of z | x, y (px): 0.018 .. 4.5 px
         bz = qz[:, 2:4].clamp(-5.0, 5.0)                                # dz / dx, dz / dy of z | x, y
-        return dict(I=I, L=L, dxy=dxy, lsxy=lsxy, bg=bg, I_lin=Ilin, w=w, wt=wt, dI=dI, z=z, lsz=lsz, bz=bz)
+        Cj = c[:, :, None] * q[:, k + T + self.NZ:k + T + self.NZ + self.NC].reshape(n, T, 2)      # joint covariance block C
+        return dict(I=I, L=L, C=Cj, dxy=dxy, lsxy=lsxy, bg=bg, I_lin=Ilin, w=w, wt=wt, dI=dI, z=z, lsz=lsz, bz=bz)
 
 
 def pad_out(sd, head):
-    """state dict of a 2D head (out layer without the z rows) -> the 3D layout: zero rows appended (exactly the 2D outputs,
-    z = 0 at the focal plane, s_z|xy = exp(-1.25) px, b = 0); a 3D state dict is returned unchanged"""
+    """state dict of an earlier head layout -> the current one: a 2D head (no z rows, no C rows) or a 3D head without the joint
+    C rows gets zero rows appended (exactly its outputs: z = 0 at the focal plane, s_z|xy = exp(-1.25) px, b = 0; C = 0);
+    a current state dict is returned unchanged"""
     n = head.out.weight.shape[0]
     if sd['out.weight'].shape[0] == n: return sd
     sd = dict(sd); k = n - sd['out.weight'].shape[0]
-    assert k == head.NZ, f"out layer {sd['out.weight'].shape[0]} rows, expected {n} or {n - head.NZ}"
+    assert k in (head.NC, head.NZ + head.NC), f"out layer {sd['out.weight'].shape[0]} rows, expected {n}, {n - head.NC} or {n - head.NZ - head.NC}"
     sd['out.weight'] = torch.cat([sd['out.weight'], sd['out.weight'].new_zeros(k, sd['out.weight'].shape[1])])
     sd['out.bias'] = torch.cat([sd['out.bias'], sd['out.bias'].new_zeros(k)])
     return sd
 
 
 def is_3d(sd):
-    """True for a state dict of a 3D head (the z rows of the out layer exist)"""
+    """True for a state dict of a 3D head (the z rows of the out layer exist; with or without the joint C rows)"""
+    T = 6; nt = T * (T + 1) // 2; n0 = T + nt + 4 + T + EmitterNet.NZ
+    return sd['out.weight'].shape[0] in (n0, n0 + EmitterNet.NC)
+
+
+def is_joint(sd):
+    """True for a state dict with the joint prior / intensity covariance rows (C)"""
     T = 6; nt = T * (T + 1) // 2
-    return sd['out.weight'].shape[0] == T + nt + 4 + T + EmitterNet.NZ
+    return sd['out.weight'].shape[0] == T + nt + 4 + T + EmitterNet.NZ + EmitterNet.NC
 
 
 def nll_full(Ig, I, L):
     e = (Ig - I)[..., None]
+    z = torch.linalg.solve_triangular(L, e, upper=False)[..., 0]
+    nll = (0.5 * (z ** 2).sum(1) + torch.log(L.diagonal(dim1=1, dim2=2).abs().clamp(min=1e-6)).sum(1)
+           - torch.log((Ig.clamp(min=0).sum(1) / 6 + 30).sqrt()) * 6)
+    return nll, z
+
+
+def nll_joint(Ig, I, L, C, zp):
+    """conditional part of the joint (x, y, I) NLL: the intensity NLL given the prior position error, zp [n,2] = (true -
+    prior) / (sx, sy) (EmitterNet: Sigma_J = L_J L_J^T, L_J = [[diag(sx, sy), 0], [C, L]]). The joint NLL = the x, y prior NLL +
+    this. The constant term is that of nll_full (depends on Ig only). -> per target [n], whitened residual [n,T]"""
+    e = (Ig - I - (C * zp[:, None, :]).sum(-1))[..., None]
     z = torch.linalg.solve_triangular(L, e, upper=False)[..., 0]
     nll = (0.5 * (z ** 2).sum(1) + torch.log(L.diagonal(dim1=1, dim2=2).abs().clamp(min=1e-6)).sum(1)
            - torch.log((Ig.clamp(min=0).sum(1) / 6 + 30).sqrt()) * 6)
