@@ -30,12 +30,12 @@ The sha256 of every asset and file are in `simcode/download_models.py`.
 | `m1809/calib_1809_2_psf_v2.psf.zip` (+ `.json`, `camera_maps_1809_2_v2.npz`) | the PSF + camera m1809 was trained on: in-situ vectorial PSF v2 of the 1809/2 movie (Zernike Noll 5-21, focus 0.20 um, gain 0.4256 e/ADU, offset / read-noise maps, fitted emitter heights) as psf.zip (torch-psf PSF_FORMAT 0.2.0: PSF, camera with its per-pixel maps, pattern, heights, provenance, z-stack TIFF, preview, fit report); the json + npz give identical results (`tests/test_psfzip.py`) |
 | `g13/calib_gauss1.3.psf.zip` (+ `.json`) | Gaussian PSF sigma 1.3 px (the preprint's simulation PSF), the PSF of g13 |
 | `calib/template_calib_emitter_pass{1,2}_sim.json` | calibrations of the pretraining networks: the templates from which the calibration of a new model is fitted (`simcode.pipeline.training`, `simcode.calibration.fit_cal_set`; `config.TEMPLATE_CAL_*`); the pass-1 one is also the start of the automatic-c fit |
-| `calib/template_calib_emitter_pass1_base.json` | the base calibration from which the pass-1 templates were fitted (`analysis/calib/fit_cal.py`, paper branch) |
+| `calib/template_calib_emitter_pass1_base.json` | the base calibration from which the pass-1 templates were fitted (`analysis/calib/fit_cal.py`, paper_figures branch) |
 | `insitu/calib_0.5nM.json`, `camera_maps_0.5nM.npz`, `camera_maps_2p5nM_m2.npz` | in-situ PSF + camera of the 0.5 nM movie and the camera maps of the 2.5 nM movie: the two acquisition presets of the training simulator (`simcode/simulate/acquisition.PRESETS`), the default PSF of the gate scenes / CRLB / held-out sets (`config.INSITU_05`), the read-noise map of the example pipeline configs |
 | `insitu/camera_maps_1809_2.npz`, `calib_gauss1.3.json` | camera maps of the 1809/2 movie (referred to by `g13/calib_gauss1.3.json` and the psf3d calibrations) and the Gaussian PSF json (`tests/test_psfzip.py`) |
 | `insitu/calib_1809_2_psf3d.json`, `calib_1809_2_psf3d_avg.json`, `calib_2p5nM_m2_psf_v2.json`, `camera_maps_2p5nM_m2_v2.npz` | in-situ calibrations used by the tests (`tests/test_fast_paths.py`, `tests/test_heights.py`) |
 
-The paper branch of the repository adds the model `m25` (2.5 nM / 2 and 20 nM / 2 movies), the in-situ calibrations of
+The paper_figures branch of the repository adds the model `m25` (2.5 nM / 2 and 20 nM / 2 movies), the in-situ calibrations of
 all paper movies, the bead PSF fit, the 4Pi PSF, the DECODE baseline parameters and the superseded / archived models.
 
 ## Models

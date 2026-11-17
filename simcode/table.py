@@ -11,7 +11,7 @@ The two tables of a pass have the same rows in the same order (row i of locs_p2_
 carry p1_index = the row of the linked pass-1 candidate in the pass-1 tables (-1: no partner among the stored pass-1 rows).
 The result table (DEFAULT_TABLE, what Dataset.from_run returns by default, the paper's SIMCODE result) is locs_p2_net: on
 held-out simulations the pass-2 network is within 1-6 % of the solve's precision and its sigma is calibrated, the solve's is
-overconfident (analysis/sigma_joint, paper branch).
+overconfident (analysis/sigma_joint, paper_figures branch).
 Columns:
   frame       window start (absolute movie frame; the window covers frame .. frame + 5)
   t           time centroid of the window's network intensities (absolute frame, fractional)

@@ -27,7 +27,7 @@ More in the docs:
 - `docs/LAYOUT.md`: the package tree with one line per directory and file (and what was renamed on 2026-11-15)
 - `docs/PSF_POLARIZATION.md`: the in-situ PSF model and its polarization terms
 
-This branch (`master`) holds the package, its tests and two example models (`m1809`, `g13`). The branch `paper` is
+This branch (`master`) holds the package, its tests and two example models (`m1809`, `g13`). The branch `paper_figures` is
 `master` plus the paper material: the analysis scripts (the baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`,
 the paper figures and simulations, the classical 4Pi-SIMFLUX pipeline `analysis/fourpi_classical`), the model `m25` and the
 in-situ calibrations of all paper movies, the development notes in `docs/` and the text sources of the paper figures
@@ -58,7 +58,7 @@ Dependencies:
 - DME v2 drift: the `dme` package (`github.com/jcnossen/drift-estimation`), a pinned git dependency in `pyproject.toml`
   (installed by `pip install -e .`); the installed package is the only one used, through `simcode/util/drift.py`
 
-The baselines of the paper (`analysis/baselines`, on the `paper` branch) need more: the preprint's SIMCODE needs
+The baselines of the paper (`analysis/baselines`, on the `paper_figures` branch) need more: the preprint's SIMCODE needs
 `smlmtorch` and its paper models (`--smlmtorch_models`), DECODE the `decode` fork.
 
 ## Run
@@ -237,7 +237,7 @@ The dcimg files are read through `simcode/io/movie.py` and the files of an acqui
 (skip finished files, atomic outputs, claims). The acquisitions (paths, channel layout, camera, settings):
 `simcode/pipeline/configs/fourpi.py` (`configs(work, data)`: the 4Pi work folder and the raw-movie folder are its
 arguments), read through the set-up `simcode/setups/fourpi.py` (`acquisition('MT', work, data)`). The 4Pi networks, the
-4Pi PSF and the classical 4Pi-SIMFLUX pipeline it is compared with are on the `paper` branch.
+4Pi PSF and the classical 4Pi-SIMFLUX pipeline it is compared with are on the `paper_figures` branch.
 
 ## Repository layout
 
@@ -248,7 +248,7 @@ per-chunk fronts and the pattern estimation; `simulate/` the acquisition simulat
 the gate suite; `calibration/` the in-situ calibration; `pipeline/` the automatic per-acquisition pipeline; `io/` readers and
 work driver; `channels/` multi-channel layout, registration and front end; `setups/` the set-ups of the pipeline (widefield,
 fourpi); `evaluation/`, `layers/`, `psf/`, `util/`; `fourpi/` the 4Pi networks, PSF and simulators. Besides it: `models/`
-calibrations and model folders, `tests/`, `docs/` (the `paper` branch adds `analysis/`: baselines, paper figures and
+calibrations and model folders, `tests/`, `docs/` (the `paper_figures` branch adds `analysis/`: baselines, paper figures and
 simulations, 4Pi calibration / classical pipeline / comparisons, benchmarks; and `figures/`).
 
 Tests: `python tests/check_imports.py` and `python tests/test_fileio.py` (CPU), `CUDA_VISIBLE_DEVICES=0 python

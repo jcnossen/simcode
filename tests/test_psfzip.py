@@ -1,7 +1,7 @@
 """
 The PSFs of the example models as psf.zip (models/<model>/*.psf.zip) give exactly what their json gives.
 CPU (env SIMCODE_TEST_DEVICE to change); needs only this checkout's models/ (json, camera maps, zips; no networks), and for the
-4Pi state json the 4Pi work folder and the 4Pi PSF zip models/fourpi/NPC_f_dxy15.psf.zip (paper branch; skipped without them).
+4Pi state json the 4Pi work folder and the 4Pi PSF zip models/fourpi/NPC_f_dxy15.psf.zip (paper_figures branch; skipped without them).
 Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzip.py [--work4pi <4Pi work folder>])
   - read_calib(zip) (the zip's blocks) gives every key of the calib json with the json's value (camera.maps = ZIP_MAPS),
     plus only the defaults torch-psf writes explicitly (EXTRA_OK)

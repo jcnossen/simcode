@@ -5,7 +5,7 @@ Evaluation: `docs/EVALUATION.md`. Working with the results: `docs/USAGE.md`.
 
 Paths under `analysis/`, the model `m25`, the in-situ calibrations of the other movies (`models/insitu/`) and the
 development notes (`docs/RESULTS.md`, `docs/AUTO_PIPELINE.md`, `docs/CLEANUP_LOG.md`, `docs/ARCHIVE.md`) named in this
-document are on the `paper` branch of the repository.
+document are on the `paper_figures` branch of the repository.
 
 The repository holds two comparisons and what they need:
 - **SIMCODE preprint vs SIMCODE v2** on DMD-SIMFLUX DNA-PAINT movies: the v2 pipeline below with the PSF-matched models, the
@@ -199,12 +199,12 @@ x_net, ... of `pass2_est2_<f0>.npz`), the tables `locs_p1` / `locs_p2` (now `loc
 
 ## Outside the package
 
-- `analysis/` (paper branch): scripts that use the package, not needed to run the method: the baselines (SMLM, SIMFLUX,
+- `analysis/` (paper_figures branch): scripts that use the package, not needed to run the method: the baselines (SMLM, SIMFLUX,
   DECODE, the preprint's SIMCODE), the paper figures and simulations, the 4Pi calibration chain, trainers and comparisons, the
   classical 4Pi-SIMFLUX pipeline, plain 4Pi on the Li & Ries data, the calibration scripts of the paper models.
 - `models/`: calibrations (`calib/`, `insitu/`), the example model folders `m1809/`, `g13/` (`model.json`, calibrations, PSF, README); network weights are not in git (`python -m simcode.download_models`, `models/README.md`).
 - `tests/`: `test_fast_paths.py` (GPU: fast paths against the reference implementations), `test_z3d.py` (3D prior, layouts), `test_joint_solve.py` (joint prior / intensity covariance in the solve), `test_fileio.py`, `test_tables.py`, `test_dataset.py`, `test_config_dict.py`, `test_runconfig.py`, `test_solve4pi_oracle.py`; `check_imports.py` (static check of the tree), `check_checkpoints.py`, `check_model_outputs.py` (outputs of every checkpoint on a fixed batch), `check_fourpi_T.py` (4Pi simulators / networks / solve / loss with 6-frame windows on the CPU, before vs after a change), `compare_npz.py` / `compare_ckpt.py` (bit-identity of outputs).
-- `docs/`: this file, method, evaluation, usage, dataset format, PSF polarization note (the paper branch adds the development notes: results of the development phase, automatic pipeline design, cleanup log and candidates, archive index).
+- `docs/`: this file, method, evaluation, usage, dataset format, PSF polarization note (the paper_figures branch adds the development notes: results of the development phase, automatic pipeline design, cleanup log and candidates, archive index).
 
 ## Renamed (2026-11-16)
 
@@ -218,7 +218,7 @@ directories under `out/` keep their names.
 | `processing/front.py`, `processing/pass2_front.py`, `processing/front_fast.py` | `processing/pass1_inference.py`, `processing/pass2_inference.py`, `processing/inference_fast.py` |
 | `solve/autoc.py`; `config.CAL_AUTOC` / `CAL_AUTOC_START`; run record `fixed.autoc` | `solve/brightness_noise_fit.py`; `config.CAL_BRIGHTNESS_NOISE_FIT` / `CAL_BRIGHTNESS_NOISE_FIT_START`; `fixed.brightness_noise_fit` |
 | `fourpi/psf4pi.py`, `fourpi/lut4pi.py` | `fourpi/coherent_psf.py`, `fourpi/spline_table.py` (classes unchanged: PSF4Pi, LUT4Pi) |
-| `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `check_spline_table_insitu.py` (tests/ of the paper branch) |
+| `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `check_spline_table_insitu.py` (tests/ of the paper_figures branch) |
 | `benchmark/gate.py`, `gate_report.py`, `gate_report_detector_matched.py` | `benchmark/gate_scenes.py`, `gate_scenes_report.py`, `gate_scenes_report_detector_matched.py` |
 | `emitter.model.ARCH_TAGS`, the legacy part of `emitter.fourpi.ARCH_TAGS`, `runconfig.KEYS_FORMAT1` | `util/legacy_names.py` (EMITTER_ARCH_TAGS, FOURPI_ARCH_TAGS, RUN_RECORD_FORMAT1_KEYS / _FIXED) |
 | model folder `<set>/`: `det_<set>.pt`, `hd_<set>.pt`, `p2det_<set>.pt`, `p2headL_<set>.pt` | `detector_pass1.pt`, `emitter_pass1.pt`, `detector_pass2.pt`, `emitter_pass2.pt` |
