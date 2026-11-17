@@ -37,7 +37,7 @@ on punctate repeated-site sims.
 | **spatial drivers** | kept fraction in the low / high tercile of the illumination envelope and of the depth field, relative to ours-all | 1 = spatially neutral; SIMCODE itself is 0.39–0.58 (centre weighted) |
 | **revisit / event-revisit** | `revisit`, `event_revisit` | realism check of the sims (binding statistics); diagnostic only |
 | **GT decomposition (sim)** | `truth`: per axis, dyn = var − cov(same event); event = cov(same event, ≥ 12 frames apart) − site; site = cov(different events, same site) | the sim ground truth all GT-free metrics are validated against |
-| **zcal / M4** | rms(e / σ) per σ-quantile bin (sim); real: consecutive photon-disjoint windows of a site, z = Δr / √(σ_w² + σ_w+6²) | M4 reads 0.8–0.9 for a true zcal of 1 at > 700 ph (window-common errors cancel), so compare real M4 with the like-for-like sim M4, not with 1. Lag-averaged NN cannot detect the winner's curse of a σ-ranked selection. |
+| **zcal / M4** | rms(e / σ) per σ-quantile bin (sim); real: consecutive photon-disjoint windows of a site, z = Δr / √(σ_w² + σ_w+6²) | M4 reads 0.8–0.9 for a true zcal of 1 at > 700 ph (window-common errors cancel), so compare real M4 with the like-for-like sim M4, not with 1. Lag-averaged NN cannot detect the winner's curse of a σ-ranked selection. M4 is a diagnostic only: until 2026-11-17 the real-data σ multiplier (`sig_ph_real_mult` of the removed `_real` calibrations) was fitted from the real 0.5 nM M4 × the sim (true / M4) ratio; σ is no longer rescaled with anything measured on real data. |
 
 ## Rules
 
