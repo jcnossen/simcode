@@ -119,7 +119,9 @@ def run(ds):
     mp = P['camera_maps']
     mp = os.path.join(ds.out, 'cammaps', 'camera_maps.npz') if mp == 'cammaps' else mp
     maps = psf_fit.load_maps(mp)
-    if maps: ds.log(f'psf: per-pixel offset / read-noise maps {mp}')
+    if maps and P['readnoise_extra_e']:        # extra white variance per pixel (model error, e.g. sample background structure)
+        maps['readnoise_e'] = np.sqrt(maps['readnoise_e'] ** 2 + float(P['readnoise_extra_e']) ** 2).astype(np.float32)
+    if maps: ds.log(f'psf: per-pixel offset / read-noise maps {mp}' + (f' (+ {P["readnoise_extra_e"]} e in quadrature)' if P['readnoise_extra_e'] else ''))
     starts = _inits(ds)
     kw = dict(optics=c['optics'], gain=cam['gain'], nsamples=P['nsamples'], iters=P['iters'], zmax=P['zmax_um'], readnoise_e=rn,
               offset_adu=off, dev=dev, log=ds.log, maps=maps)

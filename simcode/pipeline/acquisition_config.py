@@ -34,6 +34,9 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 test); psf.readnoise_e / psf.offset_adu are then unused, and the calibration carries these maps. On 1809_2 the
                 paper camera maps improve the held-out NLL by ~70-110 nats per sample over a scalar camera (out/psf_v3).
                 Movie-estimated offset maps of dense movies can hold the sample (cammaps check corr(offset_dev, loc density))
+  psf.readnoise_extra_e  with psf.camera_maps: white noise (e rms) added in quadrature to the read-noise map (default 0): the
+                variance the camera model does not hold (unmodelled sample background structure, PSF model error); choose
+                it by the held-out NLL (out/psf_v3: 1809_2 0.5 e)
   psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
@@ -71,7 +74,7 @@ DEFAULTS = {
     'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, camera_maps=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
+                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
