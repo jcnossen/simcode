@@ -23,6 +23,11 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 3.8 / 2.8 / 1.9 nm, Zernike rms 2.6 / 2.4 / 1.1 mwaves, line blur sxx 5 / 2 / 4 x 1e-3 px^2, held-out paired NLL
                 bl - base 0.009 / 0.004 / 0.002 and ps3 - bl 0.003 / 0.002 / 0.002 nats per sample at 8000 / 16000 / 32000. The
                 fit time grows linearly (RTX 3090, 32000: base 134 s, bl 178 s, ps3 449 s)
+  psf.init      the starts of the multi-start base fit (simcode/pipeline/psf_stage.py _inits): 'zero', 'f<focus um>' (zero
+                Zernikes), 'a<focus um>' (four astigmatism starts Z5 / Z6 = +- psf.astig_init_waves; added 2026-11-18: starts
+                without astigmatism cannot leave the zero-astigmatism set), 'beads' (the bead fit and its mirrored twin), a
+                calibration json / _psf.pt. Default [zero, f0.1, f0.2, f0.3, a0.1, beads]
+  psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
                 base fits (the behaviour before 2026-11-18)
@@ -58,7 +63,7 @@ DEFAULTS = {
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
     'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
-    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
+    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,

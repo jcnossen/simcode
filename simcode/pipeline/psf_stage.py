@@ -16,22 +16,59 @@ from simcode.pipeline import psf_fit
 from simcode import psf as spsf
 
 
+NOLL_M = [2, 2, 1, 1, 3, 3, 0, 2, 2, 4, 4, 1, 1, 3, 3, 5, 5]      # azimuthal order m of Noll 5..21
+
+
+def mirrored(z):
+    """the in-situ twin of a Zernike set: even-m terms (astigmatism, spherical, ...) negated, odd-m kept. The image of an
+    emitter at defocus d under W equals, up to the weak vectorial / supercritical-angle asymmetry, the one at -d under the
+    mirrored W, so a bead fit (its sign follows the stage direction) or another calibration can sit on either branch"""
+    z = torch.as_tensor(z, dtype=torch.float32).clone()
+    for j, m in enumerate(NOLL_M[:len(z)]):
+        if m % 2 == 0: z[j] = -z[j]
+    return z
+
+
+def _start(z, f):
+    return dict(init_fit=dict(zcoef=torch.as_tensor(z, dtype=torch.float32), focus=torch.tensor(float(f))))
+
+
 def _inits(ds):
-    """starting points of the multi-start: psf.init = one of / a list of 'zero' | 'f<focus um>' | 'beads' | <_psf.pt>; 'beads' without a bead
-    fit is dropped. The base fit is run from each and the lowest NLL wins (bead Zernikes can sit in another basin than the
-    in-situ optimum, and zero init can fall into the z / focus gauge basin near z = 0: out/psf3d/run_final.sh)"""
-    P = ds.c['psf']['init']; out = []
-    for p in (P if isinstance(P, list) else [P]):
+    """starting points of the multi-start: psf.init = one of / a list of
+      'zero'          zero Zernikes, focus 0
+      'f<focus um>'   zero Zernikes at that focus ('f0.2')
+      'a<focus um>'   four astigmatism starts at that focus ('a0.1'): Z5 = +-a, Z6 = +-a (a = psf.astig_init_waves)
+      'beads'         the bead-fit Zernikes and their mirrored twin (mirrored()), focus 0.1 um; dropped without a bead fit
+      <calib .json> / <_psf.pt>   the Zernikes + focus of an existing calibration (e.g. an earlier in-situ PSF of the set-up)
+    The base fit is run from each (on psf.init_nsamples samples) and the lowest training NLL wins.
+    The astigmatism starts (out/psf_v3, 2026-11-18): Zernike sets with zero astigmatism are a stationary set of the in-situ
+    NLL (the defocus-sign symmetry of the emitter images makes the astigmatism gradient vanish there), so starts with zero
+    Zernikes stay at low astigmatism at any focus (simulation: Zernike error 60-80 mwaves vs 14 from the true PSF; 2000
+    instead of 600 iterations do not leave it). One start per astigmatism direction (Z5 +-, Z6 +-) breaks the symmetry;
+    the starts on the wrong astigmatism branch end at a clearly higher NLL."""
+    P = ds.c['psf']; out = []
+    isnum = lambda s: s.replace('.', '', 1).isdigit()
+    for p in (P['init'] if isinstance(P['init'], list) else [P['init']]):
         if p == 'zero': out.append(('zero', dict()))
-        elif isinstance(p, str) and p.startswith('f') and p[1:].replace('.', '', 1).isdigit():   # 'f0.2': zero Zernikes, focus 0.2 um
-            out.append((p, dict(init_fit=dict(zcoef=torch.zeros(17), focus=torch.tensor(float(p[1:]))))))
+        elif isinstance(p, str) and p[:1] in ('f', 'a') and isnum(p[1:]):
+            f = float(p[1:])
+            if p[0] == 'f': out.append((p, _start(torch.zeros(17), f)))
+            else:
+                for j in (0, 1):
+                    for s, sn in ((1, 'p'), (-1, 'm')):
+                        z = torch.zeros(17); z[j] = s * P['astig_init_waves']
+                        out.append((f'{p}z{j + 5}{sn}', _start(z, f)))
         elif p == 'beads':
             b = ds.summary('beads')
             if b and not b.get('skipped'):
-                out.append(('beads', dict(init_zcoef=torch.load(b['pt'], weights_only=False)['zcoef'])))
+                zb = torch.load(b['pt'], weights_only=False)['zcoef']
+                out += [('beads', _start(zb, 0.1)), ('beads_mir', _start(mirrored(zb), 0.1))]
+        elif str(p).endswith('.json'):
+            J = json.load(open(p))
+            out.append((os.path.basename(p)[:-5], _start(J['zernike_waves'], J['focus_um'])))
         else:
             S = torch.load(p, weights_only=False)
-            out.append((os.path.basename(p).replace('_psf.pt', ''), dict(init_fit=dict(zcoef=S['zcoef'], focus=S['focus']))))
+            out.append((os.path.basename(p).replace('_psf.pt', ''), _start(S['zcoef'], S['focus'])))
     return out or [('zero', dict())]
 
 

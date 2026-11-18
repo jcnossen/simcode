@@ -68,5 +68,21 @@ def test_spread():
     assert abs(S4['sd']['a'] - 1.0) < 1e-12 and abs(S4['sd_draw_size']['a'] - 2.0) < 1e-12 and S4['nsamples'] == 3000
 
 
+
+def test_inits():
+    import torch
+    from simcode.pipeline import psf_stage as S
+    z = torch.arange(1, 18, dtype=torch.float32)
+    m = S.mirrored(z)                                       # even-m Noll terms (5, 6, 11, 12, 13, 14, 15) negated, odd-m kept
+    assert [int(v) for v in m[:11]] == [-1, -2, 3, 4, 5, 6, -7, -8, -9, -10, -11] and torch.equal(S.mirrored(m), z)
+    class DS:
+        c = dict(psf=dict(init=['zero', 'f0.2', 'a0.1', 'beads'], astig_init_waves=0.05))
+        def summary(self, name): return None                # no bead fit: 'beads' is dropped
+    st = dict(S._inits(DS()))
+    assert list(st) == ['zero', 'f0.2', 'a0.1z5p', 'a0.1z5m', 'a0.1z6p', 'a0.1z6m']
+    z6m = st['a0.1z6m']['init_fit']
+    assert abs(float(z6m['zcoef'][1]) + 0.05) < 1e-7 and float(z6m['zcoef'].abs().sum()) < 0.05 + 1e-6 and abs(float(z6m['focus']) - 0.1) < 1e-7
+
+
 if __name__ == '__main__':
-    test_select_stable(); test_spread(); print('ok')
+    test_select_stable(); test_spread(); test_inits(); print('ok')
