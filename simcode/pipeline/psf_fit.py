@@ -7,7 +7,7 @@ permutation of the list, so a few added / removed samples change only those few)
 angle) bg solved in closed form, per-sample x, y, z and the PSF parameters by Adam; it also fits the line blur); here: the
 sample selection (select(); torch_psf split_checkerboard for the checkerboard split), the camera conversion, the pattern-angle
 groups (frame % 6 // 3) and the photoselection hook (dip_tensor: gamma, zeta per pattern angle). Supported terms: Zernike
-5-21 + focus, blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base. Writes <out>_psf.pt / _psf.json in
+5-21 + focus, blur 'none' | 'line' | 'cov' (general covariance), photoselection 0 | 3, --init-fit / --freeze-base. Writes <out>_psf.pt / _psf.json in
 the fit_psf_tracks format.
 
 heldout(...): the PSFs frozen, x, y, z refit per sample (torch_psf heldout_tracks: spline-table refit, multi-start in z,
@@ -186,7 +186,7 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
     m.blur = None
     with torch.no_grad():
         m.zcoef.copy_(est['psf'].zcoef); G['focus'].fill_(est['report']['focus_um'])
-    if blur == 'line': F.BL0 = est['psf'].blur                              # fitted line blur -> fixed covariance
+    if blur in ('line', 'cov'): F.BL0 = est['psf'].blur                     # fitted blur -> fixed covariance
     rep = est['report']
     res = dict(gain=gain, readnoise_e=torch.exp(G['logrn']).item(), offset=G['offset'].item(), focus=G['focus'].item(),
                NA=m.NA.item(), apod=m.apod.tolist(), zernike=m.zcoef.tolist(), resid_var=rep['resid_var'], zmax=zmax,

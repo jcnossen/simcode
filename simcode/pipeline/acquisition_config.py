@@ -37,6 +37,8 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   psf.readnoise_extra_e  with psf.camera_maps: white noise (e rms) added in quadrature to the read-noise map (default 0): the
                 variance the camera model does not hold (unmodelled sample background structure, PSF model error); choose
                 it by the held-out NLL (out/psf_v3: 1809_2 0.5 e)
+  psf.blur      image-plane blur of the bl fit: 'line' (default; v v^T), 'cov' (a general 2 x 2 covariance, added 2026-11-18;
+                needs torch-psf fit_tracks blur='cov') or 'none'
   psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
@@ -187,8 +189,8 @@ def validate(c):
         raise ValueError('pattern.pitch_px must be [lo, hi] with 0 < lo < hi')
     if c['camera']['type'] not in ('scmos', 'emccd'):
         raise ValueError('camera.type: scmos | emccd')
-    if c['psf']['blur'] not in ('none', 'line') or c['psf']['photosel'] not in (0, 3):
-        raise ValueError('psf.blur: none | line; psf.photosel: 0 | 3')
+    if c['psf']['blur'] not in ('none', 'line', 'cov') or c['psf']['photosel'] not in (0, 3):
+        raise ValueError('psf.blur: none | line | cov; psf.photosel: 0 | 3')
     mf = c['spots']['maxframe']
     if mf is not None and (not isinstance(mf, int) or isinstance(mf, bool) or mf <= 0):
         raise ValueError(f'spots.maxframe: null (the whole movie) or a number of frames > 0, not {mf!r}')
