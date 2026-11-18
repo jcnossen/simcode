@@ -114,9 +114,15 @@ def run(ds):
     D = np.load(T); D = {k: D[k] for k in D.files}
     rn = P['readnoise_e'] if P['readnoise_e'] is not None else cam['readnoise_e']
     off = P['offset_adu'] if P['offset_adu'] is not None else cam['offset']
+    # per-pixel camera model (psf.camera_maps): 'cammaps' = the cammaps stage maps, a path = those maps (e.g. the set-up's
+    # calibrated maps), null = scalar offset / read noise (rn, off above)
+    mp = P['camera_maps']
+    mp = os.path.join(ds.out, 'cammaps', 'camera_maps.npz') if mp == 'cammaps' else mp
+    maps = psf_fit.load_maps(mp)
+    if maps: ds.log(f'psf: per-pixel offset / read-noise maps {mp}')
     starts = _inits(ds)
     kw = dict(optics=c['optics'], gain=cam['gain'], nsamples=P['nsamples'], iters=P['iters'], zmax=P['zmax_um'], readnoise_e=rn,
-              offset_adu=off, dev=dev, log=ds.log)
+              offset_adu=off, dev=dev, log=ds.log, maps=maps)
     out, fits = {}, {}
     def F(name, split='', salt=0, **k):
         pre = os.path.join(d, f'fit_{name}' + (f'_{split}' if split else '') + (f'_s{salt}' if salt else ''))
@@ -163,7 +169,7 @@ def run(ds):
     H = None
     if P['heldout']:
         _, pts = cb0_chain(0)
-        H = psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
+        H = psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log, maps=maps)
         np.savez(os.path.join(d, 'heldout.npz'), **{f'{n}_{k}': v[k] for n, v in H.items() for k in ('nll', 'chi2')})
         Hs = {n: {k: v for k, v in h.items() if k not in ('nll', 'chi2')} for n, h in H.items()}
         for a, b in zip(names[:-1], names[1:]): Hs[f'{b}_minus_{a}'] = psf_fit.paired(H, a, b)
@@ -179,13 +185,13 @@ def run(ds):
             t0 = time.time(); fr, pts = cb0_chain(salt, ns)
             h = None
             if P['heldout']:
-                h = H if salt == 0 and same else psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
+                h = H if salt == 0 and same else psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log, maps=maps)
             reps.append(dict(psf_fit.replicate_values(fr, h, names), **({} if salt == 0 and same else {'wall_s': time.time() - t0})))   # draw 0 = step 4 (reused)
         spread = psf_fit.spread(reps, ns, nc, nsamples=min(P['nsamples'], len(D['rois'])))   # sd for the main fit's sample count
         json.dump(dict(spread, replicates=reps), open(os.path.join(d, 'spread.json'), 'w'), indent=1)
         ds.log('psf: sampling spread (sd at psf.nsamples):', json.dumps({k: v for k, v in spread['sd'].items() if not isinstance(v, list)}))
     # 5: calib files
-    shutil.copy(os.path.join(ds.out, 'cammaps', 'camera_maps.npz'), os.path.join(d, 'camera_maps.npz'))
+    shutil.copy(mp or os.path.join(ds.out, 'cammaps', 'camera_maps.npz'), os.path.join(d, 'camera_maps.npz'))   # the maps of the fit
     js, pt = os.path.join(d, f'fit_{last}_{best}_psf.json'), os.path.join(d, f'fit_{last}_{best}_psf.pt')
     for avg, fn in ((False, 'calib.json'), (True, 'calib_avg.json')):
         json.dump(calib_dict(ds, js, pt, pat, cam, 'camera_maps.npz', avg), open(os.path.join(d, fn), 'w'), indent=1)
@@ -206,5 +212,5 @@ def run(ds):
             if '_minus_' in k_:
                 chk.append(dict(name=f'held-out NLL {k_} <= 0 (paired)', value=v, ok=v['mean'] <= 0, warn_only=True))
     summ = {n: {k: v for k, v in f.items() if k not in ('optics',)} for n, f in fits.items()}
-    return dict(init=ini_note, centre_vs_z=cz, readnoise_e_model=rn, offset_model=off, fits=summ, pattern=pat, heldout=Hs if H is not None else None, spread=spread,
+    return dict(init=ini_note, centre_vs_z=cz, readnoise_e_model=rn if not maps else 'per-pixel map', offset_model=off if not maps else 'per-pixel map', camera_maps=mp, fits=summ, pattern=pat, heldout=Hs if H is not None else None, spread=spread,
                 calib=os.path.join(d, 'calib.psf.zip'), calib_avg=os.path.join(d, 'calib_avg.psf.zip'), checks=chk)

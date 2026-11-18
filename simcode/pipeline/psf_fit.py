@@ -83,13 +83,37 @@ class Fit:
         return r
 
 
-def tracks_of(D, idx, gain, offset_adu, dev):
-    """(Tracks in photons, pattern-angle groups [B, T]) of the samples idx of a tracks.npz"""
+def load_maps(path):
+    """per-pixel camera maps of an npz (simcode.calibration.camera_maps / the calibration camera maps): dict(offset_adu
+    [H, W], readnoise_e [H, W], path); None for None"""
+    if not path: return None
+    M = np.load(path)
+    return dict(offset_adu=np.asarray(M['offset_adu'], np.float32), readnoise_e=np.asarray(M['readnoise_e'], np.float32), path=str(path))
+
+
+def crop_maps(D, idx, maps):
+    """(offset [B, R, R] ADU, read noise [B, R, R] e) of the samples idx at their crops (rois = movie[cy:cy+R, cx:cx+R])"""
+    R = D['rois'].shape[-1]; c = np.asarray(D['corner'])[idx]
+    ii = c[:, 1][:, None, None] + np.arange(R)[None, :, None]; jj = c[:, 0][:, None, None] + np.arange(R)[None, None, :]
+    return maps['offset_adu'][ii, jj], maps['readnoise_e'][ii, jj]
+
+
+def tracks_of(D, idx, gain, offset_adu, dev, maps=None):
+    """(Tracks in photons, pattern-angle groups [B, T], read noise) of the samples idx of a tracks.npz. maps (load_maps):
+    the per-pixel offset map is subtracted instead of offset_adu and the read noise is the per-pixel map at each crop
+    ([B, R, R] tensor, e rms; fit_tracks / heldout_tracks model var = mu + rn^2 per pixel); without maps: None (the
+    caller's scalar read noise)"""
     mask = torch.tensor(D['mask'][idx], device=dev); frames = torch.tensor(D['frames'][idx], device=dev)
-    rois = (torch.tensor(D['rois'][idx].astype(np.float32), device=dev) - float(offset_adu)) * gain
+    rn = None
+    if maps is not None:
+        off, rnm = crop_maps(D, idx, maps)
+        rois = (torch.tensor(D['rois'][idx].astype(np.float32), device=dev) - torch.tensor(off, device=dev)[:, None]) * gain
+        rn = torch.tensor(rnm, device=dev)
+    else:
+        rois = (torch.tensor(D['rois'][idx].astype(np.float32), device=dev) - float(offset_adu)) * gain
     tr = Tracks(rois, mask, frames, torch.tensor(D['corner'][idx], device=dev, dtype=torch.float32),
                 torch.tensor(D['xy_init'][idx], device=dev, dtype=torch.float32))
-    return tr, torch.where(mask, (frames % 6) // 3, torch.zeros_like(frames))
+    return tr, torch.where(mask, (frames % 6) // 3, torch.zeros_like(frames)), rn
 
 
 def sample_keys(D):
@@ -139,21 +163,22 @@ def select(D, nsamples, parity=None, tile=16, salt=0):
 
 def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='none', photosel=0, kdir=None, init_fit=None,
         freeze_base=False, init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, split='', tile=16, dev='cuda', log=print,
-        return_state=False, salt=0):
-    """split: '' (all samples) or 'cb0' / 'cb1' (checkerboard parity 0 / 1); salt: the sample draw (select())"""
+        return_state=False, salt=0, maps=None):
+    """split: '' (all samples) or 'cb0' / 'cb1' (checkerboard parity 0 / 1); salt: the sample draw (select()); maps:
+    per-pixel camera maps (load_maps; then offset_adu / readnoise_e are not used for the data)"""
     torch.manual_seed(0); np.random.seed(0)
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     F = Fit(R, optics, dev, blur, photosel, kdir, init_fit, freeze_base, init_zcoef, readnoise_e, offset_adu, zmax=zmax)
     sel = select(D, nsamples, int(split[2]) if split else None, tile, salt)
-    tr, groups = tracks_of(D, sel, gain, F.G['offset'], dev)
+    tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
     m, G = F.model, F.G
     m.blur = F.BL0                                                          # fixed blur of an init fit (None = none)
     hook = (lambda k: dict(dipM=F.dip_tensor(k))) if F.GAM is not None else None
     logf = lambda it, tot, t, zc: (it % 100 == 0 or it == iters - 1) and log(
         f'{it:5d} nll/px {tot:.4f}  |Z| {zc.norm().item():.3f}')
     torch.cuda.synchronize(); t0 = time.time()
-    est = fit_tracks(tr, m, readnoise_e=float(torch.exp(G['logrn'])), zmax_um=zmax, iters=iters, warmup=100,
+    est = fit_tracks(tr, m, readnoise_e=float(torch.exp(G['logrn'])) if rnp is None else rnp, zmax_um=zmax, iters=iters, warmup=100,
                      focus_um=float(G['focus'].detach()), blur=blur, groups=groups, ngroups=2, group_psf_kwargs=hook,
                      extra_params=[v for v in (F.GAM, F.ZETA) if v is not None], fix_zernike=not m.zcoef.requires_grad,
                      fix_focus=not G['focus'].requires_grad, log=logf)
@@ -167,13 +192,13 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
                NA=m.NA.item(), apod=m.apod.tolist(), zernike=m.zcoef.tolist(), resid_var=rep['resid_var'], zmax=zmax,
                blur_mode=blur, photosel=photosel, split=split, tile=tile, salt=salt, nll_per_px=rep['nll_per_px'],
                nll_per_px_last_iter=rep['nll_per_px_before_last_step'], n_train=int(len(sel)), fit_s=t_fit,
-               z_median=float(est['z'].median()), optics=optics, **F.extras_json())
+               z_median=float(est['z'].median()), optics=optics, maps=maps['path'] if maps else None, **F.extras_json())
     log(f'normalized residual var {res["resid_var"]:.4f}, nll/px (vectorial) {res["nll_per_px"]:.5f}, fit {t_fit:.0f} s')
     if out:
         json.dump(res, open(out + '_psf.json', 'w'), indent=1)
         ex = F.extras_json()
         torch.save(dict(zcoef=m.zcoef.detach().cpu(), NA=m.NA.detach().cpu(), apod=m.apod.detach().cpu(),
-                        **{k: v.detach().cpu() for k, v in G.items()}, gain=gain, zmax=zmax, optics=optics,
+                        **{k: v.detach().cpu() for k, v in G.items()}, gain=gain, zmax=zmax, optics=optics, maps=maps['path'] if maps else None,
                         **({'extras': ex} if ex else {})), out + '_psf.pt')
     if return_state:
         st = dict(I=est['I'].cpu(), r=(est['xy'] + F.c + tr.corner).cpu(), z=est['z'].cpu(), frames=tr.frames.cpu(),
@@ -200,22 +225,25 @@ def model_from_pt(pt, R, dev='cuda'):
     return F, float(S['gain'])
 
 
-def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.08, 0.15), tile=16, salt=1, dev='cuda', log=print):
+def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.08, 0.15), tile=16, salt=1, dev='cuda', log=print,
+            maps=None, keep_z=False):
     """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks; the refit on
-    the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n)}"""
+    the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt).
+    maps: per-pixel camera maps (load_maps) of the data model (the same for every PSF; None: each PSF's scalar offset /
+    read noise). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n[, z, I])}"""
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
     out = {}
     for name, pt in pts.items():
         F, gain = model_from_pt(pt, R, dev)
-        tr, groups = tracks_of(D, sel, gain, F.G['offset'], dev)
+        tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
         vm = F.angle_models()
         with torch.no_grad():
             spl = [v.to_spline(R, (0.0, F.zmax), oversample=8, dz_um=0.01, zpad=3, xy_limit=2.0) for v in vm]
-        h = heldout_tracks(tr, vm, readnoise_e=float(torch.exp(F.G['logrn'])), zmax_um=F.zmax, groups=groups, ngroups=2,
+        h = heldout_tracks(tr, vm, readnoise_e=float(torch.exp(F.G['logrn'])) if rnp is None else rnp, zmax_um=F.zmax, groups=groups, ngroups=2,
                            refit_psfs=spl, z_starts_um=zstarts, iters=iters)
-        out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n')}
+        out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n') + (('z', 'I') if keep_z else ())}
         log(f'heldout {name}: nll/px {h["nll_per_px"]:.5f}, chi2/px {h["chi2_per_px"]:.4f} ({len(sel)} samples, {test})')
     return out
 
