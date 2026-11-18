@@ -42,6 +42,10 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   psf.init_blur  (default true, added 2026-11-18) the multi-start fits include the psf.blur term, so the start is chosen by the
                 NLL of the blurred model (on 2.5 nM / 2 the base-only choice missed a start whose blurred fit is 3 nats per sample
                 better); false = base-only start fits (the behaviour before)
+  psf.init_select  how the multi-start picks its start (added 2026-11-18): 'refit' (default) = the lowest NLL of the frozen start
+                fits with every sample's x, y, z refitted from the z multi-start (held-out-style refit) on psf.init_select_nsamples
+                (default 8000) cb0 samples of another draw; 'train' = the lowest training NLL (before). The training NLL also
+                depends on the local z optimum each sample reached from the fit's single z start
   psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
@@ -79,7 +83,7 @@ DEFAULTS = {
     'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, init_blur=True, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
+                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, init_blur=True, init_select='refit', init_select_nsamples=8000, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
@@ -197,7 +201,8 @@ def validate(c):
     mf = c['spots']['maxframe']
     if mf is not None and (not isinstance(mf, int) or isinstance(mf, bool) or mf <= 0):
         raise ValueError(f'spots.maxframe: null (the whole movie) or a number of frames > 0, not {mf!r}')
-    for k_ in ('nsamples', 'heldout_nsamples', 'init_nsamples', 'spread_nsamples'):
+    if c['psf']['init_select'] not in ('refit', 'train'): raise ValueError("psf.init_select: refit | train")
+    for k_ in ('nsamples', 'heldout_nsamples', 'init_nsamples', 'spread_nsamples', 'init_select_nsamples'):
         v = c['psf'][k_]
         if not (v is None and k_ in ('init_nsamples', 'spread_nsamples')) and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
             raise ValueError(f'psf.{k_}: a number of samples > 0' + (' or null (= psf.nsamples)' if k_ in ('init_nsamples', 'spread_nsamples') else '') + f', not {v!r}')

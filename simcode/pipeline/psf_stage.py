@@ -146,8 +146,17 @@ def run(ds):
         best = min(ms, key=lambda t: ms[t]['nll_per_px'])
     else:
         best = starts[0][0]
-    ini = dict(starts)[best]; ini_note = dict(chosen=best, nsamples=ni, blur=sb, nll_per_px={t: v['nll_per_px'] for t, v in ms.items()},
-                                              focus={t: v['focus'] for t, v in ms.items()})
+    sel = None
+    if len(ms) > 1 and P['init_select'] == 'refit':
+        # the start by the frozen-PSF NLL with every sample's x, y, z refitted from the z multi-start (heldout_tracks) on a
+        # selection set of cb0 samples (draw salt 2; the cb1 test set stays untouched): the training NLL also depends on which
+        # local z optimum each sample ended in from the single z start of the fit (out/psf_v3, 2.5 nM / 2)
+        pre_ = lambda t: os.path.join(d, f'fit_{"start_bl_" if sb else ("base_" if ni == P["nsamples"] else "start_")}{t}_psf.pt')
+        Hs0 = psf_fit.heldout(D, {t: pre_(t) for t in ms}, 'cb0', nsamples=P['init_select_nsamples'], salt=2, dev=dev, log=ds.log, maps=maps)
+        sel = {t: Hs0[t]['nll_per_px'] for t in ms}
+        best = min(sel, key=sel.get)
+    ini = dict(starts)[best]; ini_note = dict(chosen=best, nsamples=ni, blur=sb, select=P['init_select'], select_nll_per_px=sel,
+                                              nll_per_px={t: v['nll_per_px'] for t, v in ms.items()}, focus={t: v['focus'] for t, v in ms.items()})
     ds.log(f'psf: start {best} chosen ({ini_note})')
     same = ni == P['nsamples'] and not sb
     fits['base'] = ms[best] if same else F(f'base_{best}', **ini)
