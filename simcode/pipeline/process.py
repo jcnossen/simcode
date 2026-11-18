@@ -77,7 +77,12 @@ def run(ds):
     a0 = argv(ds, 'X', model=ns)
     from simcode import config as SC
     calib = SC.resolve(a0[a0.index('--calib') + 1])
-    key = hashlib.sha1(json.dumps([a0, open(calib).read() if os.path.exists(calib) else calib, ns[1], open(W).read()]).encode()).hexdigest()[:10]
+    def content(f):                           # a calib json by its text (the keys of earlier runs), a psf.zip by its sha256
+        if not os.path.exists(f): return f
+        b = open(f, 'rb').read()
+        try: return b.decode()
+        except UnicodeDecodeError: return 'sha256:' + hashlib.sha256(b).hexdigest()
+    key = hashlib.sha1(json.dumps([a0, content(calib), ns[1], open(W).read()]).encode()).hexdigest()[:10]
     out = os.path.join(ds.dir('process'), 'run_' + key)     # keyed by arguments, calibration, model and overrides: chunk files are never stale
     g = ds.gpu(10)
     txt = ds.sh(['-m', 'simcode.pipeline.run_with_overrides', 'simcode.run'] + argv(ds, out, model=ns), os.path.join(ds.dir('process'), 'run.log'), gpu=g, wrap=W)

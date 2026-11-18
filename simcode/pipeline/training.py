@@ -10,7 +10,7 @@ directory 'quick/'):
   emitter_pass2_long -> emitter_pass2_final (detector = detector_pass2). The pattern draw of the pass-2 stages is fixed in the
   trainers (simulate/batches.P_STD_DEDICATED / P_STD; generic patterns: simulate/acquisition.AcquisitionSim._generic): own
   pattern only in detector_pass2, half own / half generic in every other pass-2 stage (models/README.md)
-  gate scenes (simcode.benchmark.gate_scenes, dataset PSF = psf/calib_avg.json) -> dumps of pass 1 (detector + emitter) and pass 2
+  gate scenes (simcode.benchmark.gate_scenes, dataset PSF = psf/calib_avg.psf.zip) -> dumps of pass 1 (detector + emitter) and pass 2
   (detector_pass2_cont + emitter_pass2_final)
   -> the solve calibrations of pass 1 and pass 2 (simcode.calibration.fit_cal_set, fitted on the gate scenes; used for real and
      simulated movies)
