@@ -39,6 +39,9 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 it by the held-out NLL (out/psf_v3: 1809_2 0.5 e)
   psf.blur      image-plane blur of the bl fit: 'line' (default; v v^T), 'cov' (a general 2 x 2 covariance, added 2026-11-18;
                 needs torch-psf fit_tracks blur='cov') or 'none'
+  psf.init_blur  (default true, added 2026-11-18) the multi-start fits include the psf.blur term, so the start is chosen by the
+                NLL of the blurred model (on 2.5 nM / 2 the base-only choice missed a start whose blurred fit is 3 nats per sample
+                better); false = base-only start fits (the behaviour before)
   psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
@@ -76,7 +79,7 @@ DEFAULTS = {
     'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
+                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, init_blur=True, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),

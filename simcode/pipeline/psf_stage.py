@@ -133,21 +133,26 @@ def run(ds):
         ds.log(f'psf: fit {name} {split}' + (f' draw {salt}' if salt else ''))
         return psf_fit.fit(D, pre, split=split, salt=salt, **dict(kw, **k))
     # 1-2 (base from every start on psf.init_nsamples samples; the lowest NLL / px picks the start of the later fits; the base
-    # fit from that start on psf.nsamples samples)
+    # fit from that start on psf.nsamples samples). psf.init_blur (default true, with psf.blur != none): the start fits include
+    # the blur, so the start is chosen by the NLL of the model that is used (out/psf_v3: on 2.5 nM / 2 the base-only choice
+    # missed the start whose blurred fit is 3 nats per sample better)
     ni = min(P['init_nsamples'] or P['nsamples'], P['nsamples'])
+    sb = P['blur'] if (P['init_blur'] and P['blur'] != 'none') else None
     ms = {}
     if len(starts) > 1 or ni == P['nsamples']:
         for tag, kw0 in starts:
-            ms[tag] = F(f'base_{tag}', **kw0) if ni == P['nsamples'] else F(f'start_{tag}', nsamples=ni, **kw0)
+            if sb: ms[tag] = F(f'start_bl_{tag}', nsamples=ni, blur=sb, **kw0)
+            else: ms[tag] = F(f'base_{tag}', **kw0) if ni == P['nsamples'] else F(f'start_{tag}', nsamples=ni, **kw0)
         best = min(ms, key=lambda t: ms[t]['nll_per_px'])
     else:
         best = starts[0][0]
-    ini = dict(starts)[best]; ini_note = dict(chosen=best, nsamples=ni, nll_per_px={t: v['nll_per_px'] for t, v in ms.items()},
+    ini = dict(starts)[best]; ini_note = dict(chosen=best, nsamples=ni, blur=sb, nll_per_px={t: v['nll_per_px'] for t, v in ms.items()},
                                               focus={t: v['focus'] for t, v in ms.items()})
     ds.log(f'psf: start {best} chosen ({ini_note})')
-    fits['base'] = ms[best] if ni == P['nsamples'] else F(f'base_{best}', **ini)
+    same = ni == P['nsamples'] and not sb
+    fits['base'] = ms[best] if same else F(f'base_{best}', **ini)
     for t in ms:
-        if t != best or ni < P['nsamples']: fits[f'base_{t}' if ni == P['nsamples'] else f'start_{t}'] = ms[t]
+        if t != best or not same: fits[(f'start_bl_{t}' if sb else f'base_{t}' if ni == P['nsamples'] else f'start_{t}')] = ms[t]
     fits['bl'], st = F(f'bl_{best}', blur=P['blur'], return_state=True, **ini)
     pat = psf_fit.pattern_from_intensities(st, c['pattern']['pitch_px'], dev=dev, log=ds.log)
     torch.save(st, os.path.join(d, 'bl_intensities.pt')); json.dump(pat, open(os.path.join(d, 'pattern.json'), 'w'), indent=1)
