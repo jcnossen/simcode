@@ -89,7 +89,7 @@ def calib_dict(ds, fit_js, fit_pt, pat, cam, maps_name, avg):
                     f'(Zernike 5-21 + focus + {c["psf"]["blur"]} blur, then frozen + photoselection {c["psf"]["photosel"]}); fit {fit_pt}',
              pixelsize_um=o['pixel_um'], wavelength_um=o['wavelength_um'], NA=float(S['NA']), n_imm=o['n_imm'], n_med=o['n_med'],
              apod=[float(v) for v in S['apod'].tolist()], zernike_noll=list(range(5, 22)), zernike_waves=[float(v) for v in S['zcoef'].tolist()],
-             focus_um=float(S['focus']),
+             focus_um=float(S['focus']), npupil=psf_fit.FIT_NPUPIL, oversample=psf_fit.FIT_OVERSAMPLE,
              camera=dict(gain_e_per_adu=cam['gain'], offset_adu=cam['offset'], readnoise_e=cam['readnoise_e'], maps=maps_name,
                          note=f'gain {cam["gain_source"]}, offset {cam["offset_source"]}, read noise {cam["readnoise_source"]}; maps = simcode.calibration.camera_maps masked by the stage-c spots'),
              pattern=dict(k_rad_per_px=k, pitch_nm=[float(2 * math.pi / np.hypot(*kk) * o['pixel_um'] * 1e3) for kk in k],

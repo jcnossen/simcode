@@ -37,6 +37,12 @@ dev = 'cuda'
 DEFAULTS = {0: dict(lr=1e-3, seed=0), 1: dict(lr=3e-4, seed=11)}
 
 
+def bnoise_of(a):
+    """the --bnoise flag as TrainingBatches bnoise ((c, c_a) or None)"""
+    from simcode.simulate.batches import parse_bnoise
+    return parse_bnoise(getattr(a, 'bnoise', ''))
+
+
 def focal_w(logits, label, ign, wpos, gamma=2.0, alpha=0.75):
     p = torch.sigmoid(logits)
     ce = F.binary_cross_entropy_with_logits(logits, label, reduction='none')
@@ -122,6 +128,9 @@ def parser():
     ap.add_argument('--ckpt_every', type=int, default=5000)
     # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, simulate/batches.TrainingBatches calib)
     ap.add_argument('--calib', default='')
+    # emitter brightness noise of the simulator 'c,c_a' (a dataset's measured values; simulate/batches.TrainingBatches bnoise);
+    # '' = the presets' (pass 1) / pass-2 defaults
+    ap.add_argument('--bnoise', default='')
     # ('' = the batch defaults) training ranges 'lo,hi': ON-emitter density (/px^2); pass 2 also the mean on-time (frames)
     ap.add_argument('--dens', default='')
     ap.add_argument('--tau', default='')
@@ -178,7 +187,7 @@ def train_pass1(a):
     args = vars(a); args.update(arch=ARCH, up=1, ch=[48, 96, 160], stem_ch=16, fch=32)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
+    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], bnoise=bnoise_of(a))
     net = build(args).to(dev)
     if a.init:
         net.load_state_dict(torch.load(config.resolve(a.init), map_location=dev, weights_only=False)['model'])
@@ -225,7 +234,7 @@ def train_pass2(a):
     args = vars(a); args.update(arch=ARCH, up=1, ch=[48, 96, 160], stem_ch=16)
     json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], p_std=a.p_std)
+    gen = TrainingBatches(a.size, a.size, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], bnoise=bnoise_of(a), p_std=a.p_std)
     psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))

@@ -32,9 +32,10 @@ class Simulator:
         self.tirf = tirf_depth or self.c['tirf_depth_um']
         self.R = psf_roi
         # calibrated PSF (torch_psf.PSF.load of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
-        # average; a GaussianPSF for 'psf_gauss_sigma_um')
+        # average; a GaussianPSF for 'psf_gauss_sigma_um'), at the calibration's sampling (keys npupil / oversample: the sampling
+        # the PSF was fitted with, written by the PSF stage since 2026-11-18; absent = torch_psf's default 64 / 3, as before)
         self.calib_path = calib_path
-        self.psf = spsf.PSF.load(calib_path, roisize=psf_roi, oversample=3, device=device)
+        self.psf = spsf.PSF.load(calib_path, roisize=psf_roi, device=device)   # sampling (npupil / oversample) of the calibration
         self.focus = self.c['focus_um']
         # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
         self.lz, self.ls = psf_lut_z, psf_lut_sub
@@ -52,7 +53,7 @@ class Simulator:
         if has_angle_psf(self.c):
             self.lut_angle = []
             for k in range(2):
-                pk = spsf.PSF.load(calib_path, roisize=psf_roi, oversample=3, device=device, angle=k)
+                pk = spsf.PSF.load(calib_path, roisize=psf_roi, device=device, angle=k)
                 with torch.no_grad():
                     la = torch.cat([render(pk, p) for p in pos.split(1024)])
                 self.lut_angle.append(la.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi))

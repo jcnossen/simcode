@@ -45,6 +45,12 @@ DEFAULTS = {0: dict(detector=config.PRETRAIN_DETECTOR, init='', steps=100000, lr
                     ckpt_every=10000, tau='', dens='')}
 
 
+def bnoise_of(a):
+    """the --bnoise flag as TrainingBatches bnoise ((c, c_a) or None)"""
+    from simcode.simulate.batches import parse_bnoise
+    return parse_bnoise(getattr(a, 'bnoise', ''))
+
+
 @torch.no_grad()
 def z_metrics(out, tx, ty, tz, ph):
     """running z metrics of a training batch (fresh simulated data): z RMSE (px) of the prior z and of z | true x, y, their
@@ -166,6 +172,9 @@ def parser():
     # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, simulate/batches.TrainingBatches calib; the
     # PSF-template column follows the batch's calib)
     ap.add_argument('--calib', default='')
+    # emitter brightness noise of the simulator 'c,c_a' (a dataset's measured values; simulate/batches.TrainingBatches bnoise);
+    # '' = the presets' (pass 1) / pass-2 defaults
+    ap.add_argument('--bnoise', default='')
     # training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames); pass 2 '' = the batch defaults (g13: 3,80)
     ap.add_argument('--dens', default=None)
     ap.add_argument('--tau', default=None)
@@ -213,7 +222,7 @@ def train_pass1(a):
     args.update(z3d=1, z_range_um=list(Z_RANGE_UM), z_unif=Z_UNIF)
     torch.manual_seed(a.seed)
     det, _ = load_det(a.detector)
-    gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')])
+    gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], bnoise=bnoise_of(a))
     args.update(heights=gen.heights())
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     head = EmitterNet(6, a.ch, P=PP, bf16=bool(a.bf16)).to(dev)
@@ -305,7 +314,7 @@ def train_pass2(a):
     args = dict(vars(a), arch=ARCH)
     os.makedirs(a.out, exist_ok=True); json.dump(args, open(a.out + '/args.json', 'w'), indent=1)
     torch.manual_seed(a.seed)
-    gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], p_std=a.p_std)
+    gen = TrainingBatches(64, 64, 6, seed=a.seed, calib=[config.resolve(c) for c in a.calib.split(',')], bnoise=bnoise_of(a), p_std=a.p_std)
     psub = {}
     if a.dens: psub['dens'] = tuple(float(v) for v in a.dens.split(','))
     if a.tau: psub['tau_r'] = tuple(float(v) for v in a.tau.split(','))

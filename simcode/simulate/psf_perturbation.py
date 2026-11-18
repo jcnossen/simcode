@@ -29,7 +29,7 @@ def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle
         if zern_delta is not None:
             z = torch.tensor(c['zernike_waves'], device=dev, dtype=torch.float32) + zern_delta
             c['zernike_waves'] = z.tolist()
-        psf = spsf.PSF.load(c, roisize=sim.R, oversample=3, device=dev, angle=angle)
+        psf = spsf.PSF.load(c, roisize=sim.R, device=dev, angle=angle)   # the calibration's sampling, as Simulator
     zs = torch.linspace(getattr(sim, 'zmin', 0.0), zmax, sim.lz, device=dev)
     sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
     Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')

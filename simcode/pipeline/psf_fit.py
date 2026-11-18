@@ -20,6 +20,10 @@ import numpy as np, torch
 from simcode import psf as spsf
 from simcode.psf import Tracks, fit_tracks, heldout_tracks, paired_nll, split_checkerboard
 
+# sampling of the fitted VectorialPSF (pupil samples per side, image samples per pixel per side); written into the calibration
+# (psf_stage.calib_dict: npupil / oversample) so that every consumer renders the PSF at the sampling it was fitted with
+FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
+
 
 class Fit:
     """the PSF model of one fit: the VectorialPSF (Zernikes, NA, apodization), the focus / read noise / offset (G), a fixed
@@ -28,7 +32,7 @@ class Fit:
     def __init__(self, R, optics, dev='cuda', blur='none', photosel=0, kdir=None, init_fit=None, freeze_base=False,
                  init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2):
         self.dev, self.R, self.c, self.zmax = dev, R, (R - 1) / 2, zmax
-        self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, oversample=2, device=dev)
+        self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE, device=dev)
         m = self.model
         if init_zcoef is not None:
             with torch.no_grad(): m.zcoef.copy_(torch.as_tensor(init_zcoef).to(dev))
