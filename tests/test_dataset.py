@@ -206,7 +206,7 @@ def test_real_table():
     sys.path.insert(0, os.path.join(REPO, 'analysis', 'paper'))
     import frc_fair as FF
     info = json.load(open(REAL[:-4] + '_info.json'))
-    L = Dataset.load(os.path.dirname(REAL), columns=('sx', 'sy', 'photons', 'p', 'good', 'sel', 'disjoint', 'strict_u'))
+    L = Dataset.from_run(os.path.dirname(REAL), table='locs_p2', columns=('sx', 'sy', 'photons', 'p', 'good', 'sel', 'disjoint', 'strict_u'))   # a run before 2026-11-17
     assert len(L) == info['n_rows'] and L.pixel_nm == info['px_nm'] and L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2
     assert int(L.sel.sum()) == info['n_sel'] and int(L.good.sum()) == info['n_good']
     prec = L.crlb.max(1).values.double() * L.pixel_nm
