@@ -84,7 +84,7 @@ def beads(dev):
 def fourpi_psf(state, device=None, z_range=(-0.6, 0.6), **kw):
     """torch_psf FourPiPSF of a coherent_psf state (bit-identical to simcode.fourpi.coherent_psf.psf_from_state) whose state() is the
     given state verbatim plus torch_psf's 'raw' block (the internal parameters, which a reader takes for a bit-exact
-    model): torch_psf's own state() (still at 1052362, formerly 0fee3c3) recomputes tau = softmax(log tau) and float32-rounds NA / n, so it does not
+    model): torch_psf's own state() (still at 4d806d0, formerly 1052362 / 0fee3c3) recomputes tau = softmax(log tau) and float32-rounds NA / n, so it does not
     reproduce the fitted values; this way save_zip stores the fitted state as it is and the exact parameters."""
     p = spsf.FourPiPSF.from_state(state, device=device, z_range=z_range, **kw)
     s0 = json.loads(json.dumps(state)); s0.pop('raw', None)
