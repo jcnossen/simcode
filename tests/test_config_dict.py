@@ -143,7 +143,7 @@ def test_python_loader_and_schema():
 
 
 def test_schema_of_derived_config():
-    base = ConfigDict(movie='m.tif', out='o', optics=dict(pixel_um=0.065), pattern=dict(frame_order='interleaved'))
+    base = ConfigDict(movie='m.tif', out='o', optics=dict(pixel_um=0.065), pattern=dict(pattern_frames=[[0, 2, 4], [1, 3, 5]]))
     c = base.updated(name='x', train=dict(steps=dict(detector=5)), camera=dict(offset_adu=np.float32(100.0)), process=dict(crop=(5, 5, 390)))
     r = AC.load(c)
     assert type(r) is dict and r['optics']['pixel_um'] == 0.065 and r['optics']['NA'] == 1.49 and r['_file'] is None
@@ -159,7 +159,7 @@ def test_schema_of_derived_config():
     assert 'spots.thrr' in str(e)
     raises(KeyError, AC.load, c.updated(colour=1))
     raises(ValueError, AC.load, base)                                     # name is required
-    raises(ValueError, AC.load, c.updated(pattern=dict(steps=4)))         # validate()
+    raises(ValueError, AC.load, c.updated(pattern=dict(pattern_frames=[[0, 1, 2, 3], [4, 5, 6, 7]])))   # validate(): 2 x 3 only
     raises(ValueError, AC.load, c.updated(name=1809))
 
 
@@ -205,6 +205,38 @@ def test_pipeline_class():
         finally:
             for l, was in zip(link, pre):
                 if not was and os.path.islink(l): os.remove(l)
+
+
+def test_dependency_chain():
+    """a finished stage runs again when its settings, its output files, an earlier stage's outputs or its input files change"""
+    from simcode.pipeline import localization_pipeline as P
+    with tempfile.TemporaryDirectory() as d:
+        movie = os.path.join(d, 'm.tif'); open(movie, 'w').write('movie 1')
+        link = os.path.join(P.REPO, 'out', 'auto', 'depchain'); pre = os.path.lexists(link)
+        ran, n = [], [0]
+        def pipe(**over):
+            p = P.LocalizationPipeline(dict(dict(name='depchain', movie=movie, out=os.path.join(d, 'out')), **over), log=lambda *a: None)
+            def order():
+                ran.append('order'); open(os.path.join(p.dir('order'), 'a.txt'), 'w').write(f'order {n[0]}'); return dict(checks=[])
+            def camera():
+                ran.append('camera'); open(os.path.join(p.dir('camera'), 'c.txt'), 'w').write('camera'); return dict(checks=[])
+            p._st_order, p._st_camera = order, camera
+            return p
+        try:
+            run = lambda **over: pipe(**over).run(only=['order', 'camera'])
+            run(); assert ran == ['order', 'camera']
+            run(); run(gpus=[3]); assert ran == ['order', 'camera']                       # up to date; gpus is not a setting
+            os.remove(os.path.join(d, 'out', 'order', 'a.txt'))
+            run(); assert ran == ['order', 'camera', 'order']                             # output missing: order again, same output
+            assert os.path.isdir(os.path.join(d, 'out', 'order.previous'))
+            n[0] = 1; open(os.path.join(d, 'out', 'order', 'a.txt'), 'w').write('edited')
+            run(); assert ran[3:] == ['order', 'camera']                                   # output changed -> order, then camera
+            run(camera=dict(gain_e_per_adu=0.5)); assert ran[5:] == ['camera']            # a camera setting: camera only
+            open(movie, 'w').write('movie 2, longer')
+            run(camera=dict(gain_e_per_adu=0.5)); assert ran[6:] == ['order', 'camera']   # the movie changed
+            assert pipe().stale('camera') == ['settings changed: camera']
+        finally:
+            if not pre and os.path.islink(link): os.remove(link)
 
 
 if __name__ == '__main__':

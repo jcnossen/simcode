@@ -25,15 +25,23 @@ Check the install. The test takes about 3 minutes on an RTX 3090:
 CUDA_VISIBLE_DEVICES=0 python tests/test_fast_paths.py
 ```
 
+To try the pipeline before using your own data, simulate a small example movie (6000 frames of 120 x 120 px, about 10 s) with a matching config, and run the pipeline on it (sections 2 and 3 explain the config and the stages):
+
+```bash
+python examples/simulate_movie.py /data/simcode_example
+python -m simcode.pipeline /data/simcode_example/quickstart.yaml
+```
+
+This takes about 6 minutes on one RTX 3090: camera calibration, the in-situ PSF fit from the movie, and the localization. The movie is simulated with our setup, so its config uses the shipped model `m1809` and skips the training; for your own microscope the pipeline trains a model.
+
 ## 2. Describe your setup
 
-Write one YAML file per movie. A key you leave out takes the default of our setup: NA 1.49 oil, 700 nm emission, 108.33 nm pixels, sCMOS camera, blocked frame order. The camera gain and offset are the exception: left out, they are taken from the movie. A misspelled key is reported as an error.
+Write one YAML file per movie. A key you leave out takes the default of our setup: NA 1.49 oil, 700 nm emission, 108.33 nm pixels, sCMOS camera, pattern frames [[0, 1, 2], [3, 4, 5]]. The camera gain and offset are the exception: left out, they are taken from the movie. A misspelled key is reported as an error.
 
 ```yaml
 name: "my_movie"           # quote it if it looks like a number
 movie: /data/my_movie.tif
 out: /data/simcode_out/my_movie
-gpus: [0]                  # GPUs the pipeline may use (the default [1, 2] is our lab server)
 optics:
   pixel_um: 0.10833        # pixel size in the sample
   NA: 1.49
@@ -44,14 +52,11 @@ camera:
   gain_e_per_adu: 0.56     # leave out to have it measured from the movie
   offset_adu: 99.3         # leave out: estimated from the movie (with a warning), or give dark frames: dark: /data/dark.tif
 pattern:
-  frame_order: blocked     # blocked: 3 steps of orientation 1, then 3 of orientation 2; interleaved: orientations alternate
+  pattern_frames: [[0, 1, 2], [3, 4, 5]]   # frames of a cycle per orientation, in phase-step order; alternating: [[0, 2, 4], [1, 3, 5]]
   pitch_px: [1.6, 2.8]     # search range of the pattern period (camera pixels)
-beads:                     # optional: bead z-stacks of the same setup, as a start for the PSF fit
-  stacks: [/data/beads/zstack1.tif, /data/beads/zstack2.tif]
-  dz_um: 0.010             # z step of the stacks
-  sign: 1                  # stage direction (+1 or -1; ours is -1)
-  offset_adu: 99.3         # only if the stacks were recorded with another camera offset / gain than the movie
 ```
+
+No bead z-stack is needed: the PSF is estimated from the movie itself (section 3). Bead stacks are optional, as an extra starting point for the PSF fit (`beads:`, see `simcode/pipeline/configs/1809_2.yaml`).
 
 To see the settings the pipeline will use, without running anything or writing any file, run `python -m simcode.pipeline my_movie.yaml --show`. A worked example of our own setup is in `simcode/pipeline/configs/1809_2.yaml`.
 
@@ -67,26 +72,34 @@ The stages run in this order. Each stage writes its own folder under `out`.
 
 1. **order, camera:** the frame order of the pattern, and the camera gain, offset and read noise.
 2. **spots, cammaps, tracks:** finds the isolated emitters in the movie and makes the per-pixel camera maps.
-3. **beads** (only with bead stacks) and **psf:** fit the in-situ PSF of your microscope. Steps 1–3 took about 20 minutes on our movie.
+3. **psf:** estimates the PSF of your microscope from the movie itself (below). Steps 1–3 took about 20 minutes on our movie.
 4. **train:** trains the detector and emitter networks on simulations of your PSF and camera. This takes by far the longest: about 7 hours on one RTX 3090.
 5. **process:** localizes the movie. Our 120000-frame movie took about 1 hour on one RTX 3090. The tables go to `out/process/run_<id>/`.
 6. **report:** writes `out/report/report.html`, with the checks of every stage, the PSF, the pattern and the FRC.
 
+How the PSF is estimated, without a z-stack:
+
+- The spots and tracks stages find isolated emitters in the movie and cut out their blinking events over consecutive frames.
+- The psf stage fits a vectorial PSF model to those events with torch-psf's in-situ fit: Zernike aberrations plus focus, then a blur term, then the polarization (photoselection) terms. It starts from several focus guesses and keeps the best fit.
+- The same fit gives the first estimate of the illumination pattern.
+- A held-out check refits on half of the events and tests on the other half. The result is `out/psf/calib.psf.zip` (the torch-psf PSF file format, with the camera calibration), the PSF the networks are trained on. `docs/PSF_POLARIZATION.md` has the details.
+
 Useful to know:
 
 - Each stage ends with checks. A failed check stops the run and says why. Add `--force` to continue anyway.
-- You can stop a run at any time. When you run the same command again, it skips the finished stages (and, in the train stage, the networks that are already trained).
-- `--redo psf` redoes that stage and every stage after it.
+- You can stop a run at any time. When you run the same command again, it continues where it stopped and skips the finished stages that are up to date.
+- A finished stage runs again by itself when something it depends on changed: one of its settings in the config, one of its output files (missing or edited), the outputs of an earlier stage, the movie, or the files of the model it uses. So after a change you just run the same command: a new PSF, for example, means the model is retrained and the movie localized again. Its previous results are kept once, as `<stage>.previous`.
+- `--redo psf` redoes that stage and every stage after it, without any change.
 - `--stages` runs only some stages, for example `--stages order,camera`.
-- `--gpus 0` overrides the GPU list of the config.
-- `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then start the real run with `--redo train`, because the train stage of the quick run counts as finished.
+- The pipeline uses GPU 0. With `--gpus 1,0` (or `gpus: [1, 0]` in the config) each stage takes the first GPU in that list with enough free memory.
+- `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then run the same command without `--quick`: the training and the later stages run again.
 - Already have a model for this microscope? Put `train: {model: <model folder>}` in the config to skip the training. For example, use the `out/train` folder of an earlier run. The other stages still run, so the movie gets its own camera and PSF calibration. The models we ship (`m1809`, `g13`) only fit our own setup.
 - To localize more movies with a model you already have, there are two ways:
   - Write a config with `train: {model: ...}` as above. This is the recommended way.
   - Run the localization directly with the first movie's calibration:
 
     ```bash
-    python -m simcode.run --movie <movie.tif> --calib <out>/psf/calib.json --model <out>/train --out <dir>
+    python -m simcode.run --movie <movie.tif> --calib <out>/psf/calib.psf.zip --model <out>/train --out <dir>
     ```
 
 ## 4. Use the results

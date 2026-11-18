@@ -1,7 +1,7 @@
 """SIMCODE v2 automatic per-dataset pipeline (docs/AUTO_PIPELINE.md): one config file -> camera calibration, optional bead
 fit, spot finding, isolated tracks, in-situ PSF, model, processing, report.
 
-  python -m simcode.pipeline <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 1,2] [--force]
+  python -m simcode.pipeline <config.yaml> [--stages all|camera,spots,...] [--redo psf] [--quick] [--gpus 0,1] [--force]
 
   python -m simcode.pipeline <setup.py> [--only name1,name2] [--show]      a Python file that defines `config` or a list `configs`
 
@@ -16,8 +16,9 @@ The set-up (config key 'setup', simcode/setups/) chooses the stages and supplies
 (reader / channel layout, PSF model, networks, solve); there is one pipeline class for all of them.
 Stages (run order) of the widefield set-up: order, camera, spots, cammaps, tracks, beads, psf, train, process, report
 (with more than one channel: order, camera, registration); of the fourpi set-up: registration, process, report. Each writes
-<out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped unless redone (--redo <stage> redoes
-it and every later stage). Each summary has 'checks' = [{name, value, ok, warn_only}]; a failed check that is not warn_only
+<out>/<stage>/summary.json last (atomic) = its done marker; a finished stage is skipped while it is up to date and runs again
+when its settings, its output files, an earlier stage's outputs or its input files changed (STAGE_SETTINGS, stale());
+--redo <stage> redoes it and every later stage regardless. Each summary has 'checks' = [{name, value, ok, warn_only}]; a failed check that is not warn_only
 stops the run unless --force."""
 import argparse, glob, json, os, re, shutil, subprocess, sys, time
 # as runs/psfmatch/env.sh: triton needs the env's bin/ (ptxas) on PATH; no native-JIT kernels (set before torch is imported)
@@ -34,6 +35,20 @@ METHODS = dict(order='determine_frame_order', camera='calibrate_camera', registr
                process='process', report='report')
 STAGES = list(METHODS)
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Dependency chain: a finished stage is run again when (1) a config setting it uses changed, (2) one of its output files is
+# missing or changed, (3) the outputs of an earlier stage changed (e.g. a new PSF -> the model is retrained -> the movie is
+# processed again), or (4) an input file outside <out> changed (the movie, an existing model's files). Each stage records
+# these in summary.json 'record': inputs (settings, upstream = output digest per earlier stage, files) and outputs
+# ({relative path: [size, mtime_ns, sha256]} of the files in <out>/<stage>/, without summaries and logs).
+# Settings per stage (config keys); the set-up's own section (e.g. 'fourpi') counts for every stage. gpus, name, out are not
+# settings of any stage (they do not change the results).
+STAGE_SETTINGS = dict(order=['movie', 'pattern.pattern_frames', 'pattern.cache'], camera=['movie', 'camera'],
+                      registration=['movie', 'camera', 'optics', 'registration', 'channels'], spots=['optics', 'spots', 'camera'],
+                      cammaps=['camera', 'spots'], tracks=['spots', 'psf.nsamples'], beads=['beads', 'optics'],
+                      psf=['optics', 'pattern', 'psf', 'camera'], train=['train', 'optics', 'hints'],
+                      process=['process', 'train.model', 'pattern', 'optics'], report=[])
+FULL_HASH_MAX = 1 << 30            # files up to 1 GB are fingerprinted by sha256; larger ones (a movie) by size and mtime
 
 
 class StageFailed(RuntimeError):
@@ -274,17 +289,112 @@ class LocalizationPipeline:
         default = the result table locs_p2_net; kind='solve': the pattern solve)"""
         return self._dataset(2, **kw)
 
+    # ---- dependency chain (STAGE_SETTINGS above)
+    @staticmethod
+    def _file_print(path, old=None):
+        """[size, mtime_ns, sha256 or None]; the sha256 of `old` is reused when size and mtime are unchanged"""
+        import hashlib
+        st = os.stat(path); fp = [st.st_size, st.st_mtime_ns]
+        if old and list(old[:2]) == fp: return fp + [old[2]]
+        if st.st_size > FULL_HASH_MAX: return fp + [None]
+        h = hashlib.sha256()
+        with open(path, 'rb') as f:
+            for b in iter(lambda: f.read(1 << 22), b''): h.update(b)
+        return fp + [h.hexdigest()]
+
+    def _outputs(self, name, old=None):
+        """fingerprints of the files in <out>/<stage>/ (without summaries and logs)"""
+        old = old or {}; out = {}; d = os.path.join(self.out, name)
+        for root, _, files in os.walk(d):
+            for fn in files:
+                if fn.startswith('summary') or fn.endswith(('.log', '.part', '.tmp')): continue
+                p = os.path.join(root, fn); rel = os.path.relpath(p, d)
+                out[rel] = self._file_print(p, old.get(rel))
+        return out
+
+    @staticmethod
+    def _digest(outputs):
+        import hashlib
+        return hashlib.sha256(json.dumps({k: v[2] if v[2] else v[:2] for k, v in sorted(outputs.items())}).encode()).hexdigest()
+
+    def _settings(self, name):
+        keys = STAGE_SETTINGS.get(name, []) + sorted(set(self.setup.defaults()) - set(C.DEFAULTS))
+        def get(k):
+            v = self.c
+            for part in k.split('.'): v = v.get(part) if isinstance(v, dict) else None
+            return v
+        return json.loads(json.dumps({k: get(k) for k in keys}, sort_keys=True, default=str))
+
+    def _input_files(self, name):
+        """files outside <out> that a stage reads: the movie (stages reading it) and an existing model's files (train / process)"""
+        F = {}
+        if 'movie' in STAGE_SETTINGS.get(name, []) and self.c.get('movie') and os.path.exists(self.c['movie']):
+            F['movie'] = self.c['movie']
+        if name in ('train', 'process') and (self.c['train']['model'] or self.c['process']['model']):
+            from simcode import config
+            try:
+                M = config.model_set(self.c['process']['model'] or self.c['train']['model'])
+                for k, v in M.items():
+                    if k in ('name', 'folder') or not isinstance(v, str) or not v: continue
+                    p = config.resolve(v)
+                    if os.path.isfile(p): F['model.' + k] = p
+            except (KeyError, FileNotFoundError, ValueError):
+                pass
+        return F
+
+    def _inputs(self, name, old_files=None):
+        old_files = old_files or {}
+        up = {}
+        for s in self.stages[:self.stages.index(name)]:
+            S = self.summary(s)
+            if S is not None: up[s] = (S.get('record') or {}).get('outputs_sha256')
+        files = {k: self._file_print(p, (old_files.get(k) or {}).get('print')) for k, p in self._input_files(name).items()}
+        return dict(settings=self._settings(name), upstream=up,
+                    files={k: dict(path=self._input_files(name)[k], print=v) for k, v in files.items()})
+
+    def stale(self, name):
+        """why a finished stage must run again ([] = up to date; None = a stage recorded before the dependency chain existed)"""
+        S = self.summary(name); R = (S or {}).get('record') or {}
+        if S is None: return ['not done']
+        if 'inputs' not in R: return None
+        I, why = self._inputs(name, R['inputs'].get('files')), []
+        ch = sorted(k for k in set(I['settings']) | set(R['inputs']['settings']) if I['settings'].get(k) != R['inputs']['settings'].get(k))
+        if ch: why.append('settings changed: ' + ', '.join(ch))
+        ch = sorted(s for s in set(I['upstream']) | set(R['inputs']['upstream']) if I['upstream'].get(s) != R['inputs']['upstream'].get(s))
+        if ch: why.append('outputs of an earlier stage changed: ' + ', '.join(ch))
+        old = R['inputs'].get('files', {})
+        ch = sorted(k for k in set(I['files']) | set(old) if (I['files'].get(k) or {}).get('print') != (old.get(k) or {}).get('print'))
+        if ch: why.append('input files changed: ' + ', '.join(ch))
+        rec = R.get('outputs') or {}
+        miss = sorted(k for k in rec if not os.path.exists(os.path.join(self.out, name, k)))
+        if miss: why.append('output files missing: ' + ', '.join(miss[:5]) + (' ...' if len(miss) > 5 else ''))
+        else:
+            now = self._outputs(name, rec)
+            ch = sorted(k for k in rec if now.get(k, [None, None, None])[2] != rec[k][2] or (rec[k][2] is None and now.get(k)[:2] != rec[k][:2]))
+            if ch: why.append('output files changed: ' + ', '.join(ch[:5]) + (' ...' if len(ch) > 5 else ''))
+        return why
+
     def _stage(self, name, force=False, redo=False):
         if name not in self.stages:
             raise ValueError(f'{name!r} is not a stage of the {self.setup.name} set-up ({self.stages})')
         if redo: self._invalidate(name)
         if self.done(name):
-            self.log(f'[{name}] done (summary.json exists), skipped'); return self.summary(name)
+            why = self.stale(name)
+            if why is None or not why:
+                self.log(f'[{name}] done (summary.json exists' + (', recorded before the dependency checks' if why is None else ', up to date')
+                         + '), skipped'); return self.summary(name)
+            # start clean: the stages resume from their own files (a trainer's final.pt, the PSF fit, chunk files), which are
+            # stale now; the previous folder is kept once as <stage>.previous
+            d = os.path.join(self.out, name); prev = d + '.previous'
+            if os.path.exists(prev): shutil.rmtree(prev)
+            os.replace(d, prev)
+            self.log(f'[{name}] runs again: ' + '; '.join(why) + f' (previous results moved to {name}.previous)')
         from simcode.util.proctitle import set_title
         set_title('auto-' + name[:7])
         self.log(f'[{name}] start')
         from simcode.util import runconfig as RC
         t0 = time.time(); started = RC.now()
+        inputs = self._inputs(name)
         code = {k: v for k, v in RC.code_record(dme=False).items() if k in ('version', 'git_commit', 'git_dirty', 'modified_files', 'untracked_package_files')}
         own = getattr(self.setup, 'st_' + name, None)          # a stage the set-up implements, else the pipeline's
         S = own(self) if own is not None else getattr(self, '_st_' + name)()
@@ -293,6 +403,9 @@ class LocalizationPipeline:
         S['record'] = dict(started=started, finished=RC.now(), code=code, host=RC.socket.gethostname(),
                            config_sha256=RC.hashlib.sha256(json.dumps(self.c, sort_keys=True, default=str).encode()).hexdigest(),
                            config_file=self.c.get('_file'), acquisition_record='../run_config.json')
+        S['record']['inputs'] = inputs
+        S['record']['outputs'] = self._outputs(name)
+        S['record']['outputs_sha256'] = self._digest(S['record']['outputs'])
         fails = [k for k in S.get('checks', []) if not k.get('ok') and not k.get('warn_only')]
         warns = [k for k in S.get('checks', []) if not k.get('ok') and k.get('warn_only')]
         for k in warns: self.log(f'[{name}] WARNING check: {k["name"]} = {k.get("value")}')
@@ -443,7 +556,7 @@ def main(argv=None):
     ap.add_argument('--stages', default='all', help='comma list of ' + ','.join(STAGES) + ' or all')
     ap.add_argument('--redo', default='', help='comma list: redo these stages and every later one')
     ap.add_argument('--quick', action='store_true', help='stage e: few steps per trainer (plumbing test)')
-    ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 1,2')
+    ap.add_argument('--gpus', default='', help='override the config GPU list, e.g. 0,1')
     ap.add_argument('--force', action='store_true', help='continue after failed checks')
     ap.add_argument('--only', default='', help='comma list of acquisition names (a Python file with several `configs`)')
     ap.add_argument('--show', action='store_true', help='print the resolved config(s) and exit (nothing is written)')
