@@ -82,7 +82,7 @@ How the PSF is estimated, without a z-stack:
 - The spots and tracks stages find isolated emitters in the movie and cut out their blinking events over consecutive frames.
 - The psf stage fits a vectorial PSF model to those events with torch-psf's in-situ fit: Zernike aberrations plus focus, then a blur term, then the polarization (photoselection) terms. It starts from several focus guesses and keeps the best fit.
 - The same fit gives the first estimate of the illumination pattern.
-- A held-out check refits on half of the events and tests on the other half. The result, `out/psf/calib.json`, is the PSF the networks are trained on. `docs/PSF_POLARIZATION.md` has the details.
+- A held-out check refits on half of the events and tests on the other half. The result is `out/psf/calib.psf.zip` (the torch-psf PSF file format, with the camera calibration), the PSF the networks are trained on. `docs/PSF_POLARIZATION.md` has the details.
 
 Useful to know:
 
@@ -99,7 +99,7 @@ Useful to know:
   - Run the localization directly with the first movie's calibration:
 
     ```bash
-    python -m simcode.run --movie <movie.tif> --calib <out>/psf/calib.json --model <out>/train --out <dir>
+    python -m simcode.run --movie <movie.tif> --calib <out>/psf/calib.psf.zip --model <out>/train --out <dir>
     ```
 
 ## 4. Use the results
