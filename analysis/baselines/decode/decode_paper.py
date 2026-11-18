@@ -50,7 +50,10 @@ ZMAX = 0.2
 
 def psf_luts(spec, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
     """DECODE LUT [lz, ls+1, ls+1, R, R] of a zpsf PSF: lut[iz, iy, ix] = image of an emitter at (fx, fy) = (ix, iy) / ls - 0.5
-    px from the centre pixel R // 2, height z = iz / (lz - 1) zmax um"""
+    px from the centre pixel R // 2, height z = iz / (lz - 1) zmax um. A calibration (json / psf.zip) is rendered directly at the
+    nodes (direct_luts: = the SIMCODE training simulator's LUT, no spline in between)"""
+    if spec.endswith('.json') or spec.endswith('.psf.zip'):
+        return direct_luts(spec, lz, ls, R, zmax, dev)
     psf = zpsf.load(spec, dev, zmax=max(zmax, 0.2))
     sub = torch.arange(ls + 1, device=dev, dtype=torch.float32) / ls - 0.5
     out = torch.zeros(lz, ls + 1, ls + 1, R, R, device=dev)
@@ -61,6 +64,28 @@ def psf_luts(spec, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
             imgs = torch.cat([psf.eval(FX[s:s + 128], FY[s:s + 128], R, z=z[s:s + 128])[0] for s in range(0, len(FX), 128)])
         out[iz] = imgs.reshape(ls + 1, ls + 1, R, R)
     return out, psf.desc
+
+
+def direct_luts(calib, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
+    """(2026-11-18, DECODE v4) the LUT of psf_luts rendered directly from the calibration's VectorialPSF at every node, at the
+    calibration's sampling (npupil / oversample: the in-situ fit's), as simcode.simulate.simulator.Simulator renders its LUT: the
+    same images as the SIMCODE training PSF to float precision (the earlier path went through a 6 x oversampled knot spline,
+    ~1e-4 of the peak off). A per-pattern-angle calibration enters as the mean of the two angle images (DECODE is pattern-free)."""
+    from simcode import psf as spsf
+    from simcode.config import resolve
+    path = resolve(calib); c = spsf.read_calib(path)
+    which = [0, 1] if spsf.has_angle_psf(c) else [None]
+    sub = torch.arange(ls + 1, device=dev, dtype=torch.float32) / ls - 0.5
+    zs = torch.arange(lz, device=dev, dtype=torch.float32) / (lz - 1) * zmax
+    Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
+    pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
+    out = 0
+    for a in which:
+        psf = spsf.PSF.load(path, roisize=R, device=dev, angle=a)
+        with torch.no_grad():
+            out = out + torch.cat([spsf.render(psf, p) for p in pos.split(1024)]) / len(which)
+    desc = f'calib:{os.path.basename(path)} direct (npupil {psf.npupil}, oversample {psf.os}) angles={"avg(0,1)" if len(which) == 2 else "None"}'
+    return out.reshape(lz, ls + 1, ls + 1, R, R), desc
 
 
 def setup_psf(spec, halo, zmax=ZMAX):

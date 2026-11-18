@@ -95,7 +95,7 @@ def render_calib(calib, device='cuda', P=41, xmax=1.5, zmax=0.2, sub=6, hz=0.01,
     which = [0, 1] if (angles == 'avg' and ang) else ([angles] if isinstance(angles, int) else [None])
     stacks = []
     for a in which:
-        psf = spsf.PSF.load(path, roisize=P, oversample=3, device=device, angle=a)
+        psf = spsf.PSF.load(path, roisize=P, device=device, angle=a)   # the calibration's sampling (npupil / oversample; default 64 / 3)
         L = spline(psf, zmax, oversample=sub, dz_um=hz, xy_limit=xmax)
         stacks.append(L.knots)
     zs = torch.stack(stacks).mean(0)
