@@ -16,7 +16,7 @@ SETS = {'1809_2': dict(v2_old=f'{D}/1809/cover1/2/runs/simcode_v2_psfv2_20261115
 def stats(kind, path):
     if kind == 'v2':
         from simcode.dataset import Dataset
-        tab = 'locs_p2_net' if os.path.exists(f'{path}/locs_p2_net.hdf5') else 'locs_p2'
+        tab = 'locs_p2_solve' if os.path.exists(f'{path}/locs_p2_solve.hdf5') else 'locs_p2'
         L = Dataset.from_run(path, table=tab).select(16.25)
         F = L.numpy(); T = dict(x=F['pos'][:, 0].astype(np.float64), y=F['pos'][:, 1].astype(np.float64), f=F['frame'].astype(np.int64),
                                 sx=F['crlb'][:, 0].astype(np.float64), sy=F['crlb'][:, 1].astype(np.float64))

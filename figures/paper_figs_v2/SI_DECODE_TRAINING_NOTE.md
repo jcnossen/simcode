@@ -54,16 +54,20 @@ Rows: the fair-FRC set (disjoint windows, max sigma < 0.15 px, crop).
 
 - The older model was trained on the averaged in-situ PSF with the real-data ranges and a long on-time (10.8 sums).
 - On these data the PSF-v2-trained model pixel-locks more, in all photon terciles (dimmest 0.065 / 0.057, brightest 0.091 / 0.105).
-- The paper therefore uses, for each dataset, the DECODE model that gives DECODE the better result:
-  - simulations: the converged model;
-  - 1809/2 (Fig. 3): the older real-data model;
-  - 2.5 nM/2 (Fig. 4): to be decided by the fair FRC once that model's rerun is done.
-- The cause was not isolated. A PSF-model mismatch at the pixel level is plausible: the PSF v2 and averaged-PSF images differ by 9-15 % (relative L1) at 50-200 nm height.
+- **All DECODE results of the paper use the converged PSF-v2 models** (user decision 2026-11-16: the fairest option; same PSF v2 as
+  every other method, the published training settings, converged):
+  - simulations and 1809/2 (Fig. 3): dec_m1809v3 (fair FRC 28.9 nm, RSP 0.599, 0.865 M fair-FRC rows);
+  - 2.5 nM/2 (Fig. 4): dec_m25v3, trained with the same protocol on the 2.5 nM PSF v2 (from scratch, frozen at epoch 300 with metrics flat for ~100 epochs).
+- **Earlier models, as a check:** 1809/2 with the older real-data model dec_1809_2: fair FRC 28.1 nm, RSP 0.611, 1.04 M rows; 2.5 nM/2
+  with dec_2.5nM_2: fair FRC 42.1 vs 37.0 nm (dec_m25v3), RSP 0.62 vs 0.52, rows 1.53 M vs 1.47 M; |c1| x / y 0.037 / 0.041 vs
+  0.032 / 0.031 in the fair-FRC set and 0.128 / 0.133 vs 0.065 / 0.083 over all rows (out/decode_checks/v3/real_compare_2.5nM_2.json,
+  real_pixlock_2.5nM_2.md). Simulations with the earlier dec_sim1809v2: out/decode_checks/v3/compare_sims.md.
+- The cause of the stronger pixel locking of the PSF-v2 model on 1809/2 was not isolated. A PSF-model mismatch at the pixel level is plausible: the PSF v2 and averaged-PSF images differ by 9-15 % (relative L1) at 50-200 nm height.
 
 ## SIMCODE's own residual on the same data, for comparison
 - **Simulations**, with the same rule and metrics as DECODE:
-  - Bias 0.6-1.5 nm (D0.5-D4: x 0.6-1.4, y 1.3-1.5 nm); isolated emitters 0.7 / 0.9 nm.
-  - |c1| 0.09-0.12.
+  - Bias 0.8-1.9 nm (D0.5-D4: x 0.8-1.3, y 1.4-1.9 nm; 2026-11-17 final method, before: x 0.6-1.4, y 1.3-1.5 nm); isolated emitters (true pattern) 0.9 / 0.7 nm at 500 photons.
+  - |c1| 0.09-0.14 (before: 0.09-0.12).
   - The SIMCODE pixel-bias study (out/pixel_bias_simcode/STATUS.md) traces most of this to the p >= 0.63 selection. Without the p cut its isolated-emitter bias is 0.1-0.2 nm.
 - **Real 1809/2**, fair-FRC rows:
 
@@ -72,6 +76,8 @@ Rows: the fair-FRC set (disjoint windows, max sigma < 0.15 px, crop).
 | SIMCODE | 0.032 / 0.048 |
 | SMLM | 0.008 / 0.006 |
 | SIMFLUX | 0.005 / 0.003 |
+
+(SIMCODE values of the 2026-11-16 table. The final method's pass-2 solve gives the same sub-pixel statistics: on the raw, not drift-corrected positions of the fair-FRC rows |c1| x / y = 0.075 / 0.087 before and 0.075 / 0.085 after.)
 
 ## Sources
 - Training: out/paper2/decode/lutpsf/dec_m1809v3/ (train_log.csv, eval_log.jsonl, train_v3.json; frozen weights model_e0300_converged.pt). Code: analysis/baselines/decode/train_v3.py (preset m1809), branch decodev3.

@@ -8,64 +8,64 @@
   "SIMCODE"
  ],
  "paths": {
-  "smlm": "out/paper2/2.5nM_2/baselines_psfv2/smlm/smlm.npy",
-  "sf": "out/paper2/2.5nM_2/baselines_psfv2/sf/sf.hdf5",
-  "decode": "out/paper2/2.5nM_2/decode/locs_fixed.npz",
-  "v2": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final"
+  "smlm": "/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2/smlm/smlm.npy",
+  "sf": "/home/jc/simcode2/out/paper2/2.5nM_2/baselines_psfv2/sf/sf.hdf5",
+  "decode": "/home/jc/simcode2/out/paper2/2.5nM_2/decode/locs_v3.npz",
+  "v2": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_final_20261117"
  },
  "frc_nm": [
   48.52,
   33.977591036414566,
-  42.11805555555556,
-  23.784313725490197
+  36.98170731707317,
+  23.507751937984494
  ],
  "n_raw": [
   2428529,
   2432634,
-  11055312,
-  6594973
+  8079001,
+  6590205
  ],
  "n_frc": [
   805795,
   134166,
-  1529311,
-  5370329
+  1474591,
+  4941554
  ],
  "n_disjoint": [
   1972141,
   134375,
-  11055312,
-  5370501
+  8079001,
+  4941649
  ],
  "n_all": [
   12117748,
   826634,
-  24781485,
-  10778942
+  18510340,
+  9934580
  ],
  "frc_nm_nofilter": [
   52.06008583690987,
   33.977591036414566,
-  50.96638655462185,
-  23.784313725490197
+  39.77049180327869,
+  23.507751937984494
  ],
  "frc_nm_30frame_halves": [
   44.43223443223443,
   26.955555555555556,
-  32.00527704485488,
-  22.216117216117215
+  31.671018276762403,
+  22.175502742230346
  ],
  "pearson": [
-  0.6263059588316936,
-  0.21907376153071936,
-  0.6188269067267705,
-  0.7136308988466794
+  0.6263059661726428,
+  0.21907469406768082,
+  0.5185401009833894,
+  0.7177406622407078
  ],
  "rmsd": [
-  0.31535500112128945,
-  0.3219868930186831,
-  0.3171226595633205,
-  0.3153768598930449
+  0.31535499351195445,
+  0.32200626939080607,
+  0.3197451585254728,
+  0.3156422246834486
  ],
  "drift_ptp_nm": [
   [
@@ -73,33 +73,36 @@
    89.5999984741211
   ],
   [
-   33.5,
-   68.0
+   32.79999923706055,
+   68.0999984741211
   ],
   [
-   60.900001525878906,
-   111.19999694824219
+   50.29999923706055,
+   92.5999984741211
   ],
   [
-   54.79999923706055,
-   93.0999984741211
+   55.70000076293945,
+   93.5
   ]
  ],
  "drift_info": [
   {
-   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_smlm_drift.npy"
+   "cached": "/home/jc/simcode2/out/sigadopt/fig/2.5nM_2_fig4_psfv2_smlm_drift.npy"
   },
   {
-   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_sf_drift.npy"
+   "cached": "/home/jc/simcode2/out/sigadopt/fig/2.5nM_2_fig4_psfv2_sf_drift.npy"
   },
   {
-   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_decode_drift.npy"
+   "cached": "/home/jc/simcode2/out/sigadopt/fig/2.5nM_2_fig4_psfv2_decode_drift.npy"
   },
   {
-   "cached": "out/paper_v2psf/baselines_psfv2/2.5nM_2_fig4_psfv2_v2_drift.npy"
+   "chosen": "('smooth', 72, 48)",
+   "n": 4941554,
+   "dme": "2.0.0 (/home/jc/simcode2/external/drift-estimation, git 374300f)",
+   "s": 19.8
   }
  ],
- "note": "SIMCODE: networks trained on the in-situ PSF v2 + v2 camera; detection p >= 0.63. All methods: precision < 0.15 px (16.25 nm) on their own reported uncertainty: CRLB for SMLM / SIMFLUX, network uncertainty for DECODE, calibrated uncertainty for SIMCODE. SMLM / SIMFLUX: 2D fits with the in-situ PSF v2 + v2 camera.",
+ "note": "SIMCODE: the pass-2 pattern solve (emitter networks with the joint position / intensity covariance, brightness noise estimated with the pattern), its posterior mean and posterior uncertainty (on held-out simulations rms(error / posterior sigma) = 1.2-1.3 per photon bin with the estimated brightness noise, i.e. the posterior sigma is 20-30 % smaller than the actual error); detection p >= 0.63. DECODE: retrained on the in-situ PSF v2 with its published training settings.",
  "aois": [
   [
    [
@@ -133,74 +136,74 @@
  },
  "psf_panel": {
   "conditions": {
-   "calib": "models/insitu/calib_2p5nM_m2_psf_v2.json",
-   "photons_median": 1174.6702880859375,
-   "n_rows": 5370329,
-   "bg_px_frame": 3.477656364440918,
-   "bg_n": 3698642,
+   "calib": "/home/jc/simcode2-sigadopt-paper/models/insitu/calib_2p5nM_m2_psf_v2.json",
+   "photons_median": 1166.200439453125,
+   "n_rows": 4941554,
+   "bg_px_frame": 3.4227075576782227,
+   "bg_n": 3698555,
    "bg_q25_q75": [
-    2.9585087299346924,
-    4.066405653953552
+    2.9125202894210815,
+    3.9967297315597534
    ],
    "rn2_e": 1.9540470110432628,
-   "z_median_um": 0.10560426969259978,
+   "z_median_um": 0.09858480270922186,
    "z_quantiles_um": {
-    "q05": 0.02246560032099488,
-    "q25": 0.058393240388929867,
-    "q75": 0.1782149307074398,
-    "q95": 0.30938908532500264
+    "q05": 0.020008728602647803,
+    "q25": 0.05334233603358271,
+    "q75": 0.16859895500004293,
+    "q95": 0.30655944943261143
    },
-   "z_nan_frac": 0.011917891808863107,
+   "z_nan_frac": 0.010038340165866851,
    "pattern": {
-    "pitch_nm": 224.34593193863248,
-    "depth": 0.7917026281356812,
+    "pitch_nm": 224.34237133138117,
+    "depth": 0.7861653566360474,
     "angles_deg": [
-     1.233860015344356,
-     91.39195931718402
+     1.2315509360533157,
+     91.39146583146483
     ],
     "pitch_nm_per_angle": [
-     224.18489890524165,
-     224.5069649720233
+     224.18456506145668,
+     224.50017760130564
     ],
     "depth_per_angle": [
-     0.7791308760643005,
-     0.8042743802070618
+     0.7733086347579956,
+     0.7990220785140991
     ],
     "relint": [
-     1.0495417214968492,
-     1.0476331855521412,
-     1.0282361898380223,
-     0.9585477425318992,
-     0.9645761598876986,
-     0.9514650006933886
+     1.0510107805921245,
+     1.0477544247528352,
+     1.0288049523606726,
+     0.9590295715155128,
+     0.9630472389019914,
+     0.9503530318768637
     ],
-    "source": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_v2_psfv2_final/pattern_est.pt"
+    "source": "/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/runs/simcode_final_20261117/pattern_est.pt"
    },
    "gain_e_per_adu": 0.4256,
    "focus_um": 0.2
   },
   "rms_mwaves": 72.3167657317655,
-  "z_um": 0.10560426969259978,
-  "collected": 0.7334493398666382,
-  "intensity_param": 1174.6702880859375,
-  "detected_photons": 861.5611473575846,
+  "z_um": 0.09858480270922186,
+  "collected": 0.7435199618339539,
+  "intensity_param": 1166.200439453125,
+  "detected_photons": 867.0933062329277,
   "crlb_nm": {
    "smlm": {
-    "x": 11.146495819091797,
-    "y": 11.900068283081055,
-    "z": 58.88988494873047,
+    "x": 11.076006889343262,
+    "y": 11.83716106414795,
+    "z": 58.32113265991211,
     "xy_zfixed": [
-     10.860129356384277,
-     11.049361228942871
+     10.799941062927246,
+     11.071730613708496
     ]
    },
    "sf": {
-    "x": 4.841216087341309,
-    "y": 5.012851715087891,
-    "z": 48.98761749267578,
+    "x": 4.850829601287842,
+    "y": 5.025063991546631,
+    "z": 48.67010498046875,
     "xy_zfixed": [
-     4.818660259246826,
-     4.9412407875061035
+     4.828189849853516,
+     4.960048675537109
     ]
    }
   },

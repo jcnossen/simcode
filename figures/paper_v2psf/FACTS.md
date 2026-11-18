@@ -169,3 +169,19 @@ Paths relative to the repository root unless absolute. RUN = /mnt/data/dmdsf/bn_
 - Selection: p >= 0.63 inside the crop and calibrated max(sx, sy) <= 12 nm (user decision 2026-11-13). Stored candidate cut p >= 0.3. [docs/METHOD.md stage 6 / production recipe; RUN/run_config.yaml l.18-19, 345, 355]
 - 1809_2 run: pass-2 selection n = 2 127 865 (12 nm rule), median photons 860; pass-1 n = 1 837 311. [RUN/summary.json]
 - Calibration fit: gate scenes rendered with the model's PSF -> analysis/psfmatch/fit_cal_set.py. The real-data multiplier sig_ph_real_mult was copied from the earlier calibrations (not re-measured). 2026-11-17: the multiplier and the _real calibrations were removed (real movies use the simulation-fitted cal_sim / cal_sim_pass2); x, y, z, p unchanged, sigma x1.00-1.11 (1809/2 pass 2) / x1.07-1.11 (2.5 nM pass 2); at 16.25 nm SIMCODE 1809/2 FRC 17.97 -> 17.97 nm, n 1 334 783 -> 1 324 604, RSP 0.599 -> 0.598; 2.5 nM FRC 23.78 -> 23.46 nm, n 5 370 329 -> 4 817 458, RSP 0.714 -> 0.669 (out/sigma_work/partA; figures not installed). [models/m1809/calib/calib_sc_hd_m1809_real.json note]
+
+## Final method (2026-11-17 / 18; package master 0dff72a0, figures branch finalfigs)
+- Networks: emitter networks with ONE joint (x, y, I_1..6) covariance (models-v2 weights; m25 fine-tuned the same way); no sigma factors
+  (kap_p, kap_I2, sig_a / sig_g, sig_ph, real-data multiplier) and no selection rescale g(u). [docs/METHOD.md stages 1, 4, 6]
+- Brightness noise c, c_a of the solve: estimated per run with the pattern on the clean emitter-windows (no fixed c = 0.1 any more):
+  1809/2 c 0.093, c_a 0.084; 2.5 nM/2 c 0.190, c_a 0.065. [RUN/run_config.json pattern.brightness_noise; RUN/pattern_est.json]
+- Kinetic model: both models fitted for every row and averaged by posterior weight (BIC penalty 2 ln 6). [docs/METHOD.md stage 4]
+- Tables per run: locs_p1_net, locs_p1_solve, locs_p2_net, locs_p2_solve. The paper's SIMCODE = locs_p2_solve (pass-2 solve: posterior
+  mean and posterior sd; user decision 2026-11-17); on held-out simulations rms(error / posterior sigma) = 1.2-1.3 per photon bin.
+- Runs: RUN = /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_final_20261117 and .../dnapaint/2.5nM/2/runs/simcode_final_20261117.
+- Fig 3 (1809/2; 0.15 px, p >= 0.63, fair FRC): SIMCODE FRC 18.1 nm (before 18.0), 1.349 M localizations (1.335 M), RSP 0.598 (0.599);
+  DECODE = dec_m1809v3: 28.9 nm (dec_1809_2 before: 28.1), 0.865 M (1.038 M), RSP 0.599 (0.611).
+- Fig 4 (2.5 nM/2): SIMCODE FRC 23.5 nm (23.8), 4.94 M (5.37 M), RSP 0.718 (0.714); DECODE = dec_m25v3: 37.0 nm (dec_2.5nM_2: 42.1),
+  1.47 M (1.53 M), RSP 0.519 (0.619).
+- The pass-2 network table (locs_p2_net) for comparison: 1809/2 FRC 21.2 nm on 1.06 M (on the same rows as the solve: 21.2 vs 17.6 nm);
+  2.5 nM/2 24.7 nm on 2.73 M. [out/sigadopt/study/real/]

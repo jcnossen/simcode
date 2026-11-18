@@ -1,20 +1,20 @@
 {
  "files": {
   "SMLM": {
-   "path": "out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
+   "path": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
    "mtime": 1794762405.0072734
   },
   "SIMFLUX": {
-   "path": "out/paper_figs_v2/si_dme_drift_sf_drift.npy",
+   "path": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_sf_drift.npy",
    "mtime": 1794762426.8373528
   },
   "DECODE": {
-   "path": "out/paper_figs_v2/si_dme_drift_decode_drift.npy",
-   "mtime": 1794762454.2634525
+   "path": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_decode_drift.npy",
+   "mtime": 1794949893.9935858
   },
   "SIMCODE": {
-   "path": "out/paper_figs_v2/si_dme_drift_v2_drift.npy",
-   "mtime": 1794779544.7025967
+   "path": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_v2_drift.npy",
+   "mtime": 1794951306.4121606
   }
  },
  "nframes": 120000,
@@ -30,12 +30,12 @@
    77.9
   ],
   "DECODE": [
-   47.9,
-   110.6
+   47.8,
+   112.1
   ],
   "SIMCODE": [
-   43.7,
-   101.4
+   43.5,
+   101.1
   ]
  },
  "range_nm": {
@@ -61,22 +61,22 @@
   ],
   "DECODE": [
    [
-    -17.6,
-    -76.8
+    -18.0,
+    -78.4
    ],
    [
-    30.4,
+    29.8,
     33.8
    ]
   ],
   "SIMCODE": [
    [
-    -17.3,
+    -17.0,
     -72.3
    ],
    [
-    26.4,
-    29.1
+    26.5,
+    28.9
    ]
   ]
  },
@@ -97,72 +97,72 @@
   },
   "SMLM - DECODE": {
    "all": [
-    1.86,
-    1.81
+    1.78,
+    1.82
    ],
    "slow": [
-    0.87,
-    0.87
+    0.89,
+    0.95
    ],
    "fast": [
-    1.61,
-    1.54
+    1.48,
+    1.52
    ]
   },
   "SMLM - SIMCODE": {
    "all": [
-    2.0,
+    2.02,
     1.93
    ],
    "slow": [
-    1.21,
-    1.08
+    1.23,
+    1.05
    ],
    "fast": [
-    1.46,
-    1.53
+    1.47,
+    1.54
    ]
   },
   "SIMFLUX - DECODE": {
    "all": [
-    4.25,
-    5.33
+    4.19,
+    5.48
    ],
    "slow": [
-    2.91,
-    4.64
+    3.0,
+    4.86
    ],
    "fast": [
-    2.93,
-    2.42
+    2.74,
+    2.35
    ]
   },
   "SIMFLUX - SIMCODE": {
    "all": [
-    3.79,
-    5.33
+    3.78,
+    5.24
    ],
    "slow": [
     2.83,
-    4.99
+    4.91
    ],
    "fast": [
-    2.27,
-    1.57
+    2.26,
+    1.55
    ]
   },
   "DECODE - SIMCODE": {
    "all": [
-    1.7,
-    1.65
+    1.66,
+    1.59
    ],
    "slow": [
-    0.68,
-    0.63
+    0.75,
+    0.52
    ],
    "fast": [
-    1.55,
-    1.51
+    1.46,
+    1.48
    ]
   }
  },
@@ -182,18 +182,18 @@
    "t": "window start + 3",
    "rows": "frc_fair steps 1-4: disjoint 6-frame windows, max(sigma) < 0.15 px, crop [5, 115) px; f + 6 <= F",
    "v2_selection_sigma_max_nm": 16.25,
-   "dme_version": "2.0.0 (external/drift-estimation, git 374300f)"
+   "dme_version": "2.0.0 (/home/jc/simcode2/external/drift-estimation, git 374300f)"
   },
   "methods": {
    "smlm": {
     "kind": "smlm",
-    "table": "out/paper2/1809_2/baselines_psfv2/smlm/smlm.npy",
+    "table": "/home/jc/simcode2/out/paper2/1809_2/baselines_psfv2/smlm/smlm.npy",
     "n_rows": 618591,
     "sigma_mean_px": [
      0.10909131914377213,
      0.10715122520923615
     ],
-    "cache": "out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
+    "cache": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_smlm_drift.npy",
     "cached": true,
     "auto_choice": {
      "kind": "smooth",
@@ -203,13 +203,13 @@
    },
    "sf": {
     "kind": "sf",
-    "table": "out/paper2/1809_2/baselines_psfv2/sf/sf.hdf5",
+    "table": "/home/jc/simcode2/out/paper2/1809_2/baselines_psfv2/sf/sf.hdf5",
     "n_rows": 211680,
     "sigma_mean_px": [
      0.04406445473432541,
      0.04664136841893196
     ],
-    "cache": "out/paper_figs_v2/si_dme_drift_sf_drift.npy",
+    "cache": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_sf_drift.npy",
     "cached": true,
     "auto_choice": {
      "kind": "smooth",
@@ -219,33 +219,33 @@
    },
    "decode": {
     "kind": "decode",
-    "table": "out/paper2/1809_2/decode/locs_fixed.npz",
-    "n_rows": 1037823,
+    "table": "/home/jc/simcode2/out/paper2/1809_2/decode/locs_v3.npz",
+    "n_rows": 865086,
     "sigma_mean_px": [
-     0.0992727130651474,
-     0.08955167233943939
+     0.10402648895978928,
+     0.09540299326181412
     ],
-    "cache": "out/paper_figs_v2/si_dme_drift_decode_drift.npy",
+    "cache": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_decode_drift.npy",
     "cached": true,
     "auto_choice": {
      "kind": "smooth",
-     "start_framesperbin": 200,
-     "segment_frames": 48
+     "start_framesperbin": 2000,
+     "segment_frames": 96
     }
    },
    "v2": {
     "kind": "v2",
-    "table": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_v2_psfv2_20261115",
-    "n_rows": 1334783,
+    "table": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/runs/simcode_final_20261117",
+    "n_rows": 1349239,
     "sigma_mean_px": [
-     0.08655429631471634,
-     0.08516056835651398
+     0.0737055316567421,
+     0.07337595522403717
     ],
-    "cache": "out/paper_figs_v2/si_dme_drift_v2_drift.npy",
-    "s": 7.3,
+    "cache": "/home/jc/simcode2/out/paper_figs_v2/si_dme_drift_v2_drift.npy",
+    "s": 2.3,
     "auto_choice": {
      "kind": "smooth",
-     "start_framesperbin": 1798,
+     "start_framesperbin": 1779,
      "segment_frames": 96
     }
    }

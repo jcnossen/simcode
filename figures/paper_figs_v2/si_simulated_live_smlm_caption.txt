@@ -1,4 +1,4 @@
-Caption draft: si_simulated_live_smlm (label fig:livesmlm), regenerated 2026-11-15 with model m1809 on the moving sim
+Caption draft: si_simulated_live_smlm (label fig:livesmlm), regenerated 2026-11-17 with model m1809 (final method: SIMCODE = the pass-2 pattern solve; DECODE = dec_m1809v3; previous version *_prev2) on the moving sim
 rendered with the in-situ PSF. Files: out/paper_figs_v2/si_simulated_live_smlm.{pdf,svg,png} (+ _values.json), SI table si_simulated_live_smlm_table.{md,csv,tex} (the figure's 4 methods: Jaccard 10 / 20 / 40 nm, FRC per block, RMS error;
 analysis/papersim/fig_moving_pp.py --table_only 1); internal comparison table si_simulated_live_smlm_internal_table.*; 6-method table incl.
 SIMFLUX with the true pattern: si_simulated_live_smlm_extended_table.md;
@@ -13,11 +13,11 @@ first 1000 are skipped, and is rendered as our density simulations: the in-situ 
 the sCMOS camera of that data set, and its photon and background levels (median 621 detected photons per 6-frame window, 1.94 photons/px/frame, mean
 on-time 20 frames). The reconstruction was divided into 64 blocks of 1000 frames, with each block resulting in a single reconstructed frame. One of the
 input frames, as well as the ground truth for a single reconstructed frame (frames 32 000-33 000: all positions of the labelling sites during the
-block), is shown in panel A, together with the reconstructions of that block (all localizations of the block; SIMCODE: localizations with calibrated
-precision <= 12 nm). A full reconstruction movie can be found in the supplemental media. To quantify the reconstruction accuracy, we computed the Jaccard
+block), is shown in panel A, together with the reconstructions of that block (all localizations of the block; SIMCODE: localizations with a detection
+probability >= 0.63 and a posterior precision < 0.15 px, the precision cut of the other figures). A full reconstruction movie can be found in the supplemental media. To quantify the reconstruction accuracy, we computed the Jaccard
 index of each method for each reconstructed frame against the ground truth (all trajectory points of the block). Panel B shows the mean Jaccard index over
 the 64 blocks for each method at 3 distance thresholds. SIMFLUX estimated its pattern from its SMLM localizations, which at this emitter density gives few
-converged fits; DECODE was retrained for this PSF, the emitter heights and the photon / background / density ranges. Because each block has ~0.9 million
+converged fits; DECODE was retrained for this PSF with its published training settings. Because each block has ~0.9 million
 ground-truth points, the Jaccard index mostly measures how much of the moving structure is covered, so it grows with the number of localizations; the
 localization error against the ground truth and the FRC per block are given in Table Sx.
 
@@ -26,10 +26,11 @@ localization error against the ground truth and the FRC per block are given in T
 | SMLM | 0.179 / 0.340 / 0.547 | 101 nm | 33.2 nm | 63 % | 306 436 |
 | SIMFLUX (estimated pattern) | 0.021 / 0.053 / 0.126 | n/a (< 200 rows per block) | 24.5 nm | 37 % | 23 959 |
 | SIMFLUX (true pattern, table only) | 0.051 / 0.122 / 0.249 | n/a | 12.0 nm | 8 % | 58 380 |
-| DECODE (dec_sim1809v2) | 0.421 / 0.698 / 0.912 | 57 nm | 20.3 nm | 28 % | 638 890 |
-| SIMCODE (σ <= 12 nm) | 0.431 / 0.716 / 0.916 | 44 nm | 10.4 nm | 4 % | 495 970 |
-Localizations in the shown block 32: SMLM 4739, SIMFLUX 288, DECODE 10 130, SIMCODE 8046.
-SIMCODE is best on every metric, including the Jaccard (narrowly ahead of DECODE: 0.431 vs 0.421 at 10 nm).
+| DECODE (dec_m1809v3) | 0.531 / 0.818 / 0.949 | 56 nm | 17.1 nm | 19 % | 795 406 |
+| SIMCODE (posterior σ < 0.15 px) | 0.588 / 0.848 / 0.963 | 46 nm | 12.8 nm | 9 % | 812 165 |
+| SIMCODE (posterior σ <= 12 nm, table only) | 0.533 / 0.808 / 0.953 | 45 nm | 11.7 nm | 6 % | 685 367 |
+Localizations in the shown block 32: SMLM 4739, SIMFLUX 288, DECODE 12 580, SIMCODE 12 907.
+SIMCODE is best on every metric (Jaccard 0.588 vs 0.531 for DECODE at 10 nm). 2026-11-15 values (SIMCODE sigma <= 12 nm, DECODE dec_sim1809v2): SIMCODE 0.431 / 0.716 / 0.916, 44 nm, 10.4 nm, 4 %, 495 970 rows; DECODE 0.421 / 0.698 / 0.912, 57 nm, 20.3 nm, 28 %, 638 890 rows.
 
 --- working notes ---
 Settings, code, open decisions and comparisons with earlier versions: si_simulated_live_smlm_notes_internal.txt (internal).

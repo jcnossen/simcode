@@ -7,25 +7,31 @@ PF = os.path.expanduser('~/simcode2/out/paper_figs_v2'); PS = os.path.expanduser
 f1 = lambda v, d=1: '-' if v is None or v != v else f'{v:.{d}f}'
 
 
+RS = os.path.expanduser('~/simcode2/out/sigadopt/study/real_sigma.json')       # real_sigma.py (median sigma of the fair-FRC rows)
+CR = os.path.expanduser('~/simcode2/out/papersim/common_rule'); CRO = os.path.expanduser('~/simcode2/out/decode_checks/v3/shadow/common_rule')
+
+
 def real(name):
     o, n = (json.load(open(f'{PF}/{name}{s}_values.json')) for s in ('_prev2', ''))
+    ds = name.split('_fig')[0]; M = json.load(open(RS)).get(ds, {}) if os.path.exists(RS) else {}
+    ms = dict(SIMCODE=[M.get(k, {}).get('median_sigma_nm') for k in ('v2_old', 'v2_new')], DECODE=[M.get(k, {}).get('median_sigma_nm') for k in ('dec_old', 'dec_new')])
     L = []
     for i, lab in enumerate(o['labels']):
         if lab not in ('SIMCODE', 'DECODE'): continue
         L.append(f"| {name} | {lab} | {o['n_frc'][i]} -> {n['n_frc'][i]} | FRC {f1(o['frc_nm'][i])} -> {f1(n['frc_nm'][i])} nm | "
-                 f"RSP {f1(o['pearson'][i], 3)} -> {f1(n['pearson'][i], 3)} | {f1(o.get('median_sigma_nm', [None] * 9)[i])} -> "
-                 f"{f1(n.get('median_sigma_nm', [None] * 9)[i])} |")
+                 f"RSP {f1(o['pearson'][i], 3)} -> {f1(n['pearson'][i], 3)} | {f1(ms[lab][0])} -> {f1(ms[lab][1])} |")
     return L
 
 
 def fig2(name):
     o, n = (json.load(open(f'{PF}/{name}{s}_values.json')) for s in ('_prev2', ''))
+    st = o['set']; co = json.load(open(f'{CRO}/{st}.json'))['methods']; cn = json.load(open(f'{CR}/{st}.json'))['methods']
     L = []
     for k in ('decode', 'v2'):
         a, b = o['methods'][k], n['methods'][k]
         L.append(f"| {name} | {a['label']} | {a['n']} -> {b['n']} | GT-FRC {f1(a['gt_frc_nm'])} -> {f1(b['gt_frc_nm'])} nm; frames to 30 nm "
                  f"{f1(a['ttf']['frames_to'].get('30'), 0)} -> {f1(b['ttf']['frames_to'].get('30'), 0)}; false pos. {f1(a['fp_3sigma'], 3)} -> "
-                 f"{f1(b['fp_3sigma'], 3)}; rms TP {f1(a['rms_tp_nm'])} -> {f1(b['rms_tp_nm'])} nm | - | {f1(a.get('med_sig_nm'))} -> {f1(b.get('med_sig_nm'))} |")
+                 f"{f1(b['fp_3sigma'], 3)}; rms TP {f1(a['rms_tp_nm'])} -> {f1(b['rms_tp_nm'])} nm | - | {f1(co[k].get('med_sig_nm'))} -> {f1(cn[k].get('med_sig_nm'))} |")
     return L
 
 
