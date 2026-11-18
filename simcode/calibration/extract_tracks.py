@@ -1,6 +1,6 @@
 """Extract isolated emitter tracks (raw ADU ROIs over consecutive frames) from a movie + SMLM localizations."""
 import argparse
-import numpy as np, h5py, tifffile
+import numpy as np, h5py
 from scipy.spatial import cKDTree
 import os
 
@@ -68,8 +68,9 @@ if __name__ == '__main__':
     print(f'{len(keep)} isolated tracks')
 
     # cut into samples of T frames (frames contiguous from first loc, includes frames where emitter is dim/missed)
-    tif = tifffile.TiffFile(a.movie)
-    H, W = tif.pages[0].shape
+    from simcode.io.movie import open_movie
+    mov = open_movie(a.movie)                  # every part of a multi-part TIFF (movie.tif, movie_X1.tif, ...), absolute frames
+    H, W = mov.shape[-2:]
     R = a.roi
     samples = []
     for t in keep:
@@ -83,16 +84,18 @@ if __name__ == '__main__':
             samples.append((s0, n, cx, cy, c[0] - cx, c[1] - cy, L['photons'][t].mean()))
     print(f'{len(samples)} samples of up to {a.T} frames')
 
-    frames_needed = sorted({s0 + k for s0, n, *_ in samples for k in range(n)})
     B = len(samples)
     rois = np.zeros((B, a.T, R, R), np.uint16); mask = np.zeros((B, a.T), bool); frames = -np.ones((B, a.T), np.int64)
-    fmap = {}
-    for fr in frames_needed:
-        fmap[fr] = tif.pages[fr].asarray()
-    for i, (s0, n, cx, cy, *_ ) in enumerate(samples):
-        for k in range(n):
-            rois[i, k] = fmap[s0 + k][cy:cy + R, cx:cx + R]
-            mask[i, k] = True; frames[i, k] = s0 + k
+    # the movie in blocks of 2000 frames (not every needed frame in memory at once)
+    by_block = {}
+    for i, (s0, n, *_ ) in enumerate(samples):
+        for k in range(n): by_block.setdefault((s0 + k) // 2000, []).append((s0 + k, i, k))
+    for blk in sorted(by_block):
+        F = mov.read(blk * 2000, (blk + 1) * 2000)
+        for fr, i, k in by_block[blk]:
+            cx, cy = samples[i][2], samples[i][3]
+            rois[i, k] = F[fr - blk * 2000, cy:cy + R, cx:cx + R].astype(np.uint16)
+            mask[i, k] = True; frames[i, k] = fr
     smp = np.array([s[2:] for s in samples], np.float64)
     np.savez_compressed(a.out, rois=rois, mask=mask, frames=frames, corner=smp[:, :2].astype(int),
                         xy_init=smp[:, 2:4], photons_smlm=smp[:, 4])
