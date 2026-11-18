@@ -44,5 +44,6 @@ configs = [
 ]
 
 # values derived in code: the camera maps use at most the frames the spot finder looks at (its spot mask ends there)
-SPOT_FRAMES = 30000
-configs = [c.updated(spots=dict(maxframe=SPOT_FRAMES), camera=dict(map_frames=min(20000, SPOT_FRAMES))) for c in configs]
+SPOT_FRAMES = None                         # null: the whole movie (the default); e.g. 30000 for the first 30000 frames only
+configs = [c.updated(spots=dict(maxframe=SPOT_FRAMES), camera=dict(map_frames=20000 if SPOT_FRAMES is None else min(20000, SPOT_FRAMES)))
+           for c in configs]

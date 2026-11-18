@@ -17,17 +17,23 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   psf.lut, psf.lut_sub, psf.lut_inner  deprecated (2026-11-18), accepted and ignored: the spline-table variant of the
                 in-situ PSF fit was removed; the psf stage always runs the direct vectorial fit (torch_psf fit_tracks), which
                 was the default (lut: false). lut: true logs a warning.
-  spots.maxframe  frames the spot finder and the tracks use (default 30000; null = the whole movie)
-  psf.nsamples  track samples of each PSF fit (default 8000; at most the samples there are)
-  psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (null = psf.nsamples: the start
-                fits are the base fits); the base fit from the chosen start then uses psf.nsamples
+  spots.maxframe  frames the spot finder and the tracks use (null = the whole movie, the default since 2026-11-18; it was 30000)
+  psf.nsamples  track samples of each PSF fit (default 32000 since 2026-11-18, was 8000; at most the samples there are). The
+                sampling sd of the fit falls as 1 / sqrt(nsamples); measured on 1809_2 (whole movie, 87468 samples): focus
+                3.8 / 2.8 / 1.9 nm, Zernike rms 2.6 / 2.4 / 1.1 mwaves, line blur sxx 5 / 2 / 4 x 1e-3 px^2, held-out paired NLL
+                bl - base 0.009 / 0.004 / 0.002 and ps3 - bl 0.003 / 0.002 / 0.002 nats per sample at 8000 / 16000 / 32000. The
+                fit time grows linearly (RTX 3090, 32000: base 134 s, bl 178 s, ps3 449 s)
+  psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
+                the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
+                base fits (the behaviour before 2026-11-18)
   psf.heldout_nsamples  cb1 samples of the held-out test (6000)
   psf.spread_k  sampling-spread diagnostic (2026-11-18): the cb0 fits and the held-out test repeated on spread_k independent
                 sample draws (default 3, i.e. 2 extra draws; 0 = off); the sd of focus, Zernikes, blur, gamma / zeta and of the
                 held-out NLL (and its paired differences) for a fit of psf.nsamples samples: psf/spread.json, summary 'spread',
                 report 'Sampling spread'. Each extra draw costs about one cb0 fit chain + one held-out test
-  psf.spread_nsamples  samples per draw (null = psf.nsamples; at most 3/4 of the cb0 samples). Smaller is cheaper; the sd is
-                scaled to psf.nsamples by sqrt(spread_nsamples / psf.nsamples)
+  psf.spread_nsamples  samples per draw (default 8000; null = psf.nsamples; at most 3/4 of the cb0 samples). The sd is scaled
+                to psf.nsamples by sqrt(spread_nsamples / psf.nsamples) (the 1 / sqrt(n) law held on 1809_2 for 8000 -> 32000
+                within the scatter of the estimates); draws of psf.nsamples cost about 3 x more (1809_2: ~15 instead of ~5 min each)
   train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
                 recipe's set); null: the trainer runs without it
 A Python config file can define `configs` / `config` as a function of keyword arguments (e.g. the 4Pi configs:
@@ -50,10 +56,10 @@ DEFAULTS = {
     'optics': dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
     'pattern': dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], cache=None, pitch_px=[1.6, 2.8]),
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
-    'spots': dict(maxframe=30000, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
+    'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
-    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=None, init_nsamples=None),
+    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
+                readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),

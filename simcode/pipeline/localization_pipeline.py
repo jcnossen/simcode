@@ -488,7 +488,7 @@ class LocalizationPipeline:
                      density_per_um2_window=float(m.sum()) / max(nf, 1) / area)
         chk = [dict(name='good spots per window > 1', value=stats['good_per_window'], ok=stats['good_per_window'] > 1),
                dict(name='median sigma / diffraction estimate in [0.9, 1.6]', value=s_med / C.sigma_px(c), ok=0.9 <= s_med / C.sigma_px(c) <= 1.6)]
-        if c['camera']['map_frames'] > nfr:
+        if min(c['camera']['map_frames'], open_movie(self.movie).n) > nfr:          # the maps use frames the spot mask does not cover
             chk.append(dict(name='camera.map_frames <= spots.maxframe (masks)', value=c['camera']['map_frames'], ok=False, warn_only=True))
         self.log('spots:', json.dumps(stats))
         return dict(stats=stats, sigma0=sig0, files=['spots.hdf5', 'spots_good.hdf5'], checks=chk)
