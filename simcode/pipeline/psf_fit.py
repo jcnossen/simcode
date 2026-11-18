@@ -225,12 +225,13 @@ def model_from_pt(pt, R, dev='cuda'):
     return F, float(S['gain'])
 
 
-def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.08, 0.15), tile=16, salt=1, dev='cuda', log=print,
+def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=None, tile=16, salt=1, dev='cuda', log=print,
             maps=None, keep_z=False):
     """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks; the refit on
     the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt).
     maps: per-pixel camera maps (load_maps) of the data model (the same for every PSF; None: each PSF's scalar offset /
-    read noise). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n[, z, I])}"""
+    read noise). zstarts: the z multi-start of the refit (um; default (0.1, 0.4, 0.75) x the PSF's zmax, = 0.02 / 0.08 / 0.15 um
+    at zmax 0.2). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n[, z, I])}"""
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
@@ -242,7 +243,7 @@ def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.
         with torch.no_grad():
             spl = [v.to_spline(R, (0.0, F.zmax), oversample=8, dz_um=0.01, zpad=3, xy_limit=2.0) for v in vm]
         h = heldout_tracks(tr, vm, readnoise_e=float(torch.exp(F.G['logrn'])) if rnp is None else rnp, zmax_um=F.zmax, groups=groups, ngroups=2,
-                           refit_psfs=spl, z_starts_um=zstarts, iters=iters)
+                           refit_psfs=spl, z_starts_um=zstarts or tuple(f * F.zmax for f in (0.1, 0.4, 0.75)), iters=iters)
         out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n') + (('z', 'I') if keep_z else ())}
         log(f'heldout {name}: nll/px {h["nll_per_px"]:.5f}, chi2/px {h["chi2_per_px"]:.4f} ({len(sel)} samples, {test})')
     return out
