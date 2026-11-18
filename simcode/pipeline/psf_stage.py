@@ -3,7 +3,9 @@
   2. bl     + line blur (stage 1 of out/psf3d/run_final.sh); its per-frame intensities -> pattern (k, phases)
   3. ps3    bl frozen + photoselection 3 (gamma, zeta; e_a perpendicular to the fitted k_a; run_final_ps.sh)
   4. held-out: 1-3 refitted on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit), paired NLL
-  5. calib.json (per axis) / calib_avg.json (angle-averaged, the network-set PSF) + camera maps, psf_images.npz"""
+  5. calib.psf.zip (per axis) / calib_avg.psf.zip (angle-averaged, the network-set PSF), with the camera and its maps: the
+     calibrations the later stages use (summary 'calib' / 'calib_avg'); the same content as calib json (calib.json /
+     calib_avg.json + camera_maps.npz, also written), psf_images.npy"""
 import json, math, os, shutil
 import numpy as np, torch
 from simcode.pipeline import psf_fit
@@ -136,4 +138,4 @@ def run(ds):
                 chk.append(dict(name=f'held-out NLL {k_} <= 0 (paired)', value=v, ok=v['mean'] <= 0, warn_only=True))
     summ = {n: {k: v for k, v in f.items() if k not in ('optics',)} for n, f in fits.items()}
     return dict(init=ini_note, centre_vs_z=cz, readnoise_e_model=rn, offset_model=off, fits=summ, pattern=pat, heldout=Hs if H is not None else None,
-                calib=os.path.join(d, 'calib.json'), calib_avg=os.path.join(d, 'calib_avg.json'), checks=chk)
+                calib=os.path.join(d, 'calib.psf.zip'), calib_avg=os.path.join(d, 'calib_avg.psf.zip'), checks=chk)
