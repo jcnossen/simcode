@@ -450,7 +450,7 @@ class LocalizationPipeline:
     # ---- stage a1: camera
     def _st_camera(self):
         from simcode.pipeline import camera
-        r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log)
+        r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log, dev=self.torch_dev(4))
         return r
 
     # ---- stage c1: spots
