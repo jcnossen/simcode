@@ -8,7 +8,8 @@ json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf
 FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset (localizations: torch_psf.dataset; SIMCODE's
 layer is simcode/dataset.py), TiffMovie, ArrayMovie, open_movie, solve_linear (closed-form I / bg of the variable
 projection; torch_psf.fit), Tracks, extract_rois, fit_tracks (in-situ PSF fit on tracks; torch_psf.estimation),
-spot_deviance, filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
+heldout_tracks / paired_nll / split_checkerboard (held-out check of a frozen PSF on track samples, the paired per-sample
+NLL difference, the checkerboard split; torch_psf.estimation), spot_deviance, filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
 convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
 
 SIMCODE-specific:
@@ -49,7 +50,7 @@ from torch_psf.movie import TiffMovie, ArrayMovie, open_movie
 from torch_psf.fit import solve_linear
 from torch_psf.spots import Tracks, extract_rois
 from torch_psf.detect import filter_frames
-from torch_psf.estimation import fit_tracks, spot_deviance
+from torch_psf.estimation import fit_tracks, spot_deviance, heldout_tracks, paired_nll, split_checkerboard
 from torch_psf.vectorial import gauss_blur_os, dipole_tensor
 from torch_psf.spline import emitter_height_pos_fn
 from torch_psf import psfzip as _pz

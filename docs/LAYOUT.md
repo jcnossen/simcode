@@ -111,7 +111,7 @@ simcode/
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
-    psf_fit.py                in-situ PSF fit of stage psf (torch_psf.insitu.fit_tracks with the sample selection and camera conversion; spline-table fit)
+    psf_fit.py                in-situ PSF fit of stage psf (torch_psf fit_tracks with the sample selection, camera conversion and photoselection hook; held-out check by torch_psf heldout_tracks)
     psf_stage.py              stage psf: multi-start in-situ PSF, line blur, photoselection, held-out, calibration files
     training.py               stage train: a PSF-matched model with the recipe of models/README.md, gate dumps, calibrations, acceptance, model.json
     acceptance.py             stage train acceptance on the gate dumps (sigma calibration, pass-2 vs pass-1 RMS / CRLB)

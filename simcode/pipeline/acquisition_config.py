@@ -14,6 +14,9 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 then the 3 of orientation 2; [[0, 2, 4], [1, 3, 5]]: the orientations alternate. The networks of this package
                 are trained for 2 orientations x 3 steps, so only that shape is accepted (in any frame order).
   camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)
+  psf.lut, psf.lut_sub, psf.lut_inner  deprecated (2026-11-18), accepted and ignored: the spline-table variant of the
+                in-situ PSF fit was removed; the psf stage always runs the direct vectorial fit (torch_psf fit_tracks), which
+                was the default (lut: false). lut: true logs a warning.
   train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
                 recipe's set); null: the trainer runs without it
 A Python config file can define `configs` / `config` as a function of keyword arguments (e.g. the 4Pi configs:
@@ -154,6 +157,10 @@ def validate(c):
         raise ValueError('camera.type: scmos | emccd')
     if c['psf']['blur'] not in ('none', 'line') or c['psf']['photosel'] not in (0, 3):
         raise ValueError('psf.blur: none | line; psf.photosel: 0 | 3')
+    if c['psf']['lut']:
+        import warnings
+        warnings.warn('psf.lut is deprecated and ignored: the spline-table PSF fit was removed, the psf stage runs the direct '
+                      'vectorial fit (the default, lut: false)', stacklevel=2)
     if c['channels'] is not None:
         from simcode.channels.layout import ChannelLayout
         ChannelLayout.from_config(c)                     # field checks (crop, mirror, equal crop sizes, names)

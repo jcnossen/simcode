@@ -35,8 +35,8 @@ def psf_images(pt, z=(0.0, 0.03, 0.06, 0.1, 0.15), R=15, dev='cuda'):
     F, _ = psf_fit.model_from_pt(pt, R, dev)
     with torch.no_grad():
         pos = torch.tensor([[0.0, 0.0, zz] for zz in z], device=dev)
-        p = F.psf_of(pos, F.G['focus'].expand(len(z)))
-        if p.dim() == 3: p = torch.stack([p, p], 1)
+        vm = F.angle_models()
+        p = torch.stack([vm[min(k, len(vm) - 1)].render(pos) for k in range(2)], 1)
     return p.cpu().numpy()          # [nz, 2 angles, R, R]
 
 
@@ -75,7 +75,7 @@ def run(ds):
     off = P['offset_adu'] if P['offset_adu'] is not None else cam['offset']
     starts = _inits(ds)
     kw = dict(optics=c['optics'], gain=cam['gain'], nsamples=P['nsamples'], iters=P['iters'], zmax=P['zmax_um'], readnoise_e=rn,
-              offset_adu=off, lut=P['lut'], lut_sub=P['lut_sub'], dev=dev, log=ds.log)
+              offset_adu=off, dev=dev, log=ds.log)
     out, fits = {}, {}
     def F(name, split='', **k):
         pre = os.path.join(d, f'fit_{name}' + (f'_{split}' if split else ''))
