@@ -87,11 +87,12 @@ How the PSF is estimated, without a z-stack:
 Useful to know:
 
 - Each stage ends with checks. A failed check stops the run and says why. Add `--force` to continue anyway.
-- You can stop a run at any time. When you run the same command again, it skips the finished stages (and, in the train stage, the networks that are already trained).
-- `--redo psf` redoes that stage and every stage after it.
+- You can stop a run at any time. When you run the same command again, it continues where it stopped and skips the finished stages that are up to date.
+- A finished stage runs again by itself when something it depends on changed: one of its settings in the config, one of its output files (missing or edited), the outputs of an earlier stage, the movie, or the files of the model it uses. So after a change you just run the same command: a new PSF, for example, means the model is retrained and the movie localized again. Its previous results are kept once, as `<stage>.previous`.
+- `--redo psf` redoes that stage and every stage after it, without any change.
 - `--stages` runs only some stages, for example `--stages order,camera`.
 - The pipeline uses GPU 0. With `--gpus 1,0` (or `gpus: [1, 0]` in the config) each stage takes the first GPU in that list with enough free memory.
-- `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then start the real run with `--redo train`, because the train stage of the quick run counts as finished.
+- `--quick` trains only a few steps per network. Use it once to test the whole chain; the quick model is not usable. Then run the same command without `--quick`: the training and the later stages run again.
 - Already have a model for this microscope? Put `train: {model: <model folder>}` in the config to skip the training. For example, use the `out/train` folder of an earlier run. The other stages still run, so the movie gets its own camera and PSF calibration. The models we ship (`m1809`, `g13`) only fit our own setup.
 - To localize more movies with a model you already have, there are two ways:
   - Write a config with `train: {model: ...}` as above. This is the recommended way.
