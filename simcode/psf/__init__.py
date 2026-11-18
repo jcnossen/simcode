@@ -9,7 +9,7 @@ FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset (local
 layer is simcode/dataset.py), TiffMovie, ArrayMovie, open_movie, solve_linear (closed-form I / bg of the variable
 projection; torch_psf.fit), Tracks, extract_rois, fit_tracks (in-situ PSF fit on tracks; torch_psf.estimation),
 heldout_tracks / paired_nll / split_checkerboard (held-out check of a frozen PSF on track samples, the paired per-sample
-NLL difference, the checkerboard split; torch_psf.estimation), spot_deviance, filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
+NLL difference, the checkerboard split; torch_psf.estimation), spot_deviance, maps_from_movie (per-pixel sCMOS offset / read-noise maps from a sparse movie; torch_psf.camera), filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
 convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
 
 SIMCODE-specific:
@@ -55,6 +55,7 @@ from torch_psf.vectorial import gauss_blur_os, dipole_tensor
 from torch_psf.spline import emitter_height_pos_fn
 from torch_psf import psfzip as _pz
 from torch_psf.psfzip import save_zip, is_psf_zip, convert_calibration
+from torch_psf.camera import maps_from_movie
 
 ANGLE_KEYS = ('psf_dipole_M_angle', 'psf_blur_angle_px2')
 ZIP_MAPS = '<psf.zip camera arrays>'        # camera.maps of a psf.zip calibration: the maps are arrays inside the zip
