@@ -207,6 +207,38 @@ def test_pipeline_class():
                 if not was and os.path.islink(l): os.remove(l)
 
 
+def test_dependency_chain():
+    """a finished stage runs again when its settings, its output files, an earlier stage's outputs or its input files change"""
+    from simcode.pipeline import localization_pipeline as P
+    with tempfile.TemporaryDirectory() as d:
+        movie = os.path.join(d, 'm.tif'); open(movie, 'w').write('movie 1')
+        link = os.path.join(P.REPO, 'out', 'auto', 'depchain'); pre = os.path.lexists(link)
+        ran, n = [], [0]
+        def pipe(**over):
+            p = P.LocalizationPipeline(dict(dict(name='depchain', movie=movie, out=os.path.join(d, 'out')), **over), log=lambda *a: None)
+            def order():
+                ran.append('order'); open(os.path.join(p.dir('order'), 'a.txt'), 'w').write(f'order {n[0]}'); return dict(checks=[])
+            def camera():
+                ran.append('camera'); open(os.path.join(p.dir('camera'), 'c.txt'), 'w').write('camera'); return dict(checks=[])
+            p._st_order, p._st_camera = order, camera
+            return p
+        try:
+            run = lambda **over: pipe(**over).run(only=['order', 'camera'])
+            run(); assert ran == ['order', 'camera']
+            run(); run(gpus=[3]); assert ran == ['order', 'camera']                       # up to date; gpus is not a setting
+            os.remove(os.path.join(d, 'out', 'order', 'a.txt'))
+            run(); assert ran == ['order', 'camera', 'order']                             # output missing: order again, same output
+            assert os.path.isdir(os.path.join(d, 'out', 'order.previous'))
+            n[0] = 1; open(os.path.join(d, 'out', 'order', 'a.txt'), 'w').write('edited')
+            run(); assert ran[3:] == ['order', 'camera']                                   # output changed -> order, then camera
+            run(camera=dict(gain_e_per_adu=0.5)); assert ran[5:] == ['camera']            # a camera setting: camera only
+            open(movie, 'w').write('movie 2, longer')
+            run(camera=dict(gain_e_per_adu=0.5)); assert ran[6:] == ['order', 'camera']   # the movie changed
+            assert pipe().stale('camera') == ['settings changed: camera']
+        finally:
+            if not pre and os.path.islink(link): os.remove(link)
+
+
 if __name__ == '__main__':
     for k, v in sorted(globals().items()):
         if k.startswith('test_') and callable(v):
