@@ -453,6 +453,13 @@ class LocalizationPipeline:
         r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log, dev=self.torch_dev(4))
         return r
 
+    def spot_frames(self):
+        """frames the spot finder and the tracks use: spots.maxframe, or the whole movie when it is null"""
+        mf = self.c['spots']['maxframe']
+        if mf is not None: return int(mf)
+        from simcode.io.movie import open_movie
+        return int(open_movie(self.movie).n)
+
     # ---- stage c1: spots
     def _st_spots(self):
         import torch
@@ -462,9 +469,10 @@ class LocalizationPipeline:
         self.torch_dev(4)
         sig0 = 1.15 * C.sigma_px(c)
         import hashlib
-        key = hashlib.sha1(json.dumps([self.movie, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0]).encode()).hexdigest()[:10]
+        nfr = self.spot_frames()
+        key = hashlib.sha1(json.dumps([self.movie, cam['gain'], cam['offset'], nfr, sp['sum'], sp['thr'], sp['roi'], sig0]).encode()).hexdigest()[:10]
         cd = os.path.join(d, 'chunks_' + key); os.makedirs(cd, exist_ok=True)     # chunk files keyed by the settings (no stale reuse)
-        L = spots.run(self.movie, cd, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
+        L = spots.run(self.movie, cd, cam['gain'], cam['offset'], nfr, sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
         m, s_med = spots.good(L, sp['chi2_max'], sp['snr_min'], sp['sigma_range'])
         spots.write_hdf5(L, os.path.join(d, 'spots.hdf5')); spots.write_hdf5(L[m], os.path.join(d, 'spots_good.hdf5'))
         nf = int(L['frame'].max()) + 1 if len(L) else 0
@@ -480,7 +488,7 @@ class LocalizationPipeline:
                      density_per_um2_window=float(m.sum()) / max(nf, 1) / area)
         chk = [dict(name='good spots per window > 1', value=stats['good_per_window'], ok=stats['good_per_window'] > 1),
                dict(name='median sigma / diffraction estimate in [0.9, 1.6]', value=s_med / C.sigma_px(c), ok=0.9 <= s_med / C.sigma_px(c) <= 1.6)]
-        if c['camera']['map_frames'] > sp['maxframe']:
+        if c['camera']['map_frames'] > nfr:
             chk.append(dict(name='camera.map_frames <= spots.maxframe (masks)', value=c['camera']['map_frames'], ok=False, warn_only=True))
         self.log('spots:', json.dumps(stats))
         return dict(stats=stats, sigma0=sig0, files=['spots.hdf5', 'spots_good.hdf5'], checks=chk)
@@ -502,12 +510,14 @@ class LocalizationPipeline:
     def _st_tracks(self):
         sp = self.c['spots']; d = self.dir('tracks')
         txt = self.sh(['-m', 'simcode.calibration.extract_tracks', '--movie', self.movie, '--locs', self.spots_file(),
-                       '--maxframe', sp['maxframe'], '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
+                       '--maxframe', self.spot_frames(), '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
                        '--out', os.path.join(d, 'tracks.npz')], os.path.join(d, 'tracks.log'))
         g = lambda pat: int(re.search(pat, txt).group(1))
         st = dict(tracks=g(r'(\d+) tracks spanning'), isolated=g(r'(\d+) isolated tracks'), samples=g(r'(\d+) samples of up to'))
-        need = 2 * self.c['psf']['nsamples']
-        return dict(stats=st, file='tracks.npz', checks=[dict(name=f'samples >= 2 x psf.nsamples ({need})', value=st['samples'], ok=st['samples'] >= need)])
+        n = self.c['psf']['nsamples']; need, low = 2 * n, 2 * min(n, 8000)
+        # fewer samples than 2 x psf.nsamples: the fits use what there is (warning); fewer than 2 x 8000 stops the run
+        return dict(stats=st, file='tracks.npz', checks=[dict(name=f'samples >= 2 x min(psf.nsamples, 8000) ({low})', value=st['samples'], ok=st['samples'] >= low),
+                                                         dict(name=f'samples >= 2 x psf.nsamples ({need})', value=st['samples'], ok=st['samples'] >= need, warn_only=True)])
 
     # ---- stage b: beads
     def _st_beads(self):

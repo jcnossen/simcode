@@ -1,10 +1,11 @@
 """In-situ PSF fit of the automatic pipeline (stage psf; docs/QUICKSTART.md, docs/PSF_POLARIZATION.md).
 
-fit(tracks, out, ...) = archive-2026-11-15:simcode/calibration/fit_psf_tracks.py as a function (same algorithm, defaults, random draws), but with the
-optics and the camera constants as arguments (fit_psf_tracks hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
-read noise 1.9 e). The fit itself is torch_psf fit_tracks (variable projection: per-frame I and per-(sample, pattern
+fit(tracks, out, ...) = archive-2026-11-15:simcode/calibration/fit_psf_tracks.py as a function (same algorithm and defaults),
+but with the optics and the camera constants as arguments (fit_psf_tracks hard-codes wavelength 0.70 um, pixel 0.10833 um, offset 99.3 ADU,
+read noise 1.9 e), and with a stable sample draw (2026-11-18, select(): by a hash of each sample's own key instead of a
+permutation of the list, so a few added / removed samples change only those few). The fit itself is torch_psf fit_tracks (variable projection: per-frame I and per-(sample, pattern
 angle) bg solved in closed form, per-sample x, y, z and the PSF parameters by Adam; it also fits the line blur); here: the
-sample selection (torch_psf split_checkerboard for the checkerboard split), the camera conversion, the pattern-angle
+sample selection (select(); torch_psf split_checkerboard for the checkerboard split), the camera conversion, the pattern-angle
 groups (frame % 6 // 3) and the photoselection hook (dip_tensor: gamma, zeta per pattern angle). Supported terms: Zernike
 5-21 + focus, blur 'none' | 'line', photoselection 0 | 3, --init-fit / --freeze-base. Writes <out>_psf.pt / _psf.json in
 the fit_psf_tracks format.
@@ -91,25 +92,60 @@ def tracks_of(D, idx, gain, offset_adu, dev):
     return tr, torch.where(mask, (frames % 6) // 3, torch.zeros_like(frames))
 
 
-def select(D, nsamples, parity=None, tile=16, rng=np.random):
-    """nsamples random samples (sorted), of one checkerboard parity (0 / 1; torch_psf split_checkerboard of the track
-    positions) or of all; rng: np.random (fit: the np.random.seed(0) state of fit_psf_tracks) or a RandomState"""
-    if parity is None:
-        return np.sort(rng.permutation(len(D['rois']))[:nsamples])
+def sample_keys(D):
+    """[B, 3] int64 key of each sample that depends only on the sample itself: its first frame and its crop corner (x, y).
+    (The samples of one track share the corner and differ in the first frame; two isolated tracks cannot share both.)"""
+    fr, co = np.asarray(D['frames']), np.asarray(D['corner'])
+    return np.stack([fr[:, 0], co[:, 0], co[:, 1]], 1).astype(np.int64)
+
+
+_GOLD = np.uint64(0x9E3779B97F4A7C15)
+
+
+def _mix64(h):
+    """splitmix64 finaliser of a uint64 array (wrap-around arithmetic)"""
+    h = (h ^ (h >> np.uint64(30))) * np.uint64(0xBF58476D1CE4E5B9)
+    h = (h ^ (h >> np.uint64(27))) * np.uint64(0x94D049BB133111EB)
+    return h ^ (h >> np.uint64(31))
+
+
+def sample_hash(D, salt=0):
+    """uint64 pseudo-random number per sample from its key (sample_keys) and the salt; uses no random-number state"""
+    K = np.ascontiguousarray(sample_keys(D)).view(np.uint64)
+    with np.errstate(over='ignore'):
+        h = _mix64(np.full(len(K), _GOLD * np.uint64(int(salt) + 1), dtype=np.uint64))
+        for j in range(K.shape[1]):
+            h = _mix64(h ^ (K[:, j] + _GOLD))
+    return h
+
+
+def candidates(D, parity=None, tile=16):
+    """indices of the samples of one checkerboard parity (0 / 1; torch_psf split_checkerboard of the track positions), or all"""
+    if parity is None: return np.arange(len(D['rois']))
     pos_ = D['corner'] + D['xy_init']
-    cand = np.flatnonzero(split_checkerboard(pos_[:, 0], pos_[:, 1], tile) == parity)
-    return np.sort(cand[rng.permutation(len(cand))[:nsamples]])
+    return np.flatnonzero(split_checkerboard(pos_[:, 0], pos_[:, 1], tile) == parity)
+
+
+def select(D, nsamples, parity=None, tile=16, salt=0):
+    """nsamples pseudo-random samples (sorted indices) of one checkerboard parity or of all (candidates()): the nsamples
+    candidates with the smallest sample_hash(D, salt). A sample's rank depends only on its own key (first frame, crop
+    corner), not on its position in the list, so adding or removing a few samples changes only those few in the
+    selection (a removed selected sample is replaced by the next one). Another salt gives another, independent draw."""
+    cand = candidates(D, parity, tile)
+    h, K = sample_hash(D, salt)[cand], sample_keys(D)[cand]
+    o = np.lexsort((K[:, 2], K[:, 1], K[:, 0], h))       # by hash; equal hashes (never in practice) by the key
+    return np.sort(cand[o[:nsamples]])
 
 
 def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='none', photosel=0, kdir=None, init_fit=None,
         freeze_base=False, init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, split='', tile=16, dev='cuda', log=print,
-        return_state=False):
-    """split: '' (all samples) or 'cb0' / 'cb1' (checkerboard parity 0 / 1)"""
+        return_state=False, salt=0):
+    """split: '' (all samples) or 'cb0' / 'cb1' (checkerboard parity 0 / 1); salt: the sample draw (select())"""
     torch.manual_seed(0); np.random.seed(0)
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     F = Fit(R, optics, dev, blur, photosel, kdir, init_fit, freeze_base, init_zcoef, readnoise_e, offset_adu, zmax=zmax)
-    sel = select(D, nsamples, int(split[2]) if split else None, tile)
+    sel = select(D, nsamples, int(split[2]) if split else None, tile, salt)
     tr, groups = tracks_of(D, sel, gain, F.G['offset'], dev)
     m, G = F.model, F.G
     m.blur = F.BL0                                                          # fixed blur of an init fit (None = none)
@@ -129,7 +165,7 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
     rep = est['report']
     res = dict(gain=gain, readnoise_e=torch.exp(G['logrn']).item(), offset=G['offset'].item(), focus=G['focus'].item(),
                NA=m.NA.item(), apod=m.apod.tolist(), zernike=m.zcoef.tolist(), resid_var=rep['resid_var'], zmax=zmax,
-               blur_mode=blur, photosel=photosel, split=split, tile=tile, nll_per_px=rep['nll_per_px'],
+               blur_mode=blur, photosel=photosel, split=split, tile=tile, salt=salt, nll_per_px=rep['nll_per_px'],
                nll_per_px_last_iter=rep['nll_per_px_before_last_step'], n_train=int(len(sel)), fit_s=t_fit,
                z_median=float(est['z'].median()), optics=optics, **F.extras_json())
     log(f'normalized residual var {res["resid_var"]:.4f}, nll/px (vectorial) {res["nll_per_px"]:.5f}, fit {t_fit:.0f} s')
@@ -164,12 +200,12 @@ def model_from_pt(pt, R, dev='cuda'):
     return F, float(S['gain'])
 
 
-def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.08, 0.15), tile=16, seed=1, dev='cuda', log=print):
+def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=(0.02, 0.08, 0.15), tile=16, salt=1, dev='cuda', log=print):
     """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks; the refit on
-    the PSF's spline table, 8 x oversampled, 10 nm in z). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n)}"""
+    the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n)}"""
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
-    sel = select(D, nsamples, int(test[2]) if test else None, tile, np.random.RandomState(seed))
+    sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
     out = {}
     for name, pt in pts.items():
         F, gain = model_from_pt(pt, R, dev)
@@ -188,6 +224,58 @@ def paired(H, a, b):
     """paired NLL difference b - a per sample: mean, se, z (torch_psf paired_nll)"""
     p = paired_nll(H[a]['nll'], H[b]['nll'])
     return dict(mean=p['mean'], se=p['se'], z=p['z'])
+
+
+def replicate_values(fits, H=None, names=('base', 'bl', 'ps3')):
+    """the numbers of one replicate of the fit chain (fits: {name: fit() result}; H: heldout() of its PSFs or None) whose
+    sampling spread spread() reports: focus / |Z| per fit, the Zernikes and line blur of bl (the final PSF's base),
+    gamma / zeta of ps3, held-out NLL / px per fit and the paired differences (mean NLL per sample) of consecutive fits"""
+    v = {}
+    for n in names:
+        if n not in fits or n == 'ps3': continue
+        v[f'{n}.focus_um'] = fits[n]['focus']; v[f'{n}.zernike_norm'] = float(np.linalg.norm(fits[n]['zernike']))
+    b = fits.get('bl', fits.get('base'))
+    v['bl.zernike'] = list(b['zernike'])
+    if 'blur_px2' in b: v['bl.blur_sxx_syy_sxy'] = list(b['blur_px2'][0])
+    if 'ps3' in fits:
+        v['ps3.gamma'] = fits['ps3'].get('gamma'); v['ps3.zeta'] = fits['ps3'].get('zeta')
+    v['fit_s'] = float(sum(fits[n].get('fit_s', 0.0) for n in names if n in fits))
+    if H is not None:
+        hn = [n for n in names if n in H]
+        for n in hn: v[f'heldout.{n}.nll_per_px'] = H[n]['nll_per_px']
+        for a, c in zip(hn[:-1], hn[1:]): v[f'heldout.{c}_minus_{a}'] = paired(H, a, c)['mean']
+    return v
+
+
+def spread(reps, n, N, nsamples=None):
+    """sampling spread of the replicate_values of k draws of n samples each from the same N candidates (select() with
+    salts 0 .. k-1; the draws overlap when n is not << N). Per quantity: mean, sd_draws (sd over the draws) and sd =
+    sd_draws / sqrt(1 - n / N): the sd of the fit for independent sets of n samples (the variance between draws of n of
+    N is (1 / n - 1 / N) / (1 / n) of it, sampling without replacement; None when n >= N, the draws are all the same).
+    List quantities (Zernikes, blur) per element, plus for the Zernikes the rms wavefront change sqrt(sum sd^2) (waves).
+    nsamples (default n): the size of the fit the sd is for; != n: sd x sqrt(n / nsamples) (1 / sqrt(n) scaling of the
+    sampling sd; sd_draw_size = the sd for independent sets of n)."""
+    k = len(reps); fpc = 1 / math.sqrt(1 - n / N) if n < N else None
+    nsamples = nsamples or n; sc = math.sqrt(n / nsamples)
+    out = dict(k=k, n=int(n), n_candidates=int(N), nsamples=int(nsamples), fpc=fpc, scale=sc, mean={}, sd_draws={}, sd={})
+    if sc != 1: out['sd_draw_size'] = {}
+    for q in reps[0]:
+        if q in ('fit_s', 'wall_s') or reps[0][q] is None: continue
+        X = np.array([r[q] for r in reps], dtype=float)
+        m, sdr = X.mean(0), X.std(0, ddof=1) if k > 1 else np.zeros_like(X[0])
+        sdn = sdr * fpc if fpc is not None else None
+        tl = (lambda a: a.tolist() if np.ndim(a) else float(a))
+        rms = lambda a: float(np.sqrt(np.sum(a ** 2)))
+        out['mean'][q] = tl(m); out['sd_draws'][q] = tl(sdr); out['sd'][q] = tl(sdn * sc) if sdn is not None else None
+        if sc != 1: out['sd_draw_size'][q] = tl(sdn) if sdn is not None else None
+        if q == 'bl.zernike':
+            out['sd_draws']['bl.zernike_rms'] = rms(sdr)
+            out['sd']['bl.zernike_rms'] = rms(sdn * sc) if sdn is not None else None
+            if sc != 1: out['sd_draw_size']['bl.zernike_rms'] = rms(sdn) if sdn is not None else None
+    out['fit_s_per_draw'] = float(np.mean([r['fit_s'] for r in reps]))
+    w = [r['wall_s'] for r in reps if 'wall_s' in r]
+    if w: out['wall_s_per_draw'] = float(np.mean(w))          # fits + held-out test of one extra draw
+    return out
 
 
 def pattern_from_intensities(st, pitch_px=(1.6, 2.8), dev='cuda', log=print):

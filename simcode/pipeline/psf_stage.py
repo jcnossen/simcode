@@ -3,10 +3,14 @@
   2. bl     + line blur (stage 1 of out/psf3d/run_final.sh); its per-frame intensities -> pattern (k, phases)
   3. ps3    bl frozen + photoselection 3 (gamma, zeta; e_a perpendicular to the fitted k_a; run_final_ps.sh)
   4. held-out: 1-3 refitted on checkerboard parity cb0, tested on cb1 (PSF frozen, x, y, z refit), paired NLL
+  4b. sampling spread (psf.spread_k >= 2): 1-3 on cb0 and the held-out test repeated on spread_k independent draws of
+     psf.spread_nsamples (default psf.nsamples; at most 3/4 of the cb0 samples) cb0 samples (psf_fit.select salt 0 .. k-1;
+     draw 0 = step 4 when the size is psf.nsamples); sd of focus, Zernikes, line blur, gamma / zeta, held-out NLL and the paired differences, for
+     independent sets of psf.nsamples samples (psf_fit.spread) -> spread.json, summary 'spread'
   5. calib.psf.zip (per axis) / calib_avg.psf.zip (angle-averaged, the network-set PSF), with the camera and its maps: the
      calibrations the later stages use (summary 'calib' / 'calib_avg'); the same content as calib json (calib.json /
      calib_avg.json + camera_maps.npz, also written), psf_images.npy"""
-import json, math, os, shutil
+import json, math, os, shutil, time
 import numpy as np, torch
 from simcode.pipeline import psf_fit
 from simcode import psf as spsf
@@ -77,23 +81,28 @@ def run(ds):
     kw = dict(optics=c['optics'], gain=cam['gain'], nsamples=P['nsamples'], iters=P['iters'], zmax=P['zmax_um'], readnoise_e=rn,
               offset_adu=off, dev=dev, log=ds.log)
     out, fits = {}, {}
-    def F(name, split='', **k):
-        pre = os.path.join(d, f'fit_{name}' + (f'_{split}' if split else ''))
+    def F(name, split='', salt=0, **k):
+        pre = os.path.join(d, f'fit_{name}' + (f'_{split}' if split else '') + (f'_s{salt}' if salt else ''))
         if os.path.exists(pre + '_psf.json') and not k.get('return_state') and os.path.getmtime(pre + '_psf.json') > os.path.getmtime(T):
             ds.log(f'psf: {pre} exists, reused'); return json.load(open(pre + '_psf.json'))
-        ds.log(f'psf: fit {name} {split}')
-        return psf_fit.fit(D, pre, split=split, **kw, **k)
-    # 1-2 (base from every start; the lowest NLL / px picks the start of the later fits)
+        ds.log(f'psf: fit {name} {split}' + (f' draw {salt}' if salt else ''))
+        return psf_fit.fit(D, pre, split=split, salt=salt, **dict(kw, **k))
+    # 1-2 (base from every start on psf.init_nsamples samples; the lowest NLL / px picks the start of the later fits; the base
+    # fit from that start on psf.nsamples samples)
+    ni = min(P['init_nsamples'] or P['nsamples'], P['nsamples'])
     ms = {}
-    for tag, kw0 in starts:
-        ms[tag] = F(f'base_{tag}', **kw0)
-    best = min(ms, key=lambda t: ms[t]['nll_per_px'])
-    ini = dict(starts)[best]; ini_note = dict(chosen=best, nll_per_px={t: v['nll_per_px'] for t, v in ms.items()},
+    if len(starts) > 1 or ni == P['nsamples']:
+        for tag, kw0 in starts:
+            ms[tag] = F(f'base_{tag}', **kw0) if ni == P['nsamples'] else F(f'start_{tag}', nsamples=ni, **kw0)
+        best = min(ms, key=lambda t: ms[t]['nll_per_px'])
+    else:
+        best = starts[0][0]
+    ini = dict(starts)[best]; ini_note = dict(chosen=best, nsamples=ni, nll_per_px={t: v['nll_per_px'] for t, v in ms.items()},
                                               focus={t: v['focus'] for t, v in ms.items()})
     ds.log(f'psf: start {best} chosen ({ini_note})')
-    fits['base'] = ms[best]
+    fits['base'] = ms[best] if ni == P['nsamples'] else F(f'base_{best}', **ini)
     for t in ms:
-        if t != best: fits[f'base_{t}'] = ms[t]
+        if t != best or ni < P['nsamples']: fits[f'base_{t}' if ni == P['nsamples'] else f'start_{t}'] = ms[t]
     fits['bl'], st = F(f'bl_{best}', blur=P['blur'], return_state=True, **ini)
     pat = psf_fit.pattern_from_intensities(st, c['pattern']['pitch_px'], dev=dev, log=ds.log)
     torch.save(st, os.path.join(d, 'bl_intensities.pt')); json.dump(pat, open(os.path.join(d, 'pattern.json'), 'w'), indent=1)
@@ -103,18 +112,41 @@ def run(ds):
     if P['photosel']:
         fits['ps3'] = F(f'ps3_{best}', photosel=3, kdir=pat['k'], init_fit=os.path.join(d, f'fit_bl_{best}_psf.pt'), freeze_base=True)
         last = 'ps3'
+    names = ['base', 'bl'] + (['ps3'] if P['photosel'] else [])
+    def cb0_chain(salt, ns=None):
+        """base / bl / ps3 from the chosen start on ns (default psf.nsamples) cb0 samples of draw `salt` -> ({name: fit},
+        {name: _psf.pt})"""
+        ns = ns or P['nsamples']; t = '' if ns == P['nsamples'] else f'_n{ns}'; k = dict(nsamples=ns)
+        pre = lambda n: os.path.join(d, f'fit_{n}_{best}{t}_cb0' + (f'_s{salt}' if salt else '') + '_psf.pt')
+        r = dict(base=F(f'base_{best}{t}', 'cb0', salt, **k, **ini), bl=F(f'bl_{best}{t}', 'cb0', salt, blur=P['blur'], **k, **ini))
+        if P['photosel']:
+            r['ps3'] = F(f'ps3_{best}{t}', 'cb0', salt, photosel=3, kdir=pat['k'], init_fit=pre('bl'), freeze_base=True, **k)
+        return r, {n: pre(n) for n in names}
     # 4: held-out
     H = None
     if P['heldout']:
-        F(f'base_{best}', 'cb0', **ini); F(f'bl_{best}', 'cb0', blur=P['blur'], **ini)
-        names = ['base', 'bl']
-        if P['photosel']:
-            F(f'ps3_{best}', 'cb0', photosel=3, kdir=pat['k'], init_fit=os.path.join(d, f'fit_bl_{best}_cb0_psf.pt'), freeze_base=True); names.append('ps3')
-        H = psf_fit.heldout(D, {n: os.path.join(d, f'fit_{n}_{best}_cb0_psf.pt') for n in names}, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
+        _, pts = cb0_chain(0)
+        H = psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
         np.savez(os.path.join(d, 'heldout.npz'), **{f'{n}_{k}': v[k] for n, v in H.items() for k in ('nll', 'chi2')})
         Hs = {n: {k: v for k, v in h.items() if k not in ('nll', 'chi2')} for n, h in H.items()}
         for a, b in zip(names[:-1], names[1:]): Hs[f'{b}_minus_{a}'] = psf_fit.paired(H, a, b)
         json.dump(Hs, open(os.path.join(d, 'heldout.json'), 'w'), indent=1)
+    # 4b: sampling spread: the cb0 chain (and its held-out NLL on the same cb1 samples) on spread_k independent draws
+    spread = None
+    if P['spread_k'] and P['spread_k'] >= 2:
+        nc = len(psf_fit.candidates(D, 0))
+        # draw size: psf.spread_nsamples (default psf.nsamples), at most 3/4 of the cb0 samples (the draws must differ)
+        ns = min(P['spread_nsamples'] or P['nsamples'], P['nsamples'], int(0.75 * nc)); same = ns == P['nsamples']
+        reps = []
+        for salt in range(P['spread_k']):
+            t0 = time.time(); fr, pts = cb0_chain(salt, ns)
+            h = None
+            if P['heldout']:
+                h = H if salt == 0 and same else psf_fit.heldout(D, pts, 'cb1', nsamples=P['heldout_nsamples'], dev=dev, log=ds.log)
+            reps.append(dict(psf_fit.replicate_values(fr, h, names), **({} if salt == 0 and same else {'wall_s': time.time() - t0})))   # draw 0 = step 4 (reused)
+        spread = psf_fit.spread(reps, ns, nc, nsamples=min(P['nsamples'], len(D['rois'])))   # sd for the main fit's sample count
+        json.dump(dict(spread, replicates=reps), open(os.path.join(d, 'spread.json'), 'w'), indent=1)
+        ds.log('psf: sampling spread (sd at psf.nsamples):', json.dumps({k: v for k, v in spread['sd'].items() if not isinstance(v, list)}))
     # 5: calib files
     shutil.copy(os.path.join(ds.out, 'cammaps', 'camera_maps.npz'), os.path.join(d, 'camera_maps.npz'))
     js, pt = os.path.join(d, f'fit_{last}_{best}_psf.json'), os.path.join(d, f'fit_{last}_{best}_psf.pt')
@@ -137,5 +169,5 @@ def run(ds):
             if '_minus_' in k_:
                 chk.append(dict(name=f'held-out NLL {k_} <= 0 (paired)', value=v, ok=v['mean'] <= 0, warn_only=True))
     summ = {n: {k: v for k, v in f.items() if k not in ('optics',)} for n, f in fits.items()}
-    return dict(init=ini_note, centre_vs_z=cz, readnoise_e_model=rn, offset_model=off, fits=summ, pattern=pat, heldout=Hs if H is not None else None,
+    return dict(init=ini_note, centre_vs_z=cz, readnoise_e_model=rn, offset_model=off, fits=summ, pattern=pat, heldout=Hs if H is not None else None, spread=spread,
                 calib=os.path.join(d, 'calib.psf.zip'), calib_avg=os.path.join(d, 'calib_avg.psf.zip'), checks=chk)

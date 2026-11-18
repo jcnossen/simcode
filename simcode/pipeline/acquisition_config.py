@@ -17,6 +17,17 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
   psf.lut, psf.lut_sub, psf.lut_inner  deprecated (2026-11-18), accepted and ignored: the spline-table variant of the
                 in-situ PSF fit was removed; the psf stage always runs the direct vectorial fit (torch_psf fit_tracks), which
                 was the default (lut: false). lut: true logs a warning.
+  spots.maxframe  frames the spot finder and the tracks use (default 30000; null = the whole movie)
+  psf.nsamples  track samples of each PSF fit (default 8000; at most the samples there are)
+  psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (null = psf.nsamples: the start
+                fits are the base fits); the base fit from the chosen start then uses psf.nsamples
+  psf.heldout_nsamples  cb1 samples of the held-out test (6000)
+  psf.spread_k  sampling-spread diagnostic (2026-11-18): the cb0 fits and the held-out test repeated on spread_k independent
+                sample draws (default 3, i.e. 2 extra draws; 0 = off); the sd of focus, Zernikes, blur, gamma / zeta and of the
+                held-out NLL (and its paired differences) for a fit of psf.nsamples samples: psf/spread.json, summary 'spread',
+                report 'Sampling spread'. Each extra draw costs about one cb0 fit chain + one held-out test
+  psf.spread_nsamples  samples per draw (null = psf.nsamples; at most 3/4 of the cb0 samples). Smaller is cheaper; the sd is
+                scaled to psf.nsamples by sqrt(spread_nsamples / psf.nsamples)
   train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
                 recipe's set); null: the trainer runs without it
 A Python config file can define `configs` / `config` as a function of keyword arguments (e.g. the 4Pi configs:
@@ -42,7 +53,7 @@ DEFAULTS = {
     'spots': dict(maxframe=30000, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
+                readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=None, init_nsamples=None),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
@@ -157,6 +168,16 @@ def validate(c):
         raise ValueError('camera.type: scmos | emccd')
     if c['psf']['blur'] not in ('none', 'line') or c['psf']['photosel'] not in (0, 3):
         raise ValueError('psf.blur: none | line; psf.photosel: 0 | 3')
+    mf = c['spots']['maxframe']
+    if mf is not None and (not isinstance(mf, int) or isinstance(mf, bool) or mf <= 0):
+        raise ValueError(f'spots.maxframe: null (the whole movie) or a number of frames > 0, not {mf!r}')
+    for k_ in ('nsamples', 'heldout_nsamples', 'init_nsamples', 'spread_nsamples'):
+        v = c['psf'][k_]
+        if not (v is None and k_ in ('init_nsamples', 'spread_nsamples')) and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
+            raise ValueError(f'psf.{k_}: a number of samples > 0' + (' or null (= psf.nsamples)' if k_ in ('init_nsamples', 'spread_nsamples') else '') + f', not {v!r}')
+    k = c['psf']['spread_k']
+    if not isinstance(k, int) or isinstance(k, bool) or k < 0 or k == 1:
+        raise ValueError(f'psf.spread_k: 0 (no sampling-spread diagnostic) or the number of sample draws >= 2, not {k!r}')
     if c['psf']['lut']:
         import warnings
         warnings.warn('psf.lut is deprecated and ignored: the spline-table PSF fit was removed, the psf stage runs the direct '

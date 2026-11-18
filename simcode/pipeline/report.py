@@ -75,6 +75,18 @@ def run(ds):
         parts.append(_tab(fr, ['fit', 'nll/px', 'resid var', 'focus um', '|Z| waves', 'blur px2', 'gamma', 'zeta', 'z median', 'fit s']))
         if ps.get('heldout'):
             parts.append('<h3>Held-out (fit cb0, test cb1)</h3>' + _tab([[k, v] for k, v in ps['heldout'].items()]))
+        sp_ = ps.get('spread')
+        if sp_:
+            fp, sc = sp_['fpc'], sp_.get('scale', 1.0)
+            if fp:
+                txt = (f'sd = the sd over the draws x {fp:.2f} (1 / sqrt(1 - n / N)): the sd of a fit on an independent set of n samples'
+                       + (f', x {sc:.2f} (sqrt(n / psf.nsamples)) for the {sp_["nsamples"]} samples of the PSF fit' if sc != 1 else '')
+                       + f'. One draw (fits + held-out test): {sp_.get("wall_s_per_draw", float("nan")):.0f} s.')
+            else:
+                txt = f'every draw uses all {sp_["n_candidates"]} cb0 samples: no spread estimate (psf.nsamples or psf.spread_nsamples < the cb0 samples).'
+            parts.append(f'<h3>Sampling spread ({sp_["k"]} draws of {sp_["n"]} of the {sp_["n_candidates"]} cb0 samples)</h3><p>{html.escape(txt)}</p>')
+            parts.append(_tab([[q, sp_['mean'].get(q), sp_['sd_draws'].get(q), sp_['sd'].get(q)] for q in sp_['sd_draws']],
+                              ['quantity', 'mean', 'sd over draws', f'sd ({sp_.get("nsamples", sp_["n"])} samples)']))
         im = os.path.join(ds.out, 'psf', 'psf_images.npy')
         if os.path.exists(im):
             P = np.load(im); nz = P.shape[0]; fig, ax = plt.subplots(3, nz, figsize=(2 * nz, 6))
