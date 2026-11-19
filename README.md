@@ -28,6 +28,8 @@ More in the docs:
 - `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset` = `torch_psf.Dataset` + SIMCODE's loaders and selection: load, select, drift, render, FRC, hdf5 / Picasso / ThunderSTORM files); `docs/DATASET_FORMAT.md`: the field layout
 - `docs/LAYOUT.md`: the package tree with one line per directory and file (and what was renamed on 2026-11-15)
 - `docs/CLEANUP_LOG.md`: the 2026-11 cleanup (what was removed, renamed, and how results were checked)
+- `docs/PSF_POLARIZATION.md`: the in-situ PSF model and its polarization terms
+- `docs/TORCH_PSF.md`: what SIMCODE requires of torch-psf (one import point, the pin, unchanged rendered pixels) and the pending migration to torch-psf's unified PSF classes
 
 The repository holds two comparisons and what they need: the SIMCODE preprint against SIMCODE v2 (this pipeline, the
 preprint's model and the paper's baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`), and 4Pi-SIMFLUX as published
