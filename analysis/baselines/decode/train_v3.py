@@ -61,7 +61,8 @@ PRESETS = {
                 vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
                        "phot_max": 16000.0, "dens": [4.0, 80.0]}),
     # (2026-11-18) DECODE v4 = the m1809 / m25 presets with the in-situ PSF v3 (out/psf_v3; frozen copies out/train_v3/calib, fit
-    # sampling npupil 64 / oversample 2, LUT rendered directly: decode_paper.direct_luts) and its emitter-height range
+    # sampling npupil 64 / oversample 2; trained with the LUT rendered directly from it, since 2026-11-19 decode_paper.setup_psf renders
+    # with simcode.psf.calib_psf, the integrated spline) and its emitter-height range
     # emitter_z_range_um [0, 0.2] um (LUT 0-0.2 um, emitter z U(0, 200) nm), everything else unchanged
     'm1809v4': dict(psf=os.path.join(MAIN, 'out/train_v3/calib/calib_1809_2_psf_v3.json'), zmax_um=0.2,
                     vover={"med": 600.0, "lsd": 0.7, "th": 60.0, "life": 2.0, "bg": [6.0, 30.0], "read": 3.28, "label_min": 60.0,

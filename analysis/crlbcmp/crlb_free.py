@@ -21,7 +21,7 @@ def main(scen, seeds, ntarget=3500, calib=''):
     os.makedirs(OUT, exist_ok=True)
     CD.a.calib = GA.gate_calib(calib)
     T = 6
-    sim, rpsf, lut = CD.models(T)
+    sim, rpsf = CD.models(T)
     for sc in scen:
         for seed in seeds:
             fo = f'{OUT}/{sc}__s{seed}.npz'
@@ -42,7 +42,7 @@ def main(scen, seeds, ntarget=3500, calib=''):
                 psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device='cuda')
                 ck = int(os.environ.get('GATE_PSF_CHUNK', '0')) or len(ai)
                 for i in range(0, len(ai), ck):
-                    a_ = ai[i:i + ck]; psS[a_] = CD.psf_stack(rpsf, G['x'][a_], G['y'][a_], G['z'][a_], sim.focus)
+                    a_ = ai[i:i + ck]; psS[a_] = CD.psf_stack(rpsf, G['x'][a_], G['y'][a_], G['z'][a_])
                 Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
                 full, _ = CR.two_stage_bounds(Cb['cov_or'], G, tg, o, T)
                 n = len(G['x'])

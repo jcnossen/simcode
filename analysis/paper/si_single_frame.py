@@ -48,7 +48,7 @@ def read_frame(path, i):
 def psf_fwhm(calib_path, z_um, device='cpu'):
     """pixel-integrated FWHM (px) of the PSF model along x and y at height z_um: value of the centre pixel vs sub-pixel offset"""
     import torch, zpsf
-    psf = zpsf.load(calib_path, device=device, zmax=0.4)
+    psf = zpsf.load(calib_path, device=device)
     d = np.arange(-3.0, 3.0001, 0.02)
     out = []
     for ax in (0, 1):

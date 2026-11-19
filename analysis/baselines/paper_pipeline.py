@@ -27,7 +27,9 @@ Changes (documented):
     PSF-v2 calibrations. Only gain + offset enter (Poisson MLE as fastpsf; no read-noise term), as for the other two options.
   * Fit plane (2026-11-15): --psf_z <um> or --psf_z_run <SIMCODE v2 run dir> = the median pass-1 emitter height of that run
     (rows p >= 0.63 inside the crop [5, 115) px, z -> focus_um + z * pixelsize_um of the calib, as analysis/paper/psfdata.py);
-    --psf_zmax: top of the rendered knot stack (um, default 0.2; must lie above the fit plane).
+    The calibration's PSF (zpsf: simcode.psf.calib_psf, the integrated cubic B-spline, heights 0 - 0.4 um) is the same model and
+    function as SIMCODE's; SMLM (6-frame sum) fits the mean of the two pattern-angle PSFs, SIMFLUX and the per-frame I / bg fits
+    each frame's angle PSF (frame f: f % 6 // 3) for a per-angle calibration (2026-11-19).
   * SIMFLUX initial values (--sf_init fixed, default): smlmtorch's fit_simflux indexes the per-ROI summed fits with the
     filtered dataset's index instead of the ROI id, so the published SIMFLUX started each ROI from ANOTHER ROI's SMLM fit and
     applied |SIMFLUX - SMLM| < 0.5 px against that wrong reference (most fits rejected). Here each ROI starts from its own
@@ -38,9 +40,9 @@ Changes (documented):
 usage:
   CUDA_VISIBLE_DEVICES=1 python analysis/baselines/paper_pipeline.py <dataset 1809_2|2.5nM_2|20nM_2> --psf <spec>
         [--out out/paper2/<dataset>] [--maxframes N] [--camera maps|paper|calib] [--fitter torch|fastpsf] [--steps smlm,sf]
-        [--psf_z um | --psf_z_run <run dir>] [--psf_zmax um]
+        [--psf_z um | --psf_z_run <run dir>]
   PSF v2 + camera v2 (Figs 3/4 baselines, 2026-11-15): --psf <models/.../calib_<movie>_psf_v2.json> --camera calib
-        --psf_z_run <the movie's SIMCODE v2 run> --psf_zmax 0.4 --out out/paper2/<dataset>/baselines_psfv2
+        --psf_z_run <the movie's SIMCODE v2 run> --out out/paper2/<dataset>/baselines_psfv2
 outputs: <out>/smlm/smlm.npy (+ .hdf5; SFDataset, as the paper's smlm.npy), mp_smlm.pickle, info.json;
          <out>/sf/sf.hdf5, mp_sf.pickle, info.json; <out>/run.json (settings, PSF, timing)."""
 import os, sys, json, time, argparse, pickle
@@ -130,19 +132,40 @@ def smlm_model(psf, P):
     return f
 
 
-def sf_model(psf, P, mod):
+def frame_angles(frames, K):
+    """pattern angle [N,K] of the K frames f, f + 1, ... of each window (start frames [N]): f % 6 // 3, the SIMCODE convention of
+    the per-angle PSF of a calibration (= pattern_frames [[0,1,2],[3,4,5]] of the patterns s = f % 6)"""
+    f = torch.as_tensor(np.asarray(frames, np.int64))[:, None] + torch.arange(K)[None]
+    return (f % 6) // 3
+
+
+def psf_frames(psf, xc, yc, P, ang, grad=True):
+    """the PSF of every frame: [N,1,P,P] (g, gx, gy) for one PSF (ang None or a PSF without angles), else [N,K,P,P] with each
+    frame's angle PSF (ang [N,K])"""
+    if ang is None or not psf.n_angles:
+        r = psf.eval(xc, yc, P, grad=grad)
+        return tuple(t[:, None] for t in r) if grad else r[:, None]
+    a = ang.to(xc.device)[..., None, None]
+    r0, r1 = psf.eval(xc, yc, P, grad=grad, angle=0), psf.eval(xc, yc, P, grad=grad, angle=1)
+    if not grad:
+        return torch.where(a == 0, r0[:, None], r1[:, None])
+    return tuple(torch.where(a == 0, u[:, None], v[:, None]) for u, v in zip(r0, r1))
+
+
+def sf_model(psf, P, mod, ang=None):
     """SIMFLUX (fastpsf SIMFLUX_Gauss2D model, any PSF): mod [N,K,5] = (kx, ky, phase, depth, relint) with the phase already in
-    ROI coordinates; mu_k = I relint_k (1 + depth_k sin(kx x + ky y - phase_k)) g + bg (bg per frame)."""
+    ROI coordinates; mu_k = I relint_k (1 + depth_k sin(kx x + ky y - phase_k)) g_k + bg (bg per frame); g_k = the PSF of frame
+    k's pattern angle ang [N,K] for a per-angle calibration (else the one PSF)."""
     kx, ky, ph, dep, rel = [mod[..., i] for i in range(5)]
     def f(th):
-        g, gx, gy = psf.eval(th[:, 0] - (P - 1) / 2, th[:, 1] - (P - 1) / 2, P)
+        G, GX, GY = psf_frames(psf, th[:, 0] - (P - 1) / 2, th[:, 1] - (P - 1) / 2, P, ang)
         a = kx * th[:, 0, None] + ky * th[:, 1, None] - ph
         e = rel * (1 + dep * torch.sin(a)); de = rel * dep * torch.cos(a)            # [N,K]
         I = th[:, 2, None, None, None]
-        G = g[:, None]; e4 = e[..., None, None]
+        e4 = e[..., None, None]
         mu = I * e4 * G + th[:, 3, None, None, None]
-        Jx = I * ((de * kx)[..., None, None] * G + e4 * gx[:, None])
-        Jy = I * ((de * ky)[..., None, None] * G + e4 * gy[:, None])
+        Jx = I * ((de * kx)[..., None, None] * G + e4 * GX)
+        Jy = I * ((de * ky)[..., None, None] * G + e4 * GY)
         J = torch.stack([Jx, Jy, e4 * G, torch.ones_like(mu)], 1)
         return mu.flatten(1), J.flatten(2)
     return f
@@ -178,12 +201,13 @@ class TorchSMLMFitter:
         self._ibg_est = GaussianPSFMethods(ctx).CreatePSF_XYIBg(P, 1.3, cuda=True)   # only for its native EstimateIBg
         self.stats = {}
 
-    def ibg(self, th, pixels):
-        """per-frame (I, bg) at the fitted position: fastpsf native EstimateIBg (as SMLMFitter.process) with our PSF images"""
+    def ibg(self, th, pixels, frames):
+        """per-frame (I, bg) at the fitted position: fastpsf native EstimateIBg (as SMLMFitter.process) with our PSF images (each
+        frame's pattern-angle PSF for a per-angle calibration; frames [n] = the window start frames)"""
         n, K, P = pixels.shape[0], pixels.shape[1], self.P
         with torch.no_grad():
-            g = self.psf.eval(th[:, 0] - (P - 1) / 2, th[:, 1] - (P - 1) / 2, P)[0]
-        psfs = np.ascontiguousarray(np.repeat(g.cpu().numpy(), K, axis=0), np.float32)
+            g = psf_frames(self.psf, th[:, 0] - (P - 1) / 2, th[:, 1] - (P - 1) / 2, P, frame_angles(frames, K), grad=False)
+        psfs = np.ascontiguousarray(g.expand(n, K, P, P).reshape(n * K, P, P).cpu().numpy(), np.float32)
         imgs = np.ascontiguousarray(pixels.reshape(n * K, P, P), np.float32)
         ibg = np.zeros((n * K, 2), np.float32); ibg_crlb = np.zeros((n * K, 2), np.float32)
         self._ibg_est._EstimateIBg(imgs, psfs, ibg, ibg_crlb, n * K, P * P, 400, True)
@@ -208,7 +232,7 @@ class TorchSMLMFitter:
                     th, info = self.fit_sums(px.sum(1))
                     est.append(th.cpu().numpy()); crlb.append(info['crlb'].cpu().numpy()); chisq.append(info['chisq'].cpu().numpy())
                     roipos.append(np.stack((ri['y'], ri['x']), 1)); framenum.append(ri['id'])
-                    a, b = self.ibg(th, px); ibg.append(a); ibgc.append(b)
+                    a, b = self.ibg(th, px, ri['id']); ibg.append(a); ibgc.append(b)
                     fs = info['full_step'][:, :2].abs().max(1).values; ok = ~info['atlim']
                     diag['n'] += len(px); diag['atlim'] += int(info['atlim'].sum())
                     diag['step_xy_lt_1e3'] += int(((fs < 1e-3) & ok).sum()); diag['step_xy_lt_1e2'] += int(((fs < 1e-2) & ok).sum())
@@ -281,8 +305,16 @@ def fit_simflux_torch(sfloc, psf, mp, ds, iterations=50, distFromSMLM=0.5, batch
                 mod = np.stack([mb['k'][..., 0], mb['k'][..., 1], mb['phase'], mb['depth'], mb['relint']], -1).astype(np.float32)
                 d = torch.as_tensor(pxb, device=dev).float().flatten(1)
                 th0 = torch.maximum(torch.minimum(torch.as_tensor(initial, device=dev).float(), hi), lo)
+                ang = None
+                if psf.n_angles:   # each frame's pattern-angle PSF; check: the frames of one angle share the pattern k vector
+                    ang = frame_angles(ds.frame[ixb], pxb.shape[1])
+                    kv = torch.as_tensor(mod[..., :2])
+                    for a_ in (0, 1):
+                        m_ = ang == a_
+                        k0 = kv[torch.arange(len(ang)), m_.float().argmax(1)]
+                        assert torch.allclose(kv[m_], k0[:, None].expand_as(kv)[m_], atol=1e-5), 'pattern angle != frame % 6 // 3'
                 with torch.no_grad():
-                    th, info = lm_mle(sf_model(psf, P, torch.as_tensor(mod, device=dev)), d, th0, lo, hi, iterations)
+                    th, info = lm_mle(sf_model(psf, P, torch.as_tensor(mod, device=dev), ang), d, th0, lo, hi, iterations)
                 fits.append(th.cpu().numpy()); crlb.append(info['crlb'].cpu().numpy()); org.append(initial); roi_ids.append(ixb)
                 fs = info['full_step'][:, :2].abs().max(1).values; ok = ~info['atlim']
                 diag['n'] += len(ixb); diag['atlim'] += int(info['atlim'].sum())
@@ -386,7 +418,6 @@ def main():
                     help="SIMFLUX initial value / reference: 'fixed' = the ROI's own SMLM fit; 'paper' = smlmtorch's indexing")
     ap.add_argument('--psf_z', type=float, default=None, help='fit plane (um) for a spline PSF; default from the PSF')
     ap.add_argument('--psf_z_run', default=None, help='SIMCODE v2 run dir: fit plane = its median pass-1 emitter height (run_height)')
-    ap.add_argument('--psf_zmax', type=float, default=0.2, help='top of the knot stack of a calib json PSF (um)')
     a = ap.parse_args()
     assert not (a.psf_z is not None and a.psf_z_run), '--psf_z and --psf_z_run are exclusive'
     D = DATASETS[a.dataset]
@@ -413,9 +444,9 @@ def main():
     if a.psf_z_run:
         a.psf_z, height = run_height(a.psf_z_run, a.psf)
         print('fit plane from the run:', json.dumps(height), flush=True)
-    psf = zpsf.load(a.psf, z_fit=a.psf_z, zmax=a.psf_zmax)
-    if getattr(psf, 'z_fit', 0) > a.psf_zmax - 0.02 and not a.psf.startswith('gauss:'):
-        raise SystemExit(f'fit plane {psf.z_fit:.3f} um too close to the knot-stack top --psf_zmax {a.psf_zmax}')
+    psf = zpsf.load(a.psf, z_fit=a.psf_z)
+    if not a.psf.startswith('gauss:') and not (psf.z_limits[0] <= psf.z_fit <= psf.z_limits[1]):
+        raise SystemExit(f'fit plane {psf.z_fit:.3f} um outside the PSF spline heights {psf.z_limits}')
     rel = lambda p: os.path.relpath(p, os.path.dirname(tif))
     kw = dict(pattern_frames=PAPER['pattern_frames'], pixelsize=PAPER['pixelsize'], detection_threshold=PAPER['detection_threshold'],
               roisize=PAPER['roisize'], device='cuda:0', zrange=PAPER['zrange'], gain=gain, offset=offset, maxframes=a.maxframes,

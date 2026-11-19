@@ -6,11 +6,11 @@
                       on-time (frames). GT rows of this population carry dim = 1.
   SIM_CALIB=<json>    (2026-11-11, opt-in) PSF from this calibration json instead of the preset's calib_0.5nM.json
   SIM_PSF_BLUR=sx,sy  (2026-11-11, opt-in) anisotropic Gaussian blur (px) of every rendered PSF (after the halo)
-  SIM_PSFDIV=<json>   (2026-11-11, opt-in) PSF-diversity LUT bank replacing rs.luts (acquisition.psf_div_luts); with SIM_SITE_PSF=0 one LUT per event
+  SIM_PSFDIV=<json>   (2026-11-11, opt-in) PSF-diversity bank replacing rs.psfs (acquisition.psf_div_bank); with SIM_SITE_PSF=0 one PSF per event
   SIM_EV_SHIFT=<nm>   (2026-11-11, opt-in) per-event emission offset sd per axis (PSF rendered at r + d; GT / illumination at r; stored in shift_dx / dy)
-  (2026-11-11) a SIM_CALIB with a per-pattern-angle PSF (psf_dipole_M_angle / psf_blur_angle_px2; AcquisitionSim LUT tuples) renders
+  (2026-11-11) a SIM_CALIB with a per-pattern-angle PSF (psf_dipole_M_angle / psf_blur_angle_px2; AcquisitionSim PSF pairs) renders
                       each frame with its angle's PSF (frame % 6 // 3); not combined with SIM_LAZY / SIM_PSF_DYN / SIM_HALO2 / SIM_PSF_BLUR
-  SIM_PSF_DYN=1       per-frame PSF shape fluctuation (random jittered LUT per emitter per frame), SIMP_npsf-free: uses rs.luts
+  SIM_PSF_DYN=1       per-frame PSF shape fluctuation (random jittered PSF per emitter per frame), SIMP_npsf-free: uses rs.psfs
 [2026-11-10 field copy of sc6/sim_movie.py] + SIM_PFIELD=<field .pt> (simcode/processing/pattern_field.py format): a static
 per-position pattern phase field phi_a(r) and depth factor f_a(r) are injected into the illumination
 (il = rel (1 + m f_a(r) cos(k.r - phase - phi_a(r)))); no extra random draws (same seed = same events / noise as the
@@ -18,7 +18,7 @@ field-free movie). The true field is saved as <out>/true_field.pt.
 
 Simulated 0.5 nM movie in the real-movie format (iteration 31, pipeline test of run_uncalibrated).
 rs05pm-like: AcquisitionSim '0.5nM' preset (density, on-times tau 65, z, filaments), paper photons (data.paper_bright, no per-window
-jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 LUTs) + halo, fluctuating bg,
+jitter), full mismatch: emitter variation (angle / step / frame factors), PSF jitter (4 PSFs) + halo, fluctuating bg,
 camera error (static residual offset 0.3 ADU, gain error 1 %), one continuous pattern over the movie (frame % 6 = step,
 angle = step // 3, eps(t) random walk). 120 x 120 px (the real sensor crop; camera maps of the 0.5 nM calibration),
 uint16 ADU multi-page TIFF. Rendering in 60-frame blocks.
@@ -33,7 +33,7 @@ HALO2_SIG px), SIM_FILSTAT / SIM_FILSTAT_SIG (filament-correlated dim static lig
 unit-mean filament line map blurred SIG px; FOV-mean bg unchanged), SIM_STRUCT (struct_frac override: 1 = filament geometry).
 (2026-11-10/11, evaluation protocol; all opt-in, absent = unchanged):
   SIMP_site_ev / site_wsd / site_L / site_jit   discrete docking sites with repeated binding (acquisition.AcquisitionSim._sites); z per site
-  SIM_SITE_PSF=1      (default 1 when sites are on) PSF-jitter LUT group per SITE instead of per event (static per-site PSF term)
+  SIM_SITE_PSF=1      (default 1 when sites are on) PSF-jitter group per SITE instead of per event (static per-site PSF term)
   SIM_DIM_SITES=1     dim binders also bound to (their own) sites (default: free events as before)
   SIM_SHIFT_LIN / SIM_SHIFT_RMS / SIM_SHIFT_SIG   imaging shift field (static, all methods see it): the PSF is rendered at
                       r + d(r), d = LIN nm per 100 px x (r - centre) (scale-like) + smooth random field (rms RMS nm, sigma SIG px);
@@ -49,6 +49,11 @@ from simcode.simulate.batches import paper_bright
 
 dev = 'cuda'
 
+
+
+def _avg(e):
+    """the angle-average model of a PSF-bank entry (a per-angle pair -> its mean)"""
+    return e[0].for_angle(None) if isinstance(e, tuple) else e
 
 def psf_blur(P_, sx, sy):
     """(2026-11-11 PSF-shape mismatch, opt-in SIM_PSF_BLUR=sx,sy px) anisotropic Gaussian image blur of PSF ROIs [N,R,R] (FFT, zero-padded)"""
@@ -74,11 +79,11 @@ def main():
         if k_.startswith('SIMP_'):
             over[k_[5:]] = (v_.lower() == 'true') if v_.lower() in ('true', 'false') else float(v_)
     if os.environ.get('SIM_CALIB'):   # (2026-11-11 PSF-shape mismatch, opt-in) render with this calib json's PSF (zernike_waves / focus_um);
-        over['calib'] = os.environ['SIM_CALIB']   # the jittered LUTs are centred on it; camera maps / pattern presets unchanged
+        over['calib'] = os.environ['SIM_CALIB']   # the jittered PSFs are centred on it; camera maps / pattern presets unchanged
     rs = AcquisitionSim(PRE, H, W, NF, seed=seed, **over)
-    if os.environ.get('SIM_PSFDIV'):   # (2026-11-11, opt-in) PSF-diversity LUT bank (acquisition.psf_div_luts, json); own generator, no global draws
-        from simcode.simulate.acquisition import psf_div_luts
-        rs.luts = psf_div_luts(rs, json.loads(os.environ['SIM_PSFDIV']), seed); print(f'PSF bank: {len(rs.luts)} LUTs', flush=True)
+    if os.environ.get('SIM_PSFDIV'):   # (2026-11-11, opt-in) PSF-diversity bank (acquisition.psf_div_bank, json); own generator, no global draws
+        from simcode.simulate.acquisition import psf_div_bank
+        rs.psfs = psf_div_bank(rs, json.loads(os.environ['SIM_PSFDIV']), seed); print(f'PSF bank: {len(rs.psfs)} PSFs', flush=True)
     print('preset overrides', over, flush=True)
     p = rs.p
     # (2026-11-09, sim-realism worker) emitter-variation overrides: SIM_FRAME_SD / SIM_STEP_SD / SIM_ANG_SD (defaults = preset);
@@ -125,12 +130,12 @@ def main():
     # per-emitter variation (fixed per event) + PSF group + halo
     ea = torch.exp(p['ang_sd'] * torch.randn(N, 2, device=dev)); ea = ea / ea.mean(1, keepdim=True)
     es = 1 + p['step_sd'] * torch.randn(N, 6, device=dev)
-    grp = torch.randint(0, len(rs.luts), (N,), device=dev)
+    grp = torch.randint(0, len(rs.psfs), (N,), device=dev)
     sim = rs.sim; R = sim.R
     LAZY = bool(int(os.environ.get('SIM_LAZY', '0')))
     BLUR = [float(v) for v in os.environ['SIM_PSF_BLUR'].split(',')] if os.environ.get('SIM_PSF_BLUR') else None
-    if site is not None and bool(int(os.environ.get('SIM_SITE_PSF', '1'))):   # (eval protocol) PSF LUT group per site
-        sgrp = torch.randint(0, len(rs.luts), (len(SINFO['site_x']),), device=dev)
+    if site is not None and bool(int(os.environ.get('SIM_SITE_PSF', '1'))):   # (eval protocol) PSF group per site
+        sgrp = torch.randint(0, len(rs.psfs), (len(SINFO['site_x']),), device=dev)
         grp = torch.where(site >= 0, sgrp[site.clamp(min=0)], grp)
     # (eval protocol) imaging shift field: render the PSF at r + d(r); illumination and GT stay at r
     xr_, yr_ = x, y
@@ -151,32 +156,30 @@ def main():
         SDX = EVX if SDX is None else SDX + EVX; SDY = EVY if SDY is None else SDY + EVY
     def mkpsf(ix_):
         xs, ys = xr_[ix_], yr_[ix_]
-        P_ = torch.zeros(len(ix_), R, R, device=dev); base_ = sim.lut
-        for gi, lut in enumerate(rs.luts):
+        P_ = torch.zeros(len(ix_), R, R, device=dev)
+        for gi, lut in enumerate(rs.psfs):
             m_ = grp[ix_] == gi
             if m_.any():
-                sim.lut = lut; P_[m_] = sim.render_psf(xs[m_], ys[m_], z[ix_][m_])
-        sim.lut = base_
+                P_[m_] = sim.render_psf(xs[m_], ys[m_], z[ix_][m_], _avg(lut))
         o_ = torch.arange(R, device=dev, dtype=torch.float32) - R // 2
         fx_, fy_ = xs - torch.round(xs), ys - torch.round(ys)
         gb_ = torch.exp(-0.5 * (((o_[None, None, :] - fx_[:, None, None]) ** 2 + (o_[None, :, None] - fy_[:, None, None]) ** 2) / 16.0))
         gb_ = gb_ / gb_.sum((1, 2), keepdim=True) * P_.sum((1, 2), keepdim=True)
         P_ = (1 - hh[ix_]) * P_ + hh[ix_] * gb_
         return psf_blur(P_, *BLUR) if BLUR else P_
-    ANG = isinstance(rs.luts[0], tuple); psf1 = None
+    ANG = isinstance(rs.psfs[0], tuple); psf1 = None
     if ANG: assert not (LAZY or os.environ.get('SIM_PSF_DYN') or os.environ.get('SIM_HALO2') or BLUR), 'per-angle PSF: unsupported combination'
     if LAZY:
         hh = p['halo'] * torch.rand(N, 1, 1, device=dev)
         psf = None
     else:
-        psf = torch.zeros(N, R, R, device=dev); base = sim.lut
+        psf = torch.zeros(N, R, R, device=dev)
         if ANG: psf1 = torch.zeros(N, R, R, device=dev)
-        for gi, lut in enumerate(rs.luts):
+        for gi, lut in enumerate(rs.psfs):
             m_ = grp == gi
             if m_.any():
-                sim.lut = lut[0] if ANG else lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
-                if ANG: sim.lut = lut[1]; psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
-        sim.lut = base
+                psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_], lut[0] if ANG else lut)
+                if ANG: psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_], lut[1])
         o_ = torch.arange(R, device=dev, dtype=torch.float32) - R // 2
         fx_, fy_ = xr_ - torch.round(xr_), yr_ - torch.round(yr_)
         gb = torch.exp(-0.5 * (((o_[None, None, :] - fx_[:, None, None]) ** 2 + (o_[None, :, None] - fy_[:, None, None]) ** 2) / 16.0))
@@ -189,11 +192,10 @@ def main():
     PSFD = None
     if os.environ.get('SIM_PSF_DYN'):
         assert not LAZY   # (simreal2) per-frame PSF shape fluctuation: every frame each emitter is rendered with a random one
-        # of the jittered LUTs (rs.luts; widths via SIMP_psf_wr / psf_fr / psf_zs), instead of one LUT per event (no extra draws above)
-        PSFD = torch.zeros(len(rs.luts), N, R, R, device=dev)
-        for gi, lut in enumerate(rs.luts):
-            sim.lut = lut; PSFD[gi] = sim.render_psf(x, y, z)
-        sim.lut = base
+        # of the jittered PSFs (rs.psfs; widths via SIMP_psf_wr / psf_fr / psf_zs), instead of one LUT per event (no extra draws above)
+        PSFD = torch.zeros(len(rs.psfs), N, R, R, device=dev)
+        for gi, lut in enumerate(rs.psfs):
+            PSFD[gi] = sim.render_psf(x, y, z, _avg(lut))
         PSFD = (1 - hh)[None] * PSFD + hh[None] * gb[None]
     if os.environ.get('SIM_HALO2'):   # broad emitter-correlated halo (acquisition.add_halo2); no extra random draws
         assert not LAZY

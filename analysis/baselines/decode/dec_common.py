@@ -13,7 +13,7 @@ Paper usage (checked 2026-11-10):
   must not be modified).
 
 Matched models (this work): DECODE trained on DECODE's own simulator with the sim movie's PSF, density, photons, bg, camera:
-  PSF      = the movie's vectorial PSF LUTs (AcquisitionSim '2.5nM' calibration, 41x41 px ROI, base + 3 jittered LUTs drawn with a
+  PSF      = the movie's PSF bank (AcquisitionSim '2.5nM' calibration, simcode.psf.calib_psf, 41x41 px ROI, base + 3 jittered PSFs drawn with a
              different seed than the movie's, + the 0-5 % sigma-4 px halo), z 10-150 nm (sim z p1-p99 22-140 nm)
   density  = emitters per 40x40 frame drawn per epoch uniformly in DENS_RANGE (covers m25qh 0.024 and m20qh 0.044 /px^2)
   photons  = lognormal (median, log-sd) of the sim's brightness (per frame: 313, 0.45 x the sine pattern with depth
@@ -49,38 +49,31 @@ VARIANTS = {
 }
 
 
-# ------------------------------------------------------------------------------------------------- PSF from the sim LUTs
-class LutPSF(PSF):
-    def __init__(self, xextent, yextent, img_shape, luts, zmax_um, halo=0.05, device='cuda'):
+# ------------------------------------------------------------------------------------------------- PSF: SIMCODE's renderer
+class SimcodePSF(PSF):
+    """DECODE PSF kernel rendering with SIMCODE's PSF (2026-11-19): renders = list of functions pos [N, 3] (x, y offset px from the
+    centre pixel, z um) -> [N, R, R] (zpsf eval of the --psf spec = simcode.psf.calib_psf, or simcode.psf models of an AcquisitionSim
+    PSF bank, sim_psfs); one is drawn per emitter (position-hashed); z clamped to 0 .. zmax_um"""
+    def __init__(self, xextent, yextent, img_shape, renders, R, zmax_um, halo=0.05, device='cuda'):
         super().__init__(xextent, yextent, zextent=None, img_shape=img_shape)
-        self.luts = luts
-        self.lz, self.ls = luts[0].shape[0], luts[0].shape[1] - 1
-        self.R = luts[0].shape[-1]
+        self.renders, self.R = list(renders), int(R)
         self.zmax = zmax_um; self.halo = halo; self.device = device
 
-    def _render(self, lut, x, y, z):          # = simcode.simulate.simulator.Simulator.render_psf
-        fx, fy = x - torch.round(x), y - torch.round(y)
-        tx = (fx + 0.5) * self.ls; ty = (fy + 0.5) * self.ls
-        ix = tx.floor().long().clamp(0, self.ls - 1); iy = ty.floor().long().clamp(0, self.ls - 1)
-        wx = (tx - ix)[:, None, None]; wy = (ty - iy)[:, None, None]
-        tz = (z / self.zmax).clamp(0, 1) * (self.lz - 1)
-        iz = tz.floor().long().clamp(0, self.lz - 2); wz = (tz - iz)[:, None, None]
-        out = 0
-        for dz, w_z in ((0, 1 - wz), (1, wz)):
-            a = lambda dy, dx: lut[iz + dz, iy + dy, ix + dx]
-            out = out + w_z * ((1 - wy) * ((1 - wx) * a(0, 0) + wx * a(0, 1)) + wy * ((1 - wx) * a(1, 0) + wx * a(1, 1)))
-        return out
+    def _render(self, render, x, y, z):          # = simcode.simulate.simulator.Simulator.render_psf
+        pos = torch.stack([x - torch.round(x), y - torch.round(y), z.clamp(0.0, self.zmax)], 1)
+        with torch.no_grad():
+            return render(pos)
 
     def rois(self, x, y, z_um):
         N = len(x); R = self.R
-        # per-emitter (position-hashed, so constant over an emitter's frames) LUT group and halo fraction
+        # per-emitter (position-hashed, so constant over an emitter's frames) PSF group and halo fraction
         h = torch.frac(torch.sin(x * 12.9898 + y * 78.233) * 43758.5453).abs()
-        grp = (h * len(self.luts)).long().clamp(max=len(self.luts) - 1)
+        grp = (h * len(self.renders)).long().clamp(max=len(self.renders) - 1)
         hh = self.halo * torch.frac(h * 7.0)
         psf = torch.zeros(N, R, R, device=self.device)
-        for gi, lut in enumerate(self.luts):
+        for gi, render in enumerate(self.renders):
             m = grp == gi
-            if m.any(): psf[m] = self._render(lut, x[m], y[m], z_um[m])
+            if m.any(): psf[m] = self._render(render, x[m], y[m], z_um[m])
         o = torch.arange(R, device=self.device, dtype=torch.float32) - R // 2
         fx, fy = x - torch.round(x), y - torch.round(y)
         gb = torch.exp(-0.5 * (((o[None, None, :] - fx[:, None, None]) ** 2 + (o[None, :, None] - fy[:, None, None]) ** 2) / 16.0))
@@ -161,25 +154,26 @@ def make_param(variant, epochs=400, pseudo=8192, batch=32, device='cuda:0'):
     return p
 
 
-_LUTS = None
+_PSFS = None                          # (renders, R, zmax_um, halo) of SimcodePSF: set by decode_paper.setup_psf, else sim_psfs()
 
 
-def sim_luts(device='cuda'):
-    """base + 3 jittered LUTs of the movie's PSF model (AcquisitionSim '2.5nM' calibration) with seed 3 (the movie used seed 7)."""
-    global _LUTS
-    if _LUTS is None:
+def sim_psfs(device='cuda'):
+    """base + 3 jittered PSFs of the movie's PSF model (AcquisitionSim '2.5nM' calibration, its PSF bank rs.psfs) with seed 3 (the
+    movie used seed 7); a per-angle bank entry enters as its angle average (DECODE is pattern-free; exact for the 6-frame sums)."""
+    global _PSFS
+    if _PSFS is None:
         from simcode.simulate.acquisition import AcquisitionSim
         # (2026-11-11, opt-in) DEC_CALIB=<calib json>: the movie's in-situ 3D PSF (e.g. models/insitu/calib_*_psf3d.json) instead of
-        # the preset's; a per-pattern-angle PSF enters as its angle average (DECODE is pattern-free; exact for the 6-frame sums)
+        # the preset's
         over = {'calib': os.environ['DEC_CALIB']} if os.environ.get('DEC_CALIB') else {}
         rs = AcquisitionSim('2.5nM', 40, 40, 6, seed=3, **over)
-        luts = [(l[0] + l[1]) / 2 if isinstance(l, tuple) else l for l in rs.luts]
-        _LUTS = (luts, rs.zmax, rs.p['halo'])
-    return _LUTS
+        ms = [e[0].for_angle(None) if isinstance(e, tuple) else e for e in rs.psfs]
+        _PSFS = ([m.render for m in ms], rs.sim.R, rs.zmax, rs.p['halo'])
+    return _PSFS
 
 
 class LutDecodeInstance(DecodeInstance):
-    """DecodeInstance with the sim-LUT PSF, structured bg and (per-frame variant) per-frame intensity jitter / lognormal
+    """DecodeInstance with SIMCODE's PSF (SimcodePSF), structured bg and (per-frame variant) per-frame intensity jitter / lognormal
     brightness / per-epoch density draw."""
     variant = 'frame'
 
@@ -191,9 +185,9 @@ class LutDecodeInstance(DecodeInstance):
         self._patch_sim(self.sim_train, randomize=True); self._patch_sim(self.sim_test, randomize=False)
 
     def create_psf(self):
-        luts, zmax, halo = sim_luts()
-        return LutPSF(self.param.Simulation.psf_extent[0], self.param.Simulation.psf_extent[1], self.param.Simulation.img_size,
-                      luts, zmax, halo=halo, device=self.param.Hardware.device)
+        renders, R, zmax, halo = sim_psfs()
+        return SimcodePSF(self.param.Simulation.psf_extent[0], self.param.Simulation.psf_extent[1], self.param.Simulation.img_size,
+                          renders, R, zmax, halo=halo, device=self.param.Hardware.device)
 
     def _init_optics_models(self):
         super()._init_optics_models()

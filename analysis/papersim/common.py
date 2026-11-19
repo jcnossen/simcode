@@ -235,23 +235,23 @@ def _write_sim_calib_v2(d, H, W, P):
 
 
 class RendererV2:
-    """v2-PSF movies: rows (frame, x, y, z, photons) -> expected images with the v2 PSF LUT (41 x 41 px, 0-0.40 um), + bg,
+    """v2-PSF movies: rows (frame, x, y, z, photons) -> expected images with the v2 PSF (simcode.psf.calib_psf, 41 x 41 px, 0-0.40 um), + bg,
     Poisson + read noise, ADU with the v2 camera crop (see the module doc)"""
     def __init__(self, H, W, dev='cuda'):
         import torch
         from simcode.simulate.simulator import Simulator
         self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
-        self.sim = Simulator(PSF_CALIB_V2, H=H, W=W, T=6, device=dev, psf_roi=41, psf_lut_z=41, psf_lut_sub=32, zmin=0.0, zmax=0.40)
+        self.sim = Simulator(PSF_CALIB_V2, H=H, W=W, T=6, device=dev, psf_roi=41, zmin=0.0, zmax=0.40)
         self.R = self.sim.R
         g, off, rn = camera_v2(H, W)
         self.gain = g; self.off = torch.tensor(off, device=self.dev); self.rn = torch.tensor(rn, device=self.dev)
-        L = self.sim.lut
-        self.coll = L[:, L.shape[1] // 2, L.shape[2] // 2].sum((-2, -1)).double().cpu().numpy()    # [nz] collected fraction per LUT plane
-        self.coll_z = self.sim.zs.double().cpu().numpy()
+        zs = torch.linspace(0.0, 0.40, 401, device=self.dev); o = torch.zeros_like(zs)
+        self.coll = self.sim.render_psf(o, o, zs).sum((-2, -1)).double().cpu().numpy()    # collected fraction of the 41 x 41 image, 1 nm steps
+        self.coll_z = zs.double().cpu().numpy()
 
     def collected(self, z):
-        """fraction of an emitter's intensity parameter that the rendered PSF image holds at height z (um; linear between the
-        LUT planes, as the render)"""
+        """fraction of an emitter's intensity parameter that the rendered PSF image holds at height z (um; centred emitter,
+        linear between 1 nm steps)"""
         return np.interp(np.asarray(z, float), self.coll_z, self.coll)
 
     def expected(self, f0, nf, fr, x, y, z, ph):
@@ -282,14 +282,13 @@ class RendererV2:
 
 # ------------------------------------------------------------------------------------------------ renderer
 class Renderer:
-    """rows (frame, x, y, photons) -> expected images with the simulator's PSF LUT at the fixed z, + bg, Poisson, ADU"""
+    """rows (frame, x, y, photons) -> expected images with the simulator's PSF (simcode.psf.calib_psf) at the fixed z, + bg, Poisson, ADU"""
     def __init__(self, H, W, dev='cuda', psf='vectorial'):
         import torch
         from simcode.simulate.simulator import Simulator
         self.t = torch; self.dev = torch.device(dev); self.H, self.W = H, W
         self.z = z_um()
-        # z knots 0, z, 2z: the emitter plane is a knot (no z interpolation)
-        self.sim = Simulator(PSF_CALIB, H=H, W=W, T=6, device=dev, psf_roi=21, psf_lut_z=3, psf_lut_sub=32, zmax=2 * self.z)
+        self.sim = Simulator(PSF_CALIB, H=H, W=W, T=6, device=dev, psf_roi=21, zmax=max(2 * self.z, 0.2))
         self.R = self.sim.R
         self.gauss = None
         if psf.startswith('gauss'):      # control: the preprint's Gaussian PSF (pixel-integrated, sigma in px), e.g. 'gauss1.3'
