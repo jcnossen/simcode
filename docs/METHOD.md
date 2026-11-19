@@ -68,7 +68,7 @@ The original modules (`processing/pass1_inference.py`, `processing/pass2_inferen
 
 All networks are trained only on the experiment-matched simulator (`simulate/acquisition.py`; `simulate/batches.py`, `simulate/batches.py` batches):
 
-- calibrated vectorial PSF from the in-situ fit (`models/insitu/calib_0.5nM.json`) with LUT jitter and a halo
+- calibrated PSF from the in-situ fit (`models/insitu/calib_0.5nM.json`; rendered as its integrated cubic B-spline, `simcode.psf.calib_psf`) with PSF jitter and a halo
 - the SIMFLUX pattern with estimation errors
 - DNA-PAINT kinetics, filaments, close pairs
 - per-frame / per-step / per-angle emitter brightness variation

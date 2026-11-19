@@ -45,19 +45,14 @@ def load_pass1_rows(out, chunks, crop=None, prior_off=None, cols=('wstart', 'x',
 
 
 def load_calib(path, dev='cuda'):
-    """camera maps + PSF from a calibration (calib json or psf.zip; camera / PSF entries only)."""
+    """camera maps, gain, focus and pixel size of a calibration (calib json or psf.zip; the PSF: simcode.psf.calib_psf)."""
     from simcode.config import resolve
     path = resolve(path)
     from simcode import psf as spsf
-    from simcode.psf import spline
     c = spsf.read_calib(path)
     cam = c['camera']; maps = spsf.camera_maps(path, c)
-    psf = spsf.PSF.load(path, roisize=11, device=dev)   # opt-in calib PSF terms: angle average; the calibration's sampling
-    zmax = 0.2
-    lut = spline(psf, zmax)
     return dict(offset=maps['offset_adu'].astype(np.float32), rn2=(maps['readnoise_e'] ** 2).astype(np.float32),
-                gain=float(cam['gain_e_per_adu']), lut=lut, focus=float(c['focus_um']), zmax=zmax,
-                px_nm=c['pixelsize_um'] * 1e3)
+                gain=float(cam['gain_e_per_adu']), focus=float(c['focus_um']), px_nm=c['pixelsize_um'] * 1e3)
 
 
 def region(movie, crop, margin):

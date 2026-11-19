@@ -1,7 +1,8 @@
 """
-Experiment-matched simulator. Wraps simcode/simulate/simulator.py (PSF LUT rendering, calibration) without
+Experiment-matched simulator. Wraps simcode/simulate/simulator.py (PSF rendering, calibration) without
 editing it. Everything is taken from existing calibration / summary files only (no movie is read):
-  PSF       calibrated vectorial PSF (analysis/calib_0.5nM.json); per-emitter PSF jitter = one of NPSF perturbed LUTs
+  PSF       calibrated PSF (simcode.psf.calib_psf: the integrated cubic B-spline of the calibration's vectorial model;
+            analysis/calib_0.5nM.json); per-emitter PSF jitter = one of NPSF perturbed PSFs (psf_perturbation.build_psf)
             (width x U(0.97, 1.03), Zernike jitter 0.008 waves, focus +-15 nm; psfcheck: 2-3 % coherent residual)
   pattern   k of the estimated patterns (pattern8 / pipeline pattern_est: pitch 2.070 px, angles 1.17-1.22 / 91.35 deg),
             randomized: rotation +-0.05 deg, pitch +-0.1 %; step spacing 2.09-2.11 rad (measured, not exactly 2 pi / 3);
@@ -21,7 +22,7 @@ editing it. Everything is taken from existing calibration / summary files only (
             (median ~50 nm, clipped 0-200 nm), brightness lognormal x TIRF exp(-z / 82 nm), per-emitter angle factor
             [2026-11-15: a calibration with fitted spot heights (emitter_z_quantiles_um, in-situ PSF v2: the fits not
             pinned at the fit limits) sets z instead: piecewise-linear inverse CDF of its quantiles (height_quantiles),
-            clipped to its emitter_z_range_um (the v2 calibrations: 0-0.40 um), LUT range widened to it, no TIRF factor
+            clipped to its emitter_z_range_um (the v2 calibrations: 0-0.40 um), render range widened to it, no TIRF factor
             (tirf_factor); the read-noise map is the calibration's camera map]
             (log-sd 0.18), per-emitter per-step factor (sd 0.05), per-frame multiplicative jitter (sd 0.03);
             geometry: uniform or microtubule-like smooth filaments (fraction per preset)
@@ -77,26 +78,17 @@ def lu(lo, hi, *n):
     return torch.exp(math.log(lo) + (math.log(hi) - math.log(lo)) * torch.rand(*n, device=dev))
 
 
-def psf_blur(P_, sx, sy):
-    """(2026-11-11) anisotropic Gaussian image blur (px) of PSF images [..., R, R] (FFT, zero-padded, centred kernel)"""
-    R_ = P_.shape[-1]; sh = P_.shape
-    fy_, fx_ = torch.meshgrid(torch.fft.fftfreq(2 * R_, device=P_.device), torch.fft.fftfreq(2 * R_, device=P_.device), indexing='ij')
-    K_ = torch.exp(-2 * math.pi ** 2 * (sx ** 2 * fx_ ** 2 + sy ** 2 * fy_ ** 2))
-    out = []
-    for c in P_.reshape(-1, R_, R_).split(4096):
-        out.append(torch.fft.ifft2(torch.fft.fft2(torch.nn.functional.pad(c, (0, R_, 0, R_))) * K_).real[:, :R_, :R_].clamp(min=0))
-    return torch.cat(out).reshape(sh)
-
-
-def psf_div_luts(rs, dv, seed=0):
-    """(2026-11-11 PSF-shape mismatch; used by analysis/simreal/sim_movie_r.py SIM_PSFDIV) PSF-diversity bank: n LUTs, each = calib + Gaussian
-    Zernike jitter (sd zsd waves on the Noll indices `noll`) + base_dz {noll: waves} + focus shift base_df + U(+-fr/2) um, width x
-    1 + wr (U - 0.5), then an anisotropic Gaussian image blur sx = max(0, base_blur[0] + blur_r (2U - 1)), sy likewise.
-    keep_old: prepend the existing (calib + weak jitter) LUTs, unblurred.  Own generator (seed 4321 + seed): no global draws."""
-    from simcode.simulate.psf_perturbation import build_lut
+def psf_div_bank(rs, dv, seed=0):
+    """(2026-11-11 PSF-shape mismatch; used by analysis/simreal/sim_movie_r.py SIM_PSFDIV) PSF-diversity bank: n PSFs, each = calib +
+    Gaussian Zernike jitter (sd zsd waves on the Noll indices `noll`) + base_dz {noll: waves} + focus shift base_df + U(+-fr/2) um,
+    width x 1 + wr (U - 0.5), and an anisotropic Gaussian image blur sx = max(0, base_blur[0] + blur_r (2U - 1)), sy likewise (px;
+    added to the calibration's blur covariance, rendered by the model: psf_perturbation.build_psf). keep_old: prepend the existing
+    (calib + weak jitter) PSFs (rs.psfs), unblurred. Entries as rs.psfs (a pair per entry for a per-angle calibration). Own
+    generator (seed 4321 + seed): no global draws."""
+    from simcode.simulate.psf_perturbation import build_psf
     g = torch.Generator().manual_seed(4321 + seed)
     zl = rs.sim.c['zernike_noll']; nz = len(zl)
-    out = list(rs.luts) if dv.get('keep_old', True) else []
+    out = list(rs.psfs) if dv.get('keep_old', True) else []
     for i in range(int(dv.get('n', 12))):
         u = torch.rand(5, generator=g)
         zd = torch.zeros(nz)
@@ -104,11 +96,9 @@ def psf_div_luts(rs, dv, seed=0):
         for j, v in dv.get('base_dz', {}).items(): zd[zl.index(int(j))] += v
         fs = dv.get('base_df', 0.0) + (float(u[0]) - 0.5) * dv.get('fr', 0.06)
         w = 1.0 + dv.get('wr', 0.0) * (float(u[1]) - 0.5)
-        lut = build_lut(rs.sim, w, zd.to(dev), fs, rs.zmax)[0]
         bb = dv.get('base_blur', [0.0, 0.0]); br = dv.get('blur_r', 0.0)
         sx = max(0.0, bb[0] + br * (2 * float(u[2]) - 1)); sy = max(0.0, bb[1] + br * (2 * float(u[3]) - 1))
-        if sx > 0 or sy > 0: lut = psf_blur(lut, sx, sy)
-        out.append(lut)
+        out.append(build_psf(rs.sim, w, zd.to(dev), fs, blur_px=(sx, sy) if (sx > 0 or sy > 0) else None))
     return out
 
 
@@ -189,7 +179,7 @@ class AcquisitionSim:
     def __init__(self, preset='0.5nM', H=64, W=64, T=6, npsf=4, psf_jitter=True, seed=0, psf_roi=41, zmax=0.2, **over):
         self.p = dict(PRESETS[preset], **over); self.preset = preset
         # emitter heights from the calibration (2026-11-15): a calibration with fitted spot heights (emitter_z_quantiles_um) sets
-        # the height distribution (height_quantiles / draw_z) and widens the LUT range to it; None = the presets' TIRF draw
+        # the height distribution (height_quantiles / draw_z) and widens the render range to it; None = the presets' TIRF draw
         c = _spsf.read_calib(_cfg.resolve(self.p['calib']))
         self.zq = height_quantiles(c)
         # physical range of the drawn heights (calibration key emitter_z_range_um, e.g. [0, 0.40]; draws are clipped to it)
@@ -200,9 +190,8 @@ class AcquisitionSim:
             zmin = min(0.0, math.floor(zlo / 0.01 + 1e-6) * 0.01)
             zmax = max(zmax, math.ceil(zhi / 0.01 - 1e-6) * 0.01)
         # PSF rendered on a 41 x 41 ROI (critic review 26 #3: 19 % of the real PSF energy lies outside 11 x 11, 8 % beyond 21 x 21)
-        # zmax: emitter heights of the PSF lookup table (um; 10 nm planes); the training generator (simulate/batches.TrainingBatches) uses Z_RANGE_UM
-        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax, zmin=zmin,
-                             psf_lut_z=int(round((zmax - zmin) / 0.01)) + 1)
+        # zmax: top of the rendered emitter heights (um; within simcode.psf.SPLINE z_range); the training generator (simulate/batches.TrainingBatches) uses Z_RANGE_UM
+        self.sim = Simulator(self.p['calib'], H=H, W=W, T=T, device=dev, psf_roi=psf_roi, zmax=zmax, zmin=zmin)
         self.H, self.W, self.T = H, W, T
         # pattern draw: None = the SIMCODE (DMD) pattern of the preset (pass-1 training, gate scenes, sim movies); a number in
         # [0, 1) = the generic pass-2 training draw with this share of FOVs keeping the SIMCODE pattern (set by simulate/batches.TrainingBatches)
@@ -211,12 +200,12 @@ class AcquisitionSim:
         # per-pixel read noise: the calibration's camera maps when it has them (2026-11-15, as its gain / offset), else the preset's
         self.rn_map = (self.sim.rn_map.float() if self.sim.rn_map is not None
                        else torch.tensor(np.load(self.p['cam'])['readnoise_e'], device=dev).float())
-        self.luts = [self.sim.lut]
-        # (2026-11-11, opt-in per-angle PSF calib) every LUT-bank entry is a tuple (angle-0 LUT, angle-1 LUT); same jitter draws
-        ang = self.sim.lut_angle is not None
-        if ang: self.luts = [tuple(self.sim.lut_angle)]
+        # PSF bank (simcode.psf.calib_psf models; per-angle calibrations: a pair (angle 0, angle 1) per entry): the calibration's
+        # PSF, then npsf - 1 jittered PSFs (psf_perturbation.build_psf: width, focus, Zernikes), drawn per emitter by scene()
+        ang = self.sim.psf_angle is not None
+        self.psfs = [tuple(self.sim.psf_angle) if ang else self.sim.psf]
         if psf_jitter and npsf > 1:
-            from simcode.simulate.psf_perturbation import build_lut
+            from simcode.simulate.psf_perturbation import build_psf
             g = torch.Generator().manual_seed(1234 + seed)
             nz = len(self.sim.c['zernike_waves'])
             for i in range(npsf - 1):
@@ -224,8 +213,7 @@ class AcquisitionSim:
                 # (2026-11-10 simreal2) opt-in jitter widths: psf_wr (width range, 0.06), psf_fr (focus range um, 0.03), psf_zs (Zernike sd waves, 0.008)
                 w = 1.0 + self.p.get('psf_wr', 0.06) * (float(u[0]) - 0.5); fs = (float(u[1]) - 0.5) * self.p.get('psf_fr', 0.03)
                 zd = (torch.randn(nz, generator=g) * self.p.get('psf_zs', 0.008)).to(dev)
-                self.luts.append(tuple(build_lut(self.sim, w, zd, fs, self.zmax, angle=k)[0] for k in range(2)) if ang
-                                 else build_lut(self.sim, w, zd, fs, self.zmax)[0])
+                self.psfs.append(build_psf(self.sim, w, zd, fs))
 
     # ----------------------------------------------------------------------------------------------- emitters
     def emitters(self, nb, dens=None, tau=None, struct_frac=None, bright=None, margin=6, pair_frac=0.0,
@@ -574,17 +562,15 @@ class AcquisitionSim:
         img = torch.zeros(nb, T, H + 2 * (margin + hr) + 2, W + 2 * (margin + hr) + 2, device=dev)
         xr_, yr_ = x, y
         if N > 0:
-            grp = torch.randint(0, len(self.luts) if psf_var else 1, (N,), device=dev)
-            ang = isinstance(self.luts[0], tuple)
+            grp = torch.randint(0, len(self.psfs) if psf_var else 1, (N,), device=dev)
+            ang = isinstance(self.psfs[0], tuple)
             psf = torch.zeros(N, R, R, device=dev)
             if ang: psf1 = torch.zeros(N, R, R, device=dev)       # angle-1 PSF (psf = angle 0)
-            base = sim.lut
-            for gi, lut in enumerate(self.luts):
+            for gi, pm in enumerate(self.psfs):
                 m_ = grp == gi
                 if m_.any():
-                    sim.lut = lut[0] if ang else lut; psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
-                    if ang: sim.lut = lut[1]; psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_])
-            sim.lut = base
+                    psf[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_], pm[0] if ang else pm)
+                    if ang: psf1[m_] = sim.render_psf(xr_[m_], yr_[m_], z[m_], pm[1])
             # halo-amplitude jitter: a fraction h ~ U(0, halo) of each emitter's light in a broad Gaussian (sigma 4 px)
             hmax = p.get('halo', 0.0) if emitter_var else 0.0
             if hmax > 0:

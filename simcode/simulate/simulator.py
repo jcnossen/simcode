@@ -15,50 +15,30 @@ import json, math
 import numpy as np
 import torch
 from simcode import psf as spsf
-from simcode.psf import has_angle_psf, render
+from simcode.psf import has_angle_psf
 
 
 class Simulator:
-    def __init__(self, calib_path, H=64, W=64, T=12, device='cuda', psf_roi=21, psf_lut_z=21, psf_lut_sub=32,
-                 zmax=0.2, tirf_depth=None, zmin=0.0):
+    def __init__(self, calib_path, H=64, W=64, T=12, device='cuda', psf_roi=21, zmax=0.2, tirf_depth=None, zmin=0.0):
         from simcode.config import resolve
         calib_path = resolve(calib_path)
         self.c = spsf.read_calib(calib_path)          # calib json or psf.zip
         self.H, self.W, self.T = H, W, T
         self.dev = torch.device(device)
-        # LUT heights zmin .. zmax um (zmin < 0: below the coverslip, the analytic continuation of the vectorial model that an
-        # in-situ PSF fit can return as a spot's best height; used when the calibration's fitted heights reach there)
+        # emitter heights zmin .. zmax um the simulator draws / renders (z is clamped to it)
         self.zmin, self.zmax = zmin, zmax
         self.tirf = tirf_depth or self.c['tirf_depth_um']
         self.R = psf_roi
-        # calibrated PSF (torch_psf.PSF.load of the calib json: VectorialPSF with the opt-in blur / dipole terms, angle
-        # average; a GaussianPSF for 'psf_gauss_sigma_um'), at the calibration's sampling (keys npupil / oversample: the sampling
-        # the PSF was fitted with, written by the PSF stage since 2026-11-18; absent = torch_psf's default 64 / 3, as before)
+        # calibrated PSF (2026-11-19): THE PSF renderer, simcode.psf.calib_psf = the integrated cubic B-spline of the calibration
+        # (torch_psf IntegratedSplinePSF; read from a psf.zip that carries it, else built from the vectorial model on load; a
+        # GaussianPSF for 'psf_gauss_sigma_um'). self.psf = the angle average (the mean of the angle images: pattern-free consumers,
+        # templates, sums); self.psf_angle = [angle 0, angle 1] for a per-pattern-angle calibration (frame f: angle f % 6 // 3)
         self.calib_path = calib_path
-        self.psf = spsf.PSF.load(calib_path, roisize=psf_roi, device=device)   # sampling (npupil / oversample) of the calibration
+        # (heights below the coverslip, zmin < 0, or above SPLINE's: a spline over the wider range, built from the vectorial model)
+        self.psf = spsf.calib_psf(calib_path, psf_roi, device=device, z_range=(zmin, zmax))
+        self.psf_angle = ([spsf.calib_psf(calib_path, psf_roi, angle=k, device=device, z_range=(zmin, zmax)) for k in range(2)]
+                          if has_angle_psf(self.c) else None)
         self.focus = self.c['focus_um']
-        # PSF lookup table over (z, subpixel x, subpixel y) for fast rendering; bilinear in subpixel, linear in z
-        self.lz, self.ls = psf_lut_z, psf_lut_sub
-        zs = torch.linspace(zmin, zmax, psf_lut_z, device=self.dev)
-        sub = (torch.arange(psf_lut_sub + 1, device=self.dev) / psf_lut_sub) - 0.5     # -0.5 .. 0.5 inclusive
-        Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
-        pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
-        with torch.no_grad():
-            lut = torch.cat([render(self.psf, p) for p in pos.split(1024)])
-        self.lut = lut.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi)
-        # (2026-11-11, opt-in) per-pattern-angle PSF (calib 'psf_dipole_M_angle' / 'psf_blur_angle_px2'): one LUT per angle;
-        # self.lut = the exact average of the two angle LUTs (pattern-free consumers: templates, sums); self.psf = the
-        # angle-averaged model of torch_psf.PSF.load(angle=None) (mean dipole tensor: exact; mean blur covariance: approximate)
-        self.lut_angle = None
-        if has_angle_psf(self.c):
-            self.lut_angle = []
-            for k in range(2):
-                pk = spsf.PSF.load(calib_path, roisize=psf_roi, device=device, angle=k)
-                with torch.no_grad():
-                    la = torch.cat([render(pk, p) for p in pos.split(1024)])
-                self.lut_angle.append(la.reshape(psf_lut_z, psf_lut_sub + 1, psf_lut_sub + 1, psf_roi, psf_roi))
-            self.lut = 0.5 * (self.lut_angle[0] + self.lut_angle[1])   # exact angle average (equal light per angle)
-        self.zs = zs
         cam = self.c['camera']
         self.gain, self.offset, self.rn = cam['gain_e_per_adu'], cam['offset_adu'], cam['readnoise_e']
         self.rn_map = None
@@ -69,31 +49,21 @@ class Simulator:
         self.depth0 = torch.tensor(p['depth'], device=self.dev)
 
     # ------------------------------------------------------------------
-    def render_psf_angles(self, x, y, z):
-        """(per-angle PSF) [2,N,R,R] rendered with lut_angle[0 / 1]; [1,N,R,R] with self.lut otherwise"""
-        if self.lut_angle is None:
+    def render_psf_angles(self, x, y, z, psf=None):
+        """(per-angle PSF) [2,N,R,R] of the two pattern angles (psf: a pair of models, default self.psf_angle); [1,N,R,R] of
+        self.psf for a calibration without per-angle terms"""
+        pa = self.psf_angle if psf is None else psf
+        if pa is None:
             return self.render_psf(x, y, z)[None]
-        base = self.lut; out = []
-        for la in self.lut_angle:
-            self.lut = la; out.append(self.render_psf(x, y, z))
-        self.lut = base
-        return torch.stack(out)
+        return torch.stack([self.render_psf(x, y, z, p) for p in pa])
 
-    def render_psf(self, x, y, z):
-        """Interpolated PSF images [N,R,R] for emitters with subpixel offsets relative to their pixel center."""
-        fx, fy = x - torch.round(x), y - torch.round(y)                     # [-0.5, 0.5]
-        tx = (fx + 0.5) * self.ls; ty = (fy + 0.5) * self.ls
-        ix = tx.floor().long().clamp(0, self.ls - 1); iy = ty.floor().long().clamp(0, self.ls - 1)
-        wx = (tx - ix)[:, None, None]; wy = (ty - iy)[:, None, None]
-        tz = ((z - self.zmin) / (self.zmax - self.zmin)).clamp(0, 1) * (self.lz - 1)
-        iz = tz.floor().long().clamp(0, self.lz - 2); wz = (tz - iz)[:, None, None]
-        def at(dz, dy, dx):
-            return self.lut[iz + dz, iy + dy, ix + dx]
-        out = 0
-        for dz, w_z in ((0, 1 - wz), (1, wz)):
-            out = out + w_z * ((1 - wy) * ((1 - wx) * at(dz, 0, 0) + wx * at(dz, 0, 1)) +
-                               wy * ((1 - wx) * at(dz, 1, 0) + wx * at(dz, 1, 1)))
-        return out
+    def render_psf(self, x, y, z, psf=None):
+        """PSF images [N,R,R] (psf: a model, default self.psf) of emitters at (x, y) px, height z um, on the R x R ROI centred
+        on their nearest pixel (round(x), round(y)); z clamped to zmin .. zmax"""
+        p = self.psf if psf is None else psf
+        pos = torch.stack([x - torch.round(x), y - torch.round(y), z.clamp(self.zmin, self.zmax)], 1)
+        with torch.no_grad():
+            return p.render(pos)
 
     # ------------------------------------------------------------------
     def sample(self, nb, density=(0.0005, 0.012), ontime=(2.0, 20.0), photons=(150, 1500), bg=(1.0, 30.0),
@@ -186,7 +156,7 @@ class Simulator:
             Wp = img.shape[-1]; Hp = img.shape[-2]
             lin = (fov[:, None, None] * T * Hp * Wp + torch.arange(T, device=dev)[None, :, None] * Hp * Wp
                    + (iy * Wp + ix)[:, None, :])                                          # [N,T,R*R]
-            if self.lut_angle is None:
+            if self.psf_angle is None:
                 val = phot[:, :, None] * psf.reshape(N, 1, -1)
             else:   # each frame's PSF follows its pattern angle
                 psfA = self.render_psf_angles(x, y, z).reshape(2, N, 1, -1)

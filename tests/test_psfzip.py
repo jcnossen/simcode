@@ -7,8 +7,10 @@ Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzi
     plus only the defaults torch-psf writes explicitly (EXTRA_OK)
   - camera_maps(zip) == the json's npz (every entry: offset_adu, readnoise_e and the extra entries; values and dtype)
   - PSF.load(zip) renders bit-identically to PSF.load(json) (roisize 11 / oversample 3 and the stored defaults, angle
-    average), the solve spline (simcode.psf.spline) has identical knots, the Simulator's LUT and pattern are identical,
-    the zip's zstack.tif = the json PSF rendered at its planes
+    average), the PSF renderer (simcode.psf.calib_psf, the integrated spline) has identical coefficients, the Simulator's PSF
+    and pattern are identical, the zip's zstack.tif = the json PSF rendered at its planes
+  - write_calib_zip (the integrated spline in the zip): read_calib and camera_maps give what the vectorial zip gives, calib_psf
+    reads the spline from the zip = the one built from the json
   - model folders: models.json / model.json point at the zips
   - 4Pi: fourpi_state(zip) == the state json; torch_psf FourPiPSF of the zip renders bit-identically to
     simcode.fourpi.coherent_psf, its 'raw' parameters are those of coherent_psf; the spline zip (spline_knots='rebuild') rebuilds the
@@ -74,15 +76,42 @@ def test_psf_render_spline_simulator():
             a, b = spsf.PSF.load(js, device=DEV, **kw), spsf.PSF.load(zp, device=DEV, **kw)
             assert type(a) is type(b)
             with torch.no_grad():
-                assert torch.equal(spsf.render(a, pos), spsf.render(b, pos)), (zp, kw)
-        with torch.no_grad():
-            ka = spsf.spline(spsf.PSF.load(js, roisize=11, oversample=3, device=DEV), 0.2).knots
-            kb = spsf.spline(spsf.PSF.load(zp, roisize=11, oversample=3, device=DEV), 0.2).knots
-        assert torch.equal(ka, kb), zp
+                assert torch.equal(a.render(pos), b.render(pos)), (zp, kw)
         if 'gauss' in zp: continue
-        sa, sb = (Simulator(p, H=16, W=16, T=6, device=DEV, psf_roi=15, psf_lut_z=11, psf_lut_sub=8) for p in (js, zp))
-        assert torch.equal(sa.lut, sb.lut) and torch.equal(sa.k0, sb.k0) and torch.equal(sa.depth0, sb.depth0), zp
+        ka, kb = spsf.calib_psf(js, device=DEV), spsf.calib_psf(zp, device=DEV)
+        assert torch.equal(ka.coefs, kb.coefs), zp
+        sa, sb = (Simulator(p, H=16, W=16, T=6, device=DEV, psf_roi=15) for p in (js, zp))
+        with torch.no_grad():
+            assert torch.equal(sa.psf.render(pos), sb.psf.render(pos)), zp
+        assert torch.equal(sa.k0, sb.k0) and torch.equal(sa.depth0, sb.depth0), zp
         assert torch.equal(sa.rn_map, sb.rn_map) and (sa.gain, sa.offset, sa.rn) == (sb.gain, sb.offset, sb.rn), zp
+
+
+def test_write_calib_zip_spline():
+    """write_calib_zip writes the integrated spline (channel 0, the vectorial model as source, psf.zip 0.3.0); the calibration
+    reads back as from the vectorial zip; calib_psf reads the coefficients = those built from the json"""
+    import tempfile, pathlib
+    from simcode import psf as spsf
+    tmp_path = pathlib.Path(tempfile.mkdtemp())
+    js = M('m1809/calib_1809_2_psf_v2.json')
+    out = str(tmp_path / 'c.psf.zip'); out0 = str(tmp_path / 'c0.psf.zip')
+    J = json.load(open(js)); J['camera']['maps'] = os.path.abspath(os.path.join(os.path.dirname(js), J['camera']['maps']))
+    jj = str(tmp_path / 'c.json'); json.dump(J, open(jj, 'w'))
+    spsf.write_calib_zip(jj, out, device=DEV); spsf.write_calib_zip(jj, out0, spline=False, device=DEV)
+    with zipfile.ZipFile(out) as z:
+        meta = json.loads(z.read('psf.json'))
+    assert meta['version'] == '0.3.0' and meta['channels'][0]['type'] == 'integrated_spline'
+    assert meta['channels'][0]['source']['type'] == 'vectorial'
+    assert spsf.read_calib(out) == spsf.read_calib(out0)
+    a, b = spsf.camera_maps(out), spsf.camera_maps(out0)
+    assert set(a) == set(b) and all(np.array_equal(a[k], b[k]) for k in a)
+    s1, s2 = spsf.calib_psf(out, 11, device=DEV), spsf.calib_psf(jj, 11, device=DEV)
+    assert torch.equal(s1.coefs, s2.coefs) and s1.roisize == 11
+    v = spsf.vectorial_psf(out, 11, device=DEV)
+    assert isinstance(v, spsf.VectorialPSF)
+    with torch.no_grad():
+        pos = _positions()
+        assert torch.equal(v.render(pos), spsf.vectorial_psf(jj, 11, device=DEV).render(pos))
 
 
 def test_zstack_member():

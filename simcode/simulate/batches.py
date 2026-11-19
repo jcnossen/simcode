@@ -86,13 +86,13 @@ class TrainingBatches:
     def __init__(self, H=64, W=64, T=6, seed=0, calib=None, p_std=None, bnoise=None):
         # calib (2026-11-11 psf3d retrain; None = the presets' PSF): list of in-situ calib jsons (e.g. the averaged
         # *_psf3d_avg.json of a movie) replacing the presets' PSF; one is drawn uniformly per batch (o['calib_i']), the
-        # preset (pattern / camera / emitter model) is drawn as before. Both presets of one calib share its Simulator / LUT bank.
+        # preset (pattern / camera / emitter model) is drawn as before. Both presets of one calib share its Simulator / PSF bank.
         self.calibs = None
         if calib:
             self.calibs = list(calib); self.rsm = []
             for c in self.calibs:
                 d_ = {p: AcquisitionSim(p, H, W, T, seed=seed, calib=c, zmax=Z_RANGE_UM[1], z_unif=Z_UNIF) for p in ('0.5nM', '2.5nM')}
-                d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].luts = d_['0.5nM'].luts
+                d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].psfs = d_['0.5nM'].psfs
                 self.rsm.append(d_)
             torch.cuda.empty_cache()
             self.rs = self.rsm[0]; self.ci = 0
@@ -117,7 +117,7 @@ class TrainingBatches:
         out = []
         for r in ([d_['0.5nM'] for d_ in self.rsm] if self.calibs else [self.rs['0.5nM']]):
             out.append('presets' if r.zq is None else dict(p=[round(float(v), 4) for v in r.zq[0]], z_um=[round(float(v), 4) for v in r.zq[1]],
-                                                           clip_um=r.zclip, lut_um=[round(r.zmin, 3), round(r.zmax, 3)]))
+                                                           clip_um=r.zclip, z_render_um=[round(r.zmin, 3), round(r.zmax, 3)]))
         return out
 
     def all_rs(self):

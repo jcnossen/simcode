@@ -84,10 +84,10 @@ simcode/
     acquisition.py            AcquisitionSim: the experiment-matched acquisition simulator (measured PSF with jitter, camera maps, structured / fluctuating bg, filaments, kinetics, SIMCODE or generic patterns)
     batches.py                TrainingBatches: training batches of the detector and the emitter network, pass 1 and pass 2 (emitter_batch, detector_batch, illumination_batch)
     targets.py                training targets and weights from the ground truth: detector cell targets, nn-bin weights, candidate-GT matching, emitter-network targets
-    simulator.py              Simulator: the calibrated physical model (PSF LUT rendering, calibration json, camera)
+    simulator.py              Simulator: the calibrated physical model (PSF rendering: simcode.psf.calib_psf, calibration, camera)
     crlb.py                   scene generator and multi-emitter CRLB of the benchmark scenes
     gate_layouts.py           emitter layouts of the gate scenes (grids, pairs, Poisson scenes, wide brightness) and the pattern-estimate error model
-    psf_perturbation.py       bank of perturbed PSF LUTs (width, aberrations, focus) and camera errors
+    psf_perturbation.py       perturbed PSFs of the PSF bank (width, aberrations, focus, blur)
     fourpi_patches.py         FourPiPatchSim: 4Pi candidate patches (T x 4 channel patches; pattern=False: plain 4Pi) with GT read-out targets (4Pi emitter-network training, solve gates)
     multichannel.py           MultiChannelAcquisitionSim: full multi-channel scenes through the registration maps of CellSpec acquisitions (4Pi detector training, simulated movies; patterns=False: plain 4Pi with T frames; random registration error), candidate_patches (plain-4Pi emitter-network training)
   benchmark/

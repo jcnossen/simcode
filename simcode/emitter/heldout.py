@@ -34,7 +34,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
     from simcode.simulate.crlb import illum_at
     T = 6
     CD.a.calib = config.model(config.INSITU_05)               # the PSF of the scenes (gate.gen renders with it)
-    sim, rpsf, _ = CD.models(T)
+    sim, rpsf = CD.models(T)
     det, _ = load_det(config.DETECTOR)
     col = PSFCol(sim)
     H = {}
@@ -52,7 +52,7 @@ def prep(scen=(('iso', 13000), ('pair2', 5000), ('rs25x', 5000)), seed=401, out=
             nnd = ST.nn_dist(G, tg)
             fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
             psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
-            psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai], sim.focus)
+            psS[ai] = CD.psf_stack(rpsf, G['x'][ai], G['y'][ai], G['z'][ai])
             Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
             cov = Cb['cov_or'].double(); ok = torch.isfinite(cov).all(2).all(1) & torch.isfinite(Cb['sf_m']).all(1)
             tg, nnd, cov = tg[ok], nnd[ok], cov[ok]; sfm = Cb['sf_m'][ok]

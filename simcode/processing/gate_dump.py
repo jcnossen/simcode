@@ -93,7 +93,7 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     CD.a.calib = GA.gate_calib(a.calib)
-    sim, _, _ = CD.models(6)
+    sim, _ = CD.models(6)
     col = EM.PSFCol(sim)
     if a.p2: FRONTS['p2'] = tuple(a.p2.split(','))
     FR = {}

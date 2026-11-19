@@ -16,15 +16,26 @@ convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
 
 SIMCODE-specific:
 
-  has_angle_psf(c), angle_kwargs(c, dev)   per-pattern-angle PSF terms of a calibration dict (SIM illumination angle =
+  has_angle_psf(c)                         per-pattern-angle PSF terms of a calibration dict (SIM illumination angle =
                                            step // 3 = frame % 6 // 3): 'psf_dipole_M_angle' [2][3][3], 'psf_blur_angle_px2'
-                                           [2][3]. PSF.load(path, angle=0 / 1 / None) gives that angle's model (None = the
-                                           angle average: mean dipole tensor, mean blur covariance).
-  render(psf, pos, **kw)                   normalized PSF at the model's focus for a VectorialPSF (kw = per-call dipM / blur)
-                                           or a GaussianPSF (calib key 'psf_gauss_sigma_um'; z / focus / kw do not apply).
-  spline(psf, zmax, roisize)               the PSF spline of the solve and the head template (psf.to_spline): knots 6 x
-                                           oversampled, 10 nm in z over emitter heights 0 .. zmax plus 3 planes each side,
-                                           offset limit P / 2 + 1 px, at the model's focus (or focus_um).
+                                           [2][3]. vectorial_psf(path, angle=0 / 1 / None) gives that angle's VectorialPSF (None
+                                           = the angle average: mean dipole tensor, mean blur covariance); calib_psf(path,
+                                           angle=...) its spline (None = the mean of the angle images). Note: torch_psf
+                                           PSF.load(<psf.zip>, angle=k) ignores the angle (the per-angle terms of a calibration
+                                           zip are in provenance.unused_model_keys; read_calib restores them).
+  calib_psf(path, roisize, angle, device)  THE PSF renderer of SIMCODE and of the baselines (2026-11-19; analysis/baselines
+                                           zpsf: SMLM, SIMFLUX, DECODE): the integrated cubic B-spline of the calibration
+                                           (torch_psf IntegratedSplinePSF: point samples of the exact vectorial model on
+                                           SPLINE's knot grid, the exact pixel integral of the spline; 1.7e-5 of the peak
+                                           from the vectorial model at 'exact' pixel integration). A psf.zip written with
+                                           it (write_calib_zip) carries the coefficients (per pattern angle + their mean);
+                                           any other calibration (calib json, a psf.zip without them) builds them on load
+                                           from its vectorial model (integrated_spline; cached per file). angle 0 / 1 =
+                                           that pattern angle, None = the mean of the angle images. A Gaussian calibration
+                                           ('psf_gauss_sigma_um') gives its GaussianPSF.
+  integrated_spline(calib, device)         the IntegratedSplinePSF of a calibration (path or calib dict, e.g. a perturbed
+                                           one) built from its vectorial model on the SPLINE grid (all angles).
+  vectorial_psf(path, roisize, angle)      the calibration's VectorialPSF (the source model; the PSF fits, the CRLB).
 
 Calibration files (the one reader of the non-PSF entries of a calibration): a SIMCODE calibration is either the calib json
 (PSF keys at the top level, 'camera' {gain_e_per_adu, offset_adu, readnoise_e, maps: npz next to the json}, 'pattern',
@@ -54,7 +65,7 @@ from torch_psf.spots import Tracks, extract_rois
 from torch_psf.detect import filter_frames
 from torch_psf.estimation import fit_tracks, spot_deviance, heldout_tracks, paired_nll, split_checkerboard
 from torch_psf.vectorial import gauss_blur_os, dipole_tensor
-from torch_psf.spline import emitter_height_pos_fn
+from torch_psf.pixint import IntegratedSplinePSF
 from torch_psf import psfzip as _pz
 from torch_psf.psfzip import save_zip, is_psf_zip, convert_calibration
 from torch_psf.camera import maps_from_movie, white_photon_transfer
@@ -70,34 +81,79 @@ def has_angle_psf(c):
     return any(c.get(k) is not None for k in ANGLE_KEYS)
 
 
-def angle_kwargs(c, dev):
-    """per-pattern-angle VectorialPSF.forward kwargs [kw0, kw1] (dipM / blur of that angle) of a calib dict, or None"""
-    if not has_angle_psf(c):
-        return None
-    out = []
-    for k in range(2):
-        kw = {}
-        if c.get('psf_dipole_M_angle') is not None: kw['dipM'] = torch.tensor(c['psf_dipole_M_angle'][k], device=dev, dtype=torch.float32)
-        if c.get('psf_blur_angle_px2') is not None: kw['blur'] = torch.tensor(c['psf_blur_angle_px2'][k], device=dev, dtype=torch.float32)
-        out.append(kw)
-    return out
+# ============================================================================================ the PSF renderer
+# knot grid of the integrated cubic B-spline of a calibration (IntegratedSplinePSF.from_vectorial): emitter heights 0 - 0.4 um
+# (user decision 2026-11-19; 6 extra planes each side absorb the boundary of the B-spline prefilter), 10 nm planes, 4 knots / px
+# (3 knots / px: 5.3e-5 of the peak from the exact vectorial model on the v4 PSFs, 4: 1.7e-5; out/onepsf), offsets up to 2 px
+# on a 41 x 41 ROI (a smaller ROI supports larger offsets: 15 px at 11 x 11)
+SPLINE = dict(z_range=(0.0, 0.4), roisize=41, xy_limit=2.0, oversample=4, dz_um=0.01, zpad=6)
+_SPLINES = {}                       # (file, mtime, size, device) -> IntegratedSplinePSF of calib_psf (built on load)
 
 
-def render(psf, pos, **kw):
-    """normalized PSF [N, P, P] at pos [N, 3] (x, y px rel. to the ROI centre, z um) at psf.focus_um"""
-    if isinstance(psf, VectorialPSF):
-        return psf(pos, psf.focus_um, **kw)
-    return psf.render(pos)
+def vectorial_psf(calib, roisize=15, angle=None, device='cuda'):
+    """the VectorialPSF of a calibration (path: calib json or psf.zip, with or without the integrated spline; or a calib dict)
+    at the calibration's sampling; angle 0 / 1 = that pattern angle's, None = the angle average (torch_psf semantics)"""
+    c = calib if isinstance(calib, dict) else read_calib(calib)
+    if c.get('psf_gauss_sigma_um') is not None:
+        raise ValueError('a Gaussian calibration has no vectorial model')
+    if isinstance(calib, dict) or not is_psf_zip(str(calib)):
+        return PSF.load(calib, roisize=roisize, device=device, angle=angle)
+    return PSF.load(c, roisize=roisize, device=device, angle=angle)          # the zip's vectorial keys (calib layout)
 
 
-def spline(psf, zmax=0.2, roisize=None, focus_um=None, oversample=6, dz_um=0.01, zpad=3, xy_limit=None, chunk=4):
-    """CubicSplinePSF of psf (VectorialPSF or GaussianPSF) for roisize x roisize patches (default psf.roisize) and
-    emitter heights 0 .. zmax um at the focus psf.focus_um (or focus_um; vectorial only)"""
-    P = psf.roisize if roisize is None else roisize
-    kw = dict(oversample=oversample, dz_um=dz_um, zpad=zpad, xy_limit=P / 2 + 1 if xy_limit is None else xy_limit, chunk=chunk)
-    if focus_um is not None:
-        kw['pos_fn'] = emitter_height_pos_fn(focus_um)
-    return psf.to_spline(P, (0.0, zmax), **kw)
+def integrated_spline(calib, device='cuda', **grid):
+    """the IntegratedSplinePSF (all pattern angles: coefs_angle when the calibration has per-angle terms) of a calibration (path
+    or calib dict) built from its vectorial model on the SPLINE grid (grid: overrides of SPLINE)"""
+    g = dict(SPLINE, **grid)
+    c = calib if isinstance(calib, dict) else read_calib(calib)
+    vecs = ([vectorial_psf(calib, g['roisize'], k, device) for k in range(2)] if has_angle_psf(c)
+            else vectorial_psf(calib, g['roisize'], None, device))
+    v0 = vecs[0] if isinstance(vecs, list) else vecs
+    if v0.pixel_integration != 'spectral':
+        import warnings
+        warnings.warn(f"{'calibration dict' if isinstance(calib, dict) else os.path.basename(str(calib))}: fitted with pixel_integration "
+                      f"{v0.pixel_integration!r}; its PSF spline is the exact pixel integral of the same parameters (up to ~1 % of "
+                      f"the peak from the {v0.pixel_integration!r} rendering)", stacklevel=2)
+    return IntegratedSplinePSF.from_vectorial(vecs, **g)
+
+
+def _zip_channel_type(path):
+    import zipfile
+    with zipfile.ZipFile(path) as z:
+        return json.loads(z.read('psf.json').decode('utf-8'))['channels'][0]['type']
+
+
+def calib_psf(calib, roisize=None, angle=None, device='cuda', z_range=None):
+    """THE PSF of a calibration (module doc): IntegratedSplinePSF for roisize x roisize ROIs (default SPLINE roisize) of pattern
+    angle `angle` (None = the mean of the angle images); from the psf.zip's integrated_spline channel, else built from the
+    vectorial model (integrated_spline, cached per file / device); calib may also be a calib dict (built, not cached).
+    z_range: heights (um) the spline must cover (default SPLINE's); one beyond the stored spline's range is built from the
+    vectorial model on the union of both ranges (e.g. heights below the coverslip). A Gaussian calibration: its GaussianPSF."""
+    c = calib if isinstance(calib, dict) else read_calib(calib)
+    P = SPLINE['roisize'] if roisize is None else int(roisize)
+    if c.get('psf_gauss_sigma_um') is not None:
+        return PSF.load(calib, roisize=P, device=device)
+    zr = tuple(SPLINE['z_range']) if z_range is None else (float(z_range[0]), float(z_range[1]))
+    covers = lambda r: r[0] <= zr[0] + 1e-9 and r[1] >= zr[1] - 1e-9
+    grid = {} if covers(SPLINE['z_range']) else dict(z_range=(min(zr[0], SPLINE['z_range'][0]), max(zr[1], SPLINE['z_range'][1])))
+    if isinstance(calib, dict):
+        spl = integrated_spline(c, device, **grid)
+    else:
+        path = os.path.abspath(str(calib)); st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size, str(torch.device(device)), tuple(grid.get('z_range', ())))
+        spl = _SPLINES.get(key)
+        if spl is None:
+            if is_psf_zip(path) and _zip_channel_type(path) == 'integrated_spline':
+                spl = PSF.load(path, device=device)
+                if not covers(spl.z_range):
+                    spl = integrated_spline(path, device, z_range=(min(zr[0], spl.z_range[0]), max(zr[1], spl.z_range[1])))
+            else:
+                spl = integrated_spline(path, device, **grid)
+            _SPLINES[key] = spl
+    if spl.n_angles == 0 and has_angle_psf(c):
+        raise ValueError('a calibration with per-angle PSF terms but a spline without per-angle coefficients')
+    out = spl.for_angle(angle) if angle is not None else spl
+    return out if out.roisize == P else out.resized(P)
 
 
 # ============================================================================================ calibration files
@@ -111,10 +167,15 @@ def calib_from_psfjson(meta):
     psf_v2 / provenance_note from the provenance. Zips written before torch-psf 52c75c5 (pattern note in
     patterns['note'], camera scalars = map medians) read with these limits."""
     chans = meta['channels']
-    if len(chans) != 1 or chans[0]['type'] not in ('vectorial', 'gaussian'):
-        raise ValueError(f"SIMCODE calibration: a single-channel vectorial / gaussian psf.zip expected "
+    if len(chans) != 1 or chans[0]['type'] not in ('vectorial', 'gaussian', 'integrated_spline'):
+        raise ValueError(f"SIMCODE calibration: a single-channel vectorial / gaussian / integrated_spline psf.zip expected "
                          f"({len(chans)} channels, types {sorted({c['type'] for c in chans})})")
-    ch = chans[0]; m = dict(ch['model']); c = {}
+    ch = chans[0]; c = {}
+    if ch['type'] == 'integrated_spline':          # the integrated spline (calib_psf) with the calibration's vectorial model as source
+        if (ch.get('source') or {}).get('type') != 'vectorial':
+            raise ValueError('SIMCODE calibration: an integrated_spline channel needs its vectorial source')
+        ch = dict(ch['source'], name=ch['name'])
+    m = dict(ch['model'])
     prov = meta.get('provenance') or {}
     for k in PROVENANCE_KEYS:
         if k in prov: c[k] = prov[k]
@@ -182,11 +243,17 @@ def camera_maps(path, c=None):
         return {k: M[k] for k in M.files}
 
 
-def write_calib_zip(json_path, out=None, **kw):
+def write_calib_zip(json_path, out=None, spline=True, **kw):
     """psf.zip of a SIMCODE calib json (torch_psf.psfzip.convert_calibration: lossless; the json is kept in
-    provenance.converted_from); out default <json without .json>.psf.zip; kw (report=, provenance=, ...) -> save_zip.
-    Returns the zip path."""
+    provenance.converted_from); out default <json without .json>.psf.zip; spline (default): channel 0 is the integrated
+    spline of the calibration on the SPLINE grid (per pattern angle; the vectorial model as its source: read_calib reads the
+    calibration from there), so that calib_psf reads the coefficients instead of building them (a Gaussian calibration
+    has none); kw (report=, provenance=, device=, ...) -> convert_calibration / save_zip. Returns the zip path."""
     out = out or (os.path.splitext(str(json_path))[0] + '.psf.zip')
+    with open(json_path) as f:
+        gauss = json.load(f).get('psf_gauss_sigma_um') is not None
+    if spline and not gauss:
+        kw['integrated_spline'] = dict(SPLINE)
     convert_calibration(json_path, out, **kw)
     return out
 

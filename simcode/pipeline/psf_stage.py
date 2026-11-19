@@ -212,7 +212,8 @@ def run(ds):
     js, pt = os.path.join(d, f'fit_{last}_{best}_psf.json'), os.path.join(d, f'fit_{last}_{best}_psf.pt')
     for avg, fn in ((False, 'calib.json'), (True, 'calib_avg.json')):
         json.dump(calib_dict(ds, js, pt, pat, cam, 'camera_maps.npz', avg), open(os.path.join(d, fn), 'w'), indent=1)
-        spsf.write_calib_zip(os.path.join(d, fn), device='cpu')   # the same calibration as psf.zip (calib.psf.zip, calib_avg.psf.zip)
+        spsf.write_calib_zip(os.path.join(d, fn), device=dev)     # the same calibration as psf.zip (calib.psf.zip, calib_avg.psf.zip), with
+        # the integrated spline of the PSF (simcode.psf.calib_psf; per pattern angle in calib.psf.zip)
     np.save(os.path.join(d, 'psf_images.npy'), psf_images(pt, dev=dev))
     # checks
     fl = fits[last]
