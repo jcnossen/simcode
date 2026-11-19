@@ -200,6 +200,13 @@ def _stages(a, N, cal, Units, atomic_json):
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
+    if not need_pat:
+        import torch
+        has_map = torch.load(f'{a.out}/pattern_est.pt', map_location='cpu', weights_only=False).get('relmap') is not None
+        if has_map != bool(a.intensity_map):
+            print(f'simcode.run: WARNING the existing {a.out}/pattern_est.pt was made with{"" if has_map else "out"} the intensity map, '
+                  f'--intensity_map {a.intensity_map} asks for {"one" if a.intensity_map else "none"}; it is kept (--redo 1 re-estimates it)',
+                  file=sys.stderr, flush=True)
     _uncal(common + ['--stages', 'pass1' + (',pattern' if need_pat else '')] + (['--intensity_map', str(a.intensity_map)] if a.intensity_map else []))
     ST['pass1_pattern_s'] = time.time() - t0
     # 3: pattern solve of the pass-1 rows
