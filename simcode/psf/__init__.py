@@ -1,6 +1,8 @@
 """The one place where SIMCODE uses torch_psf (github.com/jcnossen/torch-psf; pinned in pyproject.toml). Every other module
 imports the PSF models, the PSF / calibration file reader, the fits, the movie readers and the localization Dataset from
-here, so a change of the torch_psf API is a change of this file only.
+here, so a change of the torch_psf API is a change of this file only. What SIMCODE requires of a new torch-psf pin (the
+rendered pixels of the final calibrations must not change) and the pending migration to torch-psf's unified PSF classes:
+docs/TORCH_PSF.md.
 
 From torch_psf (names as there): PSF (base class; PSF.load(path | dict, roisize, device, angle, oversample): calibration
 json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf.to_spline), VectorialPSF, CubicSplinePSF
@@ -20,9 +22,10 @@ SIMCODE-specific:
                                            step // 3 = frame % 6 // 3): 'psf_dipole_M_angle' [2][3][3], 'psf_blur_angle_px2'
                                            [2][3]. vectorial_psf(path, angle=0 / 1 / None) gives that angle's VectorialPSF (None
                                            = the angle average: mean dipole tensor, mean blur covariance); calib_psf(path,
-                                           angle=...) its spline (None = the mean of the angle images). Note: torch_psf
-                                           PSF.load(<psf.zip>, angle=k) ignores the angle (the per-angle terms of a calibration
-                                           zip are in provenance.unused_model_keys; read_calib restores them).
+                                           angle=...) its spline (None = the mean of the angle images). torch_psf
+                                           PSF.load(<psf.zip>, angle=k) reads the per-angle terms since 4b0ffc3 (it refuses
+                                           angle=k for a model without them); read_calib restores them from older zips
+                                           (provenance.unused_model_keys).
   calib_psf(path, roisize, angle, device)  THE PSF renderer of SIMCODE and of the baselines (2026-11-19; analysis/baselines
                                            zpsf: SMLM, SIMFLUX, DECODE): the integrated cubic B-spline of the calibration
                                            (torch_psf IntegratedSplinePSF: point samples of the exact vectorial model on

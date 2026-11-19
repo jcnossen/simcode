@@ -27,6 +27,7 @@ More in the docs:
 - `docs/USAGE.md`: working with the results (`simcode.dataset.Dataset` = `torch_psf.Dataset` + SIMCODE's loaders and selection: load, select, drift, render, FRC, hdf5 / Picasso / ThunderSTORM files); `docs/DATASET_FORMAT.md`: the field layout
 - `docs/LAYOUT.md`: the package tree with one line per directory and file (and what was renamed on 2026-11-15)
 - `docs/PSF_POLARIZATION.md`: the in-situ PSF model and its polarization terms
+- `docs/TORCH_PSF.md`: what SIMCODE requires of torch-psf (one import point, the pin, unchanged rendered pixels) and the pending migration to torch-psf's unified PSF classes
 
 This branch (`master`) holds the package, its tests and two example models (`m1809`, `g13`). The branch `paper_figures` is
 `master` plus the paper material: the analysis scripts (the baselines SMLM / SIMFLUX / DECODE under `analysis/baselines`,
