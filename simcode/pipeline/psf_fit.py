@@ -28,6 +28,9 @@ FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
 # band-limited image (torch-psf 'spectral', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
 # _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box')
 FIT_PIXEL_INTEGRATION = 'box'
+# offset limit (px from the ROI centre) of the spline table of the held-out refit (heldout(); also the heights of the
+# final calibration): R / 2 - 0.5 (= 5 px at R = 11), as torch-psf fit_tracks_spline
+HELDOUT_XY_LIMIT = lambda R: R / 2 - 0.5
 
 
 class Fit:
@@ -244,12 +247,17 @@ def model_from_pt(pt, R, dev='cuda', pixel_integration=None):
 
 
 def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=None, tile=16, salt=1, dev='cuda', log=print,
-            maps=None, keep_z=False):
+            maps=None, keep_z=False, xy_limit=None, vp_grad=False):
     """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks; the refit on
     the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt).
     maps: per-pixel camera maps (load_maps) of the data model (the same for every PSF; None: each PSF's scalar offset /
     read noise). zstarts: the z multi-start of the refit (um; default (0.1, 0.4, 0.75) x the PSF's zmax, = 0.02 / 0.08 / 0.15 um
-    at zmax 0.2). Returns {name: dict(nll [n], chi2 [n], nll_per_px, chi2_per_px, n[, z, I])}"""
+    at zmax 0.2). xy_limit: the offset limit of the refit table (px from the ROI centre; default HELDOUT_XY_LIMIT(R) =
+    R / 2 - 0.5: a sample that runs off towards a neighbour is refitted as the vectorial model renders it; the 2 px
+    limit before 2026-11-19 left ~2 % of the real-data samples stuck at the limit, absolute held-out NLL 0.26 (1809_2)
+    to 1.2 (2.5 nM) nats / sample too high, out/pixint_final). vp_grad: the refit gradient also through the closed-form
+    I / bg (torch_psf heldout_tracks vp_grad; default off = as before). Returns {name: dict(nll [n], chi2 [n], nll_per_px,
+    chi2_per_px, n[, z, I, xy (px from the ROI centre)])}"""
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
@@ -260,10 +268,12 @@ def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=None, til
         tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
         vm = F.angle_models()
         with torch.no_grad():
-            spl = [v.to_spline(R, (0.0, F.zmax), oversample=8, dz_um=0.01, zpad=3, xy_limit=2.0) for v in vm]
+            spl = [v.to_spline(R, (0.0, F.zmax), oversample=8, dz_um=0.01, zpad=3, xy_limit=HELDOUT_XY_LIMIT(R) if xy_limit is None else xy_limit)
+                   for v in vm]
         h = heldout_tracks(tr, vm, readnoise_e=float(torch.exp(F.G['logrn'])) if rnp is None else rnp, zmax_um=F.zmax, groups=groups, ngroups=2,
-                           refit_psfs=spl, z_starts_um=zstarts or tuple(f * F.zmax for f in (0.1, 0.4, 0.75)), iters=iters)
-        out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n') + (('z', 'I') if keep_z else ())}
+                           refit_psfs=spl, z_starts_um=zstarts or tuple(f * F.zmax for f in (0.1, 0.4, 0.75)), iters=iters,
+                           **({'vp_grad': True} if vp_grad else {}))
+        out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n') + (('z', 'I', 'xy') if keep_z else ())}
         log(f'heldout {name}: nll/px {h["nll_per_px"]:.5f}, chi2/px {h["chi2_per_px"]:.4f} ({len(sel)} samples, {test})')
     return out
 
