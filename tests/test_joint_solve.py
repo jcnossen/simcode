@@ -5,6 +5,9 @@ Joint prior / intensity covariance in the pattern solve (2026-11-17). CPU, no mo
     of the nuisance part) with Sigma_J built from L_J = [[diag(sp), 0], [C, L]] and the nuisance term added to its intensity block
   - nll_joint = the explicit 8 x 8 Gaussian NLL minus the prior part
   - reference and fast solve agree with a nonzero C
+  - one brightness per pattern orientation (cal B_per_angle, solve two_b, 2026-11-19): reference = fast; with equal brightness of
+    the two orientations it gives the one-brightness solution up to the noise; with a brightness ratio between the orientations it
+    recovers both brightnesses and keeps the positions unbiased, while the one-brightness solve without c_a is biased / misfits
 """
 import math, os, sys
 import torch
@@ -96,6 +99,40 @@ def test_reference_vs_fast():
     assert float(d.median()) < 1e-4 and float((a['s_pm'] - b['s_pm']).abs().max()) < 1e-3, (float(d.median()), float(d.max()))
 
 
+def test_two_brightness():
+    from simcode.solve import solve as SV, solve_fast as MF, pattern as C
+    I, L, r0, sp, pt, Cj, B = _case(64, 3)
+    Sig = L @ L.transpose(1, 2)
+    for kw in (dict(cmult=0.0), dict(cmult=0.08)):
+        a = SV.fringe_posterior(I, Sig, r0, sp, pt, [r0], Cj, two_b=True, **kw)
+        b = MF.fringe_posterior_fast(I, Sig, r0, sp, pt, [r0], Cj, two_b=True, **kw)
+        d = (a['r_pm'] - b['r_pm']).abs().amax(1)
+        assert float(d.median()) < 1e-4 and float((a['s_pm'] - b['s_pm']).abs().max()) < 1e-3, (kw, float(d.median()))
+        dn = MF.fringe_posterior_fast(I, Sig, r0, sp, pt, [r0], Cj, two_b=True, kin='none', **kw)['dof']
+        assert torch.allclose(dn, torch.full_like(dn, 6 + 2 - 4))                 # x, y, B_0, B_1
+        o1 = MF.fringe_posterior_fast(I, Sig, r0, sp, pt, [r0], Cj, **kw)
+        # same data, equal brightness: the two solutions agree to a fraction of their sd; the extra parameter costs precision
+        assert float(((b['r_pm'] - o1['r_pm']).abs() / o1['s_pm']).median()) < 0.3
+        assert float((b['s_pm'] / o1['s_pm']).median()) >= 0.999
+    # a brightness ratio 1.3 : 0.77 between the orientations (no position noise in I): two_b fits it, the means follow
+    g = torch.Generator().manual_seed(5); n = 64
+    xy = torch.rand(n, 2, generator=g) * 3
+    il, _, _ = C.illum_at(pt, xy[:, 0], xy[:, 1])
+    f = torch.where(torch.arange(6) < 3, 1.3, 1 / 1.3)
+    I2 = 800 * f[None] * il + 5 * torch.randn(n, 6, generator=g)
+    Sig2 = 25.0 * torch.eye(6).expand(n, 6, 6).contiguous(); sp2 = torch.full((n, 2), 2.0); C0 = torch.zeros(n, 6, 2)
+    r2 = MF.fringe_posterior_fast(I2, Sig2, xy, sp2, pt, [xy], C0, two_b=True, kin='none')
+    e2 = (r2['r'] - xy).abs().amax(1)
+    assert float(e2.median()) < 0.01, float(e2.median())
+    mu = r2['mu']; ratio = (mu[:, :3].sum(1) / il[:, :3].sum(1)) / (mu[:, 3:].sum(1) / il[:, 3:].sum(1))
+    assert torch.allclose(ratio, torch.full_like(ratio, 1.69), rtol=0.02), ratio
+    r1 = MF.fringe_posterior_fast(I2, Sig2, xy, sp2, pt, [xy], C0, kin='none')
+    assert float(r1['q'].median()) > 10 * float(r2['q'].median())
+    # the calibration key
+    cal = dict(prior_off=[0, 0], box=1.5, mix_T=1.0, cmult=0.0, cmult_ang=0.0)
+    assert SV.brightness_per_angle(cal) is False and SV.brightness_per_angle(dict(cal, B_per_angle=True)) is True
+
+
 def test_kinetic_average():
     """kinetic model averaging (solve.model_average): weights in [0, 1]; an emitter on through the window -> mostly the
     non-kinetic model, one that switches off half way -> mostly the kinetic one; 'none' / 'kinetic' = one model; the average
@@ -134,5 +171,5 @@ def test_solve_cal():
 
 
 if __name__ == '__main__':
-    for f in (test_cost_equals_explicit_joint, test_nll_joint, test_reference_vs_fast, test_kinetic_average, test_solve_cal):
+    for f in (test_cost_equals_explicit_joint, test_nll_joint, test_reference_vs_fast, test_two_brightness, test_kinetic_average, test_solve_cal):
         f(); print('ok', f.__name__)

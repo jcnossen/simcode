@@ -35,22 +35,23 @@ def _gram(J):
 
 
 # ------------------------------------------------------------------------------------------------ model evaluation
-def _model(p, ptr, oh, kin, Tn):
-    """p [M,6] (x, y, B, B, t_on, t_off) -> mu [M,T], Jm [M,T,K] (K = 3 or 5 free columns: x, y, B (, t_on, t_off))"""
+def _model(p, ptr, oh, kin, Tn, two_b=False):
+    """p [M,6] (x, y, B, B, t_on, t_off) -> mu [M,T], Jm [M,T,K] (K = 3 or 5 free columns: x, y, B (, t_on, t_off)); two_b:
+    p[:, 2:4] = the brightness of the angle-0 / angle-1 frames, both free (K = 4 or 6: x, y, B_0, B_1 (, t_on, t_off))"""
     il, dx, dy = C.illum_at(ptr, p[:, 0], p[:, 1])
     a_, d0, d1 = C.onfrac(p[:, 4], p[:, 5], Tn)
-    B = p[:, 2:3]
+    B = (oh * p[:, None, 2:4]).sum(-1) if two_b else p[:, 2:3]
     mu = B * a_ * il
-    cols = [B * a_ * dx, B * a_ * dy, a_ * il]
+    cols = [B * a_ * dx, B * a_ * dy] + ([a_ * il * oh[..., 0], a_ * il * oh[..., 1]] if two_b else [a_ * il])
     if kin:
         cols += [B * il * d0, B * il * d1]
     return mu, torch.stack(cols, -1)
 
 
-def _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn):
+def _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn, two_b=False):
     """residual / Jacobian / cost at p (as solve.pattern_solve_all.rj; joint prior / intensity covariance: the intensities shifted
     by Cr z_p, z_p = (p_xy - r0) / sp): returns rI [M,T], JI [M,T,K], rp [M,2] (= z_p), cost [M]"""
-    mu, Jm = _model(p, ptr, oh, kin, Tn)
+    mu, Jm = _model(p, ptr, oh, kin, Tn, two_b)
     rp = (p[:, :2] - r0r) / spr
     Ie = Ir + (Cr * rp[:, None, :]).sum(-1)
     Jm = torch.cat([Jm[..., :2] - Cr / spr[:, None, :], Jm[..., 2:]], -1)
@@ -81,23 +82,26 @@ def _normal(JI, rI, rp, spr):
     return Hm, gr
 
 
-def _clamp(p, lo_xy, hi_xy, Tn):
+def _clamp(p, lo_xy, hi_xy, Tn, two_b=False):
     x = torch.maximum(torch.minimum(p[:, :2], hi_xy), lo_xy)
-    B = p[:, 2:3].clamp(min=1.0)
+    B = p[:, 2:4].clamp(min=1.0) if two_b else p[:, 2:3].clamp(min=1.0).expand(-1, 2)
     t_on = p[:, 4].clamp(-1, Tn - 0.25); t_off = torch.maximum(p[:, 5], t_on + 0.25).clamp(max=Tn + 1)
-    return torch.cat([x, B, B, t_on[:, None], t_off[:, None]], 1)
+    return torch.cat([x, B, t_on[:, None], t_off[:, None]], 1)
 
 
 def _lm_step(p, rI, JI, rp, cost, lam, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy,
-             cmult: float, cang: float, kin: bool, Tn: int):
+             cmult: float, cang: float, kin: bool, Tn: int, two_b: bool = False):
     """one LM iteration of solve.pattern_solve_all (accept if the cost decreases; lam / 3 or x 4)"""
     Hm, gr = _normal(JI, rI, rp, spr)
     Hd = Hm + torch.diag_embed(lam[:, None] * Hm.diagonal(dim1=1, dim2=2) + 1e-9)
     dpf = -torch.nan_to_num(torch.linalg.solve_ex(Hd, gr[..., None])[0][..., 0])
     z = torch.zeros_like(dpf[:, :1])
-    dp = torch.cat([dpf[:, :3], z, dpf[:, 3:]] if kin else [dpf, z, z, z], 1)
-    pn = _clamp(p + dp, lo_xy, hi_xy, Tn)
-    rIn, JIn, rpn, cn = _eval(pn, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
+    if two_b:
+        dp = dpf if kin else torch.cat([dpf, z, z], 1)
+    else:
+        dp = torch.cat([dpf[:, :3], z, dpf[:, 3:]] if kin else [dpf, z, z, z], 1)
+    pn = _clamp(p + dp, lo_xy, hi_xy, Tn, two_b)
+    rIn, JIn, rpn, cn = _eval(pn, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn, two_b)
     acc = cn < cost
     p = torch.where(acc[:, None], pn, p); rI = torch.where(acc[:, None], rIn, rI)
     JI = torch.where(acc[:, None, None], JIn, JI); rp = torch.where(acc[:, None], rpn, rp)
@@ -116,8 +120,8 @@ def _get_step(compile_mode):
 
 # ------------------------------------------------------------------------------------------------ solve
 def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0.75,
-                           kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, compile='off'):
-    """as solve.pattern_solve_all (nu = None)"""
+                           kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, compile='off', two_b=False):
+    """as solve.pattern_solve_all (nu = None; two_b: one free brightness per pattern orientation)"""
     n, Tn = I.shape; dev = I.device
     _, ang = C.angle_k(pt)
     H = dr.shape[1]
@@ -157,12 +161,13 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, 
     p = torch.cat([st, B0[:, None], B0[:, None], ton[:, None], toff[:, None]], 1)
     lo_xy, hi_xy = st - box, st + box
     kin = bool(kinetics)
-    p = _clamp(p, lo_xy, hi_xy, Tn); lam = torch.full((M,), 1e-2, device=dev)
-    rI, JI, rp, cost = _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn)
+    two_b = bool(two_b)
+    p = _clamp(p, lo_xy, hi_xy, Tn, two_b); lam = torch.full((M,), 1e-2, device=dev)
+    rI, JI, rp, cost = _eval(p, ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, cmult, cang, kin, Tn, two_b)
     step_fn = _get_step(compile)
     cc = [ptr, oh, Ir, r0r, spr, Cr, Lfix, Sigr, ld0, A2, lo_xy, hi_xy]
     for it in range(iters):
-        p, rI, JI, rp, cost, lam = step_fn(p, rI, JI, rp, cost, lam, *cc, cmult, cang, kin, Tn)
+        p, rI, JI, rp, cost, lam = step_fn(p, rI, JI, rp, cost, lam, *cc, cmult, cang, kin, Tn, two_b)
     chi2 = (rI ** 2).sum(1) + (rp ** 2).sum(1)
     # scatter back to the full (n, H, nk) grid
     full = lambda v, fill: torch.full((n * ns,) + v.shape[1:], fill, device=dev, dtype=v.dtype).index_copy_(0, rows, v)
@@ -196,11 +201,12 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, 
     sig = cov.diagonal(dim1=1, dim2=2)[:, :2].clamp(min=0).sqrt()
     st_all = (r0[:, None] + dr).reshape(-1, 2)
     P_xy = torch.where(okr[:, None], P_[:, :2], st_all)
-    nfree = 3 + 2 * int(kin)
+    nfree = 3 + int(two_b) + 2 * int(kin)
     out = dict(r=P_xy.view(n, H, 2), s=torch.where(okr[:, None], sig, torch.full_like(sig, float('nan'))).view(n, H, 2), nll=cf,
                dof=torch.full((n,), float(Tn + 2 - nfree), device=dev))
     il_, _, _ = C.illum_at(ptr[pidx], P_[:, 0], P_[:, 1]); a_f, _, _ = C.onfrac(P_[:, 4], P_[:, 5], Tn)
-    out['mu'] = (P_[:, 2:3] * a_f * il_).view(n, H, Tn)
+    Bsel = (oh[pidx] * P_[:, None, 2:4]).sum(-1) if two_b else P_[:, 2:3]
+    out['mu'] = (Bsel * a_f * il_).view(n, H, Tn)
     if cmult > 0:
         c2 = torch.nan_to_num(chi2, nan=1e30)[pidx]
         out['chi2'] = torch.where(okr, c2, torch.full_like(c2, float('inf'))).view(n, H)
@@ -209,11 +215,11 @@ def pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, 
 
 @torch.no_grad()
 def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0,
-                          cang=0.0, compile='off'):
+                          cang=0.0, compile='off', two_b=False):
     """as solve.fringe_posterior (same outputs; the posterior over the fringe starts and the kinetic model is solve.model_average)"""
     from simcode.solve.solve import start_offsets, model_average, kin_models
     dr = start_offsets(pt, r0, bases, nf)
-    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, compile=compile)
+    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, compile=compile, two_b=two_b)
     o0 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw) if kin != 'kinetic' else None
     o1 = pattern_solve_all_fast(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, **kw) if kin != 'none' else None
     return model_average(kin_models(kin, o0, o1), temp=temp, dedup=dedup)
@@ -227,5 +233,5 @@ def solve_emitters_fast(o, pt_win, b, cal, nf=1, kin='average', **opts):
     I, Sig, r0, sp, ph, Cj = SV.solve_inputs(o, cal, mm=_mm)
     c, ca = SV.brightness_noise(cal)
     s = fringe_posterior_fast(I, Sig, r0, sp, C.scale_rel(pt_win[b], o.get('relg')), [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'],
-                              cmult=c, cang=ca, **opts)
+                              cmult=c, cang=ca, two_b=SV.brightness_per_angle(cal), **opts)
     return SV.finish(s, I, Sig, r0, sp)

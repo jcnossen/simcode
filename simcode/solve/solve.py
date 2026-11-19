@@ -16,8 +16,10 @@ T = 6
 
 
 def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0.75,
-                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0):
+                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, two_b=False):
     # (2026-11-17) joint prior / intensity covariance of the emitter network (EmitterNet: L_J = [[diag(sp), 0], [Cj, L]]):
+    # two_b (2026-11-19): one free brightness per pattern orientation (p[2] for the angle-0 frames, p[3] for the angle-1 frames;
+    # default: one brightness B for all frames, p[3] tied to p[2]).
     # Sig = L L^T is the intensity covariance GIVEN the prior error, Cj [n,T,2] the coupling. The joint Gaussian cost
     # e_J^T Sigma_J^-1 e_J (e_J = [p_xy - r0; mu - I]) = |(p_xy - r0) / sp|^2 + |L^-1 (I + Cj z_p - mu)|^2, z_p = (p_xy - r0) / sp:
     # the intensity residual uses I shifted by Cj z_p(p) (its x, y Jacobian gets - Cj / sp). The nuisance term c adds to the
@@ -61,12 +63,12 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0
     NP = 6
     p = torch.cat([st, B0[:, None], B0[:, None], ton[:, None], toff[:, None]], 1)
     lo_xy, hi_xy = st - box, st + box
-    free = torch.tensor([1, 1, 1, 0.0, float(kinetics), float(kinetics)], device=dev)
+    free = torch.tensor([1, 1, 1, float(bool(two_b)), float(kinetics), float(kinetics)], device=dev)
     fixed_diag = torch.diag_embed((1 - free).expand(M, NP))
 
     def clamp(p):
         x = torch.maximum(torch.minimum(p[:, :2], hi_xy), lo_xy)
-        B = p[:, 2:4].clamp(min=1.0)[:, :1].expand(-1, 2)
+        B = p[:, 2:4].clamp(min=1.0) if two_b else p[:, 2:4].clamp(min=1.0)[:, :1].expand(-1, 2)
         t_on = p[:, 4].clamp(-1, T_ - 0.25); t_off = torch.maximum(p[:, 5], t_on + 0.25).clamp(max=T_ + 1)
         return torch.cat([x, B, t_on[:, None], t_off[:, None]], 1)
 
@@ -75,7 +77,7 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0
         a_, d0, d1 = C.onfrac(p[:, 4], p[:, 5], T_)
         Bt = (oh * p[:, None, 2:4]).sum(-1)
         mu = Bt * a_ * il
-        dB0, dB1 = a_ * il, torch.zeros_like(il)
+        dB0, dB1 = (a_ * il * oh[..., 0], a_ * il * oh[..., 1]) if two_b else (a_ * il, torch.zeros_like(il))
         Jm = torch.stack([Bt * a_ * dx, Bt * a_ * dy, dB0, dB1, Bt * il * d0, Bt * il * d1], -1) * free
         ldx = 0.0
         if cmult > 0:
@@ -190,11 +192,12 @@ def kin_models(kin, o0, o1):
 
 
 @torch.no_grad()
-def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0):
+def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0,
+                     two_b=False):
     """posterior over the fringe starts and the kinetic model (model_average): both models fitted for every row (kin
     'average'), or one of them ('none', 'kinetic'). Outputs: model_average"""
     dr = start_offsets(pt, r0, bases, nf)
-    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang)
+    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, two_b=two_b)
     o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw) if kin != 'kinetic' else None
     o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, **kw) if kin != 'none' else None
     return model_average(kin_models(kin, o0, o1), temp=temp, dedup=dedup)
@@ -212,12 +215,13 @@ def solve_emitters(o, pt_win, b, cal, nf=1, kin='average'):
     o: the emitter network's outputs I, L, C, x, y, lsxy. cal = solve_cal(...): prior_off (constant prior-position bias, px,
     removed), box (start box half-width, px), mix_T (posterior temperature) of the model's calibration + cmult / cmult_ang (the
     brightness noise c, c_a of the dataset, estimated with the pattern).
+    cal['B_per_angle'] (optional, default False; 2026-11-19): one free brightness per pattern orientation (pattern_solve_all two_b).
     o['relg'] (optional, 2026-11-19): per-row factors [n, 2] of the angle-0 / angle-1 relative intensities (the pattern's
     intensity map at the row's position, pattern.relmap_factors); absent or None = the pattern as given."""
     I, Sig, r0, sp, ph, Cj = solve_inputs(o, cal)
     c, ca = brightness_noise(cal)
     s = fringe_posterior(I, Sig, r0, sp, C.scale_rel(pt_win[b], o.get('relg')), [r0], Cj, nf=nf, box=cal['box'], kin=kin,
-                         temp=cal['mix_T'], cmult=c, cang=ca)
+                         temp=cal['mix_T'], cmult=c, cang=ca, two_b=brightness_per_angle(cal))
     return finish(s, I, Sig, r0, sp)
 
 
@@ -260,6 +264,11 @@ def brightness_noise(cal):
     if any(k not in cal for k in BN_KEYS):
         raise KeyError('solve calibration without the brightness noise c, c_a: build it with simcode.solve.solve.solve_cal / pattern_cal')
     return float(cal['cmult']), float(cal['cmult_ang'])
+
+
+def brightness_per_angle(cal):
+    """cal['B_per_angle'] (default False): the solve fits one brightness per pattern orientation instead of one per window"""
+    return bool(cal.get('B_per_angle', False))
 
 
 def solve_inputs(o, cal, mm=torch.matmul):
