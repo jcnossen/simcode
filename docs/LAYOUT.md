@@ -205,6 +205,11 @@ brightness-noise estimator with its per-model network-transfer tables (`brightne
 8 x Catmull-Rom refit table with its `xy_limit` option and the `vp_grad` option (the refit renders with `simcode.psf.calib_psf`;
 torch-psf always differentiates through the closed-form I / bg). The default table of a run is the pass-2 solve
 `locs_p2_solve` again (`locs_p2_net` 2026-11-17 to 2026-11-19).
+Changed 2026-11-19: the PSF stage fits with `psf.pixel_integration` 'exact' by default (the exact pixel integral of the
+band-limited image; `pipeline/psf_fit.FIT_PIXEL_INTEGRATION`); 'box' is still accepted, with a deprecation warning, to
+reproduce older fits, and old 'box' fits / calibrations stay readable. Work folders whose psf stage was fitted with 'box'
+(before the key existed) become stale under the new default (intended; `localization_pipeline.LATE_DEFAULTS` keeps 'box' as
+the value of the records before the key, so they stay up to date only with an explicit 'box').
 
 ## Outside the package
 

@@ -51,10 +51,13 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 fits with every sample's x, y, z refitted from the z multi-start (held-out-style refit) on psf.init_select_nsamples
                 (default 8000) cb0 samples of another draw; 'train' = the lowest training NLL (before). The training NLL also
                 depends on the local z optimum each sample reached from the fit's single z start
-  psf.pixel_integration  pixel integration of the fitted vectorial PSF (added 2026-11-19): 'box' (default; the mean of 2 x 2
-                point samples per pixel, the fits up to psf_v3) or 'exact' (the exact pixel integral of the band-limited
-                image, torch-psf VectorialPSF pixel_integration 'spectral'; ~2x the cost without blur, about the same with a
-                blur). Stored in the fits and the calibration, so every consumer renders the PSF with it (out/pixint_fit)
+  psf.pixel_integration  pixel integration of the fitted vectorial PSF (added 2026-11-19): 'exact' (default since 2026-11-19:
+                the exact pixel integral of the band-limited image, torch-psf VectorialPSF pixel_integration 'spectral'; ~2x the
+                cost of 'box' without blur, about the same with a blur; the in-situ PSFs v4) or 'box' (deprecated, accepted with a
+                warning to reproduce older fits: the mean of 2 x 2 point samples per pixel, the fits up to psf_v3). Stored in the
+                fits and the calibration, so every consumer renders the PSF with it (out/pixint_fit). Work folders whose psf
+                stage was fitted with 'box' (before the key, or 'box' given) are stale under the default; at 'box' a folder
+                from before the key stays up to date (localization_pipeline.LATE_DEFAULTS)
   psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
   psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
                 the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
@@ -93,7 +96,7 @@ DEFAULTS = {
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
     'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
                 readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, init_blur=True, init_select='refit', init_select_nsamples=8000, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000,
-                pixel_integration='box'),
+                pixel_integration='exact'),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
@@ -219,7 +222,11 @@ def validate(c):
     if mf is not None and (not isinstance(mf, int) or isinstance(mf, bool) or mf <= 0):
         raise ValueError(f'spots.maxframe: null (the whole movie) or a number of frames > 0, not {mf!r}')
     if c['psf']['init_select'] not in ('refit', 'train'): raise ValueError("psf.init_select: refit | train")
-    if c['psf']['pixel_integration'] not in ('box', 'exact'): raise ValueError("psf.pixel_integration: box | exact")
+    if c['psf']['pixel_integration'] not in ('box', 'exact'): raise ValueError("psf.pixel_integration: exact (default) | box (deprecated)")
+    if c['psf']['pixel_integration'] == 'box':
+        import warnings
+        warnings.warn("psf.pixel_integration 'box' is deprecated (2026-11-19; default 'exact'): accepted to reproduce older PSF fits",
+                      stacklevel=2)
     for k_ in ('nsamples', 'heldout_nsamples', 'init_nsamples', 'spread_nsamples', 'init_select_nsamples'):
         v = c['psf'][k_]
         if not (v is None and k_ in ('init_nsamples', 'spread_nsamples')) and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):

@@ -27,8 +27,9 @@ FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
 # pixel integration of the fitted VectorialPSF (psf.pixel_integration; torch_psf VectorialPSF.pixel_integration): 'box' = the
 # mean of FIT_OVERSAMPLE^2 point samples per pixel (the fits up to psf_v3), 'exact' = the exact pixel integral of the
 # band-limited image (torch-psf 'spectral', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
-# _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box')
-FIT_PIXEL_INTEGRATION = 'box'
+# _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box'). Default 'exact' since
+# 2026-11-19 (the v4 PSFs; 'box' only to reproduce older fits)
+FIT_PIXEL_INTEGRATION = 'exact'
 
 
 class Fit:

@@ -1,7 +1,7 @@
 """
 psf.pixel_integration of the psf stage (simcode.pipeline.psf_fit): the fit with pixel_integration 'exact' (torch-psf
 VectorialPSF pixel_integration 'spectral') stores it in _psf.pt / _psf.json, model_from_pt and heldout() use it (or an
-override), and calib_dict writes it; the default 'box' leaves the files as before. Small synthetic tracks (CPU or GPU).
+override), and calib_dict writes it; 'box' (deprecated since the default became 'exact', 2026-11-19) leaves the files as before. Small synthetic tracks (CPU or GPU).
 Needs a torch-psf with VectorialPSF.pixel_integration (skipped otherwise).
 Run: python tests/test_psf_pixint.py (or pytest tests/test_psf_pixint.py)
 """
@@ -45,8 +45,8 @@ def test_pixel_integration_fit_files_heldout():
     with tempfile.TemporaryDirectory() as d:
         kw = dict(optics=OPT, gain=0.5, nsamples=48, iters=40, zmax=0.2, readnoise_e=1.0, offset_adu=100.0, dev=DEV,
                   log=lambda *a: None, init_zcoef=[0.0, 0.04] + [0.0] * 15)
-        rb = P.fit(D, os.path.join(d, 'box'), **kw)
-        re = P.fit(D, os.path.join(d, 'ex'), pixel_integration='exact', **kw)
+        rb = P.fit(D, os.path.join(d, 'box'), pixel_integration='box', **kw)
+        re = P.fit(D, os.path.join(d, 'ex'), **kw)                                  # the default: exact
         assert rb['pixel_integration'] == 'box' and re['pixel_integration'] == 'spectral'
         assert torch.load(os.path.join(d, 'ex_psf.pt'), weights_only=False)['pixel_integration'] == 'spectral'
         assert json.load(open(os.path.join(d, 'ex_psf.json')))['pixel_integration'] == 'spectral'
@@ -73,26 +73,32 @@ def test_pixel_integration_fit_files_heldout():
 
 
 def test_config_and_stage_settings():
-    """psf.pixel_integration defaults to 'box', invalid values are refused, and at the default it is not part of the psf
-    stage settings (the fingerprint of a work folder recorded before the key is unchanged); 'exact' changes them"""
+    """psf.pixel_integration defaults to 'exact' (2026-11-19), 'box' is accepted with a deprecation warning, invalid values are
+    refused; at 'box' (the fits before the key) it is not part of the psf stage settings, so a work folder recorded before the
+    key is up to date at 'box' and stale under the default 'exact'"""
     from types import SimpleNamespace
     from simcode.pipeline import acquisition_config as AC
     from simcode.pipeline import localization_pipeline as LP
-    assert AC.DEFAULTS['psf']['pixel_integration'] == 'box'
-    assert LP.LATE_DEFAULTS['psf.pixel_integration'] == AC.DEFAULTS['psf']['pixel_integration']
+    import warnings
+    assert AC.DEFAULTS['psf']['pixel_integration'] == 'exact' and P.FIT_PIXEL_INTEGRATION == 'exact'
+    assert LP.LATE_DEFAULTS['psf.pixel_integration'] == 'box'
     try:
         AC.load(dict(name='t', movie='x.tif', out='o', psf=dict(pixel_integration='spectral')))
         raise AssertionError('pixel_integration spectral accepted')
     except ValueError:
         pass
     settings = lambda c: LP.LocalizationPipeline._settings(SimpleNamespace(c=c, setup=SimpleNamespace(defaults=lambda: {})), 'psf')
-    c = AC.load(dict(name='t', movie='x.tif', out='o'))
-    S = settings(c)
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        cb = AC.load(dict(name='t', movie='x.tif', out='o', psf=dict(pixel_integration='box')))
+    assert any('pixel_integration' in str(x.message) for x in w)
+    S = settings(cb)
     assert 'pixel_integration' not in S['psf']
-    old = json.loads(json.dumps(c)); old['psf'].pop('pixel_integration')          # a config from before the key
+    old = json.loads(json.dumps(cb)); old['psf'].pop('pixel_integration')         # a config from before the key (box fits)
     assert settings(old) == S
-    ce = AC.load(dict(name='t', movie='x.tif', out='o', psf=dict(pixel_integration='exact')))
-    assert settings(ce)['psf']['pixel_integration'] == 'exact' and settings(ce) != S
+    ce = AC.load(dict(name='t', movie='x.tif', out='o'))                            # the default
+    assert ce['psf']['pixel_integration'] == 'exact'
+    assert settings(ce)['psf']['pixel_integration'] == 'exact' and settings(ce) != S   # box work folders are stale
 
 
 if __name__ == '__main__':
