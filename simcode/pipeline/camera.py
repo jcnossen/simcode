@@ -1,12 +1,16 @@
-"""Stage a1 (camera): gain, read noise and offset from the movie (docs/AUTO_PIPELINE.md section 2).
+"""Stage a1 (camera): gain, read noise and offset from the movie (docs/QUICKSTART.md, stage camera).
 
-Same estimator as archive-2026-11-15:simcode/calibration/camera_gain.py (robust variance-vs-level fit of same-step frame differences, frames 6
-apart, 5 %-each-side trimmed variance corrected to a normal sigma^2), generalised: the level bins span the movie's own
-range (archive-2026-11-15:simcode/calibration/camera_gain.py: fixed 101-139 ADU), EMCCD gets the excess-noise factor 2, dark frames (optional) give offset and
-read noise directly. Config values take precedence; the measured values are reported next to them."""
+The gain is measured by torch_psf white_photon_transfer (via simcode.psf): the spatially white (beyond-OTF) noise power
+of background patches in differences of consecutive frames against their level (offset fixed pattern removed),
+grouped by the level of the frames before / after (independent noise). Sample fluctuations (sub-threshold blinks,
+haze, the illumination pattern) are band-limited by the OTF and do not enter, and
+the fixed pattern does not dilute the slope (the variance-vs-level fit of same-step frame differences per pixel used
+until 2026-11-18 gave 0.776 e/ADU on the quick-start example, true 0.56, and 0.56 on 1809_2, where the white-noise
+estimate with the movie's offset map gives 0.43). EMCCD: excess-noise factor 2. Dark frames (optional) give offset
+and read noise directly. Config values take precedence; the measured values are reported next to them.
+Without dark frames the offset and the read noise are not separately identifiable: the one that is not given follows
+from the mean level / variance of the patches (offset with a read-noise hint, camera.readnoise_e or 1 e)."""
 import numpy as np
-
-TRIM_CORR = 1 - 2 * 1.6449 * 0.10314 / 0.9    # variance of a 5 %-each-side trimmed normal / sigma^2 (= the archived camera_gain.py)
 
 
 def read_frames(movie, n, max_values=2.5e8):
@@ -17,38 +21,25 @@ def read_frames(movie, n, max_values=2.5e8):
     return M.read(0, n).astype(np.float32), M.n
 
 
-def var_vs_level(mov, nbins=12, min_px=30, rn_excl=0.9):
-    """per-pixel mean level (not the median: integer-valued movies) in quantile bins; pixels in the top (1 - rn_excl) of the
-    low-level variance map are excluded (sCMOS high-read-noise pixels would otherwise dominate the low-level bins)"""
-    d = (mov[6:] - mov[:-6]).reshape(len(mov) - 6, -1)
-    lvl = mov.mean(0).ravel()
-    mad = (1.4826 * np.median(np.abs(d - np.median(d, 0)), 0)) ** 2 / 2
-    ok = mad <= np.quantile(mad, rn_excl)
-    bins = np.quantile(lvl[ok], np.linspace(0.02, 0.98, nbins + 1))
-    X, Y, N = [], [], []
-    for lo, hi in zip(bins[:-1], bins[1:]):
-        s = ok & (lvl >= lo) & (lvl < hi)
-        if s.sum() < min_px: continue
-        x = d[:, s].ravel(); q = np.percentile(x, [5, 95]); xt = x[(x > q[0]) & (x < q[1])]
-        X.append(lvl[s].mean()); Y.append(xt.var() / TRIM_CORR / 2); N.append(int(s.sum()))
-    return np.array(X), np.array(Y), np.array(N)
-
-
-def estimate(movie, cam, nframes=12000, log=print):
+def estimate(movie, cam, nframes=12000, log=print, dev='cuda'):
     """-> dict(gain, offset, readnoise_e, measured..., checks)"""
-    mov, ntot = read_frames(movie, nframes)
-    X, Y, N = var_vs_level(mov)
-    r = dict(n_frames_used=int(len(mov)), n_frames_movie=int(ntot), levels=X.tolist(), var=Y.tolist(), npx=N.tolist())
+    from simcode.io.movie import open_movie
+    from simcode.psf import white_photon_transfer
+    ntot = open_movie(movie).n
+    f1 = int(min(nframes, ntot))
     excess = 2.0 if cam['type'] == 'emccd' else 1.0
-    if len(X) >= 3:
-        p = np.polyfit(X, Y, 1)
-        pred = np.polyval(p, X); r2 = 1 - ((Y - pred) ** 2).sum() / max(((Y - Y.mean()) ** 2).sum(), 1e-12)
-        g_meas = excess / p[0] if p[0] > 0 else float('nan')
-        r.update(slope=float(p[0]), intercept=float(p[1]), r2=float(r2), gain_measured=float(g_meas),
-                 level_span_adu=float(X.max() - X.min()))
-    else:
-        p = None; r.update(gain_measured=float('nan'), r2=float('nan'), level_span_adu=0.0)
-    log(f'camera: variance-vs-level over {len(X)} bins ({r["level_span_adu"]:.1f} ADU span): gain {r["gain_measured"]:.3f} e/ADU, r2 {r["r2"]:.3f}')
+    _, W = white_photon_transfer(movie, frames=(0, f1), nblocks=int(np.clip(f1 // 600, 1, 25)), block=600, lag=1,
+                                 excess_noise=excess, device=dev)
+    k, Lm, Vm = W['slope_adu'], W['level_mean_adu'], W['var_mean_adu2']
+    var_at = lambda o: max(Vm - k * (Lm - o), 0.0)                       # white variance (ADU^2) at level o
+    r = dict(method='torch_psf white_photon_transfer (lag 1)', n_frames_used=f1, n_frames_movie=int(ntot),
+             levels=[b[0] for b in W['bins']], var=[b[1] for b in W['bins']], npx=[b[2] for b in W['bins']],
+             slope=float(k), intercept=float(W['intercept_adu2']), r2=float(W['r2']), slope_rel_se=float(W['slope_rel_se']),
+             slope_spread=float(W['slope_spread']), warning=W['warning'],
+             gain_measured=float(W['gain_e_per_adu']), level_span_adu=float(W['level_span_adu']), level_mean_adu=float(Lm),
+             var_mean_adu2=float(Vm), fpn_sd_adu=float(W['fpn_sd_adu']))
+    log(f'camera: white photon transfer over {len(r["levels"])} bins ({r["level_span_adu"]:.1f} ADU span): gain {r["gain_measured"]:.3f} e/ADU, '
+        f'r2 {r["r2"]:.3f}, slope rel. se {r["slope_rel_se"]:.3f}, per-block slope spread {r["slope_spread"]:.3f}' + (f'; {W["warning"]}' if W['warning'] else ''))
     # offset
     if cam.get('offset_adu') is not None:
         off, src = float(cam['offset_adu']), 'config'
@@ -57,9 +48,8 @@ def estimate(movie, cam, nframes=12000, log=print):
     else:
         rn_hint = cam.get('readnoise_e') or 1.0
         g = cam.get('gain_e_per_adu') or r['gain_measured']
-        # level at which the fitted variance equals the read noise alone (rn_hint e)
-        off = float(((rn_hint / g) ** 2 - p[1]) / p[0]) if p is not None and p[0] > 0 else float(np.percentile(mov, 1))
-        src = f'estimated (variance intercept, read noise hint {rn_hint} e)'
+        off = float(Lm - (Vm - (rn_hint / g) ** 2) / k)                  # level at which the variance is the read noise alone
+        src = f'estimated (white-noise variance, read noise hint {rn_hint} e)'
     gain = float(cam['gain_e_per_adu']) if cam.get('gain_e_per_adu') else r['gain_measured']
     gsrc = 'config' if cam.get('gain_e_per_adu') else 'measured'
     if cam.get('readnoise_e') is not None:
@@ -67,16 +57,16 @@ def estimate(movie, cam, nframes=12000, log=print):
     elif cam.get('dark'):
         dk, _ = read_frames(cam['dark'], 2000)
         rn, rsrc = float(np.median(dk.std(0)) * gain), 'dark'
-    elif p is not None:
-        rn, rsrc = float(np.sqrt(max(np.polyval(p, off), 0)) * gain), 'variance intercept at the offset'
     else:
-        rn, rsrc = 1.0, 'default'
+        rn, rsrc = float(np.sqrt(var_at(off)) * gain), 'white-noise variance at the offset'
+    med = float(np.median(read_frames(movie, 200)[0]))
     r.update(gain=gain, gain_source=gsrc, offset=off, offset_source=src, readnoise_e=rn, readnoise_source=rsrc,
-             median_level_adu=float(np.median(mov)), bg_e_per_px=float((np.median(mov) - off) * gain))
+             median_level_adu=med, bg_e_per_px=float((med - off) * gain))
     for o in (99.3, 100.0, off):
-        if p is not None and p[0] > 0: r[f'rn_e_at_{o:g}'] = float(np.sqrt(max(np.polyval(p, o), 0)) * excess / p[0])
-    chk = [dict(name='level bins >= 5 (else gain must come from the config)', value=len(X), ok=bool(len(X) >= 5 or gsrc == 'config')),
-           dict(name='variance-vs-level r2 > 0.9 (or gain from the config)', value=r['r2'], ok=bool(gsrc == 'config' or (r['r2'] > 0.9))),
+        r[f'rn_e_at_{o:g}'] = float(np.sqrt(var_at(o)) * excess / k)
+    chk = [dict(name='level bins >= 5 (else gain must come from the config)', value=len(r['levels']), ok=bool(len(r['levels']) >= 5 or gsrc == 'config')),
+           dict(name='gain determined by the movie: slope rel. se < 0.1 (or gain from the config)', value=r['slope_rel_se'],
+                ok=bool(gsrc == 'config' or r['slope_rel_se'] < 0.1)),
            dict(name='measured gain within 20 % of the config value', value=r['gain_measured'],
                 ok=bool(gsrc != 'config' or (np.isfinite(r['gain_measured']) and abs(r['gain_measured'] / gain - 1) < 0.2)),
                 warn_only=True),

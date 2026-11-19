@@ -294,11 +294,14 @@ def run_chunk_pattern_solve_fast(R, info, pattern, solve_cal, dev='cuda', solve_
     from simcode.solve import z_conditioning as ZC
     G.update(z_inputs(R, idx_all, tt))
     binv = torch.tensor(inv, device=dev)
+    from simcode.solve.pattern import relmap_factors
+    RG = relmap_factors(pattern.get('relmap'), G['x'], G['y'])      # the pattern's per-orientation intensity map (2026-11-19; None: none)
     acc = {k: [] for k in ('r', 's_cal', 'kin', 'p', 'q', 'dnll', 'r_map', 'z_hy0', 'sz_cal', 'cov_xz', 'cov_yz', 'z_prior')}
     for c0 in range(0, n, solve_batch):
         sl = slice(c0, c0 + solve_batch)
         o = dict(I=G['I'][sl], L=G['L'][sl], C=G['C'][sl], x=G['x'][sl] - X0, y=G['y'][sl] - Y0, lsxy=torch.log(torch.stack([G['sx'][sl], G['sy'][sl]], 1)),
                  x_det=G['x_det'][sl] - X0, y_det=G['y_det'][sl] - Y0, z=G['z'][sl], lsz=G['lsz'][sl], bz=G['bz'][sl])
+        if RG is not None: o['relg'] = RG[sl]
         so = MF.solve_emitters_fast(o, PW, binv[sl], cal, compile=compile)
         so.update(ZC.z_columns(o, so))
         for k in acc: acc[k].append(so.get(k, so['r']) if k != 'dnll' else so.get('dnll', torch.full_like(so['q'], float('nan'))))
@@ -383,6 +386,9 @@ class Pass2FrontFast:
         tc, fabs, keep = _flags(I, ws, oh['x'] + X0, oh['y'] + Y0, l0, starts[-1], crop, own0, own1, dev)
         k_ = torch.nonzero(keep)[:, 0]
         o = {kk: v[k_] for kk, v in oh.items()}
+        if pattern.get('relmap') is not None:              # the pattern's per-orientation intensity map at each row (2026-11-19)
+            from simcode.solve.pattern import relmap_factors
+            o['relg'] = relmap_factors(pattern['relmap'], o['x'] + X0, o['y'] + Y0)
         bw = q['w'][k_]
         done = ev.rec('solve')
         acc = {k: [] for k in ('r', 's_cal', 'q', 'kin')}

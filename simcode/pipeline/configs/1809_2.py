@@ -20,7 +20,7 @@ config = ConfigDict(
         gain_e_per_adu=GAIN, offset_adu=99.3,
         readnoise_from='insitu/camera_maps_0.5nM.npz',     # same sensor (as the reference calibration)
         map_frames=20000),
-    psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads']),   # multi-start (focus-staggered; focus / z gauge), lowest base-fit NLL wins
+    psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads']),   # multi-start (focus-staggered + astigmatism starts; bead fit and its mirror), lowest base-fit NLL wins
     process=dict(model='m1809'),
     gpus=[1, 2, 0],
 )

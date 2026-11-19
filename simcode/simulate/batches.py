@@ -37,6 +37,17 @@ plane: z_target_px. A calibration with fitted spot heights (emitter_z_quantiles_
 height distribution, over its own range, without the TIRF factor (AcquisitionSim.draw_z / tirf_factor; no flag: the
 calibration's heights are used when it has them).
 GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons.
+Brightness noise (bnoise = (c, c_a), 2026-11-18; None = the presets / pass-2 values above): the emitter brightness variation of
+the simulator, c = the relative per-frame scatter (the solve's c: Sigma = Sigma_net + c^2 diag(mu^2), solve/brightness_noise_fit)
+and c_a = the sd of a per-orientation brightness factor (a simulator knob only: the solve's per-orientation term c_a^2 mu mu^T
+was removed 2026-11-19; the retrains use c_a = 0). In
+AcquisitionSim.scene an emitter's frame photons carry mult = ea[angle] x (1 + step_sd n_step) x (1 + frame_sd n_frame), ea =
+exp(ang_sd n_a) / mean_a: within a 6-frame window every step occurs once, so step and frame factors are both independent per
+frame (relative sd sqrt(step_sd^2 + frame_sd^2) = c), and the per-angle factor's contrast ea_0 - ea_1 ~ ang_sd (n_0 - n_1) has the
+variance 2 ang_sd^2 of the solve's angle contrast 2 c_a^2 (the common part is the brightness). So frame_sd = c, step_sd = 0,
+ang_sd = c_a in every preset, and no per-batch step_sd draw in illumination_batch.
+c may be a range (c_lo, c_hi) (flag 'c_lo:c_hi,c_a', 2026-11-19): c is then drawn uniformly in it once per batch (pick), so a
+network is trained over the brightness-noise range measured on the data (the pass-1 networks; pass 2 at the dataset's own c).
 """
 import math
 import torch
@@ -60,6 +71,18 @@ EM_PHOTONS = (40.0, 2500.0)                  # per-emitter photons of the per-em
 BRIGHT_TAIL = (0.1, 2000.0, 20000.0)         # (frac, lo, hi) window photons of the bright-tail draw (emitter_batch bright_tail)
 
 
+def parse_bnoise(s):
+    """'c,c_a' or 'c_lo:c_hi,c_a' (trainer flag --bnoise) -> (c, c_a) with c a number or a range (c_lo, c_hi) (drawn uniformly
+    per batch); '' / None -> None (the presets' brightness noise)"""
+    if not s: return None
+    p = str(s).split(',')
+    if len(p) != 2: raise ValueError(f'--bnoise c,c_a or c_lo:c_hi,c_a expected, got {s!r}')
+    c = tuple(float(x) for x in p[0].split(':')); ca = float(p[1])
+    if len(c) not in (1, 2) or min(c + (ca,)) < 0 or (len(c) == 2 and c[1] < c[0]):
+        raise ValueError(f'--bnoise c,c_a or c_lo:c_hi,c_a expected (values >= 0, c_lo <= c_hi), got {s!r}')
+    return (c[0] if len(c) == 1 else c, ca)
+
+
 def z_target_px(z_um, sim):
     """emitter height (um above the coverslip) -> the network's z: px of the lateral pixel size relative to the focal plane of
     the PSF calibration (torch_psf DATASET_FORMAT; z_px = (z - focus_um) / pixelsize_um)"""
@@ -67,16 +90,16 @@ def z_target_px(z_um, sim):
 
 
 class TrainingBatches:
-    def __init__(self, H=64, W=64, T=6, seed=0, calib=None, p_std=None):
+    def __init__(self, H=64, W=64, T=6, seed=0, calib=None, p_std=None, bnoise=None):
         # calib (2026-11-11 psf3d retrain; None = the presets' PSF): list of in-situ calib jsons (e.g. the averaged
         # *_psf3d_avg.json of a movie) replacing the presets' PSF; one is drawn uniformly per batch (o['calib_i']), the
-        # preset (pattern / camera / emitter model) is drawn as before. Both presets of one calib share its Simulator / LUT bank.
+        # preset (pattern / camera / emitter model) is drawn as before. Both presets of one calib share its Simulator / PSF bank.
         self.calibs = None
         if calib:
             self.calibs = list(calib); self.rsm = []
             for c in self.calibs:
                 d_ = {p: AcquisitionSim(p, H, W, T, seed=seed, calib=c, zmax=Z_RANGE_UM[1], z_unif=Z_UNIF) for p in ('0.5nM', '2.5nM')}
-                d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].luts = d_['0.5nM'].luts
+                d_['2.5nM'].sim = d_['0.5nM'].sim; d_['2.5nM'].psfs = d_['0.5nM'].psfs
                 self.rsm.append(d_)
             torch.cuda.empty_cache()
             self.rs = self.rsm[0]; self.ci = 0
@@ -90,20 +113,34 @@ class TrainingBatches:
             for rs in self.all_rs():
                 rs.p['frame_sd'] = 0.09
                 rs.p_std = float(p_std)      # generic pattern draw (simulate/acquisition.AcquisitionSim._generic) in a share 1 - p_std of the FOVs
+        # measured brightness noise (c, c_a) of a dataset (module doc): replaces the presets' / pass-2 frame_sd, step_sd, ang_sd
+        # c may be a range (c_lo, c_hi): drawn uniformly per batch in pick (self.c_range)
+        self.bnoise, self.c_range = None, None
+        if bnoise is not None:
+            c0 = bnoise[0]
+            if isinstance(c0, (tuple, list)):
+                self.c_range = (float(c0[0]), float(c0[1])); c0 = 0.5 * (self.c_range[0] + self.c_range[1])
+            self.bnoise = (float(c0), float(bnoise[1]))
+            for rs in self.all_rs():
+                rs.p['frame_sd'], rs.p['step_sd'], rs.p['ang_sd'] = self.bnoise[0], 0.0, self.bnoise[1]
 
     def heights(self):
         """the emitter-height draw per calibration (for the run record): 'presets' or the calibration's quantile nodes (um)"""
         out = []
         for r in ([d_['0.5nM'] for d_ in self.rsm] if self.calibs else [self.rs['0.5nM']]):
             out.append('presets' if r.zq is None else dict(p=[round(float(v), 4) for v in r.zq[0]], z_um=[round(float(v), 4) for v in r.zq[1]],
-                                                           clip_um=r.zclip, lut_um=[round(r.zmin, 3), round(r.zmax, 3)]))
+                                                           clip_um=r.zclip, z_render_um=[round(r.zmin, 3), round(r.zmax, 3)]))
         return out
 
     def all_rs(self):
         return [r for d_ in self.rsm for r in d_.values()] if self.calibs else list(self.rs.values())
 
     def pick(self, pre):
-        """AcquisitionSim of preset `pre`; with a calib mixture, first draws the calib of this batch (self.ci, one extra draw)"""
+        """AcquisitionSim of preset `pre`; with a calib mixture, first draws the calib of this batch (self.ci, one extra draw);
+        with a brightness-noise range (self.c_range) the batch's c (frame_sd of every preset; one extra draw, before the calib's)"""
+        if self.c_range is not None:
+            c = self.c_range[0] + (self.c_range[1] - self.c_range[0]) * torch.rand(1).item()
+            for rs in self.all_rs(): rs.p['frame_sd'] = c
         if self.calibs:
             self.ci = int(torch.randint(0, len(self.calibs), (1,)).item()); self.rs = self.rsm[self.ci]
         return self.rs[pre]
@@ -180,6 +217,7 @@ class TrainingBatches:
                            photons=(40.0, 6000.0), det_em=(40.0, 2500.0), step_sd=(0.07, 0.25), pert_model='v1'):
         """batches of the pass-2 networks with the pattern estimate (module doc); needs the pass-2 setup (p_std)"""
         if self.p_std is None: raise ValueError('illumination_batch needs TrainingBatches(..., p_std=<share>) (the pass-2 setup)')
+        if self.bnoise is not None: step_sd = (0.0, 0.0)      # the measured brightness noise (module doc): no step_sd draw
         pre = '0.5nM' if torch.rand(1).item() < 0.5 else '2.5nM'
         rs = self.pick(pre)
         g = lambda *s: torch.rand(*s, device=dev)

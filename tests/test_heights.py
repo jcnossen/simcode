@@ -4,11 +4,11 @@ height distribution of the simulator and the training batches; no flag). GPU (th
 calibration jsons / camera maps in models/insitu. Run: python tests/test_heights.py (or pytest tests)
   - height_quantiles: nodes = the calibration's quantiles + linear tails to probability 0 / 1; None without quantiles
   - draw_z of a v2 calibration reproduces its quantiles (inverse CDF) inside its emitter_z_range_um and is clipped to that
-    range (point masses at the ends), the LUT covers the range, tirf_factor = 1; the read-noise map is the calibration's
+    range (point masses at the ends), the PSF spline covers the range, tirf_factor = 1; the read-noise map is the calibration's
     camera map; without the range key the draws follow the extended nodes (below 0 too)
-  - a calibration without quantiles keeps the presets' draw: lognormal (same random draws as the explicit formula), LUT
+  - a calibration without quantiles keeps the presets' draw: lognormal (same random draws as the explicit formula), PSF
     0 .. zmax, the TIRF factor, the preset's read-noise map
-  - Simulator LUT with zmin < 0: rendering at a LUT plane gives that plane
+  - Simulator with zmin < 0: the PSF spline covers the heights below the coverslip (the vectorial model's continuation there)
   - TrainingBatches on a v2 calibration: GT heights follow the calibration
 """
 import json, os, sys
@@ -51,8 +51,8 @@ def test_v2_calibration_heights():
     for k, v in q.items():
         e = np.quantile(z, float(k[1:]) / 100)
         assert abs(e - min(max(v, lo), hi)) < 0.004, (k, v, e)
-    assert z.min() == lo and z.max() == hi and rs.sim.lut.shape[0] == int(round((rs.zmax - rs.zmin) / 0.01)) + 1
-    # without emitter_z_range_um: no clip, the LUT reaches the extended nodes (below 0 here)
+    assert z.min() == lo and z.max() == hi and rs.sim.psf.z_limits[0] <= rs.zmin and rs.sim.psf.z_limits[1] >= rs.zmax
+    # without emitter_z_range_um: no clip, the PSF reaches the extended nodes (below 0 here)
     import tempfile
     c2 = dict(c); c2.pop('emitter_z_range_um'); c2['camera'] = dict(c['camera'], maps=os.path.join(os.path.dirname(_cal(V2)), c['camera']['maps']))
     with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as f:
@@ -61,6 +61,7 @@ def test_v2_calibration_heights():
     os.unlink(f.name)
     z2 = rs2.draw_z(100000).cpu().numpy()
     assert rs2.zclip is None and rs2.zmin < 0 and z2.min() < 0 and rs2.zmin <= z2.min() and z2.max() <= rs2.zmax + 1e-6
+    assert rs2.sim.psf.z_limits[0] <= rs2.zmin
     assert abs(np.quantile(z2, 0.05) - q['q05']) < 0.004
     assert torch.all(rs.tirf_factor(torch.tensor([-0.1, 0.0, 0.5], device='cuda')) == 1)
     maps = np.load(os.path.join(os.path.dirname(_cal(V2)), c['camera']['maps']))['readnoise_e']
@@ -71,7 +72,7 @@ def test_v2_calibration_heights():
 def test_presets_unchanged():
     from simcode.simulate.acquisition import AcquisitionSim
     rs = AcquisitionSim('0.5nM', 32, 32, 6, npsf=1, calib=_cal(OLD), zmax=0.3)
-    assert rs.zq is None and rs.zmin == 0.0 and rs.zmax == 0.3 and rs.sim.lut.shape[0] == 31
+    assert rs.zq is None and rs.zmin == 0.0 and rs.zmax == 0.3 and rs.sim.psf.z_limits == (0.0, 0.4)
     torch.manual_seed(3); z = rs.draw_z(1000)
     torch.manual_seed(3); z0 = (rs.p['z_med'] * torch.exp(rs.p['z_sd'] * torch.randn(1000, device='cuda'))).clamp(0.0, 0.3)
     assert torch.equal(z, z0)
@@ -81,16 +82,20 @@ def test_presets_unchanged():
     assert np.allclose(rs.rn_map.cpu().numpy(), np.load(_cal('insitu/camera_maps_1809_2.npz'))['readnoise_e'])
 
 
-def test_lut_negative_heights():
+def test_negative_heights():
+    from simcode import psf as spsf
     from simcode.simulate.simulator import Simulator
-    sim = Simulator(_cal(V2), H=16, W=16, T=6, psf_roi=15, zmin=-0.2, zmax=0.4, psf_lut_z=61)
-    assert abs(float(sim.zs[0]) + 0.2) < 1e-6 and abs(float(sim.zs[-1]) - 0.4) < 1e-6
-    for k in (0, 7, 20, 60):
-        zk = sim.zs[k:k + 1]
-        r = sim.render_psf(torch.zeros(1, device='cuda'), torch.zeros(1, device='cuda'), zk)
-        assert torch.allclose(r[0], sim.lut[k, 16, 16], atol=1e-6), k
-    # below 0 the PSF differs from the one at 0 (the LUT is not clamped there)
-    assert (sim.lut[0, 16, 16] - sim.lut[20, 16, 16]).abs().max() > 1e-4
+    sim = Simulator(_cal(V2), H=16, W=16, T=6, psf_roi=15, zmin=-0.2, zmax=0.4)
+    assert sim.psf.z_limits[0] <= -0.2 and sim.psf.z_limits[1] >= 0.4
+    vec = spsf.vectorial_psf(_cal(V2), 15, device='cuda')
+    vec = vec.resized(15, pixel_integration='spectral')     # the spline is the exact pixel integral (a v2 calibration: 'box')
+    zk = torch.tensor([-0.2, -0.13, 0.0, 0.4], device='cuda'); o = torch.zeros(4, device='cuda')
+    r = sim.render_psf(o, o, zk)
+    with torch.no_grad():
+        ref = vec.render(torch.stack([o, o, zk], 1))
+    assert float(((r - ref).abs() / ref.amax((1, 2), keepdim=True)).max()) < 1e-4
+    # below 0 the PSF differs from the one at 0 (not clamped there)
+    assert (r[0] - r[2]).abs().max() > 1e-4
 
 
 def test_training_batches_heights():

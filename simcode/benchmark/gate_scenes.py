@@ -110,14 +110,14 @@ def gen(sc, it, seed, T=6):
     return o
 
 
-def psf_rows(psS, rpsf, G, ai, focus):
+def psf_rows(psS, rpsf, G, ai):
     """psS[ai] = CD.psf_stack of the emitters ai, in chunks that fit the free GPU memory (halved after an out-of-memory error;
     per-emitter values, the same for any chunk size). Replaces the env GATE_PSF_CHUNK (2026-11-14)."""
     ck = len(ai)
     while True:
         try:
             for i in range(0, len(ai), max(ck, 1)):
-                a_ = ai[i:i + ck]; psS[a_] = CD.psf_stack(rpsf, G['x'][a_], G['y'][a_], G['z'][a_], focus)
+                a_ = ai[i:i + ck]; psS[a_] = CD.psf_stack(rpsf, G['x'][a_], G['y'][a_], G['z'][a_])
             return
         except torch.OutOfMemoryError:
             if ck <= 16: raise
@@ -169,15 +169,15 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     CD.a.calib = gate_calib(a.calib)
     T = 6
-    sim, rpsf, lut = CD.models(T)
+    sim, rpsf = CD.models(T)
     fronts = a.fronts.split(',')
     assert fronts == ['sc'], 'only the sc front-end is available (SIMCODE preprint: archive-2026-11-15:simcode/benchmark/preprint_gate.py; pass 2: simcode.processing.gate_dump)'
     from simcode.emitter import model as EM
     from simcode.detector import model as DM
     det_, _ = DM.load(a.detector)
     from simcode.solve.solve import solve_cal
-    from simcode.simulate.crlb import BRIGHTNESS_NOISE        # the gate scenes' constant emitter brightness: c = c_a = 0
-    SC = (det_, EM.load(config.resolve(a.emitter)), EM.PSFCol(sim), solve_cal(config.resolve(a.cal), *BRIGHTNESS_NOISE) if a.cal else {})
+    from simcode.simulate.crlb import BRIGHTNESS_NOISE        # the gate scenes' constant emitter brightness: c = 0
+    SC = (det_, EM.load(config.resolve(a.emitter)), EM.PSFCol(sim), solve_cal(config.resolve(a.cal), BRIGHTNESS_NOISE) if a.cal else {})
     for sc in a.scen.split(','):
         for seed in [int(s_) for s_ in a.seeds.split(',')]:
             t0 = time.time(); GT, OUTS = [], {f: [] for f in fronts}; need = a.ntarget; it = 0; fov0 = 0
@@ -196,7 +196,7 @@ def main():
                 nn = ST.nn_dist(G, tg)
                 fovs = torch.unique(G['fov'][tg]); ai = torch.nonzero(torch.isin(G['fov'], fovs))[:, 0]
                 psS = torch.zeros(len(G['x']), CD.psf_channels(rpsf), CD.R, CD.R, device=dev)
-                psf_rows(psS, rpsf, G, ai, sim.focus)
+                psf_rows(psS, rpsf, G, ai)
                 Cb = CD.crlb_all(G, o, psS, tg, T, sim.focus); del psS
                 n = len(G['x'])
                 full = lambda v, w=2: torch.full((n, w), float('nan'), device=dev).index_copy_(0, tg, v.float())

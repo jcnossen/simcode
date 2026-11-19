@@ -26,7 +26,7 @@ base = ConfigDict(
     pattern=dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], pitch_px=[1.6, 2.8]),
     beads=dict(stacks=[f'{DATA}/PSF_calib/raw/zstack{i}-1.tif' for i in range(2, 8)],   # the setup's bead z-stacks
                sign=-1, holdout=7, offset_adu=106.34, gain_e_per_adu=GAIN),
-    psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads']),
+    psf=dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads']),
     gpus=[1, 2, 0],
 ).freeze()                                 # read-only: acquisitions are derived with .updated(), the base cannot change by accident
 
@@ -45,5 +45,6 @@ configs = [
 ]
 
 # values derived in code: the camera maps use at most the frames the spot finder looks at (its spot mask ends there)
-SPOT_FRAMES = 30000
-configs = [c.updated(spots=dict(maxframe=SPOT_FRAMES), camera=dict(map_frames=min(20000, SPOT_FRAMES))) for c in configs]
+SPOT_FRAMES = None                         # null: the whole movie (the default); e.g. 30000 for the first 30000 frames only
+configs = [c.updated(spots=dict(maxframe=SPOT_FRAMES), camera=dict(map_frames=20000 if SPOT_FRAMES is None else min(20000, SPOT_FRAMES)))
+           for c in configs]

@@ -256,13 +256,14 @@ def mod_slope(I, Ig):
 
 # ------------------------------------------------------------------------------------------------ on detector candidates
 class PSFCol:
-    """unit-sum-free PSF columns on the PP x PP patch from the calibrated 15 x 15 LUT (z fixed 50 nm)"""
+    """unit-sum-free PSF columns on the PP x PP patch: the calibrated PSF of the simulator (sim.psf = simcode.psf.calib_psf, the
+    angle average) at z fixed 50 nm, offset off [n, 2] px from the patch centre"""
     def __init__(self, sim, z=0.05):
-        from simcode.psf import spline
-        self.lut = spline(sim.psf, sim.zmax, roisize=PP); self.z = z
+        self.psf = sim.psf if sim.psf.roisize == PP else sim.psf.resized(PP); self.z = z
 
     def __call__(self, off):
-        return self.lut.render(torch.cat([off, torch.full_like(off[:, :1], self.z)], 1))
+        with torch.no_grad():
+            return self.psf.render(torch.cat([off, torch.full_like(off[:, :1], self.z)], 1))
 
 
 @torch.no_grad()

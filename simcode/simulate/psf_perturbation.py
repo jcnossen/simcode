@@ -1,41 +1,37 @@
 """
-PSF-perturbed simulation (critic review 24 #1): build_lut renders a Simulator PSF lookup table from the calibrated
-vectorial PSF with a perturbation (used by simulate/acquisition.py):
+PSF-perturbed simulation (critic review 24 #1): build_psf = the calibrated PSF with a perturbation, rendered by the same model as
+the calibration (simcode.psf.calib_psf: the integrated cubic B-spline, built from the perturbed vectorial model; used by
+simulate/acquisition.py):
   width   pixel-size scale (PSF width in pixels x w)
   zern    Zernike coefficient deltas on top of the calibration
   focus   focus shift (um)
+  blur    an extra anisotropic Gaussian image blur (sx, sy px), added to the calibration's blur covariance
 """
-import json
 import torch
 from simcode import psf as spsf
-from simcode.psf import render
 
 dev = 'cuda'
 
 
-def build_lut(sim, width=1.0, zern_delta=None, focus_shift=0.0, zmax=None, angle=None):
-    """returns (lut [nz, ls+1, ls+1, R, R], zmax) for a perturbed PSF, rendered like Simulator.__init__
-    (2026-11-11) with the calib's opt-in PSF terms: torch_psf.PSF.load of the calib dict with the pixel size / width, the focus
-    and the Zernikes changed (angle = that pattern angle's PSF, None = average).
-    A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike / focus terms do not apply to it."""
-    zmax = zmax or sim.zmax
+def build_psf(sim, width=1.0, zern_delta=None, focus_shift=0.0, blur_px=None):
+    """the Simulator's PSF (sim.calib_path, ROI sim.R) perturbed: the calibration dict with the pixel size / width, the focus, the
+    Zernikes and the blur changed -> simcode.psf.calib_psf of that dict: one model, or (angle 0, angle 1) for a per-pattern-angle
+    calibration (as sim.psf / sim.psf_angle). A Gaussian calibration ('psf_gauss_sigma_um') gets sigma x width; the Zernike /
+    focus / blur terms do not apply to it."""
     c = spsf.read_calib(sim.calib_path)
     if c.get('psf_gauss_sigma_um') is not None:
         base = spsf.PSF.load(c, roisize=sim.R, device=dev)
-        psf = spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)
-    else:
-        c['pixelsize_um'] = c['pixelsize_um'] / width
-        c['focus_um'] = sim.focus + focus_shift
-        if zern_delta is not None:
-            z = torch.tensor(c['zernike_waves'], device=dev, dtype=torch.float32) + zern_delta
-            c['zernike_waves'] = z.tolist()
-        psf = spsf.PSF.load(c, roisize=sim.R, oversample=3, device=dev, angle=angle)
-    zs = torch.linspace(getattr(sim, 'zmin', 0.0), zmax, sim.lz, device=dev)
-    sub = (torch.arange(sim.ls + 1, device=dev) / sim.ls) - 0.5
-    Z, SY, SX = torch.meshgrid(zs, sub, sub, indexing='ij')
-    pos = torch.stack([SX.reshape(-1), SY.reshape(-1), Z.reshape(-1)], 1)
-    with torch.no_grad():
-        lut = torch.cat([render(psf, p) for p in pos.split(1024)])
-    return lut.reshape(sim.lz, sim.ls + 1, sim.ls + 1, sim.R, sim.R), zmax
-
-
+        return spsf.GaussianPSF(sim.R, sigma_px=base.sigma[0] * width, device=dev)
+    c['pixelsize_um'] = c['pixelsize_um'] / width
+    c['focus_um'] = sim.focus + focus_shift
+    if zern_delta is not None:
+        z = torch.tensor(c['zernike_waves'], device=dev, dtype=torch.float32) + zern_delta
+        c['zernike_waves'] = z.tolist()
+    if blur_px is not None:
+        add = [float(blur_px[0]) ** 2, float(blur_px[1]) ** 2, 0.0]
+        if c.get('psf_blur_angle_px2') is not None:
+            c['psf_blur_angle_px2'] = [[b + a for a, b in zip(add, B)] for B in c['psf_blur_angle_px2']]
+        else:
+            c['psf_blur_px2'] = [b + a for a, b in zip(add, c.get('psf_blur_px2') or [0.0, 0.0, 0.0])]
+    spl = spsf.calib_psf(c, sim.R, device=dev, z_range=(sim.zmin, sim.zmax))
+    return tuple(spl.for_angle(k) for k in range(2)) if spsf.has_angle_psf(c) else spl

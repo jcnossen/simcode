@@ -1,24 +1,29 @@
-"""Brightness noise (c, c_a) of a dataset from the explicit solve's own intensity-domain residuals (critic 33 #2; 2026-11-17: a
-stage of the pattern estimation, processing/pattern_estimation.estimate_brightness_noise). GT-free; the same code for simulated and
-real movies. c and c_a are, besides the PSF / camera calibration and the pattern, the only values taken from the data.
+"""Brightness noise c of a dataset from the explicit solve's own intensity-domain residuals (critic 33 #2; 2026-11-17: a stage
+of the pattern estimation, processing/pattern_estimation.estimate_brightness_noise). GT-free; the same code for simulated and
+real movies. c is, besides the PSF / camera calibration and the pattern (with its intensity map), the only value taken from the
+data.
 
-Noise model of a window's network intensities around the model mean mu(p) (T = 6 frames):
-    Sigma(theta) = Sigma_net + c^2 diag(mu^2) + c_a^2 (mu mu^T within each angle)            theta = (c, c_a)
-(Sigma_net = the emitter network's own intensity covariance, no scale factor; c = the solve's 'cmult', c_a = 'cmult_ang':
-exactly the Sigma(p) of solve.pattern_solve_all.) c_a is one value shared by the two pattern orientations: with the brightness B
-fitted per window only the sum of the two orientations' terms is identified (the contrast below), not a split per angle.
-Rows: the clean emitter-windows of the pattern estimation (on through the window, isolated, >= 300 photons), solved with the
-non-kinetic model (they are on through the window). Residuals e = I_net - mu(p_hat) at the solve's MAP. For a GLS fit of
-p = (x, y, B) with the Gaussian position prior (precision P = diag(1/s_p^2), 0 for B) the residual covariance is exactly
-V_e(theta) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^T (J = d mu / d p at p_hat), so
+Noise model of a window's network intensities around the model mean mu(p) (T = 6 frames): exactly the Sigma(p) of
+solve.pattern_solve_all,
+    Sigma(c) = Sigma_net + c^2 diag(mu^2)
+(Sigma_net = the emitter network's own intensity covariance, no scale factor; c = the solve's 'cmult': the relative per-frame
+scatter of the emitter brightness). Rows: the clean emitter-windows of the pattern estimation (on through the window, isolated,
+>= 300 photons), solved with the non-kinetic model (they are on through the window). Residuals e = I_net - mu(p_hat) at the
+solve's MAP. For a GLS fit of p = (x, y, B) with the Gaussian position prior (precision P = diag(1/s_p^2), 0 for B) the residual
+covariance is exactly V_e(c) = Sigma - J (J^T Sigma^-1 J + P)^-1 J^T (J = d mu / d p at p_hat), so
   per frame      r_t = e_t / sqrt(V_e,tt)                     ~ N(0, 1)   -> PIT u = F_chi2_1(r_t^2)
   angle contrast h = w^T e / sqrt(w^T V_e w), w = +-1 by angle ~ N(0, 1)   (the within-angle phase sum is ~position-free and
-                 B is shared, so h is the per-angle brightness ratio: it splits c_a from c)
-binned by the frame SNR^2 = mu_t^2 / Sigma_net,tt (high SNR pins c^2 + c_a^2) and the window SNR^2 of the contrast; theta
-minimises sum_bins (median u - 1/2)^2 (robust to FP / merged tails) at the fixed solutions; the solve is re-run with theta and
-the fit repeated (fixed point, 3 iterations).
-(Until 2026-11-17 the estimator also fitted a global scale s of the network covariance and was an analysis tool only; the
-pipeline used a fixed c = c_a = 0.1 from the model's calibration files. Both removed.)
+                 B is shared: the brightness ratio of the two orientations)
+binned by the frame SNR^2 = mu_t^2 / Sigma_net,tt (high SNR pins c) and the window SNR^2 of the contrast; c minimises
+sum_bins (median u - 1/2)^2 (robust to FP / merged tails) at the fixed solutions; the solve is re-run with c and the fit
+repeated (fixed point, 3 iterations).
+History: until 2026-11-17 the estimator also fitted a global scale of the network covariance and was an analysis tool only (the
+pipeline used a fixed c = c_a = 0.1 from the model's calibration files). 2026-11-19: the per-orientation term c_a^2 mu mu^T
+(cmult_ang) and the component estimator with per-model network-transfer tables (estimate_components, bn_transfer_pass1.json)
+were removed: c_a changed neither the same-rows FRC nor the pair precision of real 1809_2 / 2.5 nM data nor the precision on
+simulations (out/model_studies/eval_final.log, ev_real.json), so the noise model is the intensity map + this one c + the full
+Sigma_net, and c is the plain residual fit of that model. (On the networks' intensities it reads lower than the simulator's
+brightness scatter, as the networks shrink part of the fluctuation; the solve uses the noise the residuals show.)
 The 'q/dof' of the solve uses dof = T + 2 - n_free
 (5 = 6 intensities + 2 prior pseudo-observations - (x, y, B); 3 with the kinetic on/off times)."""
 import numpy as np, torch
@@ -64,20 +69,23 @@ def chunk_rows(d, pattern, rows_of_chunk):
         PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
         o = dict(I=tt(R['I'][keep]), L=tt(R['L'][keep]), C=tt(R['C'][keep]), x=tt(R['x'][keep] - X0), y=tt(R['y'][keep] - Y0),
                  lsxy=torch.log(tt(np.c_[R['sx'][keep], R['sy'][keep]])), x_det=tt(R['x_det'][keep] - X0), y_det=tt(R['y_det'][keep] - Y0))
+        if pattern.get('relmap') is not None:      # the pattern's per-orientation intensity map at each row (2026-11-19)
+            from simcode.solve.pattern import relmap_factors
+            o['relg'] = relmap_factors(pattern['relmap'], tt(R['x'][keep]), tt(R['y'][keep]))
         out.append((o, PW, torch.tensor(inv, device=dev), R['I'][keep].sum(1), np.ones(len(keep), bool)))
     return out
 
 
 # ------------------------------------------------------------------------------------------------------------- solve
-def with_theta(cal, th):
-    """the model's solve calibration (no c) + theta = (c, c_a)"""
+def with_c(cal, c):
+    """the model's solve calibration (without c) + the brightness noise c"""
     from simcode.solve import solve as SV
-    return SV.solve_cal({k: v for k, v in cal.items() if k not in SV.BN_KEYS}, th[0], th[1])
+    return SV.solve_cal({k: v for k, v in cal.items() if k != SV.BN_KEY}, c)
 
 
 @torch.no_grad()
 def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True):
-    """non-kinetic pattern solve on all rows (cal from with_theta); per-row residual quantities at the MAP (torch, concatenated).
+    """non-kinetic pattern solve on all rows (cal from with_c); per-row residual quantities at the MAP (torch, concatenated).
     Only the rows flagged iso are kept unless keep_all. fast: solve_fast.solve_emitters_fast instead of solve.solve_emitters."""
     from simcode.solve import solve_fast as MF
     from simcode.solve import solve as SV
@@ -91,31 +99,28 @@ def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True):
             sl = slice(c0, c0 + chunk)
             oo = {k: v[sl] for k, v in o.items()}
             s = solve(oo, PW, b[sl], cal, kin='none')
-            pt = PW[b[sl]]
+            pt = C.scale_rel(PW[b[sl]], oo.get('relg'))
             il, dx, dy = C.illum_at(pt, s['r_map'][:, 0], s['r_map'][:, 1])
             Bh = s['mu'].sum(1) / il.sum(1).clamp(min=1e-6)
             J = torch.stack([Bh[:, None] * dx, Bh[:, None] * dy, il], -1)
             m = torch.ones(len(Bh), dtype=torch.bool, device=dev) if keep_all else torch.tensor(iso[sl], device=dev)
-            for k, v in dict(e=oo['I'] - s['mu'], mu=s['mu'], Sn=s['Sig'], J=J, sp=s['s_prior'], ang=C.angle_k(pt)[1],
-                             ph=tt(ph[sl]), q=s['chi2'], dof=s['dof']).items():
+            vals = dict(e=oo['I'] - s['mu'], mu=s['mu'], Sn=s['Sig'], J=J, sp=s['s_prior'], ang=C.angle_k(pt)[1],
+                        ph=tt(ph[sl]), q=s['chi2'], dof=s['dof'])
+            for k, v in vals.items():
                 add(k, v[m])
             add('n_all', torch.tensor([n if c0 == 0 else 0], device=dev))
     return {k: torch.cat(v) for k, v in acc.items()}
 
 
-def sigma_theta(S, th):
-    c, ca = th
+def sigma_c(S, c):
+    """Sigma(c) = Sigma_net + c^2 diag(mu^2) of the rows of S"""
     mu = S['mu'].clamp(min=0)
-    Sg = S['Sn'] + torch.diag_embed((c * mu) ** 2) + 1e-6 * torch.eye(T, device=dev)
-    if ca > 0:
-        oh = torch.nn.functional.one_hot(S['ang'], 2).float()
-        Sg = Sg + ca ** 2 * (mu[:, :, None] * mu[:, None, :]) * (oh @ oh.transpose(1, 2))
-    return Sg
+    return S['Sn'] + torch.diag_embed((c * mu) ** 2) + 1e-6 * torch.eye(T, device=dev)
 
 
-def resid_cov(S, th):
+def resid_cov(S, c):
     """V_e = Sigma - J (J^T Sigma^-1 J + P)^-1 J^T"""
-    Sg = sigma_theta(S, th)
+    Sg = sigma_c(S, c)
     J = S['J']
     Si_J = torch.linalg.solve(Sg, J)
     A = J.transpose(1, 2) @ Si_J
@@ -128,9 +133,9 @@ def wvec(S):
     return torch.where(S['ang'] == 0, 1.0, -1.0)
 
 
-def pit(S, th):
+def pit(S, c):
     """per-frame u [n,T] and contrast u [n]"""
-    V = resid_cov(S, th)
+    V = resid_cov(S, c)
     v = V.diagonal(dim1=1, dim2=2).clamp(min=1e-6)
     uF = torch.special.gammainc(torch.full_like(v, 0.5), S['e'] ** 2 / v / 2)
     w = wvec(S)
@@ -155,9 +160,9 @@ def snr_bins(S):
     return lF, eF, lC, eC
 
 
-def bin_medians(S, th, B=None):
+def bin_medians(S, c, B=None):
     lF, eF, lC, eC = B if B is not None else snr_bins(S)
-    uF, uC = pit(S, th)
+    uF, uC = pit(S, c)
     rF = []; rC = []
     for i in range(len(eF) - 1):
         m = (lF >= eF[i]) & (lF <= eF[i + 1])
@@ -167,39 +172,37 @@ def bin_medians(S, th, B=None):
     return rF, rC
 
 
-def fit_theta(S, th0, nmax=60000):
+def fit_c(S, c0, nmax=60000):
+    """c minimising the squared deviation of the bin medians of the PIT u from 1/2 (frames and contrast) at the fixed solutions
+    of S (multi-start Nelder-Mead on |c|); returns c, objective, the SNR bins"""
     if len(S['e']) > nmax:
         g = torch.Generator(device='cpu').manual_seed(0)
         ii = torch.randperm(len(S['e']), generator=g)[:nmax].to(dev)
         S = {k: (v[ii] if (torch.is_tensor(v) and v.dim() > 0 and len(v) == len(S['e'])) else v) for k, v in S.items()}
     B = snr_bins(S)
     def f(x):
-        th = (abs(float(x[0])), abs(float(x[1])))
-        rF, rC = bin_medians(S, th, B)
+        rF, rC = bin_medians(S, abs(float(x[0])), B)
         return sum((m - 0.5) ** 2 for _, _, m in rF if np.isfinite(m)) + sum((m - 0.5) ** 2 for _, _, m in rC if np.isfinite(m))
     best = None
-    for x0 in ([th0[0], th0[1]], [0.05, 0.05], [0.2, 0.1], [0.1, 0.0]):
-        r = minimize(f, x0, method='Nelder-Mead', options=dict(xatol=1e-3, fatol=1e-8, maxiter=400))
+    for x0 in (c0, 0.05, 0.2, 0.1):
+        r = minimize(f, [x0], method='Nelder-Mead', options=dict(xatol=1e-3, fatol=1e-8, maxiter=200))
         if best is None or r.fun < best.fun: best = r
-    x = best.x
-    return (abs(float(x[0])), abs(float(x[1]))), float(best.fun), B
+    return abs(float(best.x[0])), float(best.fun), B
 
 
-def estimate(rows, cal0, n_iter=3, th0=(0.10, 0.10), log=print, fast=True):
-    """fixed-point estimate of theta = (c, c_a) (cal0 = the model's solve calibration, without c); returns theta, history, the
-    last residual set"""
-    th = tuple(th0); hist = []
+def estimate(rows, cal0, n_iter=3, c0=0.10, log=print, fast=True):
+    """fixed-point estimate of c (cal0 = the model's solve calibration, without c); returns c, history, the last residual set"""
+    c = float(c0); hist = []
     for it in range(n_iter):
-        S = solve_rows(rows, with_theta(cal0, th), fast=fast)
-        th_new, J, B = fit_theta(S, th)
-        rF, rC = bin_medians(S, th_new)
+        S = solve_rows(rows, with_c(cal0, c), fast=fast)
+        c_new, J, B = fit_c(S, c)
+        rF, rC = bin_medians(S, c_new)
         nfr = int(len(S['e']))
-        hist.append(dict(it=it, theta_in=list(th), theta=list(th_new), J=J, n_rows=nfr, frame_bins=rF, contrast_bins=rC))
-        log(f'  brightness noise it {it}: c {th[0]:.3f} c_a {th[1]:.3f} -> c {th_new[0]:.3f} c_a {th_new[1]:.3f} '
-            f'(J {J:.1e}, rows {nfr}) med u frame [SNR]: ' + ' '.join(f'{m:.2f}[{x:.0f}]' for x, _, m in rF) +
-            ' | contrast: ' + ' '.join(f'{m:.2f}[{x:.0f}]' for x, _, m in rC))
-        th = th_new
-    return th, hist, S
+        hist.append(dict(it=it, c_in=c, c=c_new, J=J, n_rows=nfr, frame_bins=rF, contrast_bins=rC))
+        log(f'  brightness noise it {it}: c {c:.3f} -> {c_new:.3f} (J {J:.1e}, rows {nfr}) med u frame [SNR]: '
+            + ' '.join(f'{m:.2f}[{x:.0f}]' for x, _, m in rF) + ' | contrast: ' + ' '.join(f'{m:.2f}[{x:.0f}]' for x, _, m in rC))
+        c = c_new
+    return c, hist, S
 
 
 def q_table(rows, cal, fast=True):

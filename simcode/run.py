@@ -9,15 +9,16 @@ Stages (each skipped if its outputs exist, unless --redo):
   1  pass 1      detector + head on every 6-frame window (start every 3 frames): network per-frame intensities
                  with covariance, bg, pattern-free position prior; candidates with detector p >= 0.3 are stored
                  (simcode/processing/common.CAND_PMIN)
-  2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift) estimated from
-                 the pass-1 network intensities, and the dataset's brightness noise c, c_a (the solve's relative intensity
-                 scatter per frame / per orientation) from the same clean emitter-windows
+  2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift, the
+                 per-orientation intensity map over the field of view) estimated from the pass-1 network intensities, and the
+                 dataset's brightness noise c (the solve's relative per-frame intensity scatter) from the same clean
+                 emitter-windows
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (posterior over the fringe starts and the
                  non-kinetic / kinetic models, posterior sd) with the model's solve calibration (cal_sim: prior_off from
-                 simulated gate scenes) and the estimated c, c_a
+                 simulated gate scenes) and the estimated c
   4  pass 2      pattern-aware pass-2 detector + emitter network fed the estimated pattern, then the same solve
   5  tables      the four localization tables (simcode/table.py; the torch_psf Dataset format): locs_p1_net, locs_p1_solve,
-                 locs_p2_net (THE RESULT: the pass-2 emitter network's position and sd), locs_p2_solve; summary.json. The
+                 locs_p2_net, locs_p2_solve (THE RESULT: the pass-2 pattern solve's position and posterior sd); summary.json. The
                  paper's selection (max(sx, sy) <= 12 nm on the rows with p >= 0.63 inside the crop) is applied when a table
                  is loaded: simcode.dataset.Dataset.select.
 Output region: --crop x0,y0,size (px); default the whole frame (square sensors; else the largest top-left square). The
@@ -71,6 +72,9 @@ def build_parser():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
                     'selection region uses the corrected positions')
+    ap.add_argument('--intensity_map', type=int, default=1, choices=(0, 1), help='deprecated (2026-11-19): the pattern stage always '
+                    'estimates the per-orientation intensity map over the field of view (processing/pattern_estimation.estimate_relmap); '
+                    '0 is ignored with a warning')
     ap.add_argument('--redo', type=int, default=0)
     return ap
 
@@ -115,7 +119,8 @@ def fixed_values():
     d = vars(RU.build_parser().parse_args(['--movie', 'x', '--calib', 'x', '--out', 'x']))
     return dict(stages='pass 1, pattern estimation (+ brightness noise), pattern solve of the pass-1 rows, pass 2 (pattern-aware) + solve, tables', pass2=True,
                 window_frames=6, window_step=3, cand_pmin=CAND_PMIN, p_good=SP.P_GOOD,
-                solve_c='estimated per run with the pattern (pattern_estimation.estimate_brightness_noise; pattern_est.pt cmult / cmult_ang; run_config pattern.brightness_noise)',
+                solve_c='estimated per run with the pattern (pattern_estimation.estimate_brightness_noise; pattern_est.pt cmult; run_config pattern.brightness_noise)',
+                intensity_map='estimated by the pattern stage, used by every solve (pattern_estimation.estimate_relmap; pattern_est.pt relmap)',
                 kinetic_model=f'posterior average of the non-kinetic and kinetic fits for every row, BIC penalty {SV.KIN_PENALTY:.3f} = 2 ln 6 (solve.model_average)',
                 brightness_noise_rows=PE.BN_NMAX,
                 code_path='fast (queued batching, exact fast solve)', compile=RU.COMPILE, compile_emitter='off',
@@ -157,6 +162,9 @@ def main(argv=None):
     if c.config:
         argv, REC, W0 = _from_config(c.config, rest); W = W or W0
     a, N, cal = resolve(ap, argv)
+    if a.intensity_map == 0:
+        print('simcode.run: WARNING --intensity_map 0 is deprecated and ignored: the pattern stage always estimates the '
+              'per-orientation intensity map (2026-11-19)', file=sys.stderr, flush=True)
     a.model_name = N['name']
     from simcode.util.proctitle import set_title; set_title('run')     # recognizable name in nvidia-smi / ps
     from simcode.io.work import Units, atomic_json
@@ -195,6 +203,11 @@ def _stages(a, N, cal, Units, atomic_json):
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
+    if not need_pat:
+        import torch
+        if torch.load(f'{a.out}/pattern_est.pt', map_location='cpu', weights_only=False).get('relmap') is None:
+            print(f'simcode.run: WARNING the existing {a.out}/pattern_est.pt was made without the intensity map (a run before '
+                  '2026-11-19); it is kept (--redo 1 re-estimates it)', file=sys.stderr, flush=True)
     _uncal(common + ['--stages', 'pass1' + (',pattern' if need_pat else '')])
     ST['pass1_pattern_s'] = time.time() - t0
     # 3: pattern solve of the pass-1 rows

@@ -4,7 +4,7 @@ Run: python tests/test_tables.py (or pytest tests).
   tables   the four tables (net / solve x pass 1 / 2): columns, same rows in both kinds, p1_index; select(table) = p >= 0.63,
            inside the crop, max(sx, sy) * px_nm <= 12 nm (max_precision_nm / min_score / in_region / crop / px_nm); the crop of
            the run is read from its pass-1 file; the HDF5 table file round trips and the selection is applied at load; the
-           default table of a run directory is locs_p2_net; no sigma rescale
+           default table of a run directory is locs_p2_solve; no sigma rescale
   drift    row selection of the drift estimate (simcode/util/drift.drift_rows; DME itself is not run)
   FRC      identical sets never drop below 1/7; block halves; a blurred point pattern resolves near its blur
 """
@@ -88,12 +88,15 @@ def test_strict_table():
         eq = lambda k: np.array_equal(C[k], T[k], equal_nan=T[k].dtype.kind == 'f')
         assert all(eq(k) for k in T), [k for k in T if not eq(k)]
         assert np.array_equal(SP.select(C), main) and np.array_equal(L.mask().numpy(), main)
-        # the four tables of a run; the result table is locs_p2_net
+        # the four tables of a run; the result table is the pass-2 solve locs_p2_solve (2026-11-19)
         res = SP.write_tables(d)
-        assert set(res) == set(SP.TABLES) and SP.DEFAULT_TABLE == 'locs_p2_net' and res['locs_p2_net'][0]['default']
+        assert set(res) == set(SP.TABLES) and SP.DEFAULT_TABLE == 'locs_p2_solve' and res['locs_p2_solve'][0]['default']
+        assert not res['locs_p2_net'][0]['default']
         assert all(os.path.exists(f'{d}/{n}.hdf5') and os.path.exists(f'{d}/{n}_info.json') for n in SP.TABLES)
         L = Dataset.load(d)
-        assert L.meta['table'] == 'locs_p2_net' and L.meta['kind'] == 'net' and L.meta['pass'] == 2 and np.array_equal(L.columns()['x'], Tn['x'])
+        assert L.meta['table'] == 'locs_p2_solve' and L.meta['kind'] == 'solve' and L.meta['pass'] == 2 and np.array_equal(L.columns()['x'], T['x'])
+        Ln = Dataset.from_run(d, kind='net')                                         # the other tables by pass / kind
+        assert Ln.meta['table'] == 'locs_p2_net' and Ln.meta['kind'] == 'net' and np.array_equal(Ln.columns()['x'], Tn['x'])
         assert Dataset.from_run(d, pass_=1, kind='solve').meta['table'] == 'locs_p1_solve'
     print('  ok table: net / solve columns, p1_index, select (max_precision_nm, min_score, in_region), HDF5 table file, the four tables')
 

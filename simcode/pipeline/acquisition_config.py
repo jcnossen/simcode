@@ -13,7 +13,63 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 phase-step order (the preprint code's pattern_frames). [[0, 1, 2], [3, 4, 5]]: the 3 steps of orientation 1,
                 then the 3 of orientation 2; [[0, 2, 4], [1, 3, 5]]: the orientations alternate. The networks of this package
                 are trained for 2 orientations x 3 steps, so only that shape is accepted (in any frame order).
+  pattern.intensity_map  deprecated (2026-11-19; an option for one day): the pattern stage always estimates the per-orientation
+                intensity map over the field of view (the angle contrast of the clean emitter-windows as a 2D cubic B-spline;
+                processing/pattern_estimation.estimate_relmap) and every solve of the run uses it. 1 (the default) = that; 0 is
+                accepted, logs a warning and is ignored (set to 1). A work folder whose process stage ran without the map (before
+                the key, or at 0) is stale
   camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)
+  psf.lut, psf.lut_sub, psf.lut_inner  deprecated (2026-11-18), accepted and ignored: the spline-table variant of the
+                in-situ PSF fit was removed; the psf stage always runs the direct vectorial fit (torch_psf fit_tracks), which
+                was the default (lut: false). lut: true logs a warning.
+  spots.maxframe  frames the spot finder and the tracks use (null = the whole movie, the default since 2026-11-18; it was 30000)
+  psf.nsamples  track samples of each PSF fit (default 32000 since 2026-11-18, was 8000; at most the samples there are). The
+                sampling sd of the fit falls as 1 / sqrt(nsamples); measured on 1809_2 (whole movie, 87468 samples): focus
+                3.8 / 2.8 / 1.9 nm, Zernike rms 2.6 / 2.4 / 1.1 mwaves, line blur sxx 5 / 2 / 4 x 1e-3 px^2, held-out paired NLL
+                bl - base 0.009 / 0.004 / 0.002 and ps3 - bl 0.003 / 0.002 / 0.002 nats per sample at 8000 / 16000 / 32000. The
+                fit time grows linearly (RTX 3090, 32000: base 134 s, bl 178 s, ps3 449 s)
+  psf.init      the starts of the multi-start base fit (simcode/pipeline/psf_stage.py _inits): 'zero', 'f<focus um>' (zero
+                Zernikes), 'a<focus um>' (four astigmatism starts Z5 / Z6 = +- psf.astig_init_waves; added 2026-11-18: starts
+                without astigmatism cannot leave the zero-astigmatism set), 'beads' (the bead fit and its mirrored twin), a
+                calibration json / _psf.pt. Default [zero, f0.1, f0.2, f0.3, a0.1, beads]
+  psf.camera_maps  per-pixel camera model of the PSF fits (added 2026-11-18): null (default) = scalar offset (psf.offset_adu
+                or the camera stage) and read noise (psf.readnoise_e); 'cammaps' = the cammaps stage maps; a path = an npz with
+                offset_adu [H, W] (ADU) and readnoise_e [H, W] (e rms) of the movie frame (e.g. the set-up's calibrated maps).
+                With maps the offset map is subtracted per pixel and the variance model is mu + rn^2 per pixel (fit, held-out
+                test); psf.readnoise_e / psf.offset_adu are then unused, and the calibration carries these maps. On 1809_2 the
+                paper camera maps improve the held-out NLL by ~70-110 nats per sample over a scalar camera (out/psf_v3).
+                Movie-estimated offset maps of dense movies can hold the sample (cammaps check corr(offset_dev, loc density))
+  psf.readnoise_extra_e  with psf.camera_maps: white noise (e rms) added in quadrature to the read-noise map (default 0): the
+                variance the camera model does not hold (unmodelled sample background structure, PSF model error); choose
+                it by the held-out NLL (out/psf_v3: 1809_2 0.5 e)
+  psf.blur      image-plane blur of the bl fit: 'line' (default; v v^T), 'cov' (a general 2 x 2 covariance, added 2026-11-18;
+                needs torch-psf fit_tracks blur='cov') or 'none'
+  psf.init_blur  (default true, added 2026-11-18) the multi-start fits include the psf.blur term, so the start is chosen by the
+                NLL of the blurred model (on 2.5 nM / 2 the base-only choice missed a start whose blurred fit is 3 nats per sample
+                better); false = base-only start fits (the behaviour before)
+  psf.init_select  how the multi-start picks its start (added 2026-11-18): 'refit' (default) = the lowest NLL of the frozen start
+                fits with every sample's x, y, z refitted from the z multi-start (held-out-style refit) on psf.init_select_nsamples
+                (default 8000) cb0 samples of another draw; 'train' = the lowest training NLL (before). The training NLL also
+                depends on the local z optimum each sample reached from the fit's single z start
+  psf.pixel_integration  pixel integration of the fitted vectorial PSF (added 2026-11-19): 'exact' (default since 2026-11-19:
+                the exact pixel integral of the band-limited image, torch-psf VectorialPSF pixel_integration 'spectral'; ~2x the
+                cost of 'box' without blur, about the same with a blur; the in-situ PSFs v4) or 'box' (deprecated, accepted with a
+                warning to reproduce older fits: the mean of 2 x 2 point samples per pixel, the fits up to psf_v3). Stored in the
+                fits and the calibration, so every consumer renders the PSF with it (out/pixint_fit). Work folders whose psf
+                stage was fitted with 'box' (before the key, or 'box' given) are stale under the default; at 'box' a folder
+                from before the key stays up to date (localization_pipeline.LATE_DEFAULTS)
+  psf.astig_init_waves  astigmatism amplitude of the 'a<focus>' starts (default 0.05 waves)
+  psf.init_nsamples  samples of the multi-start base fits (psf.init) that choose the start (default 8000; null = psf.nsamples);
+                the base fit from the chosen start then uses psf.nsamples. With init_nsamples >= nsamples the start fits are the
+                base fits (the behaviour before 2026-11-18)
+  psf.heldout_nsamples  cb1 samples of the held-out test (6000)
+  psf.spread_k  sampling-spread diagnostic (2026-11-18): the cb0 fits and the held-out test repeated on spread_k independent
+                sample draws (default 3, i.e. 2 extra draws; 0 = off); the sd of focus, Zernikes, blur, gamma / zeta and of the
+                held-out NLL (and its paired differences) for a fit of psf.nsamples samples: psf/spread.json, summary 'spread',
+                report 'Sampling spread'. Each extra draw costs about one cb0 fit chain + one held-out test
+  psf.spread_nsamples  samples per draw (default 8000; null = psf.nsamples; at most 3/4 of the cb0 samples). The sd is scaled
+                to psf.nsamples by sqrt(spread_nsamples / psf.nsamples) (the 1 / sqrt(n) law held on 1809_2 for 8000 -> 32000
+                within the scatter of the estimates); draws of psf.nsamples cost about 3 x more (1809_2: ~15 instead of ~5 min each)
   train.heldout  held-out set of the emitter trainer (python -m simcode.emitter.heldout --set 5 --out <file>; the model
                 recipe's set); null: the trainer runs without it
 A Python config file can define `configs` / `config` as a function of keyword arguments (e.g. the 4Pi configs:
@@ -34,12 +90,13 @@ DEFAULTS = {
                          d_um=0.27, z_range=[-0.6, 0.6], z_range_sym=[0.03, 0.8], k_dev=3.0, max_crlb=0.15, zlim=[-0.5, 0.5],
                          zlim_sym=[0.0, 0.75], flips=['none', 'lr', 'ud', 'both'], r1=2.0, k_sigma=4.0, kfold=5),
     'optics': dict(pixel_um=0.10833, NA=1.49, wavelength_um=0.70, n_imm=1.518, n_med=1.33, tirf_depth_um=0.082),
-    'pattern': dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], cache=None, pitch_px=[1.6, 2.8]),
+    'pattern': dict(pattern_frames=[[0, 1, 2], [3, 4, 5]], cache=None, pitch_px=[1.6, 2.8], intensity_map=1),
     'hints': dict(photons_window=None, density_per_um2=None, bg_photons_px=None),
-    'spots': dict(maxframe=30000, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
+    'spots': dict(maxframe=None, sum=6, thr=3.5, roi=11, track_roi=11, isolation_px=7.0, link_px=0.8,
                   chi2_max=3.6, snr_min=8.0, sigma_range=[0.75, 1.35], tracks_from='all'),
-    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'beads'], nsamples=8000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
-                readnoise_e=1.9, offset_adu=None, lut_sub=4, lut_inner=1, heldout_nsamples=6000),
+    'psf': dict(init=['zero', 'f0.1', 'f0.2', 'f0.3', 'a0.1', 'beads'], astig_init_waves=0.05, nsamples=32000, iters=600, zmax_um=0.2, blur='line', photosel=3, lut=False, heldout=True,
+                readnoise_e=1.9, offset_adu=None, camera_maps=None, readnoise_extra_e=0.0, init_blur=True, init_select='refit', init_select_nsamples=8000, lut_sub=4, lut_inner=1, heldout_nsamples=6000, spread_k=3, spread_nsamples=8000, init_nsamples=8000,
+                pixel_integration='exact'),
     'train': dict(model=None, quick=False, quick_steps=30, heldout=None,
                   steps=dict(detector=40000, emitter=18000, detector_pass2=40000, detector_pass2_mix=40000, detector_pass2_cont=40000, emitter_pass2=24000,
                              emitter_pass2_long=50000, emitter_pass2_final=50000),
@@ -150,10 +207,37 @@ def validate(c):
         raise ValueError(f'pattern.pattern_frames {PF!r} must use each of the frames 0-5 of a cycle once')
     if not (0 < P['pitch_px'][0] < P['pitch_px'][1]):
         raise ValueError('pattern.pitch_px must be [lo, hi] with 0 < lo < hi')
+    if not (isinstance(P['intensity_map'], int) and not isinstance(P['intensity_map'], bool) and P['intensity_map'] in (0, 1)):
+        raise ValueError('pattern.intensity_map (deprecated): 1 (the default; the intensity map is always estimated) or 0 (ignored)')
+    if P['intensity_map'] == 0:
+        import warnings
+        warnings.warn('pattern.intensity_map 0 is deprecated and ignored: the pattern stage always estimates the per-orientation '
+                      'intensity map (2026-11-19)', stacklevel=2)
+        P['intensity_map'] = 1
     if c['camera']['type'] not in ('scmos', 'emccd'):
         raise ValueError('camera.type: scmos | emccd')
-    if c['psf']['blur'] not in ('none', 'line') or c['psf']['photosel'] not in (0, 3):
-        raise ValueError('psf.blur: none | line; psf.photosel: 0 | 3')
+    if c['psf']['blur'] not in ('none', 'line', 'cov') or c['psf']['photosel'] not in (0, 3):
+        raise ValueError('psf.blur: none | line | cov; psf.photosel: 0 | 3')
+    mf = c['spots']['maxframe']
+    if mf is not None and (not isinstance(mf, int) or isinstance(mf, bool) or mf <= 0):
+        raise ValueError(f'spots.maxframe: null (the whole movie) or a number of frames > 0, not {mf!r}')
+    if c['psf']['init_select'] not in ('refit', 'train'): raise ValueError("psf.init_select: refit | train")
+    if c['psf']['pixel_integration'] not in ('box', 'exact'): raise ValueError("psf.pixel_integration: exact (default) | box (deprecated)")
+    if c['psf']['pixel_integration'] == 'box':
+        import warnings
+        warnings.warn("psf.pixel_integration 'box' is deprecated (2026-11-19; default 'exact'): accepted to reproduce older PSF fits",
+                      stacklevel=2)
+    for k_ in ('nsamples', 'heldout_nsamples', 'init_nsamples', 'spread_nsamples', 'init_select_nsamples'):
+        v = c['psf'][k_]
+        if not (v is None and k_ in ('init_nsamples', 'spread_nsamples')) and (not isinstance(v, int) or isinstance(v, bool) or v <= 0):
+            raise ValueError(f'psf.{k_}: a number of samples > 0' + (' or null (= psf.nsamples)' if k_ in ('init_nsamples', 'spread_nsamples') else '') + f', not {v!r}')
+    k = c['psf']['spread_k']
+    if not isinstance(k, int) or isinstance(k, bool) or k < 0 or k == 1:
+        raise ValueError(f'psf.spread_k: 0 (no sampling-spread diagnostic) or the number of sample draws >= 2, not {k!r}')
+    if c['psf']['lut']:
+        import warnings
+        warnings.warn('psf.lut is deprecated and ignored: the spline-table PSF fit was removed, the psf stage runs the direct '
+                      'vectorial fit (the default, lut: false)', stacklevel=2)
     if c['channels'] is not None:
         from simcode.channels.layout import ChannelLayout
         ChannelLayout.from_config(c)                     # field checks (crop, mirror, equal crop sizes, names)

@@ -32,7 +32,7 @@ python examples/simulate_movie.py /data/simcode_example
 python -m simcode.pipeline /data/simcode_example/quickstart.yaml
 ```
 
-This takes about 6 minutes on one RTX 3090: camera calibration, the in-situ PSF fit from the movie, and the localization. The movie is simulated with our setup, so its config uses the shipped model `m1809` and skips the training; for your own microscope the pipeline trains a model.
+This takes about 10 minutes on one RTX 3090: camera calibration, the in-situ PSF fit from the movie (with its sampling-spread check), and the localization. The movie is simulated with our setup, so its config uses the shipped model `m1809` and skips the training; for your own microscope the pipeline trains a model.
 
 ## 2. Describe your setup
 
@@ -72,7 +72,7 @@ The stages run in this order. Each stage writes its own folder under `out`.
 
 1. **order, camera:** the frame order of the pattern, and the camera gain, offset and read noise.
 2. **spots, cammaps, tracks:** finds the isolated emitters in the movie and makes the per-pixel camera maps.
-3. **psf:** estimates the PSF of your microscope from the movie itself (below). Steps 1–3 took about 20 minutes on our movie.
+3. **psf:** estimates the PSF of your microscope from the movie itself (below). Steps 1–3 take about 1 hour on our 120000-frame movie, almost all of it the PSF fit. For a faster, noisier fit, set `psf: {nsamples: 16000}` (about 35 minutes) or turn off the spread check with `psf: {spread_k: 0}` (saves about 15 minutes).
 4. **train:** trains the detector and emitter networks on simulations of your PSF and camera. This takes by far the longest: about 7 hours on one RTX 3090.
 5. **process:** localizes the movie. Our 120000-frame movie took about 1 hour on one RTX 3090. The tables go to `out/process/run_<id>/`.
 6. **report:** writes `out/report/report.html`, with the checks of every stage, the PSF, the pattern and the FRC.
@@ -82,6 +82,8 @@ How the PSF is estimated, without a z-stack:
 - The spots and tracks stages find isolated emitters in the movie and cut out their blinking events over consecutive frames.
 - The psf stage fits a vectorial PSF model to those events with torch-psf's in-situ fit: Zernike aberrations plus focus, then a blur term, then the polarization (photoselection) terms. It starts from several focus guesses and keeps the best fit.
 - The same fit gives the first estimate of the illumination pattern.
+- The spots and tracks use the whole movie, and each PSF fit uses up to 32000 events (`spots.maxframe`, `psf.nsamples`). Fewer events make the fit noisier: on our movie the focus varies by about 4 nm between random sets of 8000 events, and by about 2 nm with 32000.
+- The psf stage measures this itself: it repeats the fit on independent random sets of events (`psf.spread_k`, 3 by default, 0 = off) and reports the spread of the focus, aberrations, blur, polarization term and held-out likelihood (report section *Sampling spread*). The events are picked by a hash of each event's frame and position, so a few more or fewer events change only those few, not the whole set.
 - A held-out check refits on half of the events and tests on the other half. The result is `out/psf/calib.psf.zip` (the torch-psf PSF file format, with the camera calibration), the PSF the networks are trained on. `docs/PSF_POLARIZATION.md` has the details.
 
 Useful to know:
@@ -109,7 +111,7 @@ Each run writes four tables:
 - `locs_p1_net` and `locs_p1_solve`: pass 1;
 - `locs_p2_net` and `locs_p2_solve`: pass 2, which is pattern-aware.
 
-`_net` is the emitter network's own position and σ, and `_solve` is the explicit pattern solve on the network intensities. The two tables of a pass have the same rows. By default you load `locs_p2_net`, the result table. Add `kind='solve'` to load the pass-2 solve, which is the table the paper's figures use. Add `pass_=1` to load pass 1.
+`_net` is the emitter network's own position and σ, and `_solve` is the explicit pattern solve on the network intensities. The two tables of a pass have the same rows. By default you load `locs_p2_solve`, the result table (the pass-2 solve, which is also the table the paper's figures use). Add `kind='net'` to load the pass-2 network's own output. Add `pass_=1` to load pass 1.
 
 The tables are HDF5 files in the torch-psf format. You can load, filter, drift-correct, render and export them in Python:
 

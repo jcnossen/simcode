@@ -90,7 +90,7 @@ def pass1_z_columns(P1, cal1, ws, xd, yd, r, s):
 
 
 def network_columns(P1, cal1, cal2, ws, xd, yd, xp, yp, sp):
-    """the pass-2 emitter network's own result (2026-11-17: the pipeline's result table locs_p2_net): x_net, y_net = the network
+    """the pass-2 emitter network's own result (table locs_p2_net; the pipeline's result table 2026-11-17 to 2026-11-19): x_net, y_net = the network
     position (global px; the pass-2 calibration's prior_off removed, as the solve's prior centre), sx_net, sy_net = its sd (the
     position block of the joint (x, y, I_1..6) covariance), z_net, sz_net, cov_xz_net, cov_yz_net = the linked pass-1 candidate's
     z prior conditioned on x_net, y_net with that sd (pass1_z_columns; NaN without a pass-1 partner). P1, cal1, ws, xd, yd: as

@@ -48,6 +48,11 @@ STAGE_SETTINGS = dict(order=['movie', 'pattern.pattern_frames', 'pattern.cache']
                       cammaps=['camera', 'spots'], tracks=['spots', 'psf.nsamples'], beads=['beads', 'optics'],
                       psf=['optics', 'pattern', 'psf', 'camera'], train=['train', 'optics', 'hints'],
                       process=['process', 'train.model', 'pattern', 'optics'], report=[])
+# config keys added after work folders existed, with the value that reproduces the earlier behaviour: at that value they are
+# left out of a stage's settings, so a stage recorded before the key does not become stale (another value does).
+# psf.pixel_integration: 'box' = the fits before the key; the default is 'exact' since 2026-11-19, so a psf stage fitted with
+# box becomes stale under the default (intended)
+LATE_DEFAULTS = {'psf.pixel_integration': 'box'}
 FULL_HASH_MAX = 1 << 30            # files up to 1 GB are fingerprinted by sha256; larger ones (a movie) by size and mtime
 
 
@@ -279,14 +284,14 @@ class LocalizationPipeline:
         return L
 
     def dataset_pass1(self, **kw):
-        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (kind='net': the emitter network's output,
-        the default; kind='solve': the pattern solve; the paper's selection: ds.select()); with process.cycle_aligned_only only
-        the windows that start at a cycle boundary"""
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (kind='solve': the pattern solve, the
+        default; kind='net': the emitter network's output; the paper's selection: ds.select()); with process.cycle_aligned_only
+        only the windows that start at a cycle boundary"""
         return self._dataset(1, **kw)
 
     def dataset_pass2(self, **kw):
-        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset (kind='net', the
-        default = the result table locs_p2_net; kind='solve': the pattern solve)"""
+        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset (kind='solve', the
+        default = the result table locs_p2_solve; kind='net': the emitter network's output)"""
         return self._dataset(2, **kw)
 
     # ---- dependency chain (STAGE_SETTINGS above)
@@ -323,7 +328,11 @@ class LocalizationPipeline:
             v = self.c
             for part in k.split('.'): v = v.get(part) if isinstance(v, dict) else None
             return v
-        return json.loads(json.dumps({k: get(k) for k in keys}, sort_keys=True, default=str))
+        S = json.loads(json.dumps({k: get(k) for k in keys}, sort_keys=True, default=str))
+        for lk, dv in LATE_DEFAULTS.items():
+            top, sub = lk.split('.', 1)
+            if isinstance(S.get(top), dict) and S[top].get(sub, dv) == dv: S[top].pop(sub, None)
+        return S
 
     def _input_files(self, name):
         """files outside <out> that a stage reads: the movie (stages reading it) and an existing model's files (train / process)"""
@@ -450,8 +459,15 @@ class LocalizationPipeline:
     # ---- stage a1: camera
     def _st_camera(self):
         from simcode.pipeline import camera
-        r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log)
+        r = camera.estimate(self.movie, self.c['camera'], self.c['camera']['gain_frames'], log=self.log, dev=self.torch_dev(4))
         return r
+
+    def spot_frames(self):
+        """frames the spot finder and the tracks use: spots.maxframe, or the whole movie when it is null"""
+        mf = self.c['spots']['maxframe']
+        if mf is not None: return int(mf)
+        from simcode.io.movie import open_movie
+        return int(open_movie(self.movie).n)
 
     # ---- stage c1: spots
     def _st_spots(self):
@@ -462,9 +478,10 @@ class LocalizationPipeline:
         self.torch_dev(4)
         sig0 = 1.15 * C.sigma_px(c)
         import hashlib
-        key = hashlib.sha1(json.dumps([self.movie, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0]).encode()).hexdigest()[:10]
+        nfr = self.spot_frames()
+        key = hashlib.sha1(json.dumps([self.movie, cam['gain'], cam['offset'], nfr, sp['sum'], sp['thr'], sp['roi'], sig0]).encode()).hexdigest()[:10]
         cd = os.path.join(d, 'chunks_' + key); os.makedirs(cd, exist_ok=True)     # chunk files keyed by the settings (no stale reuse)
-        L = spots.run(self.movie, cd, cam['gain'], cam['offset'], sp['maxframe'], sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
+        L = spots.run(self.movie, cd, cam['gain'], cam['offset'], nfr, sp['sum'], sp['thr'], sp['roi'], sig0, log=lambda *a: None)
         m, s_med = spots.good(L, sp['chi2_max'], sp['snr_min'], sp['sigma_range'])
         spots.write_hdf5(L, os.path.join(d, 'spots.hdf5')); spots.write_hdf5(L[m], os.path.join(d, 'spots_good.hdf5'))
         nf = int(L['frame'].max()) + 1 if len(L) else 0
@@ -480,7 +497,7 @@ class LocalizationPipeline:
                      density_per_um2_window=float(m.sum()) / max(nf, 1) / area)
         chk = [dict(name='good spots per window > 1', value=stats['good_per_window'], ok=stats['good_per_window'] > 1),
                dict(name='median sigma / diffraction estimate in [0.9, 1.6]', value=s_med / C.sigma_px(c), ok=0.9 <= s_med / C.sigma_px(c) <= 1.6)]
-        if c['camera']['map_frames'] > sp['maxframe']:
+        if min(c['camera']['map_frames'], open_movie(self.movie).n) > nfr:          # the maps use frames the spot mask does not cover
             chk.append(dict(name='camera.map_frames <= spots.maxframe (masks)', value=c['camera']['map_frames'], ok=False, warn_only=True))
         self.log('spots:', json.dumps(stats))
         return dict(stats=stats, sigma0=sig0, files=['spots.hdf5', 'spots_good.hdf5'], checks=chk)
@@ -502,12 +519,14 @@ class LocalizationPipeline:
     def _st_tracks(self):
         sp = self.c['spots']; d = self.dir('tracks')
         txt = self.sh(['-m', 'simcode.calibration.extract_tracks', '--movie', self.movie, '--locs', self.spots_file(),
-                       '--maxframe', sp['maxframe'], '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
+                       '--maxframe', self.spot_frames(), '--roi', sp['track_roi'], '--isolation', sp['isolation_px'], '--link', sp['link_px'],
                        '--out', os.path.join(d, 'tracks.npz')], os.path.join(d, 'tracks.log'))
         g = lambda pat: int(re.search(pat, txt).group(1))
         st = dict(tracks=g(r'(\d+) tracks spanning'), isolated=g(r'(\d+) isolated tracks'), samples=g(r'(\d+) samples of up to'))
-        need = 2 * self.c['psf']['nsamples']
-        return dict(stats=st, file='tracks.npz', checks=[dict(name=f'samples >= 2 x psf.nsamples ({need})', value=st['samples'], ok=st['samples'] >= need)])
+        n = self.c['psf']['nsamples']; need, low = 2 * n, 2 * min(n, 8000)
+        # fewer samples than 2 x psf.nsamples: the fits use what there is (warning); fewer than 2 x 8000 stops the run
+        return dict(stats=st, file='tracks.npz', checks=[dict(name=f'samples >= 2 x min(psf.nsamples, 8000) ({low})', value=st['samples'], ok=st['samples'] >= low),
+                                                         dict(name=f'samples >= 2 x psf.nsamples ({need})', value=st['samples'], ok=st['samples'] >= need, warn_only=True)])
 
     # ---- stage b: beads
     def _st_beads(self):

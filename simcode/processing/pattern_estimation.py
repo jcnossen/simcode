@@ -32,10 +32,16 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
   4. m_a: unbiased cross-cycle estimator on pairs of photon-disjoint consecutive windows (w, w + 6) of the same clean
      emitter: m^2 = sum Re(Z_w conj(Z_w+6) exp(i (eps diff))) / sum A_w A_w+6 (independent noise, position-error free).
   2-4 are iterated (`n_iter`).
-  5. brightness noise (2026-11-17; estimate_brightness_noise): c (relative per-frame scatter) and c_a (shared within each
-     orientation) of the intensity covariance Sigma = Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (per angle) of the solve, from
-     the residuals of the network intensities of the same clean emitter-windows against the estimated pattern
-     (simcode/solve/brightness_noise_fit.py); stored in the pattern (cmult, cmult_ang) and used by every solve of the run.
+  5. (2026-11-19; always on) the per-orientation intensity map over the field of view (estimate_relmap): the
+     relative intensity of the two orientations varies over the field (illumination envelope per orientation), seen as a smooth
+     map of the angle contrast of the clean windows; stored as P['relmap'] (2D cubic B-spline, knot spacing RELMAP_KNOT_PX) and
+     applied per row by every solve (o['relg'], simcode/solve/pattern.relmap_factors; g_0 g_1 = 1).
+  6. brightness noise (2026-11-17; estimate_brightness_noise): c (the relative per-frame scatter of the emitter brightness) of
+     the solve's intensity covariance Sigma = Sigma_net + c^2 diag(mu^2), from the residuals of the network intensities of the
+     same clean emitter-windows against the estimated pattern with its intensity map (simcode/solve/brightness_noise_fit.py:
+     the plain residual fit of the solve's noise model); stored in the pattern (cmult) and used by every solve of the run.
+     (Removed 2026-11-19: the per-orientation term c_a (cmult_ang) and the component estimator with per-model network-transfer
+     tables; the map + one c + the full Sigma_net give the same precision and FRC, brightness_noise_fit.)
 """
 import math
 import numpy as np, torch
@@ -277,9 +283,121 @@ def fit_depth(D, sel, K, psi, rel, eps_knots, kf, verbose=print, pbins=(0, 1000,
     return np.array([res[0]['m'], res[1]['m']]), res
 
 
+RELMAP_PHB = (0, 450, 600, 800, 1050, 1400, 1900, 2600, 3600, 1e9)    # window-photon bins of the contrast centring
+RELMAP_KNOT_PX = 13.75   # knot spacing of the intensity-map B-spline (movie px; n = round(box / spacing) intervals per axis)
+RELMAP_SMOOTH = 1e-2     # second-difference penalty of the B-spline coefficients (P-spline), relative to the mean diagonal of the
+                         # weighted normal matrix (independent of the number of windows); both by tile cross-validation
+
+
+def relmap_grid(box, knot_px=RELMAP_KNOT_PX):
+    """knot intervals (nx, ny) of the intensity-map B-spline over box (x0, x1, y0, y1): round(side / knot_px), at least 1"""
+    return [max(1, int(round((box[1] - box[0]) / knot_px))), max(1, int(round((box[3] - box[2]) / knot_px)))]
+
+
+def relmap_penalty(n):
+    """D^T D of the second differences of the (ny + 3) x (nx + 3) coefficient grid (row-major, row = y) along x and along y"""
+    mx, my = n[0] + 3, n[1] + 3
+    dx = np.diff(np.eye(mx), 2, axis=0); dy = np.diff(np.eye(my), 2, axis=0)
+    Dm = np.r_[np.kron(np.eye(my), dx), np.kron(dy, np.eye(mx))]
+    return Dm.T @ Dm
+
+
+def _relmap_X(box, n, x, y):
+    from simcode.solve import pattern as C
+    rm = dict(box=list(box), n=list(n))
+    return C.relmap_design(rm, torch.as_tensor(np.asarray(x, np.float64)), torch.as_tensor(np.asarray(y, np.float64))).numpy()
+
+
+def _robust_wls(X, y, w, n_irls=4, huber=2.5, pen=None):
+    """robust (Huber IRLS) weighted LS; pen: optional penalty matrix, scaled by the mean diagonal of X^T W X"""
+    ww = w.copy()
+    for _ in range(n_irls):
+        A = X.T @ (X * ww[:, None]); tr = np.trace(A) / len(A); A += 1e-9 * tr * np.eye(len(A))
+        if pen is not None: A += pen * tr
+        c = np.linalg.solve(A, X.T @ (ww * y))
+        r = (y - X @ c) * np.sqrt(w); s = 1.4826 * np.median(np.abs(r)); a = np.abs(r) / max(s, 1e-12)
+        ww = w * np.where(a > huber, huber / a, 1.0)
+    return c
+
+
+def estimate_relmap(D, sel, psi, rel, knot_px=RELMAP_KNOT_PX, smooth=RELMAP_SMOOTH, box=None, verbose=print):
+    """(2026-11-19) per-orientation intensity map of the pattern: the angle contrast h = (A_0 - A_1) / mean A of the clean
+    emitter-windows (A_a = the exact 3-step solve of angle a with the global psi / rel; position-free) as a 2D cubic B-spline
+    (simcode/solve/pattern.relmap_design: uniform knots, spacing ~knot_px, relmap_grid) over the box (x0, x1, y0, y1) (movie px;
+    default the extent of the windows), robust weighted LS with a second-difference penalty `smooth` on the coefficients
+    (P-spline; relmap_penalty), h centred per window-photon bin (the networks' photon-dependent
+    contrast bias), weights 1 / (a / photons + v_s) (fitted per bin), map weighted mean zero (the global orientation ratio stays in
+    rel). The solves use rel_s x g_a, g_0 = exp(delta / 2), g_1 = exp(-delta / 2), delta = log((1 + h / 2) / (1 - h / 2))
+    (simcode/solve/pattern.relmap_factors): g_0 g_1 = 1, so the per-window brightness B keeps its meaning.
+    Measured (out/pattern_map, 2026-11-19; 1809_2 / 2.5 nM_2, v3 models; with the first, Legendre degree-4 version of the map): the
+    map holds ~40 % of the h variance (held-out tiles), is stable over the movie (time thirds: map correlation >= 0.988) and
+    matches the contrast map of the networks' per-frame background (correlation 0.93 / 0.94, an emitter-free measurement of the
+    illumination); with it c_a 0.219 -> 0.109 / 0.230 -> 0.077 (component estimator); the positions of the clean windows move by
+    0.5 / 3 nm rms, the photon-disjoint pair precision changes by < 0.7 %. Held-out v3 sims (no envelope): flat map, no gain.
+    The B-spline replaced the Legendre polynomial (out/model_studies/relmap, 2026-11-19; held-out share of the h variance, mean of
+    the checkerboard 11 / 22 px and random 5-fold tile cross-validations, 1809_2 / 2.5 nM_2): Legendre degree 4 0.394 / 0.405
+    (best degree 0.405 / 0.405); unpenalised B-splines at best 0.398 / 0.406 (3 / 2 intervals) and unstable on finer grids; the
+    P-spline at 13.75 px, smooth 1e-2 0.423 / 0.429 (flat optimum: 9-28 px with smooth 1e-3 - 1e-1 within 0.01). Pipeline
+    check (pattern stage, component estimator): c_a 0.109 -> 0.099 / 0.077 -> 0.059 (no map: 0.219 / 0.230), the code's own
+    checkerboard gain 0.402 -> 0.428 / 0.416 -> 0.437. Maps fitted on the windows below / above the median network z agree
+    (correlation 0.997 / 0.993): 2D, no height dependence (the two orientations' TIRF decay lengths differ by < 1 nm).
+    One map per orientation (per-step maps have no further held-out gain).
+    Returns (relmap dict for the pattern file, info)."""
+    w0 = D['w'][sel]; f = w0[:, None] + np.arange(T)[None]; st = f % 6
+    A0, _, _ = angle_Z(D['I'][sel], st, psi, rel, 0); A1, _, _ = angle_Z(D['I'][sel], st, psi, rel, 1)
+    Am = 0.5 * (A0 + A1); x, y, ph = D['x'][sel], D['y'][sel], D['phot'][sel]
+    ok = (Am > 0) & np.isfinite(A0) & np.isfinite(A1)
+    h = np.where(ok, (A0 - A1) / np.where(Am > 0, Am, 1.0), 0.0)
+    ok &= np.abs(h) < 2
+    pb = np.clip(np.searchsorted(RELMAP_PHB, ph) - 1, 0, len(RELMAP_PHB) - 2)
+    hc = h.copy(); var_b = []; ph_b = []
+    for b in range(len(RELMAP_PHB) - 1):
+        m = ok & (pb == b)
+        if m.sum() >= 50:
+            hc[m] -= np.median(h[m]); var_b.append((1.4826 * np.median(np.abs(hc[m]))) ** 2); ph_b.append(np.median(ph[m]))
+    if len(var_b) >= 2:          # var(h) ~ a / photons + v_s over the photon bins
+        Xv = np.c_[1.0 / np.array(ph_b), np.ones(len(ph_b))]
+        a_, vs = np.linalg.lstsq(Xv, np.array(var_b), rcond=None)[0]; a_ = max(a_, 1e-6); vs = max(vs, 1e-3)
+    else:
+        a_, vs = 1.0, 1e-2
+    w = 1.0 / (a_ / np.maximum(ph, 1.0) + vs)
+    if box is None: box = (float(x[ok].min()), float(x[ok].max()), float(y[ok].min()), float(y[ok].max()))
+    n = relmap_grid(box, knot_px)
+    X = _relmap_X(box, n, x, y); pen = smooth * relmap_penalty(n) if smooth > 0 else None
+    c = _robust_wls(X[ok], hc[ok], w[ok], pen=pen)
+    c -= np.average(X[ok] @ c, weights=w[ok])                                 # mean zero (the basis sums to 1)
+    # held-out check: 2-fold checkerboard of 11-px tiles (weighted MSE, clipped at 5 robust sd) vs a constant
+    tile = ((np.floor((x - box[0]) / 11.0) + np.floor((y - box[2]) / 11.0)) % 2).astype(int)
+    def wmse(r, ww):
+        s = 1.4826 * np.median(np.abs(r * np.sqrt(ww))); return float(np.mean(np.clip(r * np.sqrt(ww), -5 * s, 5 * s) ** 2))
+    rm, r0 = np.zeros(ok.sum()), np.zeros(ok.sum()); Xo, ho, wo, to = X[ok], hc[ok], w[ok], tile[ok]
+    for k in (0, 1):
+        tr, te = to != k, to == k
+        if tr.sum() < 10 * X.shape[1] or te.sum() < 10: rm[te] = ho[te]; r0[te] = ho[te]; continue
+        rm[te] = ho[te] - Xo[te] @ _robust_wls(Xo[tr], ho[tr], wo[tr], pen=pen); r0[te] = ho[te] - np.average(ho[tr], weights=wo[tr])
+    gain = 1 - wmse(rm, wo) / wmse(r0, wo)
+    gx, gy = np.meshgrid(np.linspace(box[0], box[1], 41), np.linspace(box[2], box[3], 41)); M = _relmap_X(box, n, gx.ravel(), gy.ravel()) @ c
+    from simcode.solve.pattern import RELMAP_KIND
+    relmap = dict(kind=RELMAP_KIND, knot_px=float(knot_px), smooth=float(smooth), n=n, box=[float(b_) for b_ in box], coef=c.tolist(),
+                  note='angle contrast h(x, y) = (A0 - A1) / mean A over the box (movie px) as a cubic B-spline with n = (nx, ny) uniform '
+                       'knot intervals, coef row-major over the (ny + 3) x (nx + 3) grid (simcode/solve/pattern.relmap_design); '
+                       'relint x g_a, g_0 = exp(delta / 2), g_1 = exp(-delta / 2), delta = log((1 + h / 2) / (1 - h / 2)), g_0 g_1 = 1 '
+                       '(simcode/solve/pattern.relmap_factors); processing/pattern_estimation.estimate_relmap')
+    info = dict(knot_px=float(knot_px), smooth=float(smooth), grid=n, n=int(ok.sum()), heldout_gain=float(gain), h_p1=float(np.percentile(M, 1)),
+                h_p99=float(np.percentile(M, 99)), h_rms=float(M.std()), var_a=float(a_), var_static=float(vs), box=relmap['box'])
+    verbose(f'  intensity map (cubic B-spline, {n[0]} x {n[1]} knot intervals of ~{knot_px:g} px, {X.shape[1]} parameters, {ok.sum()} '
+            f'clean windows): angle contrast over the field p1 / p99 {info["h_p1"]:+.3f} / {info["h_p99"]:+.3f} (rms {info["h_rms"]:.3f}); '
+            f'held-out share of the contrast variance (checkerboard 11-px tiles) {gain:.3f}')
+    if gain <= 0:
+        verbose('  intensity map: no held-out gain (too few clean windows or no field dependence); the map is kept (it is then '
+                'close to flat)')
+    return relmap, info
+
+
 def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print, clean_rows=False):
-    """full estimation from pass-1 rows R (dict of concatenated arrays). Returns (pattern dict, info) (+ the indices into R of
-    the clean emitter-windows with clean_rows)."""
+    """full estimation from pass-1 rows R (dict of concatenated arrays), steps 1-5 (incl. the per-orientation intensity map
+    P['relmap'], estimate_relmap; always on since 2026-11-19). Returns (pattern dict, info) (+ the indices into R of the clean
+    emitter-windows with clean_rows)."""
     D = select(R, nn_min=nn_min, min_phot=min_phot)
     verbose(f'pattern estimation: {len(D["w"])} localizations, on-through {D["on"].sum()}, clean (nn >= {nn_min}, '
             f'>= {min_phot:.0f} ph) {D["clean"].sum()}')
@@ -311,29 +429,43 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
              note='estimated from pass-1 pattern-free localizations (simcode/processing/pattern_estimation.py)')
     info = dict(k=kinfo, hist=hist, depth=dinfo, depth_vs_nn=nn_diag, eps_se=einfo['se'].tolist(), eps_n=einfo['n'].tolist(),
                 n_clean=int(sel.sum()), n_on=int(D['on'].sum()), n=int(len(D['w'])))
+    P['relmap'], info['relmap'] = estimate_relmap(D, sel, psi, rel, verbose=verbose)
     if clean_rows: return P, info, np.nonzero(R['out'].astype(bool))[0][sel]
     return P, info
 
 
 BN_NMAX = 120000      # clean emitter-windows used for the brightness-noise fit (evenly subsampled over the movie)
+BN_NMIN = 2000        # fewer clean emitter-windows: a warning (the estimate gets fewer SNR bins, it is noisier)
+BN_NMIN_HARD = 300    # fewer: no estimate; c = BN_FALLBACK_C, with a warning
+BN_FALLBACK_C = 0.1   # (the fixed c of the model calibrations before 2026-11-17)
 
 
 def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print):
-    """step 5: brightness noise (c, c_a) of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
-    load_pass1_rows, which carry each row's chunk / row), the estimated pattern P and the model's pass-1 solve calibration cal
-    (path or dict, without c). -> (c, c_a, info)"""
-    import json
+    """step 6: brightness noise c of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
+    load_pass1_rows, which carry each row's chunk / row; at most nmax, evenly over the movie), the estimated pattern P (with
+    its intensity map) and the model's pass-1 solve calibration cal (path or dict, without c): the residual fit of the solve's
+    noise model (brightness_noise_fit.estimate). -> (c, info)"""
+    import json, warnings
     from simcode.solve import brightness_noise_fit as BN
     cal = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
     idx = np.asarray(clean)
     if len(idx) > nmax: idx = idx[np.linspace(0, len(idx) - 1, nmax).round().astype(np.int64)]
-    if len(idx) < 2000: raise ValueError(f'brightness noise: only {len(idx)} clean emitter-windows (>= 2000 needed)')
+    rule = ('clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), non-kinetic solve with '
+            'the estimated pattern and its intensity map; residual fit of Sigma_net + c^2 diag(mu^2), simcode/solve/brightness_noise_fit.py')
+    info = dict(n_rows=int(len(idx)), n_clean=int(len(clean)), rule=rule)
+    if len(idx) < BN_NMIN_HARD:
+        msg = (f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN_HARD}): not estimated, using c {BN_FALLBACK_C:.3f}')
+        warnings.warn(msg); verbose('  WARNING ' + msg)
+        info.update(c=BN_FALLBACK_C, fallback=True)
+        return BN_FALLBACK_C, info
+    if len(idx) < BN_NMIN:
+        msg = f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN}): the estimate is noisier'
+        warnings.warn(msg); verbose('  WARNING ' + msg)
     by = {int(f0): R['row'][idx[R['chunk'][idx] == f0]] for f0 in np.unique(R['chunk'][idx])}
     rows = BN.chunk_rows(out, P, by)
-    th, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
-    q50 = BN.q_table(rows, BN.with_theta(cal, th))
-    verbose(f'  brightness noise: c {th[0]:.4f}, c_a {th[1]:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
+    c, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
+    q50 = BN.q_table(rows, BN.with_c(cal, c))
+    verbose(f'  brightness noise: c {c:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
             + ' '.join(f'{lo:g}:{q:.2f}' for lo, q in q50))
-    return th[0], th[1], dict(c=th[0], c_a=th[1], n_rows=int(len(idx)), n_clean=int(len(clean)), hist=hist, q50_by_photons=q50,
-                              rule='clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), '
-                                   'non-kinetic solve with the estimated pattern; simcode/solve/brightness_noise_fit.py')
+    info.update(c=c, hist=hist, q50_by_photons=q50)
+    return c, info

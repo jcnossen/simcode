@@ -3,7 +3,7 @@
   load(scene, front, d=<dir>)   seeds pooled, FOV ids made unique
   targets(R)                    gate_scenes_report_detector_matched matching: candidates score >= 0.5 matched one-to-one (1 px) to targets on the
                                 DETECTOR point x_det
-  solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe / kinetic posterior; c = c_a = 0: the gate scenes' constant brightness) on
+  solve(R, oi, cal, prior)      (3D head dumps: + z, sz after the solve, zp = the head's z) explicit pattern solve (simcode/solve/solve.solve_emitters; fringe / kinetic posterior; c = 0: the gate scenes' constant brightness) on
                                 the dumped head outputs; prior 'own' (the head's prior) or 'pf' (the pattern-free prior of pretrain_emitter_pass1 on
                                 the same candidates, pass-2 dumps only); 'direct' = the head prior itself (variant b) with
                                 sigma = s_prior
@@ -49,12 +49,12 @@ def targets(R, thr=0.5):
 
 @torch.no_grad()
 def solve(R, oi, cal, prior='own', patt='est', chunk=8192, dev='cuda'):
-    """(cal: the model's solve calibration; the gate scenes' brightness noise c = c_a = 0 of simcode.simulate.crlb is added)"""
+    """(cal: the model's solve calibration; the gate scenes' brightness noise c = 0 of simcode.simulate.crlb is added)"""
     from simcode.emitter import model as SCM
     from simcode.solve import solve as SV
     from simcode.solve import z_conditioning as ZC
     from simcode.simulate.crlb import BRIGHTNESS_NOISE
-    cal = SV.solve_cal(cal, *BRIGHTNESS_NOISE)
+    cal = SV.solve_cal(cal, BRIGHTNESS_NOISE)
     ph = R['sc_I'][oi].sum(1)
     pre = 'sc_pf_' if prior == 'pf' else 'sc_'
     if prior == 'direct':

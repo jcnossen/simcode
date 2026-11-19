@@ -2,7 +2,7 @@
 Scene generator and multi-emitter Cramer-Rao bounds for the benchmark scenes (used by the gate suite simcode/benchmark/gate_scenes.py,
 the nuisance CRLB archive-2026-11-15:simcode/benchmark/crlb_nuisance.py, the detector training data archive-2026-11-15:simcode/simulate/emitters.py).
 
-Multi-emitter CRLB (exact vectorial PSF, true pattern, per-pixel read noise, Poisson + Gaussian variance) on the fixed
+Multi-emitter CRLB (the calibrated PSF, simcode.psf.calib_psf; true pattern, per-pixel read noise, Poisson + Gaussian variance) on the fixed
 15 x 15 region around the target pixel; expected image = bg + all emitters; free parameters = every active emitter whose
 pixel is within 9 px (Chebyshev) of the target pixel, plus one bg per angle:
   SF   : (x, y, z, B, t_on, t_off) per emitter with the true pattern illumination (kinetics as nuisance)
@@ -17,13 +17,12 @@ import numpy as np, torch
 from scipy.optimize import linear_sum_assignment
 from simcode.simulate.simulator import Simulator
 from simcode import psf as spsf
-from simcode.psf import spline, angle_kwargs
 from simcode.layers.blocks import extract_patches
 from simcode import config as _cfg
 
-# brightness noise (c, c_a) of the gate scenes for the solve (simcode.solve.solve.solve_cal): the emitters of these scenes have a
-# constant brightness (true photons = B x on-fraction x illumination, no per-frame or per-orientation scatter), so c = c_a = 0
-BRIGHTNESS_NOISE = (0.0, 0.0)
+# brightness noise c of the gate scenes for the solve (simcode.solve.solve.solve_cal): the emitters of these scenes have a
+# constant brightness (true photons = B x on-fraction x illumination, no per-frame scatter), so c = 0
+BRIGHTNESS_NOISE = 0.0
 
 a = types.SimpleNamespace(calib=_cfg.model(_cfg.INSITU_05))
 _CDIV = 3   # (2026-11-11) per-angle PSF CRLB batch divisor (memory only; same results)
@@ -109,27 +108,25 @@ def shift_region(img, ox, oy):
 
 
 def psf_channels(rpsf):
-    """4 (p, dx, dy, dz), or 8 = angle-0 then angle-1 stacks when rpsf carries a per-pattern-angle PSF (rpsf.angle_kw)"""
-    return 8 if getattr(rpsf, 'angle_kw', None) else 4
+    """4 (p, dx, dy, dz), or 8 = angle-0 then angle-1 stacks for a per-pattern-angle PSF (rpsf = [angle 0, angle 1])"""
+    return 4 * len(rpsf)
 
 
 @torch.no_grad()   # (2026-11-11) no autograd graph (memory; same values)
-def psf_stack(rpsf, x, y, z, focus, chunk=1024):
-    """Exact vectorial PSF on each emitter's own 15x15 ROI + central-difference derivatives: [N,4,R,R] (p, dx, dy, dz).
-    (2026-11-11) [N,8,R,R] (angle 0 | angle 1) if rpsf has a per-angle PSF (models() of a per-angle calib)."""
+def psf_stack(rpsf, x, y, z, chunk=1024):
+    """The calibrated PSF (rpsf of models(): [the model] or [angle 0, angle 1], simcode.psf.calib_psf) on each emitter's own
+    15x15 ROI + central-difference derivatives: [N,4,R,R] (p, dx, dy, dz); [N,8,R,R] (angle 0 | angle 1) for a per-angle PSF."""
     pos = torch.stack([x - torch.round(x), y - torch.round(y), z], 1)
-    kws = getattr(rpsf, 'angle_kw', None) or [{}]
     out = []
     for p in pos.split(chunk):
-        f = torch.full((len(p),), focus, device=dev); im = []
-        for kw in kws:
-            ev = (lambda q: rpsf(q, f, **kw)) if isinstance(rpsf, spsf.VectorialPSF) else rpsf.render   # Gaussian: no focus / kw
-            im.append(ev(p))
+        im = []
+        for m in rpsf:
+            im.append(m.render(p))
             for i, hh in ((0, 1e-3), (1, 1e-3), (2, 1e-3)):
                 dd = torch.zeros_like(p); dd[:, i] = hh
-                im.append((ev(p + dd) - ev(p - dd)) / (2 * hh))
+                im.append((m.render(p + dd) - m.render(p - dd)) / (2 * hh))
         out.append(torch.stack(im, 1))
-    return torch.cat(out) if out else torch.zeros(0, 4 * len(kws), R, R, device=dev)
+    return torch.cat(out) if out else torch.zeros(0, 4 * len(rpsf), R, R, device=dev)
 
 
 def scaled_solve(FI, cols):
@@ -316,9 +313,7 @@ def two_stage_bounds(Cb, G, tg, o, T):
 
 # ------------------------------------------------------------------------------------------------ models
 def models(T):
-    """calibrated simulator (64 x 64), exact 15 x 15 vectorial PSF for the CRLB, 11 x 11 PSF LUT"""
+    """calibrated simulator (64 x 64) and its PSF on the 15 x 15 CRLB ROI: rpsf = [model] or [angle 0, angle 1] (simcode.psf.calib_psf)"""
     sim = Simulator(a.calib, H=S, W=S, T=T, device=dev)
-    p0 = sim.psf
-    rpsf = p0.resized(R) if isinstance(p0, spsf.VectorialPSF) else spsf.GaussianPSF(R, sigma_px=p0.sigma, device=dev)
-    rpsf.angle_kw = angle_kwargs(sim.c, dev)             # per-angle PSF for psf_stack / crlb_all (None = off)
-    return sim, rpsf, spline(p0, sim.zmax, roisize=P)
+    rpsf = [m.resized(R) for m in (sim.psf_angle or [sim.psf])]
+    return sim, rpsf

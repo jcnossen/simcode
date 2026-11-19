@@ -69,7 +69,7 @@ def main():
     with open(os.path.join(out, 'quickstart.yaml'), 'w') as f:
         f.write(f'name: "example"\nmovie: {out}/movie.tif\nout: {out}/simcode_out\n'
                 f'camera:\n  gain_e_per_adu: {GAIN}\n  offset_adu: {OFFSET}\n'
-                f'psf:                       # a short movie has fewer isolated emitters than the default PSF fit uses (8000)\n'
+                f'psf:                       # a short movie has fewer isolated emitters than the default PSF fit uses (32000)\n'
                 f'  nsamples: 2000\n  heldout_nsamples: 2000\n'
                 f'train:                     # the shipped model fits this simulated setup: no training. For your own\n'
                 f'  model: m1809             # microscope leave this out, and the pipeline trains a model for its PSF.\n')

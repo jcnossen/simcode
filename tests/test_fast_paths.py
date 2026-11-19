@@ -147,7 +147,7 @@ def test_pattern_solve():
     from simcode.solve import solve as SV
     from simcode.processing.common import pattern_frames
     Ra, _, _ = _pass1(False)
-    cal = SV.solve_cal(CAL, 0.1, 0.1)                     # a nonzero brightness noise (the c path of the solve)
+    cal = SV.solve_cal(CAL, 0.1)                          # a nonzero brightness noise (the c path of the solve)
     pat = torch.load(PATT, weights_only=False)
     keep = np.nonzero(Ra['out'])[0][:8192]
     tt = lambda a: torch.tensor(np.asarray(a), device='cuda', dtype=torch.float32)
@@ -178,7 +178,7 @@ def test_pass2_p2_fp32():
     A.emitter.bf16 = False
     with fp32_mode():
         from simcode.solve.solve import solve_cal
-        c2 = solve_cal(CAL_PASS2, 0.1, 0.1)
+        c2 = solve_cal(CAL_PASS2, 0.1)
         Ra = A.run_chunk(mov, cal, 0, mov.n, pat, c2, P1, CAL)
         Rb = B.run_chunk(mov, cal, 0, mov.n, pat, c2, P1, CAL)
     A.emitter.bf16 = True

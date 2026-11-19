@@ -17,8 +17,8 @@ directory were calculated. Written by simcode.run at the start (status 'running'
   code          package version, git commit, dirty flag, modified files, DME version / commit
   environment   python / numpy / torch / CUDA versions, GPU, host, platform (no user name, no e-mail)
   invocations   one entry per process that worked on the directory (resumed runs, one copy per GPU with --claim 1)
-  pattern       summary of the estimated pattern (pitch, angle, depth, phases, drift range, the brightness noise c / c_a used by
-                every solve of the run) + sha256 of pattern_est.pt
+  pattern       summary of the estimated pattern (pitch, angle, depth, phases, drift range, the intensity map, the brightness
+                noise c used by every solve of the run) + sha256 of pattern_est.pt
   tables        the four tables of the run (simcode/table.py TABLES): name -> what it is; 'default' = the result table
   selection     per table (locs_p1_net, locs_p1_solve, locs_p2_net, locs_p2_solve): the rule and the counts per rule
   counts, timing
@@ -44,6 +44,7 @@ REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
                'windows of 6 frames starting every 3 frames')
 # arguments of simcode.run that define the results (the others: out, claim, redo, config)
+# (intensity_map: an option 2026-11-19 only, now always on; a record's value is not passed)
 RERUN_KEYS = ('movie', 'calib', 'model', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb')
 
 
@@ -283,7 +284,8 @@ def pattern_summary(out):
         r.update({k: J[k] for k in ('n', 'n_on', 'n_clean') if k in J})
         if 'brightness_noise' in J:
             B = J['brightness_noise']
-            r['brightness_noise'] = dict(c=B.get('c'), c_a=B.get('c_a'), n_rows=B.get('n_rows'), rule=B.get('rule'))
+            r['brightness_noise'] = dict(c=B.get('c'), n_rows=B.get('n_rows'), rule=B.get('rule'))
+        if 'relmap' in J: r['intensity_map'] = J['relmap']
     except Exception as e:
         r['error'] = f'pattern_est.json: {type(e).__name__}: {e}'
     pt = os.path.join(out, 'pattern_est.pt')
@@ -437,7 +439,8 @@ def start(out, settings, fixed, model, calib, movie, overrides=None, rerun_of=No
 def finish(out, timing=None, error=None, extra=None):
     """complete the record: this invocation's end time; with the tables on disk: pattern, selection, counts, outputs, 'done'"""
     res = None
-    if error is None and os.path.exists(os.path.join(out, 'locs_p2_net_info.json')): res = results(out)
+    from simcode import table as SP
+    if error is None and os.path.exists(os.path.join(out, SP.DEFAULT_TABLE + '_info.json')): res = results(out)
 
     def fn(R):
         R = R or dict(format=FORMAT, invocations=[], steps=[])

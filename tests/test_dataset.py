@@ -41,8 +41,8 @@ def _skip(msg):
 
 def _table(d, n=3000):
     _run_dir(d, n=n)
-    T, info = SP.build_table(d, 'est2')
-    SP.write_table(T, info, f'{d}/locs_p2_net'); json.dump(info, open(f'{d}/locs_p2_net_info.json', 'w'), default=str)
+    T, info = SP.build_table(d, 'est2', kind='solve')                         # the result table (Dataset.from_run default)
+    SP.write_table(T, info, f'{d}/locs_p2_solve'); json.dump(info, open(f'{d}/locs_p2_solve_info.json', 'w'), default=str)
     return T, info
 
 
@@ -61,7 +61,7 @@ def _check_layout(L, T):
 def test_v2_table_select():
     with tempfile.TemporaryDirectory() as d:
         T, info = _table(d)
-        L = Dataset.load(d)                                                     # run directory -> locs_p2_net.hdf5
+        L = Dataset.load(d)                                                     # run directory -> locs_p2_solve.hdf5
         assert type(L) is Dataset and len(L) == 3000 and L.n_dims == 2 and L.pixel_nm == SP.PX_NM_DEFAULT
         _check_layout(L, T)
         assert L.meta['crop'] == [5.0, 5.0, 110.0] and L.meta['pass'] == 2 and L.meta['format'] == 'simcode hdf5'
@@ -81,8 +81,8 @@ def test_v2_table_select():
             assert type(A) is Dataset and A.meta['crop'] == L.meta['crop'] and len(A.select(in_region=False)) <= len(A)
         assert len(L.filter_crlb(max_nm=10)) == (np.maximum(T['sx'], T['sy']).astype(np.float64) * SP.PX_NM_DEFAULT <= 10).sum()
         # from_run(pass_); Dataset.load of the table file
-        SP.write_table(T, info, f'{d}/locs_p1_net')
-        assert Dataset.from_run(d, pass_=1).meta['pass'] == 1 and len(Dataset.load(f'{d}/locs_p1_net.hdf5').select()) == info['n_main']
+        SP.write_table(T, info, f'{d}/locs_p1_solve')
+        assert Dataset.from_run(d, pass_=1).meta['pass'] == 1 and len(Dataset.load(f'{d}/locs_p1_solve.hdf5').select()) == info['n_main']
         try: Dataset.from_run(d, pass_=3); raise AssertionError('a missing pass must raise')
         except FileNotFoundError: pass
     with tempfile.TemporaryDirectory() as d:
@@ -91,7 +91,7 @@ def test_v2_table_select():
         np.savez(f'{d}/locs_p2.npz', **T, px_nm=np.array(info['px_nm']), sigma_max=np.array(12.0))
         json.dump(info, open(f'{d}/locs_p2_info.json', 'w'), default=str)
         L = Dataset.from_run(d, table='locs_p2'); _check_layout(L, T)
-        try: Dataset.from_run(d); raise AssertionError('an old run directory without locs_p2_net must raise')
+        try: Dataset.from_run(d); raise AssertionError('an old run directory without locs_p2_solve must raise')
         except FileNotFoundError as e: assert 'before 2026-11-17' in str(e)
         assert L.meta['format'] == 'simcode npz' and L.meta['crop'] == [5.0, 5.0, 110.0] and len(L.select()) == info['n_main']
         P = Dataset.load_npz(f'{d}/locs_p2.npz', columns=('sx', 'sy'))

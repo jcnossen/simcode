@@ -28,6 +28,74 @@ def angle_index(pt):
     return (pt[..., 0].abs() < pt[..., 1].abs()).long()
 
 
+# (2026-11-19) per-orientation intensity map of the pattern (pattern dict 'relmap', processing/pattern_estimation.estimate_relmap):
+# the relative intensity of each orientation varies over the field of view (beam envelope); the solves take it per row as o['relg'].
+# The map is the angle contrast h(x, y) = (A_0 - A_1) / mean A as a 2D tensor-product cubic B-spline on a uniform knot grid over the
+# map's box (the cubic B-spline kernel of the PSF splines, torch-psf pixint 'bspline'; coefficients fitted, not interpolated).
+# Normalisation: the two orientations get the factors g_0 = e^{delta/2}, g_1 = e^{-delta/2}, delta = log((1 + h/2) / (1 - h/2)), so
+# g_0 / g_1 = A_0 / A_1 and g_0 g_1 = 1 at every position (geometric mean 1: the map only redistributes intensity between the
+# orientations; the common envelope stays in the per-window brightness B, which keeps its meaning); the map has weighted mean 0 over
+# the clean windows (the global orientation ratio stays in the per-step rel_s). 2D only: the map has no height dependence (TIRF).
+RELMAP_KIND = 'bspline_angle_contrast'
+
+
+def bspline_kernel(s):
+    """the cubic B-spline kernel (C2, support [-2, 2]; = torch_psf.pixint._kernel(s, 'bspline'))"""
+    a = s.abs()
+    return torch.where(a <= 1, 2 / 3 - a ** 2 + 0.5 * a ** 3, torch.where(a < 2, (2 - a) ** 3 / 6, torch.zeros_like(a)))
+
+
+def bspline_basis(t, n):
+    """the n + 3 uniform cubic B-splines of n knot intervals at t [m] in knot units (clamped to [0, n]): [m, n + 3]; basis k is
+    centred on knot k - 1 (knots -1 .. n + 1), and the basis sums to 1 on [0, n] (partition of unity)"""
+    t = t.clamp(0, n)
+    return bspline_kernel(t[:, None] - (torch.arange(n + 3, device=t.device, dtype=t.dtype)[None] - 1))
+
+
+def relmap_knot_coords(relmap, x, y):
+    """movie positions x, y [m] -> knot coordinates (tx, ty) of the map's grid (float64; clamping is done by bspline_basis)"""
+    x0, x1, y0, y1 = (float(v) for v in relmap['box'])
+    nx, ny = (int(v) for v in relmap['n'])
+    return (x.double() - x0) / (x1 - x0) * nx, (y.double() - y0) / (y1 - y0) * ny
+
+
+def relmap_design(relmap, x, y):
+    """the design matrix [m, (ny + 3) (nx + 3)] of the map at x, y (row-major over the (ny + 3) x (nx + 3) coefficient grid)"""
+    nx, ny = (int(v) for v in relmap['n'])
+    tx, ty = relmap_knot_coords(relmap, x, y)
+    Bx, By = bspline_basis(tx, nx), bspline_basis(ty, ny)
+    return (By[:, :, None] * Bx[:, None, :]).reshape(len(x), -1)
+
+
+def relmap_contrast(relmap, x, y):
+    """the angle contrast h(x, y) = (A_0 - A_1) / mean A of a pattern intensity map at movie positions x, y [m] (torch; positions
+    outside the map's box are clamped to its edge; h clamped to +-1.5)"""
+    if relmap.get('kind') != RELMAP_KIND:
+        raise ValueError(f'pattern intensity map of kind {relmap.get("kind")!r}: only {RELMAP_KIND!r} is supported (the Legendre map of '
+                         'the first 2026-11-19 version was replaced); re-run the pattern stage (--redo 1)')
+    nx, ny = (int(v) for v in relmap['n'])
+    tx, ty = relmap_knot_coords(relmap, x, y)
+    c = torch.as_tensor(relmap['coef'], device=x.device, dtype=torch.float64).reshape(ny + 3, nx + 3)
+    return ((bspline_basis(ty, ny) @ c) * bspline_basis(tx, nx)).sum(1).clamp(-1.5, 1.5).float()
+
+
+def relmap_factors(relmap, x, y):
+    """per-row factors g [n, 2] of the relative intensity of the angle-0 / angle-1 frames at movie positions x, y [n]:
+    exp(+- delta / 2), delta = log((1 + h / 2) / (1 - h / 2)) (A_0 / A_1 = e^delta; g_0 g_1 = 1, geometric mean 1, the brightness B
+    keeps its meaning). relmap None -> None"""
+    if relmap is None: return None
+    h = relmap_contrast(relmap, x, y)
+    d = torch.log((1 + h / 2) / (1 - h / 2))
+    return torch.stack([torch.exp(d / 2), torch.exp(-d / 2)], -1)
+
+
+def scale_rel(pt, g):
+    """per-row pattern pt [n,T,5] with the relint of every frame multiplied by the factor g [n,2] of its angle (g None: pt itself)"""
+    if g is None: return pt
+    f = torch.gather(g.to(pt.dtype), 1, angle_index(pt))
+    return torch.cat([pt[..., :4], (pt[..., 4] * f)[..., None]], -1)
+
+
 def angle_k(pt):
     """mean k vector per angle [n,2(angle),2(kx,ky)] and the angle index of every frame [n,T]."""
     ang = angle_index(pt)

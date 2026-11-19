@@ -20,7 +20,7 @@ drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), r
             mask(...) is the boolean row mask.
 
     from simcode.dataset import Dataset
-    ds = Dataset.load('out/run1')                     # a run directory (its result table locs_p2_net.hdf5) or a table file
+    ds = Dataset.load('out/run1')                     # a run directory (its result table locs_p2_solve.hdf5) or a table file
     sel = ds.select()                                 # the paper's selection
     ds.estimate_drift(rows=ds.good & ds.disjoint)     # DME v2 (the dme package: simcode.util.drift.dme_package())
     sel = ds.select().apply_drift(ds.drift)
@@ -157,11 +157,12 @@ class Dataset(_TorchPSFDataset):
         return L
 
     @classmethod
-    def from_run(cls, run_dir, pass_=2, kind='net', table=None, **kw):
+    def from_run(cls, run_dir, pass_=2, kind='solve', table=None, **kw):
         """A localization table of a run directory of simcode.run (four tables per run, simcode/table.py TABLES): pass_ = 2 (the
-        pattern-aware pass, the default) or 1, kind = 'net' (the emitter network's own output, the default: locs_p2_net = the
-        result table) or 'solve' (the pattern solve: locs_p<pass>_solve); table: another base name instead (e.g. 'locs_p2' of
-        a run before 2026-11-17, whose locs_p<pass> tables were the solve with the removed sigma rescale). meta['pass'] and
+        pattern-aware pass, the default) or 1, kind = 'solve' (the pattern solve, the default: locs_p2_solve = the result table,
+        simcode.table.DEFAULT_TABLE; 2026-11-19) or 'net' (the emitter network's own output: locs_p<pass>_net); table: another
+        base name instead (e.g. 'locs_p2' of a run before 2026-11-17, whose locs_p<pass> tables were the solve with the removed
+        sigma rescale). meta['pass'] and
         meta['kind'] record which table it is. This is what the pipeline's dataset_pass1() / dataset_pass2() return; the
         paper's selection: ds.select()."""
         n = table or SP.table_name(pass_, kind)
