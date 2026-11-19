@@ -1,9 +1,10 @@
 """Outputs of the 4Pi code path with 6-frame windows (4Pi-SIMFLUX) on fixed inputs, on the CPU: the multi-channel scene
 simulator (patterns on / off), the candidate-patch simulator, the 4Pi priors / learned-window networks (v3L, v10, v11)
 and the 4Pi detector, the explicit solve (modes on / kin / free, fit_phi, window model, table model) and the solve-aware
-training loss. Used to check that the generalisation to T frames per window (2026-11-15, plain 4Pi) leaves the T = 6
-outputs bit-identical: run once with the code before the change (--save), once after (--ref). Only APIs present in both
-versions are used.
+training loss. Used to check that the generalisation to T frames per window (2026-11-15, plain 4Pi) and the switch to
+torch-psf's 4Pi PSF (2026-11-20: simcode.psf.fourpi_spline instead of simcode/fourpi/spline_table.LUT4Pi; the table is
+made by whichever of the two the code has) leave the T = 6 outputs bit-identical: run once with the code before the
+change (--save), once after (--ref). Only APIs present in both versions are used.
 
   PYTHONPATH=<code> python tests/check_fourpi_T.py --work <4Pi work folder> --save ref.pt
   PYTHONPATH=<code> python tests/check_fourpi_T.py --work <4Pi work folder> --ref ref.pt        (exit code 1 on any difference)
@@ -16,7 +17,12 @@ dev = 'cpu'
 
 def run(P4):
     """P4: the 4Pi work folder"""
-    from simcode.fourpi.spline_table import LUT4Pi
+    try:
+        from simcode.psf import fourpi_spline
+        table = lambda st: fourpi_spline(st, 15, device=dev)
+    except ImportError:          # the code before 2026-11-20
+        from simcode.fourpi.spline_table import LUT4Pi
+        table = lambda st: LUT4Pi(st, P=15, dev=dev)
     from simcode.simulate.multichannel import MultiChannelAcquisitionSim
     from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.emitter.fourpi import FourPiPrior, FourPiEmitterNet, WINDOWS_K, solve_loss, linear_readout, border_bg
@@ -38,7 +44,7 @@ def run(P4):
     for k in ('img', 'det_in'): R[f'mcs_reg|{k}'] = S[k]
     del sim
     # ---- patch simulator + networks
-    lut = LUT4Pi(st, P=15, dev=dev)
+    lut = table(st)
     ps = FourPiPatchSim(lut, dev=dev, seed=5)
     S = ps.sample(96, eps_range=math.pi)
     for k in ('img', 'mu', 'mu0', 'bg', 'x', 'y', 'z', 'Phi0', 'Nt', 'q', 'F', 'm', 'eps', 'doff', 'T', 'C', 'nnb'):

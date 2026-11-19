@@ -4,7 +4,7 @@ single frames (50 ms), 2048 x 168 px camera frames with 4 interference channels 
 left-right), 192 x 168 px channel crops. Derived in out/fourpi_refactor/public_4pi/STATUS.md: layout, camera (gain 0.455
 e/ADU from their own 4-channel sum, offset 103 ADU from the dark columns, read noise about 1 e), 128 nm px, the in-situ
 registration of file 000 (used for every file: registration mode 'file'), the 4Pi PSF fitted to their bead stack
-(PSF4Pi, NA 1.35 / n 1.406 / lambda 0.67 assumed; astigmatism scaled to the bead data: analysis/fourpi_plain/psf_astig.py).
+(torch_psf FourPiPSF, NA 1.35 / n 1.406 / lambda 0.67 assumed; astigmatism scaled to the bead data: analysis/fourpi_plain/psf_astig.py).
 Arguments of configs(work, data): work = the work folder (models, PSF, map, outputs; on qnano1 ~/simcode2/out/plain4pi), data = the
 folder of the extracted Zenodo data (on qnano1 /mnt/data/dmdsf/public_4pi_sms/zenodo_4022827/extracted).
 

@@ -52,9 +52,9 @@ def context(c):
     net, ck = load_emitter(f['emitter'])
     net.use_cs = f['learned_cs']
     if f.get('lut_psf'):          # the network's PSF table from another PSF json (fourpi.lut_psf)
-        from simcode.fourpi.spline_table import LUT4Pi
-        zl = dict(zip(('zmin', 'zmax'), ck['args']['zlut'])) if ck['args'].get('zlut') else {}
-        net.lut = LUT4Pi(json.load(open(f['lut_psf']))['psf'], P=15, dev=dev, **zl)
+        from simcode.psf import fourpi_spline
+        zr = tuple(ck['args']['zlut']) if ck['args'].get('zlut') else (-0.6, 0.6)
+        net.lut = fourpi_spline(json.load(open(f['lut_psf']))['psf'], 15, z_range=zr, device=dev)
     det, _ = dload(f['detector'])
     if net.T != f['window'] or det.T != f['window']:
         raise ValueError(f"{c['name']}: networks for {net.T} / {det.T} frames, config fourpi.window = {f['window']}")

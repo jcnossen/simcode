@@ -13,7 +13,7 @@ projection; torch_psf.fit), Tracks, extract_rois, fit_tracks (in-situ PSF fit on
 heldout_tracks / paired_nll / split_checkerboard (held-out check of a frozen PSF on track samples, the paired per-sample
 NLL difference, the checkerboard split; torch_psf.estimation), spot_deviance, maps_from_movie (per-pixel sCMOS offset / read-noise maps from a sparse movie; torch_psf.camera),
 white_photon_transfer (camera gain from the white background noise; torch_psf.camera), fit_gaussian_free_sigma
-(spot fit with a free Gaussian width; torch_psf.gaussian), filter_frames, gauss_blur_os, dipole_tensor, emitter_height_pos_fn, save_zip / is_psf_zip /
+(spot fit with a free Gaussian width; torch_psf.gaussian), filter_frames, emitter_height_pos_fn, save_zip / is_psf_zip /
 convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
 
 SIMCODE-specific:
@@ -54,8 +54,30 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
                                  json or the camera arrays (+ camera.extra_arrays) of a psf.zip.
   camera_maps_path(path, c)   -> the file that holds the maps (the npz; the zip itself for a psf.zip), or None.
   write_calib_zip(json, out)  -> psf.zip of a calib json (torch_psf convert_calibration; report= passed to save_zip).
-  fourpi_state(path)          -> the coherent_psf state dict of a 4Pi PSF file: json {'psf': state} or a psf.zip (FourPiPSF /
-                                 FourPiSplinePSF with its source).
+  fourpi_state(path)          -> the 4Pi PSF state (FourPiPSF parameter dict) of a 4Pi PSF file: json {'psf': state} or a
+                                 psf.zip (FourPiPSF / FourPiSplinePSF with its source).
+
+4Pi PSF (torch_psf FourPiPSF / FourPiSplinePSF; SIMCODE has no 4Pi PSF code of its own since 2026-11-20):
+
+  fourpi_psf(state, device, roisize, zmode)  the FourPiPSF of a 4Pi PSF state (the bead fit's parameter dict,
+                                 analysis/fourpi/fit_psf4pi.py; FourPiPSF.state()). Also reads the per-arm terms of SIMCODE's
+                                 in-situ states ('arms' {'top' | 'bot': {NA, n_med, apod, saf, pupil_phase, pupil_amp}},
+                                 analysis/fourpi_plain/insitu4pi.py): FourPiPSF.from_state reads 'arms' {'top' | 'bottom'}
+                                 without a per-arm n_med, so 'bot' is renamed and n_med is set on the arm.
+  fourpi_spline(state, roisize, z_range, oversample, dz_um, zpad, device)  THE 4Pi PSF of the networks, the simulators and
+                                 the solve: the FourPiSplinePSF (FourPiPSF.to_spline; 4Pi phase analytic) of a state on
+                                 SIMCODE's grid (default 15 px, 4 knots / px, z -0.6 .. 0.6 um in 10 nm planes, zpad 3; the
+                                 networks pass their checkpoint's zlut). State keys of the in-situ states that torch_psf
+                                 does not read (fourpi_knots): 'reg' (per-channel image offsets [C][2] px = FourPiPSF
+                                 channel_offsets, baked into the table by to_spline), 'beta' (a 4Pi phase linear in z, rad /
+                                 um: cr + i ci rotated by beta z per plane; not in FourPiPSF) and 'spline' (a refined knot
+                                 table, analysis/fourpi_plain/p4spline_refine.py: K [3, C, nz, n, n] of 'spline_base' (default
+                                 the file's vector_state); the table is K + table(state) - table(spline_base) on the file's
+                                 grid, i.e. exactly K for the base state itself; roisize is kept, the file's grid replaces
+                                 z_range / oversample / dz_um / zpad).
+  fourpi_knots(state, ...)     the knots [3 (inc, cr, ci), C, nz, n, n] of that table (with reg / beta; no 'spline').
+  fourpi_channel(spline, pos, phi, c, grad)  channel c of a FourPiSplinePSF at pos [N, 3] and the 4Pi phase phi [N]: [N, P, P]
+                                 (grad: value, d/dx, d/dy, d/dz, d/dphi); FourPiSplinePSF.evaluate gives all channels.
 """
 import json, os
 import numpy as np
@@ -67,7 +89,6 @@ from torch_psf.fit import solve_linear
 from torch_psf.spots import Tracks, extract_rois
 from torch_psf.detect import filter_frames
 from torch_psf.estimation import fit_tracks, spot_deviance, heldout_tracks, paired_nll, split_checkerboard
-from torch_psf.vectorial import gauss_blur_os, dipole_tensor
 from torch_psf.pixint import IntegratedSplinePSF
 from torch_psf import psfzip as _pz
 from torch_psf.psfzip import save_zip, is_psf_zip, convert_calibration
@@ -263,7 +284,7 @@ def write_calib_zip(json_path, out=None, spline=True, **kw):
 
 # ============================================================================================ 4Pi PSF files
 def fourpi_state(path, root=None):
-    """coherent_psf state dict of a 4Pi PSF file: a json with key 'psf' (out/4pi/psf4pi/*.json), or a psf.zip of a FourPiPSF
+    """4Pi PSF state (FourPiPSF parameter dict) of a 4Pi PSF file: a json with key 'psf' (out/4pi/psf4pi/*.json), or a psf.zip of a FourPiPSF
     (top-level source) / FourPiSplinePSF (its source block; without torch_psf's 'raw' parameter block). path: a file, or a name looked up as
     <root>/psf4pi/<name>.json, then <models>/fourpi/<name>.psf.zip (root = the 4Pi work directory)"""
     path = str(path)
@@ -280,3 +301,92 @@ def fourpi_state(path, root=None):
         return st
     with open(path) as f:
         return json.load(f)['psf']
+
+
+# ============================================================================================ 4Pi PSF models
+FOURPI_TABLE_KEYS = ('reg', 'beta', 'spline', 'spline_base')     # state keys read by fourpi_spline / fourpi_knots, not torch_psf
+
+
+def fourpi_psf(state, device=None, roisize=None, zmode=None):
+    """torch_psf FourPiPSF of a 4Pi PSF state (module doc): FourPiPSF.from_state, plus SIMCODE's in-situ per-arm terms
+    ('arms' with 'bot' and a per-arm n_med); roisize default meta.R, zmode default the state's ('emitter')"""
+    arms = state.get('arms') or {}
+    s = state
+    if 'bot' in arms:          # SIMCODE in-situ state: {'top' | 'bot': {NA, n_med, apod, saf, pupil_phase, pupil_amp}}
+        s = dict(state)
+        s['arms'] = {nm: {k: v for k, v in (arms.get(src) or {}).items() if k != 'n_med'} for nm, src in (('top', 'top'), ('bottom', 'bot'))}
+    p = FourPiPSF.from_state(s, device=device, roisize=roisize, zmode=zmode)
+    if 'bot' in arms:
+        with torch.no_grad():
+            for arm, src in ((p.top, 'top'), (p.bot, 'bot')):
+                v = (arms.get(src) or {}).get('n_med')
+                if v is not None:
+                    arm.n_med.copy_(torch.as_tensor(v, dtype=arm.n_med.dtype).reshape(arm.n_med.shape))
+    return p
+
+
+def _rotate_beta(K, beta, z_range, dz_um, zpad):
+    """knots [3, C, nz, n, n] with the coherent term cr + i ci of every plane rotated by beta z (state key 'beta', rad / um)"""
+    nz = K.shape[2]
+    z = (z_range[0] - zpad * dz_um + dz_um * torch.arange(nz, device=K.device, dtype=torch.float64)).float()
+    b = (float(beta) * z)[None, :, None, None]
+    cr, ci = K[1], K[2]
+    return torch.stack([K[0], cr * torch.cos(b) - ci * torch.sin(b), cr * torch.sin(b) + ci * torch.cos(b)])
+
+
+def fourpi_knots(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.01, zpad=3, device=None, chunk=128,
+                 xy_limit=None, spline=False):
+    """knots [3 (inc, cr, ci), C, nz, n, n] of the 4Pi spline table of a state (FourPiPSF.to_spline of fourpi_psf(state)
+    in the movie geometry zmode 'emitter'), with the state keys 'reg' (channel_offsets of the model) and 'beta' (module
+    doc); spline=True: (knots, the FourPiSplinePSF of to_spline: the table itself when there is no 'beta')"""
+    p = fourpi_psf({k: v for k, v in state.items() if k not in FOURPI_TABLE_KEYS}, device=device, zmode='emitter').eval()
+    if state.get('reg') is not None:
+        with torch.no_grad():
+            p.channel_offsets.copy_(torch.as_tensor(state['reg'], dtype=torch.float32).reshape(p.channel_offsets.shape))
+    with torch.no_grad():
+        T = p.to_spline(roisize, tuple(z_range), oversample=oversample, dz_um=dz_um, zpad=zpad, xy_limit=xy_limit, chunk=chunk)
+    K = T.knots
+    if state.get('beta'):
+        K = _rotate_beta(K, state['beta'], z_range, dz_um, zpad)
+        T = None
+    return (K, T) if spline else K
+
+
+def fourpi_spline(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.01, zpad=3, device=None, chunk=128):
+    """THE 4Pi PSF: the FourPiSplinePSF of a 4Pi PSF state on SIMCODE's grid (module doc; state keys reg / beta / spline)"""
+    if state.get('spline'):
+        return _fourpi_refined(state, roisize, device, chunk)
+    K, T = fourpi_knots(state, roisize, z_range, oversample, dz_um, zpad, device, chunk, spline=True)
+    if T is not None:
+        return T
+    return FourPiSplinePSF(roisize, tuple(z_range), K, oversample=oversample, dz_um=dz_um, zpad=zpad, tau=state['tau'],
+                           device=device, pixel_um=state['meta']['px'])
+
+
+def _fourpi_refined(state, roisize, device, chunk):
+    """FourPiSplinePSF of a state with a refined knot table (state key 'spline'; module doc)"""
+    f = torch.load(state['spline'], weights_only=False, map_location='cpu')
+    S, hz, zpad, zr = int(f['S']), float(f['dz']), int(f['zpad']), (float(f['z_range'][0]), float(f['z_range'][1]))
+    K = f['K'].to(device if device is not None else ('cuda' if torch.cuda.is_available() else 'cpu'))
+    base = dict(f['vector_state'] if state.get('spline_base') is None else state['spline_base'])
+    own = {k: v for k, v in state.items() if k not in ('spline', 'spline_base')}
+    if json.dumps(base, sort_keys=True) != json.dumps(own, sort_keys=True):     # another state: K + its change of the table
+        g = dict(roisize=f['roisize'], z_range=zr, oversample=S, dz_um=hz, zpad=zpad, device=K.device, chunk=chunk,
+                 xy_limit=f['xy_limit'])
+        d = fourpi_knots(own, **g) - fourpi_knots(base, **g)
+        if d.shape != K.shape:
+            raise ValueError(f"{state['spline']}: knots {tuple(K.shape)}, the table of its grid {tuple(d.shape)}")
+        K = K + d
+    return FourPiSplinePSF(roisize, zr, K, oversample=S, dz_um=hz, zpad=zpad, tau=state['tau'], device=K.device,
+                           pixel_um=state['meta']['px'])
+
+
+def fourpi_channel(spline, pos, phi, c, grad=False):
+    """channel c of a FourPiSplinePSF at pos [N, 3] (x, y px, z um) and 4Pi phase phi [N]: inc + cos(phi) cr - sin(phi) ci
+    [N, P, P]; grad: (value, d/dx, d/dy, d/dz, d/dphi)"""
+    cP, sP = torch.cos(phi)[:, None, None], torch.sin(phi)[:, None, None]
+    if not grad:
+        inc, cr, ci = (row[c].render(pos) for row in spline.luts)
+        return inc + cP * cr - sP * ci
+    a, b, e = (row[c].render(pos, True) for row in spline.luts)
+    return [a[k] + cP * b[k] - sP * e[k] for k in range(4)] + [-sP * b[0] - cP * e[0]]

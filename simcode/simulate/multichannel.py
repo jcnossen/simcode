@@ -38,7 +38,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.nn.functional as F
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 
 
 
@@ -112,7 +112,7 @@ class MultiChannelAcquisitionSim:
         self.H, self.W, self.dev, self.P, self.wsd, self.T = H, W, dev, P, wsd, T
         self.g = torch.Generator(device=dev).manual_seed(seed)
         rng = np.random.default_rng(seed)
-        self.luts = [LUT4Pi(s, P=P, dev=dev, sub=sub, zmin=zlut[0], zmax=zlut[1]) for s in perturbed_states(psf_state, n_psf, rng)]
+        self.luts = [fourpi_spline(s, P, z_range=tuple(zlut), oversample=sub, device=dev) for s in perturbed_states(psf_state, n_psf, rng)]
         cells = fourpi_sf_cells(work) if cells is None else list(cells)
         self.spec = {c.name: c for c in cells}
         self.cells = [c.name for c in cells]

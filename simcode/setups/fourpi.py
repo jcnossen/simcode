@@ -30,7 +30,7 @@ camera.offset_map, optics.pixel_um, channels, registration):
   det_batch     windows per detector batch
   zstack, bead_align   file globs of the bead z-stack / bead-align recordings of the acquisition (PSF / registration
                 calibration samples; not used by the processing)
-  psf           the 4Pi PSF model json (key 'psf': a coherent_psf state);  pattern_ref  reference SIM pattern json (k start)
+  psf           the 4Pi PSF model json (key 'psf': a 4Pi PSF state, simcode.psf.fourpi_psf);  pattern_ref  reference SIM pattern json (k start)
   lut_psf       '' (default): the processing uses the PSF table of the emitter checkpoint; a PSF json: the network's
                 PSF table (windows, solve) is built from that PSF instead (e.g. an in-situ PSF with a network
                 trained on another PSF)

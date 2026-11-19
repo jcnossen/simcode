@@ -16,10 +16,10 @@ def test_solve_oracle(work4pi):
     f = f'{work4pi}/psf4pi/NPC_f_dxy15.json' if work4pi else 'the 4Pi work folder (--work4pi)'
     if not os.path.exists(f) or not torch.cuda.is_available():
         print(f'  skip (needs a GPU and {f})'); return
-    from simcode.fourpi.spline_table import LUT4Pi
+    from simcode.psf import fourpi_spline
     from simcode.simulate.fourpi_patches import FourPiPatchSim
     from simcode.solve.fourpi import FourPiSolve, psi_from_eps
-    lut = LUT4Pi(json.load(open(f))['psf'], P=15)
+    lut = fourpi_spline(json.load(open(f))['psf'], 15, device='cuda')
     n = 2000
     S = FourPiPatchSim(lut, seed=5).sample(n, p_nb=0.0, p_on=1.0)
     g = torch.Generator(device='cuda').manual_seed(0)
