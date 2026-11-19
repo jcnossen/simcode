@@ -10,8 +10,9 @@ groups (frame % 6 // 3) and the photoselection hook (dip_tensor: gamma, zeta per
 5-21 + focus, blur 'none' | 'line' | 'cov' (general covariance), photoselection 0 | 3, --init-fit / --freeze-base. Writes <out>_psf.pt / _psf.json in
 the fit_psf_tracks format.
 
-heldout(...): the PSFs frozen, x, y, z refit per sample (torch_psf heldout_tracks: spline-table refit, multi-start in z,
-NLL / chi2 per sample with the vectorial model); the same samples for every PSF (paired comparison: paired()).
+heldout(...): the PSFs frozen, x, y, z refit per sample (torch_psf heldout_tracks: the refit renders with SIMCODE's PSF
+renderer simcode.psf.calib_psf of the fit's calibration keys (psf_calib), multi-start in z; NLL / chi2 per sample with the
+vectorial model); the same samples for every PSF (paired comparison: paired()).
 pattern_from_intensities(...): k per orientation (FFT + DFT refinement of the 3-step phasor over the pitch range), per-step
 phase / modulation / relative intensity.
 """
@@ -28,9 +29,6 @@ FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
 # band-limited image (torch-psf 'spectral', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
 # _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box')
 FIT_PIXEL_INTEGRATION = 'box'
-# offset limit (px from the ROI centre) of the spline table of the held-out refit (heldout(); also the heights of the
-# final calibration): R / 2 - 0.5 (= 5 px at R = 11), as torch-psf fit_tracks_spline
-HELDOUT_XY_LIMIT = lambda R: R / 2 - 0.5
 
 
 class Fit:
@@ -246,33 +244,53 @@ def model_from_pt(pt, R, dev='cuda', pixel_integration=None):
     return F, float(S['gain'])
 
 
+def psf_calib(pt, pixel_integration=None, optics=None):
+    """the PSF keys of a calibration (calib-json layout, simcode.psf: optics, Zernikes, focus, apodization, the fit's
+    sampling and pixel integration, line / covariance blur, per-angle dipole tensors 'psf_dipole_M_angle') of a _psf.pt (path
+    or dict; this module's fit or fit_psf_tracks's). pixel_integration: None = the fit's own, else this one (as
+    model_from_pt); optics: None = the pt's (default the DMD setup). The PSF part of psf_stage.calib_dict."""
+    S = torch.load(pt, weights_only=False) if isinstance(pt, str) else pt
+    o = optics or S.get('optics') or dict(pixel_um=0.10833, wavelength_um=0.70, n_imm=1.518, n_med=1.33)
+    d = dict(pixelsize_um=o['pixel_um'], wavelength_um=o['wavelength_um'], NA=float(S['NA']), n_imm=o['n_imm'], n_med=o['n_med'],
+             apod=[float(v) for v in torch.as_tensor(S['apod']).tolist()], zernike_noll=list(range(5, 22)),
+             zernike_waves=[float(v) for v in torch.as_tensor(S['zcoef']).tolist()], focus_um=float(S['focus']),
+             npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE)
+    pix = pixel_integration or S.get('pixel_integration', 'box')
+    if pix != 'box': d['pixel_integration'] = pix
+    ex = S.get('extras', {})
+    if 'blur_px2' in ex: d['psf_blur_px2'] = ex['blur_px2'][0]
+    if 'dipole_M' in ex: d['psf_dipole_M_angle'] = ex['dipole_M']
+    return d
+
+
 def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=None, tile=16, salt=1, dev='cuda', log=print,
-            maps=None, keep_z=False, xy_limit=None, vp_grad=False):
-    """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks; the refit on
-    the PSF's spline table, 8 x oversampled, 10 nm in z); the test samples = select(D, nsamples, test parity, salt).
+            maps=None, keep_z=False):
+    """per-sample NLL / chi2 of several frozen PSFs on the same held-out samples (torch_psf heldout_tracks: x, y, z of every
+    sample refitted with the gradient through the closed-form I / bg; the refit renders with simcode.psf.calib_psf of the PSF's
+    calibration keys (psf_calib: the integrated cubic B-spline of its vectorial model, per pattern angle), the NLL is the
+    vectorial model's at its own pixel integration); the test samples = select(D, nsamples, test parity, salt).
     maps: per-pixel camera maps (load_maps) of the data model (the same for every PSF; None: each PSF's scalar offset /
     read noise). zstarts: the z multi-start of the refit (um; default (0.1, 0.4, 0.75) x the PSF's zmax, = 0.02 / 0.08 / 0.15 um
-    at zmax 0.2). xy_limit: the offset limit of the refit table (px from the ROI centre; default HELDOUT_XY_LIMIT(R) =
-    R / 2 - 0.5: a sample that runs off towards a neighbour is refitted as the vectorial model renders it; the 2 px
-    limit before 2026-11-19 left ~2 % of the real-data samples stuck at the limit, absolute held-out NLL 0.26 (1809_2)
-    to 1.2 (2.5 nM) nats / sample too high, out/pixint_final). vp_grad: the refit gradient also through the closed-form
-    I / bg (torch_psf heldout_tracks vp_grad; default off = as before). Returns {name: dict(nll [n], chi2 [n], nll_per_px,
-    chi2_per_px, n[, z, I, xy (px from the ROI centre)])}"""
+    at zmax 0.2). The refit spline supports offsets far beyond the ROI centre (a sample that runs off towards a neighbour is
+    refitted as the model renders it; the 2 px limit of the separate refit table before 2026-11-19 left ~2 % of the
+    real-data samples stuck at the limit, out/pixint_final). (Removed 2026-11-19: the 8 x Catmull-Rom refit table and its
+    xy_limit option; the vp_grad option: torch-psf always differentiates through the solve.) Returns {name: dict(nll [n],
+    chi2 [n], nll_per_px, chi2_per_px, n[, z, I, xy (px from the ROI centre)])}"""
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
     sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
     out = {}
     for name, pt in pts.items():
         pt, pix = pt if isinstance(pt, tuple) else (pt, None)
-        F, gain = model_from_pt(pt, R, dev, pix)
+        S = torch.load(pt, weights_only=False) if isinstance(pt, str) else pt
+        F, gain = model_from_pt(S, R, dev, pix)
         tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
         vm = F.angle_models()
-        with torch.no_grad():
-            spl = [v.to_spline(R, (0.0, F.zmax), oversample=8, dz_um=0.01, zpad=3, xy_limit=HELDOUT_XY_LIMIT(R) if xy_limit is None else xy_limit)
-                   for v in vm]
+        cal = psf_calib(S, pix)
+        spl = spsf.calib_psf(cal, roisize=R, device=dev, z_range=(0.0, F.zmax))
+        spl = [spl.for_angle(k) for k in range(2)] if len(vm) == 2 else [spl]
         h = heldout_tracks(tr, vm, readnoise_e=float(torch.exp(F.G['logrn'])) if rnp is None else rnp, zmax_um=F.zmax, groups=groups, ngroups=2,
-                           refit_psfs=spl, z_starts_um=zstarts or tuple(f * F.zmax for f in (0.1, 0.4, 0.75)), iters=iters,
-                           **({'vp_grad': True} if vp_grad else {}))
+                           refit_psfs=spl, z_starts_um=zstarts or tuple(f * F.zmax for f in (0.1, 0.4, 0.75)), iters=iters)
         out[name] = {k: h[k] for k in ('nll', 'chi2', 'nll_per_px', 'chi2_per_px', 'n') + (('z', 'I', 'xy') if keep_z else ())}
         log(f'heldout {name}: nll/px {h["nll_per_px"]:.5f}, chi2/px {h["chi2_per_px"]:.4f} ({len(sel)} samples, {test})')
     return out

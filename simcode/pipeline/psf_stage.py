@@ -81,16 +81,17 @@ def psf_images(pt, z=(0.0, 0.03, 0.06, 0.1, 0.15), R=15, dev='cuda'):
     return p.cpu().numpy()          # [nz, 2 angles, R, R]
 
 
+ANGLE_TERMS = ('psf_blur_px2', 'psf_dipole_M_angle')       # psf_fit.psf_calib keys that calib_dict places after the camera / pattern
+
+
 def calib_dict(ds, fit_js, fit_pt, pat, cam, maps_name, avg):
     c, o = ds.c, ds.c['optics']
     S = torch.load(fit_pt, weights_only=False); J = json.load(open(fit_js)); ex = S.get('extras', {})
+    psf = psf_fit.psf_calib(S, optics=o)                    # the PSF keys (optics, Zernikes, focus, sampling, blur, dipoles)
     k = pat['k']
     d = dict(source=f'simcode.pipeline in-situ calibration of {c["movie"]} (dataset {c["name"]}): {"angle-averaged" if avg else "per pattern axis"} PSF '
                     f'(Zernike 5-21 + focus + {c["psf"]["blur"]} blur, then frozen + photoselection {c["psf"]["photosel"]}); fit {fit_pt}',
-             pixelsize_um=o['pixel_um'], wavelength_um=o['wavelength_um'], NA=float(S['NA']), n_imm=o['n_imm'], n_med=o['n_med'],
-             apod=[float(v) for v in S['apod'].tolist()], zernike_noll=list(range(5, 22)), zernike_waves=[float(v) for v in S['zcoef'].tolist()],
-             focus_um=float(S['focus']), npupil=psf_fit.FIT_NPUPIL, oversample=psf_fit.FIT_OVERSAMPLE,
-             **({'pixel_integration': S['pixel_integration']} if S.get('pixel_integration', 'box') != 'box' else {}),
+             **{key: v for key, v in psf.items() if key not in ANGLE_TERMS},
              camera=dict(gain_e_per_adu=cam['gain'], offset_adu=cam['offset'], readnoise_e=cam['readnoise_e'], maps=maps_name,
                          note=f'gain {cam["gain_source"]}, offset {cam["offset_source"]}, read noise {cam["readnoise_source"]}; maps = simcode.calibration.camera_maps masked by the stage-c spots'),
              pattern=dict(k_rad_per_px=k, pitch_nm=[float(2 * math.pi / np.hypot(*kk) * o['pixel_um'] * 1e3) for kk in k],
@@ -98,9 +99,9 @@ def calib_dict(ds, fit_js, fit_pt, pat, cam, maps_name, avg):
                           note='in-situ estimate from the track intensities (blocked slot order, angle = slot // 3); depth = regression '
                                'modulation (diluted by bg / kinetics, low); used only by the simulators: the pipeline estimates the pattern from the data'),
              tirf_depth_um=o['tirf_depth_um'], emitter_z_median_um=float(J.get('z_median', 0.05)))
-    if 'blur_px2' in ex: d['psf_blur_px2'] = ex['blur_px2'][0]
-    if 'dipole_M' in ex:
-        M = ex['dipole_M']
+    if 'psf_blur_px2' in psf: d['psf_blur_px2'] = psf['psf_blur_px2']
+    if 'psf_dipole_M_angle' in psf:
+        M = psf['psf_dipole_M_angle']
         if avg: d['psf_dipole_M'] = [[(M[0][i][j] + M[1][i][j]) / 2 for j in range(3)] for i in range(3)]
         else: d['psf_dipole_M_angle'] = M
     d['psf3d'] = dict(fit=fit_pt, gamma=ex.get('gamma'), zeta=ex.get('zeta'), e_dir=ex.get('e_dir'), resid_var=J.get('resid_var'), avg=avg)
