@@ -4,9 +4,9 @@ averaged in-situ PSF), applied to the real 6-frame-summed movies.
 Configuration = the paper's DECODE (decode-3f-g1.3, ~/smlmtorch/scripts/decode_localize.py): SigmaMUNet, 3-frame context
 (channels_in 3) on 6-frame sums, depth_union 2, sigmoid intensity scale; driven through dec_common.LutDecodeInstance
 (analysis/baselines/decode/dec_common.py: DECODE fork ~/decode2 imported read-only, structured bg, sCMOS-like camera).
-Training PSF: --psf <spec> (analysis/baselines/zpsf.py) rendered into DECODE's per-subpixel LUT (21 z planes 0-200 nm x 33 x 33
-subpixel shifts, 41 x 41 px; bilinear subpixel / linear z, as dec_common.LutPSF), no halo / PSF jitter (pure averaged PSF;
---halo to add the 0-5 % sigma-4 px halo of the hd_sum6 model). Emitter z uniform 10-150 nm (DECODE emitter_extent).
+Training PSF: --psf <spec> (analysis/baselines/zpsf.py; a calibration: simcode.psf.calib_psf, the integrated cubic B-spline =
+SIMCODE's PSF renderer, angle average) rendered per emitter on 41 x 41 px (dec_common.SimcodePSF), no halo / PSF jitter (pure
+averaged PSF; --halo to add the 0-5 % sigma-4 px halo of the hd_sum6 model). Emitter z uniform 10-150 nm (DECODE emitter_extent).
 Training-sim ranges (VARIANTS['sum6p']) cover the 3 paper movies (real_stats_paper2.py -> out/paper2/decode_real_stats.json;
 SIMCODE v2 pass-1 rows, p >= 0.63, disjoint windows; per 6-frame sum):
   photons  median 820 / 960 / 1210, log-sd 0.45 / 0.51 / 0.56, p1-p99 300-4800  -> lognormal(median 1000, log-sd 0.6)
@@ -22,7 +22,7 @@ s = 0 only); frame = window start. x / y: DECODE px (pixel centre = integer, x =
 usage:
   train: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/decode/decode_paper.py train --psf <spec> --name <model>
              [--epochs 400] [--max_hours 6] [--pseudo 8192] [--halo 0] [--zmax_um 0.2 --z_nm 10,150 --e_per_adu 0.56]
-             (2026-11-15 opt-in for the v2-PSF sims: --zmax_um 0.4 --z_nm 0,400 = LUT and emitter heights 0-0.40 um,
+             (2026-11-15 opt-in for the v2-PSF sims: --zmax_um 0.4 --z_nm 0,400 = rendered and emitter heights 0-0.40 um,
              --e_per_adu 0.4256 = the v2 camera gain; inference reads zmax_um from psf.json)
   infer: CUDA_VISIBLE_DEVICES=1 python analysis/baselines/decode/decode_paper.py infer <1809_2|2.5nM_2|20nM_2> --name <model>
              --out <locs.npz> [--maxframes N] [--starts 0,3] [--camera old|v2]
@@ -48,26 +48,14 @@ DATASETS = {'1809_2': ('1809/cover1/2/simflux_5.5ms_500mW.tif', 'camera_maps_180
 ZMAX = 0.2
 
 
-def psf_luts(spec, lz=21, ls=32, R=41, zmax=ZMAX, dev='cuda'):
-    """DECODE LUT [lz, ls+1, ls+1, R, R] of a zpsf PSF: lut[iz, iy, ix] = image of an emitter at (fx, fy) = (ix, iy) / ls - 0.5
-    px from the centre pixel R // 2, height z = iz / (lz - 1) zmax um"""
-    psf = zpsf.load(spec, dev, zmax=max(zmax, 0.2))
-    sub = torch.arange(ls + 1, device=dev, dtype=torch.float32) / ls - 0.5
-    out = torch.zeros(lz, ls + 1, ls + 1, R, R, device=dev)
-    FY, FX = torch.meshgrid(sub, sub, indexing='ij'); FX, FY = FX.reshape(-1), FY.reshape(-1)
-    for iz in range(lz):
-        z = torch.full_like(FX, iz / (lz - 1) * zmax)
-        with torch.no_grad():
-            imgs = torch.cat([psf.eval(FX[s:s + 128], FY[s:s + 128], R, z=z[s:s + 128])[0] for s in range(0, len(FX), 128)])
-        out[iz] = imgs.reshape(ls + 1, ls + 1, R, R)
-    return out, psf.desc
-
-
 def setup_psf(spec, halo, zmax=ZMAX):
-    """zmax (um): top of the LUT (default ZMAX = 0.2; 10 nm planes); the v2-PSF model (2026-11-15) uses 0.40 (psf.json zmax_um)"""
-    lut, desc = psf_luts(spec, lz=int(round(zmax / 0.01)) + 1, zmax=zmax)
-    D._LUTS = ([lut], zmax, float(halo))
-    return desc
+    """DECODE's training PSF = the zpsf PSF of spec (a calibration: simcode.psf.calib_psf, the integrated cubic B-spline, the same
+    renderer and pixel values as the SIMCODE training simulator; angle average: DECODE is pattern-free) on 41 x 41 px; heights
+    clamped to 0 .. zmax um (default ZMAX = 0.2; the v2-PSF model (2026-11-15) uses 0.40, psf.json zmax_um)"""
+    psf = zpsf.load(spec, 'cuda')
+    R = 41
+    D._PSFS = ([lambda pos: psf.eval(pos[:, 0], pos[:, 1], R, pos[:, 2], grad=False)], R, zmax, float(halo))
+    return psf.desc
 
 
 def train(a):

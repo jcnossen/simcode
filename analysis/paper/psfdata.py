@@ -83,9 +83,9 @@ def panel_info(calib, cond, device=None):
     info['detected_photons'] give the detected equivalent (photons x collected)."""
     import torch, psfpanel, zpsf
     info = psfpanel.psf_info(cond['calib'], cond['photons_median'], cond['bg_px_frame'], z_um=cond['z_median_um'],
-                             pattern=cond['pattern'], detected=False, rn2_e=cond['rn2_e'], zmax=0.4, device=device)
+                             pattern=cond['pattern'], detected=False, rn2_e=cond['rn2_e'], device=device)
     dev = psfpanel._dev(device)
-    psf = zpsf.load(cond['calib'], device=dev, zmax=0.4); zero = torch.zeros(1, device=dev)
+    psf = zpsf.load(cond['calib'], device=dev); zero = torch.zeros(1, device=dev)
     coll = float(psf.eval(zero, zero, 41, torch.full((1,), info['z_um'], device=dev))[0].sum())
     info['collected'] = coll; info['detected_photons'] = coll * cond['photons_median']
     return info

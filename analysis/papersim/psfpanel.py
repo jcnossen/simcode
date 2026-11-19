@@ -1,7 +1,7 @@
 """PSF panel + CRLB small print for render figures (papersim overviews; reusable for the real-data figures).
 
   info = psf_info(spec, photons, bg_px_frame, z_um=None, pattern=dict(pitch_nm=224, depth=0.9, angles_deg=(0, 90)), px_nm=108.33)
-      spec = a PSF spec of analysis/baselines/zpsf.py ('gauss:<sigma px>', an in-situ calib .json, a z-stack .npz): the PSF the
+      spec = a PSF spec of analysis/baselines/zpsf.py ('gauss:<sigma px>', an in-situ calib .json / .psf.zip): the PSF the
       data were simulated / processed with. Returns the xy image at the emitter height z_um (default: the PSF's fit plane =
       the calib's emitter_z_median_um), an xz section through the emitter over the PSF's z range, the rms aberration of the
       calib's Zernike terms Noll >= 5 (mλ; None for a Gaussian PSF) and the CRLBs at `photons` per 6-frame window and
@@ -66,19 +66,19 @@ def _crlb(model, th, steps, var_add=0.0):
     return C.mean(0).float().cpu().numpy()
 
 
-def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, device=None, seed=0, rn2_e=0.0, detected=False, zmax=0.2):
+def psf_info(spec, photons, bg_px_frame, z_um=None, pattern=None, px_nm=108.33, device=None, seed=0, rn2_e=0.0, detected=False):
     """(2026-11-15 opt-in) rn2_e: read-noise variance per pixel and frame (e^2) in the CRLB; detected: `photons` are detected
-    photons (the intensity parameter = photons / collected fraction of the 41 x 41 px PSF image at z); zmax: PSF z range (um)"""
+    photons (the intensity parameter = photons / collected fraction of the 41 x 41 px PSF image at z)"""
     dev = _dev(device)
-    psf = zpsf.load(spec, device=dev, zmax=zmax)
+    psf = zpsf.load(spec, device=dev)
     is3d = not spec.startswith('gauss:')
     z0 = float(psf.z_fit if z_um is None else z_um)
     pattern = dict(dict(pitch_nm=224.0, depth=0.9, angles_deg=(0.0, 90.0)), **(pattern or {}))
     # images
     Pi = 15; zero = torch.zeros(1, device=dev)
     xy = _g(psf, zero, zero, Pi, torch.full((1,), z0, device=dev))[0].cpu().numpy()
-    # xz section over 0 - ZMAX_IMG um (a separate, taller knot stack of the same calib; a Gaussian PSF has no z dependence)
-    pz = zpsf.render_calib(spec, dev, P=Pi + 4, zmax=ZMAX_IMG, hz=0.02) if spec.endswith('.json') else psf
+    # xz section over 0 - ZMAX_IMG um (a taller integrated spline of the same calib, 20 nm planes; a Gaussian PSF has no z dependence)
+    pz = zpsf.CalibPSF(spec, psf.z_fit, dev, grid=dict(z_range=(0.0, ZMAX_IMG), dz_um=0.02, roisize=Pi + 4)) if not spec.startswith('gauss:') else psf
     zs = np.linspace(0.0, ZMAX_IMG, 61)
     zt = torch.as_tensor(zs, device=dev, dtype=torch.float32)
     xz = _g(pz, torch.zeros_like(zt), torch.zeros_like(zt), Pi, zt)[:, Pi // 2, :].cpu().numpy()     # [nz, x]
@@ -194,7 +194,7 @@ def sim_psf_info(md, dexp):
     kw = {}
     if '_v2psf' in os.path.basename(md.rstrip('/')):     # every v2-PSF set (_v2psf, _v2psf_wsm, _v2psf_wsmaxis, ...)
         rn = np.load(os.path.join(md, 'camera_sim.npz'))['readnoise_e']
-        kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()), zmax=0.4)
+        kw = dict(detected=True, rn2_e=float((rn.astype(float) ** 2).mean()))
     if str(g0.get('gt', '')).startswith('wsm3d'): kw['z_um'] = float(g0['z_um'])     # webSMLM heights: the median GT height (= the fit plane)
     return psf_info(spec, ph, bg, pattern={k: pat[k] for k in ('angles_deg', 'pitch_nm', 'depth') if k in pat}, **kw)
 

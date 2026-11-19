@@ -164,12 +164,12 @@ class Nets:
         self.col = SCM.PSFCol(sim)
         det, _ = DM.load(ns['detector'])
         # brightness noise of the solve (2026-11-17: no longer in the model calibrations): these scenes have a constant emitter
-        # brightness (pure Poisson), c = c_a = 0 (simcode.simulate.crlb.BRIGHTNESS_NOISE, as the gate scenes)
+        # brightness (pure Poisson), c = 0 (simcode.simulate.crlb.BRIGHTNESS_NOISE, as the gate scenes)
         from simcode.simulate.crlb import BRIGHTNESS_NOISE
-        self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col, SV.solve_cal(config.resolve(ns['cal_sim']), *BRIGHTNESS_NOISE))
+        self.p1 = (det, SCM.load(config.resolve(ns['emitter'])), self.col, SV.solve_cal(config.resolve(ns['cal_sim']), BRIGHTNESS_NOISE))
         d2, _ = DM.load(ns['detector_pass2'])
         self.p2 = (d2, SCM.load(config.resolve(ns['emitter_pass2'])), True)
-        self.p2cal = SV.solve_cal(config.resolve(ns['cal_sim_pass2']), *BRIGHTNESS_NOISE)
+        self.p2cal = SV.solve_cal(config.resolve(ns['cal_sim_pass2']), BRIGHTNESS_NOISE)
 
     @torch.no_grad()
     def run(self, frames, patt):

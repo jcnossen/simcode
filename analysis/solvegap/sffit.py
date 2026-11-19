@@ -14,12 +14,6 @@ import numpy as np, torch
 from simcode.simulate.gate_layouts import CD, S
 from simcode.benchmark import gate_scenes as GA
 from simcode.solve import pattern as C
-from simcode.simulate import simulator as _SIMM
-
-_render0 = _SIMM.render
-def _render_small(psf, p, **kw):   # GPU 0 is shared: build the PSF LUT in chunks of 128 (same values)
-    return torch.cat([_render0(psf, q, **kw) for q in p.split(128)])
-_SIMM.render = _render_small
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CACHE = os.path.join(REPO, 'out', 'crlbcmp', 'cache')
@@ -30,15 +24,13 @@ dev = 'cuda'; R = 15; HR = R // 2; T = 6
 class Model:
     def __init__(self, rs):
         self.sim = rs.sim
-        L = rs.luts[0]
+        L = rs.psfs[0]                                           # simcode.psf.calib_psf model(s) (per angle when available)
         self.luts = list(L) if isinstance(L, tuple) else [L]
         self.RR = self.sim.R; self.c = self.RR // 2
 
     def psf(self, x, y, z, cx, cy, lut):
         """[n,R,R] PSF on the ROI centred at pixel (cx, cy) for an emitter at (x, y, z) (absolute px)"""
-        base = self.sim.lut; self.sim.lut = lut
-        im = self.sim.render_psf(x, y, z)                       # centred at round(x), round(y)
-        self.sim.lut = base
+        im = self.sim.render_psf(x, y, z, lut)                  # centred at round(x), round(y)
         dx = (cx - torch.round(x)).long(); dy = (cy - torch.round(y)).long()
         o = torch.arange(R, device=dev) - HR
         iy = (self.c + dy[:, None] + o[None]).clamp(0, self.RR - 1); ix = (self.c + dx[:, None] + o[None]).clamp(0, self.RR - 1)

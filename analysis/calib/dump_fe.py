@@ -52,7 +52,7 @@ def main():
     OUT = a.out
     os.makedirs(OUT, exist_ok=True)
     CD.a.calib = GA.gate_calib(a.calib)
-    sim, _, _ = CD.models(6)
+    sim, _ = CD.models(6)
     det, _ = DM.load(_cfg.model(_cfg.DETECTOR)); det.eval()   # as the gate runs (SC_DET) and the pipeline
     head = SCM.load(a.head); col = SCM.PSFCol(sim)
     for sc in a.scen.split(','):

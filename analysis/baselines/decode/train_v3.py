@@ -60,6 +60,27 @@ PRESETS = {
     'm25': dict(psf='models/m25/calib_2p5nM_m2_psf_v2.json',
                 vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
                        "phot_max": 16000.0, "dens": [4.0, 80.0]}),
+    # (2026-11-18) DECODE v4 = the m1809 / m25 presets with the in-situ PSF v3 (out/psf_v3; frozen copies out/train_v3/calib, fit
+    # sampling npupil 64 / oversample 2; trained with the LUT rendered directly from it, since 2026-11-19 decode_paper.setup_psf renders
+    # with simcode.psf.calib_psf, the integrated spline) and its emitter-height range
+    # emitter_z_range_um [0, 0.2] um (LUT 0-0.2 um, emitter z U(0, 200) nm), everything else unchanged
+    'm1809v4': dict(psf=os.path.join(MAIN, 'out/train_v3/calib/calib_1809_2_psf_v3.json'), zmax_um=0.2,
+                    vover={"med": 600.0, "lsd": 0.7, "th": 60.0, "life": 2.0, "bg": [6.0, 30.0], "read": 3.28, "label_min": 60.0,
+                           "phot_max": 8000.0, "dens": [4.0, 160.0]},
+                    scaling=dict(input_scale=10.774956268096291, input_offset=18.0, bg_max=36.0, phot_max=8000.0)),
+    'm25v4': dict(psf=os.path.join(MAIN, 'out/train_v3/calib/calib_2p5nM_m2_psf_v3.json'), zmax_um=0.2,
+                  vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
+                         "phot_max": 16000.0, "dens": [4.0, 80.0]}),
+    # (2026-11-19) DECODE v5 = the v4 presets with the final in-situ PSF v4 (exact pixel integration, per pattern axis: DECODE renders
+    # the angle average, exact for its 6-frame sums; simcode.psf.calib_psf = the integrated cubic B-spline built from the calib json)
+    # and the decided emitter-height range 0 - 0.4 um (LUT 0 - 0.4 um, emitter z U(0, 400) nm); everything else = v4
+    'm1809v5': dict(psf='/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v4/calib_1809_2_psf_v4_axis.json', zmax_um=0.4,
+                    vover={"med": 600.0, "lsd": 0.7, "th": 60.0, "life": 2.0, "bg": [6.0, 30.0], "read": 3.28, "label_min": 60.0,
+                           "phot_max": 8000.0, "dens": [4.0, 160.0]},
+                    scaling=dict(input_scale=10.774956268096291, input_offset=18.0, bg_max=36.0, phot_max=8000.0)),
+    'm25v5': dict(psf='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/simcode_results/psf_v4/calib_2p5nM_m2_psf_v4_axis.json', zmax_um=0.4,
+                  vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
+                         "phot_max": 16000.0, "dens": [4.0, 80.0]}),
 }
 SCHED = dict(mode='min', factor=0.5, patience=20, cooldown=10, threshold=1e-4)
 
@@ -92,9 +113,10 @@ def patch_density_blocks(inst, block, dens):
 def build(a):
     P = PRESETS[a.preset]
     D.VARIANTS['sum6p'] = {**D.VARIANTS['sum6p'], **{k: tuple(v) if isinstance(v, list) else v for k, v in P['vover'].items()}}
-    desc = DP.setup_psf(P['psf'], 0.0, 0.4)
+    zmax = P.get('zmax_um', 0.4)      # LUT top and emitter-height range (um; v3 presets 0.40, v4 0.2)
+    desc = DP.setup_psf(P['psf'], 0.0, zmax)
     p = D.make_param('sum6p', epochs=a.epochs, pseudo=a.pseudo, batch=a.batch)
-    p.Simulation.emitter_extent = [[-0.5, 39.5], [-0.5, 39.5], [0.0, 400.0]]; p.Simulation.psf_extent = p.Simulation.emitter_extent
+    p.Simulation.emitter_extent = [[-0.5, 39.5], [-0.5, 39.5], [0.0, zmax * 1e3]]; p.Simulation.psf_extent = p.Simulation.emitter_extent
     p.Camera.e_per_adu = 0.4256
     for k, v in P.get('scaling', {}).items(): setattr(p.Scaling, k, v)
     H = p.HyperParameter
@@ -123,7 +145,8 @@ def main():
     resumed = os.path.exists(st_fn)
     if not resumed:
         param_io.save_params(f'{md}/param_train.yaml', inst.param)
-        json.dump(dict(psf=PRESETS[a.preset]['psf'], desc=desc, halo=0.0, zmax_um=0.4, z_nm='0,400', e_per_adu=0.4256, variant_name='sum6p',
+        zmax = PRESETS[a.preset].get('zmax_um', 0.4)
+        json.dump(dict(psf=PRESETS[a.preset]['psf'], desc=desc, halo=0.0, zmax_um=zmax, z_nm=f'0,{zmax * 1e3:g}', e_per_adu=0.4256, variant_name='sum6p',
                        variant=D.VARIANTS['sum6p']), open(f'{md}/psf.json', 'w'), indent=1)
         json.dump(dict(args=vars(a), scheduler=SCHED, recipe=f'preset {a.preset} (train_v3.PRESETS) + DECODE published schedule', preset=PRESETS[a.preset],
                        density='per block of %d sums (thinning)' % a.dens_block if a.dens_block > 0 else 'per epoch (dec_common)',
