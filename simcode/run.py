@@ -10,7 +10,7 @@ Stages (each skipped if its outputs exist, unless --redo):
                  with covariance, bg, pattern-free position prior; candidates with detector p >= 0.3 are stored
                  (simcode/processing/common.CAND_PMIN)
   2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift; with
-                 --intensity_map N the per-orientation intensity map over the field of view) estimated from the pass-1 network
+                 --intensity_map 1 the per-orientation intensity map over the field of view) estimated from the pass-1 network
                  intensities, and the dataset's brightness noise c, c_a (the solve's relative intensity scatter per frame / per
                  orientation) from the same clean emitter-windows
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (posterior over the fringe starts and the
@@ -72,8 +72,8 @@ def build_parser():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
                     'selection region uses the corrected positions')
-    ap.add_argument('--intensity_map', type=int, default=0, help='pattern stage: 0 (default) = one relative intensity per pattern step; '
-                    'N > 0 = also the per-orientation intensity map over the field of view (Legendre degree N, 4 recommended; '
+    ap.add_argument('--intensity_map', type=int, default=0, choices=(0, 1), help='pattern stage: 0 (default) = one relative intensity '
+                    'per pattern step; 1 = also the per-orientation intensity map over the field of view (2D cubic B-spline; '
                     'processing/pattern_estimation.estimate_relmap), used by every solve of the run')
     ap.add_argument('--redo', type=int, default=0)
     return ap

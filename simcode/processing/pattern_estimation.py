@@ -40,11 +40,11 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
      the depth differences of the photon-disjoint pairs (w, w + 6) of the same emitter, with the model's network-transfer table
      (bn_transfer_pass1.json next to the pass-1 calibration, or cal['bn_transfer']); < 2000 clean windows: a warning, < 300: the
      networks' training values (table 'theta_train').
-  6. (2026-11-19, option intensity_map = N > 0; default 0 = off) the per-orientation intensity map over the field of view
+  6. (2026-11-19, option intensity_map = 1; default 0 = off) the per-orientation intensity map over the field of view
      (estimate_relmap): the relative intensity of the two orientations varies over the field (illumination envelope per
-     orientation), seen as a smooth map of the angle contrast of the clean windows; stored as P['relmap'] (Legendre degree N) and
-     applied per row by every solve (o['relg'], simcode/solve/pattern.relmap_factors); estimated before step 5, so c_a holds only
-     what the map does not explain.
+     orientation), seen as a smooth map of the angle contrast of the clean windows; stored as P['relmap'] (2D cubic B-spline,
+     knot spacing RELMAP_KNOT_PX) and applied per row by every solve (o['relg'], simcode/solve/pattern.relmap_factors; g_0 g_1 = 1);
+     estimated before step 5, so c_a holds only what the map does not explain.
 """
 import math
 import numpy as np, torch
@@ -287,40 +287,64 @@ def fit_depth(D, sel, K, psi, rel, eps_knots, kf, verbose=print, pbins=(0, 1000,
 
 
 RELMAP_PHB = (0, 450, 600, 800, 1050, 1400, 1900, 2600, 3600, 1e9)    # window-photon bins of the contrast centring
+RELMAP_KNOT_PX = 13.75   # knot spacing of the intensity-map B-spline (movie px; n = round(box / spacing) intervals per axis)
+RELMAP_SMOOTH = 1e-2     # second-difference penalty of the B-spline coefficients (P-spline), relative to the mean diagonal of the
+                         # weighted normal matrix (independent of the number of windows); both by tile cross-validation
 
 
-def _leg2d(u, v, deg):
-    """numpy twin of simcode.solve.pattern._legendre_2d"""
-    P = lambda t: [np.polynomial.legendre.legval(t, np.eye(deg + 1)[i]) for i in range(deg + 1)]
-    Pu, Pv = P(u), P(v)
-    return np.stack([Pu[i] * Pv[j] for i in range(deg + 1) for j in range(deg + 1 - i)], -1)
+def relmap_grid(box, knot_px=RELMAP_KNOT_PX):
+    """knot intervals (nx, ny) of the intensity-map B-spline over box (x0, x1, y0, y1): round(side / knot_px), at least 1"""
+    return [max(1, int(round((box[1] - box[0]) / knot_px))), max(1, int(round((box[3] - box[2]) / knot_px)))]
 
 
-def _robust_wls(X, y, w, n_irls=4, huber=2.5):
+def relmap_penalty(n):
+    """D^T D of the second differences of the (ny + 3) x (nx + 3) coefficient grid (row-major, row = y) along x and along y"""
+    mx, my = n[0] + 3, n[1] + 3
+    dx = np.diff(np.eye(mx), 2, axis=0); dy = np.diff(np.eye(my), 2, axis=0)
+    Dm = np.r_[np.kron(np.eye(my), dx), np.kron(dy, np.eye(mx))]
+    return Dm.T @ Dm
+
+
+def _relmap_X(box, n, x, y):
+    from simcode.solve import pattern as C
+    rm = dict(box=list(box), n=list(n))
+    return C.relmap_design(rm, torch.as_tensor(np.asarray(x, np.float64)), torch.as_tensor(np.asarray(y, np.float64))).numpy()
+
+
+def _robust_wls(X, y, w, n_irls=4, huber=2.5, pen=None):
+    """robust (Huber IRLS) weighted LS; pen: optional penalty matrix, scaled by the mean diagonal of X^T W X"""
     ww = w.copy()
     for _ in range(n_irls):
-        A = X.T @ (X * ww[:, None]); A += 1e-9 * np.trace(A) / len(A) * np.eye(len(A))
+        A = X.T @ (X * ww[:, None]); tr = np.trace(A) / len(A); A += 1e-9 * tr * np.eye(len(A))
+        if pen is not None: A += pen * tr
         c = np.linalg.solve(A, X.T @ (ww * y))
         r = (y - X @ c) * np.sqrt(w); s = 1.4826 * np.median(np.abs(r)); a = np.abs(r) / max(s, 1e-12)
         ww = w * np.where(a > huber, huber / a, 1.0)
     return c
 
 
-def estimate_relmap(D, sel, psi, rel, deg=4, box=None, verbose=print):
+def estimate_relmap(D, sel, psi, rel, knot_px=RELMAP_KNOT_PX, smooth=RELMAP_SMOOTH, box=None, verbose=print):
     """(2026-11-19) per-orientation intensity map of the pattern: the angle contrast h = (A_0 - A_1) / mean A of the clean
-    emitter-windows (A_a = the exact 3-step solve of angle a with the global psi / rel; position-free) as a Legendre polynomial of
-    total degree `deg` over the box (x0, x1, y0, y1) (movie px; default the extent of the windows), robust weighted LS, h centred
-    per window-photon bin (the networks' photon-dependent contrast bias), weights 1 / (a / photons + v_s) (fitted per bin), map
-    mean zero (the global orientation ratio stays in rel). The solves use rel_s x exp(+- delta / 2), delta = log((1 + h / 2) /
-    (1 - h / 2)) (simcode/solve/pattern.relmap_factors).
-    Measured (out/pattern_map, 2026-11-19; 1809_2 / 2.5 nM_2, v3 models): the map holds 39 % / 40 % of the h variance (2-fold
-    checkerboard 11-px tiles, held-out), is stable over the movie (time thirds: map correlation >= 0.988) and matches the
-    contrast map of the networks' per-frame background (correlation 0.93 / 0.94, an emitter-free measurement of the illumination);
-    with it c_a 0.219 -> 0.109 / 0.230 -> 0.077 and the component fit's held-out objective falls 10x / 2x; the positions of the
-    clean windows move by 0.5 / 3 nm rms, the photon-disjoint pair precision changes by < 0.7 %, the sigma calibration ~not.
-    Held-out v3 sims (no envelope): map rms 0.008, no held-out gain, c and c_a unchanged (+- 0.002).
-    Degree 4 (15 parameters) is the held-out optimum of the Legendre degrees 0-10 and tensor B-splines 2x2-16x16 on both movies;
-    one map per orientation (not per step: per-step maps have no further held-out gain).
+    emitter-windows (A_a = the exact 3-step solve of angle a with the global psi / rel; position-free) as a 2D cubic B-spline
+    (simcode/solve/pattern.relmap_design: uniform knots, spacing ~knot_px, relmap_grid) over the box (x0, x1, y0, y1) (movie px;
+    default the extent of the windows), robust weighted LS with a second-difference penalty `smooth` on the coefficients
+    (P-spline; relmap_penalty), h centred per window-photon bin (the networks' photon-dependent
+    contrast bias), weights 1 / (a / photons + v_s) (fitted per bin), map weighted mean zero (the global orientation ratio stays in
+    rel). The solves use rel_s x g_a, g_0 = exp(delta / 2), g_1 = exp(-delta / 2), delta = log((1 + h / 2) / (1 - h / 2))
+    (simcode/solve/pattern.relmap_factors): g_0 g_1 = 1, so the per-window brightness B keeps its meaning.
+    Measured (out/pattern_map, 2026-11-19; 1809_2 / 2.5 nM_2, v3 models; with the first, Legendre degree-4 version of the map): the
+    map holds ~40 % of the h variance (held-out tiles), is stable over the movie (time thirds: map correlation >= 0.988) and
+    matches the contrast map of the networks' per-frame background (correlation 0.93 / 0.94, an emitter-free measurement of the
+    illumination); with it c_a 0.219 -> 0.109 / 0.230 -> 0.077 (component estimator); the positions of the clean windows move by
+    0.5 / 3 nm rms, the photon-disjoint pair precision changes by < 0.7 %. Held-out v3 sims (no envelope): flat map, no gain.
+    The B-spline replaced the Legendre polynomial (out/model_studies/relmap, 2026-11-19; held-out share of the h variance, mean of
+    the checkerboard 11 / 22 px and random 5-fold tile cross-validations, 1809_2 / 2.5 nM_2): Legendre degree 4 0.394 / 0.405
+    (best degree 0.405 / 0.405); unpenalised B-splines at best 0.398 / 0.406 (3 / 2 intervals) and unstable on finer grids; the
+    P-spline at 13.75 px, smooth 1e-2 0.423 / 0.429 (flat optimum: 9-28 px with smooth 1e-3 - 1e-1 within 0.01). Pipeline
+    check (pattern stage, component estimator): c_a 0.109 -> 0.099 / 0.077 -> 0.059 (no map: 0.219 / 0.230), the code's own
+    checkerboard gain 0.402 -> 0.428 / 0.416 -> 0.437. Maps fitted on the windows below / above the median network z agree
+    (correlation 0.997 / 0.993): 2D, no height dependence (the two orientations' TIRF decay lengths differ by < 1 nm).
+    One map per orientation (per-step maps have no further held-out gain).
     Returns (relmap dict for the pattern file, info)."""
     w0 = D['w'][sel]; f = w0[:, None] + np.arange(T)[None]; st = f % 6
     A0, _, _ = angle_Z(D['I'][sel], st, psi, rel, 0); A1, _, _ = angle_Z(D['I'][sel], st, psi, rel, 1)
@@ -341,10 +365,10 @@ def estimate_relmap(D, sel, psi, rel, deg=4, box=None, verbose=print):
         a_, vs = 1.0, 1e-2
     w = 1.0 / (a_ / np.maximum(ph, 1.0) + vs)
     if box is None: box = (float(x[ok].min()), float(x[ok].max()), float(y[ok].min()), float(y[ok].max()))
-    u = np.clip(2 * (x - box[0]) / (box[1] - box[0]) - 1, -1, 1); v = np.clip(2 * (y - box[2]) / (box[3] - box[2]) - 1, -1, 1)
-    X = _leg2d(u, v, deg)
-    c = _robust_wls(X[ok], hc[ok], w[ok])
-    c[0] -= np.average(X[ok] @ c, weights=w[ok])                              # mean zero (P_00 = 1)
+    n = relmap_grid(box, knot_px)
+    X = _relmap_X(box, n, x, y); pen = smooth * relmap_penalty(n) if smooth > 0 else None
+    c = _robust_wls(X[ok], hc[ok], w[ok], pen=pen)
+    c -= np.average(X[ok] @ c, weights=w[ok])                                 # mean zero (the basis sums to 1)
     # held-out check: 2-fold checkerboard of 11-px tiles (weighted MSE, clipped at 5 robust sd) vs a constant
     tile = ((np.floor((x - box[0]) / 11.0) + np.floor((y - box[2]) / 11.0)) % 2).astype(int)
     def wmse(r, ww):
@@ -353,18 +377,20 @@ def estimate_relmap(D, sel, psi, rel, deg=4, box=None, verbose=print):
     for k in (0, 1):
         tr, te = to != k, to == k
         if tr.sum() < 10 * X.shape[1] or te.sum() < 10: rm[te] = ho[te]; r0[te] = ho[te]; continue
-        rm[te] = ho[te] - Xo[te] @ _robust_wls(Xo[tr], ho[tr], wo[tr]); r0[te] = ho[te] - np.average(ho[tr], weights=wo[tr])
+        rm[te] = ho[te] - Xo[te] @ _robust_wls(Xo[tr], ho[tr], wo[tr], pen=pen); r0[te] = ho[te] - np.average(ho[tr], weights=wo[tr])
     gain = 1 - wmse(rm, wo) / wmse(r0, wo)
-    gx, gy = np.meshgrid(np.linspace(-1, 1, 41), np.linspace(-1, 1, 41)); M = _leg2d(gx.ravel(), gy.ravel(), deg) @ c
-    relmap = dict(kind='legendre_angle_contrast', deg=int(deg), box=[float(b_) for b_ in box], coef=c.tolist(),
-                  note='angle contrast h(x, y) = (A0 - A1) / mean A over the box (movie px); relint x exp(+- delta / 2), '
-                       'delta = log((1 + h / 2) / (1 - h / 2)) (simcode/solve/pattern.relmap_factors); '
-                       'processing/pattern_estimation.estimate_relmap')
-    info = dict(deg=int(deg), n=int(ok.sum()), heldout_gain=float(gain), h_p1=float(np.percentile(M, 1)), h_p99=float(np.percentile(M, 99)),
-                h_rms=float(M.std()), var_a=float(a_), var_static=float(vs), box=relmap['box'])
-    verbose(f'  intensity map (Legendre degree {deg}, {X.shape[1]} parameters, {ok.sum()} clean windows): angle contrast over the '
-            f'field p1 / p99 {info["h_p1"]:+.3f} / {info["h_p99"]:+.3f} (rms {info["h_rms"]:.3f}); held-out share of the contrast '
-            f'variance (checkerboard 11-px tiles) {gain:.3f}')
+    gx, gy = np.meshgrid(np.linspace(box[0], box[1], 41), np.linspace(box[2], box[3], 41)); M = _relmap_X(box, n, gx.ravel(), gy.ravel()) @ c
+    from simcode.solve.pattern import RELMAP_KIND
+    relmap = dict(kind=RELMAP_KIND, knot_px=float(knot_px), smooth=float(smooth), n=n, box=[float(b_) for b_ in box], coef=c.tolist(),
+                  note='angle contrast h(x, y) = (A0 - A1) / mean A over the box (movie px) as a cubic B-spline with n = (nx, ny) uniform '
+                       'knot intervals, coef row-major over the (ny + 3) x (nx + 3) grid (simcode/solve/pattern.relmap_design); '
+                       'relint x g_a, g_0 = exp(delta / 2), g_1 = exp(-delta / 2), delta = log((1 + h / 2) / (1 - h / 2)), g_0 g_1 = 1 '
+                       '(simcode/solve/pattern.relmap_factors); processing/pattern_estimation.estimate_relmap')
+    info = dict(knot_px=float(knot_px), smooth=float(smooth), grid=n, n=int(ok.sum()), heldout_gain=float(gain), h_p1=float(np.percentile(M, 1)),
+                h_p99=float(np.percentile(M, 99)), h_rms=float(M.std()), var_a=float(a_), var_static=float(vs), box=relmap['box'])
+    verbose(f'  intensity map (cubic B-spline, {n[0]} x {n[1]} knot intervals of ~{knot_px:g} px, {X.shape[1]} parameters, {ok.sum()} '
+            f'clean windows): angle contrast over the field p1 / p99 {info["h_p1"]:+.3f} / {info["h_p99"]:+.3f} (rms {info["h_rms"]:.3f}); '
+            f'held-out share of the contrast variance (checkerboard 11-px tiles) {gain:.3f}')
     if gain <= 0:
         verbose('  WARNING intensity map: no held-out gain (too few clean windows or no field dependence); the map is kept but '
                 'consider pattern.intensity_map 0')
@@ -374,9 +400,9 @@ def estimate_relmap(D, sel, psi, rel, deg=4, box=None, verbose=print):
 def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print, clean_rows=False, intensity_map=0):
     """full estimation from pass-1 rows R (dict of concatenated arrays). Returns (pattern dict, info) (+ the indices into R of
     the clean emitter-windows with clean_rows).
-    intensity_map (2026-11-19): 0 (default) = one relative intensity per step (as before); N > 0 = also the per-orientation
-    intensity map over the field of view (estimate_relmap, Legendre degree N; 4 recommended), stored as P['relmap'] and used
-    by every solve of the run."""
+    intensity_map (2026-11-19): 0 (default) = one relative intensity per step (as before); 1 = also the per-orientation
+    intensity map over the field of view (estimate_relmap: 2D cubic B-spline), stored as P['relmap'] and used by every solve of
+    the run."""
     D = select(R, nn_min=nn_min, min_phot=min_phot)
     verbose(f'pattern estimation: {len(D["w"])} localizations, on-through {D["on"].sum()}, clean (nn >= {nn_min}, '
             f'>= {min_phot:.0f} ph) {D["clean"].sum()}')
@@ -408,8 +434,11 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
              note='estimated from pass-1 pattern-free localizations (simcode/processing/pattern_estimation.py)')
     info = dict(k=kinfo, hist=hist, depth=dinfo, depth_vs_nn=nn_diag, eps_se=einfo['se'].tolist(), eps_n=einfo['n'].tolist(),
                 n_clean=int(sel.sum()), n_on=int(D['on'].sum()), n=int(len(D['w'])))
-    if intensity_map and int(intensity_map) > 0:
-        P['relmap'], info['relmap'] = estimate_relmap(D, sel, psi, rel, deg=int(intensity_map), verbose=verbose)
+    if intensity_map not in (0, 1, False, True):
+        raise ValueError(f'intensity_map {intensity_map!r}: 0 (none) or 1 (the B-spline intensity map; the Legendre degree of the first '
+                         '2026-11-19 version is no longer an option)')
+    if intensity_map:
+        P['relmap'], info['relmap'] = estimate_relmap(D, sel, psi, rel, verbose=verbose)
     if clean_rows: return P, info, np.nonzero(R['out'].astype(bool))[0][sel]
     return P, info
 

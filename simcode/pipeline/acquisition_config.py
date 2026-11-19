@@ -13,11 +13,11 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 phase-step order (the preprint code's pattern_frames). [[0, 1, 2], [3, 4, 5]]: the 3 steps of orientation 1,
                 then the 3 of orientation 2; [[0, 2, 4], [1, 3, 5]]: the orientations alternate. The networks of this package
                 are trained for 2 orientations x 3 steps, so only that shape is accepted (in any frame order).
-  pattern.intensity_map  (added 2026-11-19) 0 (default: one relative intensity per pattern step, as before) or N > 0: the pattern
+  pattern.intensity_map  (added 2026-11-19) 0 (default: one relative intensity per pattern step, as before) or 1: the pattern
                 stage also estimates the per-orientation intensity map over the field of view (the angle contrast of the clean
-                emitter-windows as a Legendre polynomial of total degree N; processing/pattern_estimation.estimate_relmap) and every
-                solve of the run uses it. 4 recommended (held-out optimum on 1809_2 / 2.5 nM_2; out/pattern_map). Work folders made
-                before the key are not stale at the default (localization_pipeline.LATE_DEFAULTS)
+                emitter-windows as a 2D cubic B-spline; processing/pattern_estimation.estimate_relmap, knot spacing RELMAP_KNOT_PX)
+                and every solve of the run uses it (factors g_0 g_1 = 1 per position). Work folders made before the key are not
+                stale at the default (localization_pipeline.LATE_DEFAULTS)
   camera.offset_map  npz with a per-pixel offset map 'off' [C, H, W] of the channel crops (ADU; instead of offset_adu)
   psf.lut, psf.lut_sub, psf.lut_inner  deprecated (2026-11-18), accepted and ignored: the spline-table variant of the
                 in-situ PSF fit was removed; the psf stage always runs the direct vectorial fit (torch_psf fit_tracks), which
@@ -204,8 +204,9 @@ def validate(c):
         raise ValueError(f'pattern.pattern_frames {PF!r} must use each of the frames 0-5 of a cycle once')
     if not (0 < P['pitch_px'][0] < P['pitch_px'][1]):
         raise ValueError('pattern.pitch_px must be [lo, hi] with 0 < lo < hi')
-    if not (isinstance(P['intensity_map'], int) and not isinstance(P['intensity_map'], bool) and 0 <= P['intensity_map'] <= 10):
-        raise ValueError('pattern.intensity_map: 0 (none) or the Legendre degree 1-10 of the per-orientation intensity map (4 recommended)')
+    if not (isinstance(P['intensity_map'], int) and not isinstance(P['intensity_map'], bool) and P['intensity_map'] in (0, 1)):
+        raise ValueError('pattern.intensity_map: 0 (none) or 1 (the per-orientation intensity map, a 2D cubic B-spline; the Legendre '
+                         'degree of the first 2026-11-19 version is no longer an option)')
     if c['camera']['type'] not in ('scmos', 'emccd'):
         raise ValueError('camera.type: scmos | emccd')
     if c['psf']['blur'] not in ('none', 'line', 'cov') or c['psf']['photosel'] not in (0, 3):
