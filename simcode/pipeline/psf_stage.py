@@ -90,6 +90,7 @@ def calib_dict(ds, fit_js, fit_pt, pat, cam, maps_name, avg):
              pixelsize_um=o['pixel_um'], wavelength_um=o['wavelength_um'], NA=float(S['NA']), n_imm=o['n_imm'], n_med=o['n_med'],
              apod=[float(v) for v in S['apod'].tolist()], zernike_noll=list(range(5, 22)), zernike_waves=[float(v) for v in S['zcoef'].tolist()],
              focus_um=float(S['focus']), npupil=psf_fit.FIT_NPUPIL, oversample=psf_fit.FIT_OVERSAMPLE,
+             **({'pixel_integration': S['pixel_integration']} if S.get('pixel_integration', 'box') != 'box' else {}),
              camera=dict(gain_e_per_adu=cam['gain'], offset_adu=cam['offset'], readnoise_e=cam['readnoise_e'], maps=maps_name,
                          note=f'gain {cam["gain_source"]}, offset {cam["offset_source"]}, read noise {cam["readnoise_source"]}; maps = simcode.calibration.camera_maps masked by the stage-c spots'),
              pattern=dict(k_rad_per_px=k, pitch_nm=[float(2 * math.pi / np.hypot(*kk) * o['pixel_um'] * 1e3) for kk in k],
@@ -124,7 +125,7 @@ def run(ds):
     if maps: ds.log(f'psf: per-pixel offset / read-noise maps {mp}' + (f' (+ {P["readnoise_extra_e"]} e in quadrature)' if P['readnoise_extra_e'] else ''))
     starts = _inits(ds)
     kw = dict(optics=c['optics'], gain=cam['gain'], nsamples=P['nsamples'], iters=P['iters'], zmax=P['zmax_um'], readnoise_e=rn,
-              offset_adu=off, dev=dev, log=ds.log, maps=maps)
+              offset_adu=off, dev=dev, log=ds.log, maps=maps, pixel_integration=P['pixel_integration'])
     out, fits = {}, {}
     def F(name, split='', salt=0, **k):
         pre = os.path.join(d, f'fit_{name}' + (f'_{split}' if split else '') + (f'_s{salt}' if salt else ''))

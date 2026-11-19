@@ -23,6 +23,11 @@ from simcode.psf import Tracks, fit_tracks, heldout_tracks, paired_nll, split_ch
 # sampling of the fitted VectorialPSF (pupil samples per side, image samples per pixel per side); written into the calibration
 # (psf_stage.calib_dict: npupil / oversample) so that every consumer renders the PSF at the sampling it was fitted with
 FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
+# pixel integration of the fitted VectorialPSF (psf.pixel_integration; torch_psf VectorialPSF.pixel_integration): 'box' = the
+# mean of FIT_OVERSAMPLE^2 point samples per pixel (the fits up to psf_v3), 'exact' = the exact pixel integral of the
+# band-limited image (torch-psf 'spectral', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
+# _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box')
+FIT_PIXEL_INTEGRATION = 'box'
 
 
 class Fit:
@@ -30,9 +35,12 @@ class Fit:
     line blur (BL0: the fitted blur of an init fit, or the result of a blur='line' fit) and the photoselection terms
     (GAM, ZETA, per pattern angle)"""
     def __init__(self, R, optics, dev='cuda', blur='none', photosel=0, kdir=None, init_fit=None, freeze_base=False,
-                 init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2):
+                 init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2, pixel_integration=None):
         self.dev, self.R, self.c, self.zmax = dev, R, (R - 1) / 2, zmax
-        self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE, device=dev)
+        pix = pixel_integration or FIT_PIXEL_INTEGRATION       # the kwarg only when not 'box' (torch-psf before pixel_integration)
+        self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE, device=dev,
+                                                   **({} if pix == 'box' else dict(pixel_integration=pix)))
+        self.pixel_integration = getattr(self.model, 'pixel_integration', 'box')     # torch-psf name ('exact' -> 'spectral')
         m = self.model
         if init_zcoef is not None:
             with torch.no_grad(): m.zcoef.copy_(torch.as_tensor(init_zcoef).to(dev))
@@ -167,13 +175,15 @@ def select(D, nsamples, parity=None, tile=16, salt=0):
 
 def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='none', photosel=0, kdir=None, init_fit=None,
         freeze_base=False, init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, split='', tile=16, dev='cuda', log=print,
-        return_state=False, salt=0, maps=None):
+        return_state=False, salt=0, maps=None, pixel_integration=None):
     """split: '' (all samples) or 'cb0' / 'cb1' (checkerboard parity 0 / 1); salt: the sample draw (select()); maps:
-    per-pixel camera maps (load_maps; then offset_adu / readnoise_e are not used for the data)"""
+    per-pixel camera maps (load_maps; then offset_adu / readnoise_e are not used for the data); pixel_integration: 'box' |
+    'exact' (FIT_PIXEL_INTEGRATION; None = FIT_PIXEL_INTEGRATION)"""
     torch.manual_seed(0); np.random.seed(0)
     D = np.load(tracks) if isinstance(tracks, str) else tracks
     R = D['rois'].shape[-1]
-    F = Fit(R, optics, dev, blur, photosel, kdir, init_fit, freeze_base, init_zcoef, readnoise_e, offset_adu, zmax=zmax)
+    F = Fit(R, optics, dev, blur, photosel, kdir, init_fit, freeze_base, init_zcoef, readnoise_e, offset_adu, zmax=zmax,
+            pixel_integration=pixel_integration)
     sel = select(D, nsamples, int(split[2]) if split else None, tile, salt)
     tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
     m, G = F.model, F.G
@@ -196,13 +206,15 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
                NA=m.NA.item(), apod=m.apod.tolist(), zernike=m.zcoef.tolist(), resid_var=rep['resid_var'], zmax=zmax,
                blur_mode=blur, photosel=photosel, split=split, tile=tile, salt=salt, nll_per_px=rep['nll_per_px'],
                nll_per_px_last_iter=rep['nll_per_px_before_last_step'], n_train=int(len(sel)), fit_s=t_fit,
-               z_median=float(est['z'].median()), optics=optics, maps=maps['path'] if maps else None, **F.extras_json())
+               z_median=float(est['z'].median()), optics=optics, maps=maps['path'] if maps else None,
+               pixel_integration=F.pixel_integration, oversample=FIT_OVERSAMPLE, **F.extras_json())
     log(f'normalized residual var {res["resid_var"]:.4f}, nll/px (vectorial) {res["nll_per_px"]:.5f}, fit {t_fit:.0f} s')
     if out:
         json.dump(res, open(out + '_psf.json', 'w'), indent=1)
         ex = F.extras_json()
         torch.save(dict(zcoef=m.zcoef.detach().cpu(), NA=m.NA.detach().cpu(), apod=m.apod.detach().cpu(),
                         **{k: v.detach().cpu() for k, v in G.items()}, gain=gain, zmax=zmax, optics=optics, maps=maps['path'] if maps else None,
+                        pixel_integration=F.pixel_integration,
                         **({'extras': ex} if ex else {})), out + '_psf.pt')
     if return_state:
         st = dict(I=est['I'].cpu(), r=(est['xy'] + F.c + tr.corner).cpu(), z=est['z'].cpu(), frames=tr.frames.cpu(),
@@ -211,12 +223,14 @@ def fit(tracks, out, optics, gain, nsamples=8000, iters=600, zmax=0.2, blur='non
     return res
 
 
-def model_from_pt(pt, R, dev='cuda'):
-    """frozen Fit object from a _psf.pt (this module's or fit_psf_tracks's; optics default = the DMD setup)"""
+def model_from_pt(pt, R, dev='cuda', pixel_integration=None):
+    """frozen Fit object from a _psf.pt (this module's or fit_psf_tracks's; optics default = the DMD setup). pixel_integration:
+    None = the fit's own (the pt's 'pixel_integration'; 'box' for the fits before it was stored), else this one"""
     S = torch.load(pt, weights_only=False) if isinstance(pt, str) else pt
     o = S.get('optics') or dict(pixel_um=0.10833, NA=float(S['NA']), wavelength_um=0.70, n_imm=1.518, n_med=1.33)
     o = dict(o); o['NA'] = float(S['NA'])
-    F = Fit(R, o, dev, zmax=float(S.get('zmax', 0.2)), readnoise_e=float(torch.exp(torch.as_tensor(S['logrn']))), offset_adu=float(S['offset']))
+    F = Fit(R, o, dev, zmax=float(S.get('zmax', 0.2)), readnoise_e=float(torch.exp(torch.as_tensor(S['logrn']))), offset_adu=float(S['offset']),
+            pixel_integration=pixel_integration or S.get('pixel_integration', 'box'))
     with torch.no_grad():
         F.model.zcoef.copy_(S['zcoef'].to(dev)); F.G['focus'].fill_(float(S['focus']))
     ex = S.get('extras', {})
@@ -241,7 +255,8 @@ def heldout(tracks, pts, test='cb1', nsamples=6000, iters=300, zstarts=None, til
     sel = select(D, nsamples, int(test[2]) if test else None, tile, salt)
     out = {}
     for name, pt in pts.items():
-        F, gain = model_from_pt(pt, R, dev)
+        pt, pix = pt if isinstance(pt, tuple) else (pt, None)
+        F, gain = model_from_pt(pt, R, dev, pix)
         tr, groups, rnp = tracks_of(D, sel, gain, F.G['offset'], dev, maps)
         vm = F.angle_models()
         with torch.no_grad():
