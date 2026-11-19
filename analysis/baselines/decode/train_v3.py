@@ -71,6 +71,16 @@ PRESETS = {
     'm25v4': dict(psf=os.path.join(MAIN, 'out/train_v3/calib/calib_2p5nM_m2_psf_v3.json'), zmax_um=0.2,
                   vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
                          "phot_max": 16000.0, "dens": [4.0, 80.0]}),
+    # (2026-11-19) DECODE v5 = the v4 presets with the final in-situ PSF v4 (exact pixel integration, per pattern axis: DECODE renders
+    # the angle average, exact for its 6-frame sums; simcode.psf.calib_psf = the integrated cubic B-spline built from the calib json)
+    # and the decided emitter-height range 0 - 0.4 um (LUT 0 - 0.4 um, emitter z U(0, 400) nm); everything else = v4
+    'm1809v5': dict(psf='/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v4/calib_1809_2_psf_v4_axis.json', zmax_um=0.4,
+                    vover={"med": 600.0, "lsd": 0.7, "th": 60.0, "life": 2.0, "bg": [6.0, 30.0], "read": 3.28, "label_min": 60.0,
+                           "phot_max": 8000.0, "dens": [4.0, 160.0]},
+                    scaling=dict(input_scale=10.774956268096291, input_offset=18.0, bg_max=36.0, phot_max=8000.0)),
+    'm25v5': dict(psf='/mnt/data/dmdsf/bn_dnapaint/dnapaint/2.5nM/2/simcode_results/psf_v4/calib_2p5nM_m2_psf_v4_axis.json', zmax_um=0.4,
+                  vover={"med": 1200.0, "lsd": 0.7, "th": 80.0, "life": 2.0, "bg": [8.0, 70.0], "read": 3.39, "label_min": 100.0,
+                         "phot_max": 16000.0, "dens": [4.0, 80.0]}),
 }
 SCHED = dict(mode='min', factor=0.5, patience=20, cooldown=10, threshold=1e-4)
 
