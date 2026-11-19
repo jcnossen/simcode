@@ -36,6 +36,10 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
      orientation) of the intensity covariance Sigma = Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (per angle) of the solve, from
      the residuals of the network intensities of the same clean emitter-windows against the estimated pattern
      (simcode/solve/brightness_noise_fit.py); stored in the pattern (cmult, cmult_ang) and used by every solve of the run.
+     2026-11-19: the component estimator (brightness_noise_fit, component section): the angle contrast of every clean window and
+     the depth differences of the photon-disjoint pairs (w, w + 6) of the same emitter, with the model's network-transfer table
+     (bn_transfer_pass1.json next to the pass-1 calibration, or cal['bn_transfer']); < 2000 clean windows: a warning, < 300: the
+     networks' training values (table 'theta_train').
 """
 import math
 import numpy as np, torch
@@ -318,22 +322,74 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
 BN_NMAX = 120000      # clean emitter-windows used for the brightness-noise fit (evenly subsampled over the movie)
 
 
-def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print):
+BN_NMIN = 2000        # fewer clean emitter-windows: a warning (the estimate gets fewer photon bins, it is noisier)
+BN_NMIN_HARD = 300    # fewer: no estimate; the networks' training brightness noise (transfer table 'theta_train') is used, with a warning
+
+
+def transfer_path(cal_path, cal):
+    """the network-transfer table of the brightness-noise estimator for a model's pass-1 calibration: cal['bn_transfer']
+    (relative to the calibration's folder), else <calibration folder>/bn_transfer_pass1.json if it exists, else None"""
+    import os
+    base = os.path.dirname(os.path.abspath(cal_path)) if isinstance(cal_path, str) else ''
+    p = cal.get('bn_transfer') or 'bn_transfer_pass1.json'
+    p = p if os.path.isabs(p) else os.path.join(base, p)
+    return p if os.path.exists(p) else None
+
+
+def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print, method='components', transfer=None):
     """step 5: brightness noise (c, c_a) of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
     load_pass1_rows, which carry each row's chunk / row), the estimated pattern P and the model's pass-1 solve calibration cal
-    (path or dict, without c). -> (c, c_a, info)"""
-    import json
+    (path or dict, without c). -> (c, c_a, info).
+    method 'components' (default, 2026-11-19): the component estimator with the model's network-transfer table (transfer = path;
+    default transfer_path(cal)); 'residual': the frame-residual fit (BN.estimate; until 2026-11-19, reads low with networks that
+    shrink the brightness fluctuations: brightness_noise_fit, component section)."""
+    import json, warnings
     from simcode.solve import brightness_noise_fit as BN
+    cal_path = cal if isinstance(cal, str) else None
     cal = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
+    tp = transfer if transfer is not None else transfer_path(cal_path, cal)
+    tr = BN.load_transfer(tp) if method == 'components' else None
     idx = np.asarray(clean)
-    if len(idx) > nmax: idx = idx[np.linspace(0, len(idx) - 1, nmax).round().astype(np.int64)]
-    if len(idx) < 2000: raise ValueError(f'brightness noise: only {len(idx)} clean emitter-windows (>= 2000 needed)')
+    # photon-disjoint pairs (w, w + 6) of the same emitter among the clean windows (the depth statistic of the component method)
+    d_, j_ = depth_pair_query(dict(x1=R['x'][idx], y1=R['y'][idx], w=R['wstart'][idx]), np.arange(len(idx)))
+    pa = np.nonzero(np.isfinite(d_))[0]; pb = j_[pa]
+    if len(idx) > nmax:      # evenly over the movie, the pairs' members first
+        sp = np.unique(np.linspace(0, len(pa) - 1, min(len(pa), nmax // 2)).round().astype(np.int64)) if len(pa) else np.zeros(0, np.int64)
+        mem = np.unique(np.r_[pa[sp], pb[sp]]); rest = np.setdiff1d(np.arange(len(idx)), mem)
+        nfill = max(nmax - len(mem), 0)
+        fill = rest[np.unique(np.linspace(0, len(rest) - 1, min(nfill, len(rest))).round().astype(np.int64))] if nfill and len(rest) else rest[:0]
+        keep = np.sort(np.r_[mem, fill]); pa, pb = pa[sp], pb[sp]
+        loc = -np.ones(len(idx), np.int64); loc[keep] = np.arange(len(keep))
+        pa, pb, idx = loc[pa], loc[pb], idx[keep]
+    # the row order of chunk_rows / solve_rows: by chunk, then by row
+    order = np.lexsort((R['row'][idx], R['chunk'][idx])); pos = np.empty(len(idx), np.int64); pos[order] = np.arange(len(idx))
+    pairs = (pos[pa], pos[pb])
+    rule = ('clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), non-kinetic solve with '
+            'the estimated pattern; simcode/solve/brightness_noise_fit.py (' + method + ')')
+    info = dict(n_rows=int(len(idx)), n_clean=int(len(clean)), n_pairs=int(len(pairs[0])), method=method, transfer=tp, rule=rule)
+    if len(idx) < BN_NMIN_HARD:
+        th = tuple(tr['theta_train']) if tr is not None and 'theta_train' in tr else (0.1, 0.05)
+        msg = (f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN_HARD}): not estimated, using c {th[0]:.3f}, '
+               f'c_a {th[1]:.3f} (' + ('the networks\' training values' if tr is not None and 'theta_train' in tr else 'default') + ')')
+        warnings.warn(msg); verbose('  WARNING ' + msg)
+        info.update(c=th[0], c_a=th[1], fallback=True)
+        return th[0], th[1], info
+    if len(idx) < BN_NMIN:
+        msg = f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN}): the estimate is noisier'
+        warnings.warn(msg); verbose('  WARNING ' + msg)
     by = {int(f0): R['row'][idx[R['chunk'][idx] == f0]] for f0 in np.unique(R['chunk'][idx])}
     rows = BN.chunk_rows(out, P, by)
-    th, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
+    if method == 'components':
+        if tr is None:
+            msg = 'brightness noise: no network-transfer table for this model (K = a = 1; reads low with shrinking networks)'
+            warnings.warn(msg); verbose('  WARNING ' + msg)
+        th, cinfo = BN.estimate_components(rows, cal, tr, pairs=pairs, log=verbose)
+        info.update(components=cinfo)
+    else:
+        th, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
+        info.update(hist=hist)
     q50 = BN.q_table(rows, BN.with_theta(cal, th))
     verbose(f'  brightness noise: c {th[0]:.4f}, c_a {th[1]:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
             + ' '.join(f'{lo:g}:{q:.2f}' for lo, q in q50))
-    return th[0], th[1], dict(c=th[0], c_a=th[1], n_rows=int(len(idx)), n_clean=int(len(clean)), hist=hist, q50_by_photons=q50,
-                              rule='clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), '
-                                   'non-kinetic solve with the estimated pattern; simcode/solve/brightness_noise_fit.py')
+    info.update(c=th[0], c_a=th[1], q50_by_photons=q50)
+    return th[0], th[1], info
