@@ -32,7 +32,7 @@ movie_files = lambda cell, work, data: S4.movie_files(acquisition(cell, work, da
 def front(cell, dev, work, data):
     """the front end of the classical tables: the whole-series map <4Pi work folder>/smlm/reg/reg_insitu_<cell>.json"""
     return S4.front(acquisition(cell, work, data), dev=dev, map_file=f'{work}/smlm/reg/reg_insitu_{cell}.json')
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.io.work import Units, atomic_savez, atomic_json
 from cl4pi import Classic4Pi
 import mov4pi_cl as M
@@ -244,7 +244,7 @@ def main():
     P4 = a.work; OUT = f'{P4}/classical/real'
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = fourpi_state(a.psf, P4)
-    c4 = Classic4Pi(LUT4Pi(st, P=P, dev=dev), delta=(0.0, delta(a.cell, P4, a.data)), dev=dev)
+    c4 = Classic4Pi(fourpi_spline(st, P, device=dev), delta=(0.0, delta(a.cell, P4, a.data)), dev=dev)
     U = units(a.cell, a.tag, P4, claim=a.claim, redo=not a.skip_done, min_free_gb=a.min_free_gb)
     for fi in (a.files or []):
         if U.done(fi): print(f'{a.cell} {fi}: done, skipped')
@@ -259,7 +259,7 @@ def follow(a):
     P4 = a.work; OUT = f'{P4}/classical/real'
     dev = 'cuda'; os.makedirs(OUT, exist_ok=True)
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=P, dev=dev)
+    lut = fourpi_spline(st, P, device=dev)
     US = {c: units(c, a.tag, P4, claim=True) for c in a.cells}
     c4s = {c: Classic4Pi(lut, delta=(0.0, delta(c, P4, a.data)), dev=dev) for c in a.cells}
     expect = {c: sorted(file_index(f) for f in movie_files(c, P4, a.data)) for c in a.cells}

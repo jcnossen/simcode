@@ -34,7 +34,7 @@ XLIM = tuple(DEFAULTS['xlim'])
 # work = the 4Pi work folder, data = the folder of the raw 4Pi movies
 movie_file = lambda cell, fi, work, data: S4.movie_file(acquisition(cell, work, data), fi)
 movie_files = lambda cell, work, data: S4.movie_files(acquisition(cell, work, data))
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.io.movie import Prefetch
 from simcode.io.work import Units, atomic_save, atomic_savez, atomic_text, disk_guard
 from cl4pi import Classic4Pi
@@ -233,7 +233,7 @@ def main():
         print('reader done', flush=True); return
     # fitter: claim ready files in movie order (claim marker of the table; a claim of a dead fitter is taken over)
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=P, dev=dev)
+    lut = fourpi_spline(st, P, device=dev)
     reg = json.load(open(f'{P4}/patches/regions_MT.json'))
     c4s, frs = {}, {}
     while True:

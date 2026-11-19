@@ -25,7 +25,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline, fourpi_channel
 
 PX = 0.128
 GAIN, OFF, RN_ADU = 0.23, 100.0, 4.9
@@ -129,7 +129,7 @@ def main():
     dev = 'cuda'
     st = fourpi_state('NPC_f_dxy15', P4)
     R = 21; h = R // 2
-    lut = LUT4Pi(st, P=R, dev=dev)
+    lut = fourpi_spline(st, R, device=dev)
     img = torch.zeros(T, 4, H + 2 * h, W + 2 * h, device=dev)
     o = torch.arange(R, device=dev)
     tb = time.time()
@@ -139,7 +139,7 @@ def main():
             sl = slice(i, i + 8192)
             ix, iy = np.round(xc[sl]).astype(int), np.round(yc[sl]).astype(int)
             pos = torch.tensor(np.c_[xc[sl] - ix, yc[sl] - iy, z[sl]], device=dev, dtype=torch.float32)
-            g = lut.evaluate_ch(pos, torch.tensor(Phi[sl], device=dev, dtype=torch.float32), c)       # [n,R,R]
+            g = fourpi_channel(lut, pos, torch.tensor(Phi[sl], device=dev, dtype=torch.float32), c)       # [n,R,R]
             g = g * torch.tensor(Nph[sl], device=dev, dtype=torch.float32)[:, None, None]
             fi = torch.tensor(fr[sl], device=dev)
             Y = (torch.tensor(iy, device=dev)[:, None, None] + o[None, :, None]).expand(-1, R, R)

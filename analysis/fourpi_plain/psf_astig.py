@@ -1,4 +1,4 @@
-"""Astigmatism of the plain-4Pi PSF model (public 4Pi-SMS bead stack fit, PSF4Pi state) vs the bead data: the
+"""Astigmatism of the plain-4Pi PSF model (public 4Pi-SMS bead stack fit, FourPiPSF state) vs the bead data: the
 astigmatic focus separation (elliptical Gaussian on the phase-averaged 4-channel sum, stage z axis) of the model with
 the astigmatism Zernikes (Noll 5, 6; both arms) scaled by f. Target: the data / model separation ratio of the bead fit
 (out/fourpi_refactor/public_4pi/results/astig_cmp_<tag>.json: elliptical Gaussian on the bead ROIs and on the fitted
@@ -11,7 +11,7 @@ Writes the state with that scale (CPU, a few minutes).
 import argparse, json, copy
 import numpy as np, torch
 from scipy.optimize import least_squares
-from simcode.fourpi.coherent_psf import psf_from_state
+from simcode.psf import fourpi_psf
 
 R = 25
 yy, xx = np.mgrid[-(R // 2):R // 2 + 1, -(R // 2):R // 2 + 1].astype(float)
@@ -41,7 +41,7 @@ def scaled(st, f):
 def separation(st, fit, zst_nm):
     """stage-axis focus separation (nm) of the phase-averaged model for the fit's stage -> model z mapping"""
     s = dict(st); s['meta'] = dict(st['meta'], R=R)
-    m = psf_from_state(s, device='cpu').eval()
+    m = fourpi_psf(s, device='cpu').eval()
     z = float(np.mean(fit['z0'])) + fit['args']['s'] * fit['zscale'] * (zst_nm - zst_nm.mean()) / 1000.0
     pos = torch.tensor(np.c_[np.zeros_like(z), np.zeros_like(z), z], dtype=torch.float32)
     with torch.no_grad():

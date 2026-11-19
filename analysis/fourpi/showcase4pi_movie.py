@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, PX, GAIN, OFF, RN_ADU, BG, DELTA, REG
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline, fourpi_channel
 
 # (p0, control, p2) in um, (z at p0, z at p2) in um (z linear along the curve parameter)
 FILS = [((0.0, 2.0), (3.8, 1.6), (7.68, 2.6), (-0.15, -0.15)),     # A: low, nearly horizontal
@@ -115,7 +115,7 @@ def main():
     dev = 'cuda'
     st = fourpi_state('NPC_f_dxy15', P4)
     R = 21; h = R // 2
-    lut = LUT4Pi(st, P=R, dev=dev)
+    lut = fourpi_spline(st, R, device=dev)
     o = torch.arange(R, device=dev)
     yy, xx = torch.meshgrid(torch.arange(H, device=dev) / H, torch.arange(W, device=dev) / W, indexing='ij')
     bgs = 1 + 0.2 * torch.sin(2 * math.pi * (xx * 0.8 + 0.3)) * torch.cos(2 * math.pi * (yy * 0.6))
@@ -132,7 +132,7 @@ def main():
                 sl = slice(i, i + 8192); g_ = slice(e0 + i, min(e1, e0 + i + 8192))
                 ix, iy = np.round(xc[sl]).astype(int), np.round(yc[sl]).astype(int)
                 pos = torch.tensor(np.c_[xc[sl] - ix, yc[sl] - iy, z[g_]], device=dev, dtype=torch.float32)
-                g = lut.evaluate_ch(pos, torch.tensor(Phi[g_], device=dev, dtype=torch.float32), c)
+                g = fourpi_channel(lut, pos, torch.tensor(Phi[g_], device=dev, dtype=torch.float32), c)
                 g = g * torch.tensor(Nph[g_], device=dev, dtype=torch.float32)[:, None, None]
                 fi = torch.tensor(fr[g_] - c0, device=dev)
                 Y = (torch.tensor(iy, device=dev)[:, None, None] + o[None, :, None]).expand(-1, R, R)

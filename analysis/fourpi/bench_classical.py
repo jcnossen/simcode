@@ -16,7 +16,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline, fourpi_channel
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
@@ -28,7 +28,7 @@ def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
     """P4: the 4Pi work folder"""
     OUT = f'{P4}/sim'
     st = fourpi_state('NPC_f_dxy15', P4)
-    lut = LUT4Pi(st, P=15, dev=dev)
+    lut = fourpi_spline(st, 15, device=dev)
     sim = FourPiPatchSim(lut, dev=dev, seed=seed)
     S = sim.sample(n, p_nb=0.0, p_on=1.0, eps_range=eps_range)
     img = S['img']                                                     # [n,6,4,P,P]
@@ -41,7 +41,7 @@ def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
         out = []
         for c in range(4):
             pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
-            g = torch.stack([lut.evaluate_ch(pc, Phi0 + DELTA_A[a], c) for a in range(2)], 1)[:, ang]      # [n,6,P,P]
+            g = torch.stack([fourpi_channel(lut, pc, Phi0 + DELTA_A[a], c) for a in range(2)], 1)[:, ang]      # [n,6,P,P]
             out.append(F[:, None, None, None] * pat[:, :, None, None] * g + th[:, 4 + c, None, None, None])
         return torch.stack(out, 2).reshape(len(th), -1)
 
@@ -60,7 +60,7 @@ def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
         mus, Js = [], []
         for c in range(4):
             pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
-            G = [lut.evaluate_ch_grad(pc, Phi0 + DELTA_A[a], c) for a in range(2)]
+            G = [fourpi_channel(lut, pc, Phi0 + DELTA_A[a], c, grad=True) for a in range(2)]
             g, gx, gy, gz = (torch.stack([G[0][k], G[1][k]], 1)[:, ang] for k in range(4))     # [n,6,P,P]
             Fp = F[:, None, None, None]
             mu_c = Fp * pat[:, :, None, None] * g + th[:, 4 + c, None, None, None]
@@ -117,7 +117,7 @@ def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
         mp = torch.zeros(n, 4, device=dev)
         for a in range(2):
             for c in range(4):
-                g = lut.evaluate_ch(torch.stack([th_s[:, 0] + doff[:, c, 0], th_s[:, 1] + doff[:, c, 1], zz], 1), Phi0 + DELTA_A[a], c)
+                g = fourpi_channel(lut, torch.stack([th_s[:, 0] + doff[:, c, 0], th_s[:, 1] + doff[:, c, 1], zz], 1), Phi0 + DELTA_A[a], c)
                 mp[:, c] += (g * ap).sum((-1, -2))
         mp = mp / mp.sum(1, keepdim=True)
         e = ((fa - mp) ** 2).sum(1)

@@ -1,4 +1,4 @@
-"""Fit the coherent two-arm 4Pi PSF (simcode/fourpi/coherent_psf.py) to a bead z-stack, per channel (61 slices x 4 channels).
+"""Fit the coherent two-arm 4Pi PSF (torch_psf FourPiPSF, simcode.psf) to a bead z-stack, per channel (61 slices x 4 channels).
 
 Data: <work>/smlm/zcal/zstack_rois_<cell>.npy ([61,4,21,21] e, registered channel ROIs around the bead).
 Per slice: x, y (px), N (common to the 4 channels), bg per channel; z_k = z0 + s * zstage_k (s = +-1 tried).
@@ -7,13 +7,14 @@ coherence, bottom-arm offset (dx, dy, dz), blur; optional per-slice 4Pi phase dr
 index (--drift_order). Loss: Poisson NLL with the sCMOS variance shift v (mu + v ~ Poisson).
 
 Usage: python analysis/fourpi/fit_psf4pi.py --work <4Pi work folder> --cell NPC [--mirror y] [--s -1] [--iters 1500] [--tag base]
-Output: <work>/psf4pi/<cell>_<tag>.json (+ _state.pt) and a figure.
+Output: <work>/psf4pi/<cell>_<tag>.json (key 'psf': FourPiPSF.state(), read by simcode.psf.fourpi_psf / fourpi_spline) and
+<cell>_<tag>_mu.npy (the model images).
 """
 import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.fourpi.coherent_psf import PSF4Pi, PSF4PiA
+from simcode.psf import FourPiPSF
 
 def run(a):
     P4 = a.work; OUT = f'{P4}/psf4pi'
@@ -26,8 +27,9 @@ def run(a):
     base = json.load(open(f'{P4}/smlm/psf/{a.cell}_base.json'))['bead']
     zst = torch.tensor(zc['zstage'], device=dev, dtype=torch.float32)
     if a.asym:   # asymmetric arms (oil 1.5 top / silicone 1.35 bottom), stage mode for the bead stack, init from a symmetric fit
-        m = PSF4PiA(R, px=a.px, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror, zmode='stage',
-                    NA_t=a.NA_t, n_imm_t=a.n_imm_t, NA_b=a.NA_b, n_imm_b=a.n_imm_b, n_med=a.n_med, depth=(a.depth_t, a.depth_b))
+        m = FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=(a.NA_t, a.NA_b), n_imm=(a.n_imm_t, a.n_imm_b), n_med=a.n_med,
+                      zernike_indices=(4,) + tuple(range(5, 22)), npupil=a.npupil, oversample=2, mirror=a.mirror,
+                      depth_um=(a.depth_t, a.depth_b), zmode='stage', device=dev)
         s0 = json.load(open(f'{OUT}/{a.cell}_{a.init_sym}.json'))['psf']
         with torch.no_grad():
             m.top.zcoef[1:].copy_(torch.tensor(s0['zt'], device=dev)); m.bot.zcoef[1:].copy_(torch.tensor(s0['zb'], device=dev))
@@ -35,7 +37,8 @@ def run(a):
             m.a_log.fill_(math.log(s0['a'])); m.gamma_logit.fill_(math.log(s0['gamma'] / (1 - s0['gamma'])))
             m.d_bot.copy_(torch.tensor(s0['d_bot'], device=dev)); m.logblur.fill_(math.log(s0['blur_px2']))
     else:
-        m = PSF4Pi(R, px=a.px, NA=a.NA, n=a.n, lam=a.lam, npupil=a.npupil, os_=2, device=dev, mirror=a.mirror)
+        m = FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=a.NA, n_imm=a.n, npupil=a.npupil, oversample=2, mirror=a.mirror,
+                      device=dev)
         zt = torch.tensor(base['psf']['zcoef1'], device=dev)
         with torch.no_grad():
             m.top.zcoef.copy_(zt); m.bot.zcoef.copy_(-zt if a.bot_init == 'neg' else zt)

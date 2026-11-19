@@ -1,4 +1,4 @@
-"""Export an in-situ 4Pi PSF for SIMCODE: a PSF json {'psf': state} that simcode/fourpi/spline_table.py LUT4Pi and the
+"""Export an in-situ 4Pi PSF for SIMCODE: a PSF json {'psf': state} that simcode.psf.fourpi_spline (the 4Pi table) and the
 simulator read (fourpi.psf / fourpi.lut_psf / the training recipe).
 
   python analysis/fourpi_plain/p4export.py --state <Model4Pi state.json> --out <psf json> [--knots <refined knots .pt>]

@@ -19,7 +19,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.simulate.fourpi_patches import FourPiPatchSim
 from simcode.emitter.fourpi import nll_prior
 from simcode.emitter.fourpi import WINDOWS_K
@@ -52,7 +52,7 @@ def main():
     from simcode.util.proctitle import set_title; set_title('4pi-train-w')
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=15)
+    lut = fourpi_spline(st, 15, device='cuda')
     sim = FourPiPatchSim(lut, seed=a.seed)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
     from simcode.emitter.fourpi import neighbour_map, init_from_v10
@@ -124,7 +124,7 @@ def main_plain(a):
     torch.manual_seed(a.seed)
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'      # cpu: smoke tests only
     st = fourpi_state(c['fourpi']['psf'])
-    lut = LUT4Pi(st, P=15, zmin=t['zlut'][0], zmax=t['zlut'][1], dev=dev)
+    lut = fourpi_spline(st, 15, z_range=tuple(t['zlut']), device=dev)
     init, smp = S_.sim_kw(c)
     sim = MultiChannelAcquisitionSim(st, H=t['emitter_size'], W=t['emitter_size'], seed=a.seed, dev=dev, **init)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, train_prior=True, T=T, zmax=t['zmax'], vread=vread, wins=WINDOWS_PLAIN, excess=a.excess).to(dev); net.lut = lut

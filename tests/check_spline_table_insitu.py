@@ -1,4 +1,4 @@
-"""SIMCODE's LUT4Pi from an in-situ state (arms / reg / beta) and from a refined spline file vs the torch-psf models of
+"""SIMCODE's 4Pi table (simcode.psf.fourpi_spline) from an in-situ state (arms / reg / beta) and from a refined spline file vs the torch-psf models of
 analysis/fourpi_plain/insitu4pi.py (two processes: torch-psf master for A, the pinned torch_psf of SIMCODE for B).
 
   python tests/check_spline_table_insitu.py A <Model4Pi state json> <out.npz> [<refined knots .pt>]
@@ -29,22 +29,22 @@ if mode == 'A':
         out['ref_file'] = sys.argv[4]
     np.savez(sys.argv[3], **out)
 else:
-    from simcode.fourpi.spline_table import LUT4Pi
+    from simcode.psf import fourpi_spline
     d = np.load(sys.argv[2])
     st = json.loads(str(d['state']))
-    L = LUT4Pi(st, P=15, zmin=-1.0, zmax=1.0, dev='cuda')
+    L = fourpi_spline(st, 15, (-1.0, 1.0), device='cuda')
     with torch.no_grad():
         v = L.evaluate(pos.cuda(), Phi.cuda()).cpu().numpy()
-    print('LUT4Pi(in-situ state) vs torch-psf vectorial: rel L2', np.linalg.norm(v - d['vec']) / np.linalg.norm(d['vec']))
+    print('fourpi_spline(in-situ state) vs torch-psf vectorial: rel L2', np.linalg.norm(v - d['vec']) / np.linalg.norm(d['vec']))
     if 'ref' in d.files:
         st2 = dict(st, spline=str(d['ref_file']))
-        L2 = LUT4Pi(st2, P=15, dev='cuda')
+        L2 = fourpi_spline(st2, 15, device='cuda')
         with torch.no_grad():
             v2 = L2.evaluate(pos.cuda(), Phi.cuda()).cpu().numpy()
-        print('LUT4Pi(spline file) vs torch-psf refined spline: rel L2', np.linalg.norm(v2 - d['ref']) / np.linalg.norm(d['ref']),
+        print('fourpi_spline(spline file) vs torch-psf refined spline: rel L2', np.linalg.norm(v2 - d['ref']) / np.linalg.norm(d['ref']),
               '; vs vectorial', np.linalg.norm(v2 - d['vec']) / np.linalg.norm(d['vec']))
         st3 = json.loads(json.dumps(st)); st3['gamma'] = st3['gamma'] * 0.9; st3['spline'] = str(d['ref_file']); st3['spline_base'] = st
-        L3 = LUT4Pi(st3, P=15, dev='cuda')
+        L3 = fourpi_spline(st3, 15, device='cuda')
         with torch.no_grad():
             v3 = L3.evaluate(pos.cuda(), Phi.cuda()).cpu().numpy()
         print('perturbed (gamma x 0.9) spline member differs from the refined table by rel', np.linalg.norm(v3 - v2) / np.linalg.norm(v2))

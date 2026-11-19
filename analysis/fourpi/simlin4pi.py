@@ -19,7 +19,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simcode.processing import fourpi_pattern_phase as SR
 from simcode.processing.fourpi_pattern_phase import repattern_xy
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.solve.fourpi import kin_starts, best_of
 from simcode.solve.fourpi import FourPiSolve
 from simcode.emitter.fourpi import linear_readout, border_bg
@@ -58,7 +58,7 @@ def main():
     d = f'{P4}/simmovie/{a.tag}'
     meta = json.load(open(f'{d}/meta.json'))
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=15)
+    lut = fourpi_spline(st, 15, device='cuda')
     t0 = time.time()
     F = np.load(f'{d}/front_SIM_000_{a.front}.npz')
     assert 'img' in F.files, 'run simfront4pi.py with --save_img 1'

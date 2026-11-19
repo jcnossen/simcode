@@ -10,7 +10,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save   # atomic, disk-guarded
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.simulate.fourpi_patches import FourPiPatchSim
 from simcode.emitter.fourpi import FourPiPrior, nll_2x2, nll_prior
 
@@ -30,13 +30,13 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=15)
+    lut = fourpi_spline(st, 15, device='cuda')
     sim = FourPiPatchSim(lut, seed=a.seed)
     net = FourPiPrior(ch=a.ch, nblk=a.nblk).cuda()
     if a.init:
         net.load_state_dict(torch.load(a.init if a.init.startswith('/') else f'{REPO}/{a.init}', weights_only=False)['state'])
     if a.template == 'lut':
-        net.tlut = LUT4Pi(st, P=15, sub=1)
+        net.tlut = fourpi_spline(st, 15, oversample=1, device='cuda')
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=a.lr, total_steps=a.steps, pct_start=0.05)
     log = open(f'{OUT}/head4pi_{a.tag}.log', 'a')

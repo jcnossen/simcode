@@ -12,7 +12,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.psf import fourpi_state
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 from pixel_lm import fisher_j, crlb
 from cl4pi import Classic4Pi, run_chunk
@@ -28,7 +28,7 @@ def main():
     from simcode.util.proctitle import set_title; set_title('4pi-classic')
     dev = 'cuda'
     st = fourpi_state('NPC_f_dxy15', P4)
-    lut = LUT4Pi(st, P=15, dev=dev)
+    lut = fourpi_spline(st, 15, device=dev)
     c4 = Classic4Pi(lut, delta=DELTA_A, dev=dev)
     print(f'calibration: fringe {c4.fringe_um * 1000:.0f} nm, monotone {c4.monotone}, tau {c4.tau.cpu().numpy().round(3)}, '
           f'|e| {c4.e.abs().cpu().numpy().round(3)}, arg e {np.degrees(np.angle(c4.e.cpu().numpy())).round(0)}', flush=True)

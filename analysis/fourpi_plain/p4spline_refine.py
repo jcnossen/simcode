@@ -29,8 +29,8 @@ def refine_geometry(model, S=2, dz=0.01, xy_limit=2.5):
 
 
 def save_refined(path, spl, K, vector_state, extra=None):
-    """K = baked table + dK; vector_state = the SIMCODE state of the vectorial model the table was built from (LUT4Pi
-    'spline' / 'spline_base', simcode/fourpi/spline_table.py)"""
+    """K = baked table + dK; vector_state = the SIMCODE state of the vectorial model the table was built from (state keys
+    'spline' / 'spline_base' of simcode.psf.fourpi_spline)"""
     torch.save(dict(K=K.detach().cpu(), roisize=spl.roisize, z_range=spl.z_range, S=spl.S, dz=spl.hz, zpad=spl.zpad,
                     xy_limit=spl.xy_limit, tau=spl.tau.cpu(), pixel_um=spl.pixel_um, vector_state=vector_state,
                     source_state=spl.source_state, **(extra or {})), path)

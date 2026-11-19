@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline, fourpi_channel
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson_j, fisher_j, crlb
 
@@ -132,7 +132,7 @@ def classical(d, meta, F, lut, dev):
         mp = torch.zeros(n, 4, device=dev)
         for aa, dl in ((0, 0.0), (1, delta)):
             for c in range(4):
-                g = lut.evaluate_ch(torch.stack([fx, fy, zz], 1), Ph + dl, c)
+                g = fourpi_channel(lut, torch.stack([fx, fy, zz], 1), Ph + dl, c)
                 mp[:, c] += (g * ap).sum((-1, -2))
         mp = mp / mp.sum(1, keepdim=True)
         e = ((fa_t - mp) ** 2).sum(1)
@@ -168,7 +168,7 @@ def crlb_units(U, idx, meta, lut, dev):
         x, y, z, s = th[:, 0], th[:, 1], th[:, 2], th[:, 3]
         mus, Js = [], []
         for c in range(4):
-            G = [lut.evaluate_ch_grad(torch.stack([x, y, z], 1), Phi_ + (delta if aa else 0.0), c) for aa in range(2)]
+            G = [fourpi_channel(lut, torch.stack([x, y, z], 1), Phi_ + (delta if aa else 0.0), c, grad=True) for aa in range(2)]
             mu_t, J_t = [], []
             for t in range(6):
                 g, gx, gy, gz, _ = G[ang[t]]
@@ -223,7 +223,7 @@ def main():
     d = f'{P4}/simmovie/{a.tag}'; dev = 'cuda'
     meta = json.load(open(f'{d}/meta.json'))
     st = fourpi_state(meta["psf"], P4)
-    lut = LUT4Pi(st, P=15, dev=dev)
+    lut = fourpi_spline(st, 15, device=dev)
     U = gt_units(d, meta['T'])
     inr = lambda x, y: (x >= LO) & (x < HI) & (y >= LO) & (y < HI)
     gsel = inr(U['x'], U['y']) & (U['N'] >= 300)

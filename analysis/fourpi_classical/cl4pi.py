@@ -24,6 +24,7 @@ Steps (the published procedure, SI Note 2 / Extended Data Fig. 5, re-implemented
 import math
 import numpy as np
 import torch
+from simcode.psf import fourpi_channel
 from pixel_lm import lm_poisson_j, fisher_j, crlb
 
 V_PX = 1.14 ** 2 + 0.2 ** 2          # read noise + residual offset error variance per pixel and image (e^2)
@@ -318,7 +319,7 @@ class Classic4Pi:
             ai = torch.tensor(ang, device=dev)
             for c in range(4):
                 pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
-                G = [lut.evaluate_ch_grad(pc, Phi0 + self.delta[a], c) for a in range(2)]
+                G = [fourpi_channel(lut, pc, Phi0 + self.delta[a], c, grad=True) for a in range(2)]
                 g, gx, gy, gz = (torch.stack([G[0][q], G[1][q]], 1)[:, ai] for q in range(4))           # [n,6,P,P]
                 Fp = F[:, None, None, None]; pt = pat[:, :, None, None]
                 mu_c = Fp * pt * g + th[:, 4 + c, None, None, None]

@@ -31,7 +31,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson_j, fisher_j, crlb
 
@@ -94,7 +94,7 @@ def main():
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     LO, HI = 8.0, W - 8.0
     st = fourpi_state(meta["psf"], P4)
-    lut = LUT4Pi(st, P=15, dev=dev)
+    lut = fourpi_spline(st, 15, device=dev)
     t0 = time.time()
     U = gt_units(d, T)
     inr = lambda x, y, m=0.0: (x >= LO - m) & (x < HI + m) & (y >= LO - m) & (y < HI + m)

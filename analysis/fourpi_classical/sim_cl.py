@@ -11,7 +11,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 for p_ in (REPO, f'{REPO}/analysis/fourpi', os.path.dirname(os.path.abspath(__file__))):
     if p_ not in sys.path: sys.path.insert(0, p_)
 from simcode.psf import fourpi_state
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
 from simeval4pi import gt_units, match, crlb_units, LO, HI, EDGES
 from cl4pi import Classic4Pi
@@ -57,7 +57,7 @@ def main():
     meta = json.load(open(f'{d}/meta.json')); H, W, T = meta['H'], meta['W'], meta['T']
     F = dict(np.load(a.front or f'{d}/front_SIM_000_{a.model}.npz'))
     st = fourpi_state(meta["psf"], P4)
-    lut = LUT4Pi(st, P=P, dev=dev)
+    lut = fourpi_spline(st, P, device=dev)
     c4 = Classic4Pi(lut, delta=(0.0, math.radians(meta['delta_deg'])), dev=dev)
     t0 = time.time()
     imgs, doff = patches(d, meta, F, dev)

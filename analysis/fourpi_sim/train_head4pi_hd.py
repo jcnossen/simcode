@@ -20,7 +20,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simcode.util.checkpoint import save as safe_save
-from simcode.fourpi.spline_table import LUT4Pi
+from simcode.psf import fourpi_spline
 from simcode.simulate.fourpi_patches import FourPiPatchSim
 from simcode.emitter.fourpi import nll_prior
 from simcode.emitter.fourpi import WINDOWS_K
@@ -53,7 +53,7 @@ def main():
     OUT = f'{P4}/models/head4pi_{a.tag}'; os.makedirs(OUT, exist_ok=True)
     torch.manual_seed(a.seed)
     st = fourpi_state(a.psf, P4)
-    lut = LUT4Pi(st, P=15)
+    lut = fourpi_spline(st, 15, device='cuda')
     sim = Sim4PiHD(lut, seed=a.seed, p_iso=a.p_iso, p_close=a.p_close, rho=(0.08, a.rho_hi)) if a.sim == 'hd' else FourPiPatchSim(lut, seed=a.seed)
     net = FourPiEmitterNet(ch=a.ch, nblk=a.nblk, bound=a.bound, nbr_in=bool(a.nbr_in), train_prior=bool(a.train_prior)).cuda(); net.lut = lut
     from simcode.emitter.fourpi import neighbour_map, init_from_v10

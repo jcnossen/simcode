@@ -18,9 +18,9 @@ json files stay; SIMCODE reads both through simcode.psf.read_calib / PSF.load / 
       fourpi/NPC_f_dxy15.psf.zip: FourPiPSF (coupled model, 4 source_output channels with their camera crop / mirror;
       the fitted state verbatim plus torch_psf's 'raw' parameters, fourpi_psf below);
       fourpi/NPC_f_dxy15_spline.psf.zip (--spline): its FourPiSplinePSF as the 4Pi heads build it
-      (simcode/fourpi/spline_table.LUT4Pi: 15 px, 4 x oversampled, z -0.6 .. 0.6 um, 10 nm, zpad 3) with the FourPiPSF as
+      (simcode.psf.fourpi_spline(state, 15): 15 px, 4 x oversampled, z -0.6 .. 0.6 um, 10 nm, zpad 3) with the FourPiPSF as
       source; --spline-knots rebuild (default: no knots stored, the reader tabulates the source on the grid; on the GPU
-      the knots equal LUT4Pi on the GPU bit for bit, tests/test_psfzip.py) or float32 (~120 MB, not in git)
+      the knots equal fourpi_spline on the GPU bit for bit, tests/test_psfzip.py) or float32 (~120 MB, not in git)
   model folders: m1809/calib_1809_2_psf_v2.psf.zip, m25/calib_2p5nM_m2_psf_v2.psf.zip, g13/calib_gauss1.3.psf.zip
       (byte copies of the insitu/ files)
 
@@ -82,7 +82,7 @@ def beads(dev):
 
 
 def fourpi_psf(state, device=None, z_range=(-0.6, 0.6), **kw):
-    """torch_psf FourPiPSF of a coherent_psf state (bit-identical to simcode.fourpi.coherent_psf.psf_from_state) whose state() is the
+    """torch_psf FourPiPSF of a 4Pi PSF state (the model of simcode.psf.fourpi_psf) whose state() is the
     given state verbatim plus torch_psf's 'raw' block (the internal parameters, which a reader takes for a bit-exact
     model): torch_psf's own state() (still at 4d806d0, formerly 1052362 / 0fee3c3) recomputes tau = softmax(log tau) and float32-rounds NA / n, so it does not
     reproduce the fitted values; this way save_zip stores the fitted state as it is and the exact parameters."""
@@ -113,7 +113,7 @@ def fourpi(dev, spline, work, knots='rebuild'):
         S = p.to_spline(15, (-0.6, 0.6), oversample=4, dz_um=0.01, zpad=3)
         out = os.path.join(d, 'NPC_f_dxy15_spline.psf.zip')
         spsf.save_zip(out, S, source=p, channels=chans, spline_knots=knots,
-                      provenance=dict(prov, spline='simcode/fourpi/spline_table.LUT4Pi(state, P=15) grid: 4 x oversampled, z -0.6 .. 0.6 um, '
+                      provenance=dict(prov, spline='simcode.psf.fourpi_spline(state, 15) grid (formerly simcode/fourpi/spline_table.LUT4Pi(state, P=15)): 4 x oversampled, z -0.6 .. 0.6 um, '
                                                    '10 nm, zpad 3, offset limit 8.5 px' + ('' if knots == 'rebuild' else f'; tabulated on {dev}')))
         print(out, flush=True)
 
