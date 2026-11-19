@@ -28,6 +28,45 @@ def angle_index(pt):
     return (pt[..., 0].abs() < pt[..., 1].abs()).long()
 
 
+# (2026-11-19) per-orientation intensity map of the pattern (pattern dict 'relmap', processing/pattern_estimation.estimate_relmap):
+# the relative intensity of each orientation varies over the field of view (beam envelope); the solves take it per row as o['relg']
+def _legendre_2d(u, v, deg):
+    """Legendre products P_i(u) P_j(v), i + j <= deg (i major, j minor) [n, (deg + 1)(deg + 2) / 2]"""
+    def P(t):
+        p = [torch.ones_like(t), t]
+        for n in range(1, deg):
+            p.append(((2 * n + 1) * t * p[n] - n * p[n - 1]) / (n + 1))
+        return p[:deg + 1]
+    Pu, Pv = P(u), P(v)
+    return torch.stack([Pu[i] * Pv[j] for i in range(deg + 1) for j in range(deg + 1 - i)], -1)
+
+
+def relmap_contrast(relmap, x, y):
+    """the angle contrast h(x, y) = (A_0 - A_1) / mean A of a pattern intensity map at movie positions x, y [n] (torch; positions
+    outside the map's box are clamped to its edge; h clamped to +-1.5)"""
+    x0, x1, y0, y1 = (float(v) for v in relmap['box'])
+    u = (2 * (x.double() - x0) / (x1 - x0) - 1).clamp(-1, 1); v = (2 * (y.double() - y0) / (y1 - y0) - 1).clamp(-1, 1)
+    c = torch.as_tensor(relmap['coef'], device=x.device, dtype=torch.float64)
+    return (_legendre_2d(u, v, int(relmap['deg'])) @ c).clamp(-1.5, 1.5).float()
+
+
+def relmap_factors(relmap, x, y):
+    """per-row factors g [n, 2] of the relative intensity of the angle-0 / angle-1 frames at movie positions x, y [n]:
+    exp(+- delta / 2), delta = log((1 + h / 2) / (1 - h / 2)) (A_0 / A_1 = e^delta; geometric mean 1, the brightness B keeps its
+    meaning). relmap None -> None"""
+    if relmap is None: return None
+    h = relmap_contrast(relmap, x, y)
+    d = torch.log((1 + h / 2) / (1 - h / 2))
+    return torch.stack([torch.exp(d / 2), torch.exp(-d / 2)], -1)
+
+
+def scale_rel(pt, g):
+    """per-row pattern pt [n,T,5] with the relint of every frame multiplied by the factor g [n,2] of its angle (g None: pt itself)"""
+    if g is None: return pt
+    f = torch.gather(g.to(pt.dtype), 1, angle_index(pt))
+    return torch.cat([pt[..., :4], (pt[..., 4] * f)[..., None]], -1)
+
+
 def angle_k(pt):
     """mean k vector per angle [n,2(angle),2(kx,ky)] and the angle index of every frame [n,T]."""
     ang = angle_index(pt)

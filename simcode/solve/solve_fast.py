@@ -221,10 +221,11 @@ def fringe_posterior_fast(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='ave
 
 @torch.no_grad()
 def solve_emitters_fast(o, pt_win, b, cal, nf=1, kin='average', **opts):
-    """simcode.solve.solve.solve_emitters (same calibration keys, same outputs) with the fast fringe posterior"""
+    """simcode.solve.solve.solve_emitters (same calibration keys, same outputs, the optional per-row intensity-map factors
+    o['relg']) with the fast fringe posterior"""
     from simcode.solve import solve as SV
     I, Sig, r0, sp, ph, Cj = SV.solve_inputs(o, cal, mm=_mm)
     c, ca = SV.brightness_noise(cal)
-    s = fringe_posterior_fast(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'],
+    s = fringe_posterior_fast(I, Sig, r0, sp, C.scale_rel(pt_win[b], o.get('relg')), [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'],
                               cmult=c, cang=ca, **opts)
     return SV.finish(s, I, Sig, r0, sp)

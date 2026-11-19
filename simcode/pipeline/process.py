@@ -34,6 +34,8 @@ def argv(ds, out, calib=None, nframes=None, chunk_list=None, model=None):
     if n: a += ['--nframes', n]
     cl = p['chunk_list'] if chunk_list is None else chunk_list
     if cl: a += ['--chunk_list', cl]
+    im = ds.c['pattern'].get('intensity_map', 0)
+    if im: a += ['--intensity_map', im]
     return a + [str(v) for v in p['extra']]
 
 

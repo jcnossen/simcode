@@ -44,7 +44,7 @@ REPO = str(config.REPO)
 FRAME_ORDER = ('blocked: frame f = pattern step f % 6 = orientation (f % 6) // 3, phase step f % 3 (2 orientations x 3 steps); '
                'windows of 6 frames starting every 3 frames')
 # arguments of simcode.run that define the results (the others: out, claim, redo, config)
-RERUN_KEYS = ('movie', 'calib', 'model', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb')
+RERUN_KEYS = ('movie', 'calib', 'model', 'crop', 'chunk', 'chunk_list', 'nframes', 'drift', 'min_free_gb', 'intensity_map')
 
 
 def now():
@@ -284,6 +284,7 @@ def pattern_summary(out):
         if 'brightness_noise' in J:
             B = J['brightness_noise']
             r['brightness_noise'] = dict(c=B.get('c'), c_a=B.get('c_a'), n_rows=B.get('n_rows'), rule=B.get('rule'))
+        if 'relmap' in J: r['intensity_map'] = J['relmap']
     except Exception as e:
         r['error'] = f'pattern_est.json: {type(e).__name__}: {e}'
     pt = os.path.join(out, 'pattern_est.pt')
@@ -400,6 +401,7 @@ def update(out, fn):
 def _inputs_key(R):
     """what defines the results of a record: result settings, fixed values, overrides, file hashes"""
     S = {k: R.get('settings', {}).get(k) for k in RERUN_KEYS if k != 'min_free_gb'}
+    if not S.get('intensity_map'): S.pop('intensity_map', None)       # 0 (default) = records before the option (2026-11-19)
     H = {k: v.get('sha256') for k, v in R.get('model', {}).get('files', {}).items()}
     H['calib'] = R.get('calib', {}).get('sha256'); H['maps'] = (R.get('calib', {}).get('camera_maps') or {}).get('sha256')
     return json.dumps([S, R.get('fixed'), R.get('overrides'), H], sort_keys=True, default=str)

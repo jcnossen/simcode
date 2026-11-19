@@ -9,9 +9,10 @@ Stages (each skipped if its outputs exist, unless --redo):
   1  pass 1      detector + head on every 6-frame window (start every 3 frames): network per-frame intensities
                  with covariance, bg, pattern-free position prior; candidates with detector p >= 0.3 are stored
                  (simcode/processing/common.CAND_PMIN)
-  2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift) estimated from
-                 the pass-1 network intensities, and the dataset's brightness noise c, c_a (the solve's relative intensity
-                 scatter per frame / per orientation) from the same clean emitter-windows
+  2  pattern     illumination pattern (k, per-step phase / depth / relative intensity, per-angle phase drift; with
+                 --intensity_map N the per-orientation intensity map over the field of view) estimated from the pass-1 network
+                 intensities, and the dataset's brightness noise c, c_a (the solve's relative intensity scatter per frame / per
+                 orientation) from the same clean emitter-windows
   3  solve       explicit intensity-domain pattern solve of the pass-1 rows (posterior over the fringe starts and the
                  non-kinetic / kinetic models, posterior sd) with the model's solve calibration (cal_sim: prior_off from
                  simulated gate scenes) and the estimated c, c_a
@@ -71,6 +72,9 @@ def build_parser():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--drift', default='', help='optional drift [F,2] px (e.g. DME output): the tables get x_dc, y_dc and the '
                     'selection region uses the corrected positions')
+    ap.add_argument('--intensity_map', type=int, default=0, help='pattern stage: 0 (default) = one relative intensity per pattern step; '
+                    'N > 0 = also the per-orientation intensity map over the field of view (Legendre degree N, 4 recommended; '
+                    'processing/pattern_estimation.estimate_relmap), used by every solve of the run')
     ap.add_argument('--redo', type=int, default=0)
     return ap
 
@@ -103,7 +107,8 @@ def settings_of(a, cal):
                 detector=r(a.detector), emitter=r(a.emitter), cal=r(cal), detector_pass2=r(a.detector_pass2), emitter_pass2=r(a.emitter_pass2),
                 cal_pass2=r(a.cal_pass2),
                 crop=a.crop, chunk=a.chunk, chunk_list=a.chunk_list, nframes=a.nframes,
-                drift=os.path.abspath(a.drift) if a.drift else '', claim=a.claim, min_free_gb=a.min_free_gb, redo=a.redo)
+                drift=os.path.abspath(a.drift) if a.drift else '', claim=a.claim, min_free_gb=a.min_free_gb, redo=a.redo,
+                intensity_map=a.intensity_map)
 
 
 def fixed_values():
@@ -195,7 +200,7 @@ def _stages(a, N, cal, Units, atomic_json):
     # 1-2: pass 1 + pattern (the pattern stage only uses the calibration's prior_off, identical in all pass-1 calibrations)
     t0 = time.time()
     need_pat = a.redo or not os.path.exists(f'{a.out}/pattern_est.pt')
-    _uncal(common + ['--stages', 'pass1' + (',pattern' if need_pat else '')])
+    _uncal(common + ['--stages', 'pass1' + (',pattern' if need_pat else '')] + (['--intensity_map', str(a.intensity_map)] if a.intensity_map else []))
     ST['pass1_pattern_s'] = time.time() - t0
     # 3: pattern solve of the pass-1 rows
     t0 = time.time()

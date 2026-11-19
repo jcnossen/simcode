@@ -68,6 +68,9 @@ def chunk_rows(d, pattern, rows_of_chunk):
         PW = pattern_frames(pattern, (uw[:, None] + np.arange(T)[None]).reshape(-1), X0, Y0, dev).reshape(len(uw), T, 5)
         o = dict(I=tt(R['I'][keep]), L=tt(R['L'][keep]), C=tt(R['C'][keep]), x=tt(R['x'][keep] - X0), y=tt(R['y'][keep] - Y0),
                  lsxy=torch.log(tt(np.c_[R['sx'][keep], R['sy'][keep]])), x_det=tt(R['x_det'][keep] - X0), y_det=tt(R['y_det'][keep] - Y0))
+        if pattern.get('relmap') is not None:      # the pattern's per-orientation intensity map at each row (2026-11-19)
+            from simcode.solve.pattern import relmap_factors
+            o['relg'] = relmap_factors(pattern['relmap'], tt(R['x'][keep]), tt(R['y'][keep]))
         out.append((o, PW, torch.tensor(inv, device=dev), R['I'][keep].sum(1), np.ones(len(keep), bool)))
     return out
 
@@ -96,7 +99,7 @@ def solve_rows(rows, cal, chunk=8192, keep_all=False, fast=True, extra=False):
             sl = slice(c0, c0 + chunk)
             oo = {k: v[sl] for k, v in o.items()}
             s = solve(oo, PW, b[sl], cal, kin='none')
-            pt = PW[b[sl]]
+            pt = C.scale_rel(PW[b[sl]], oo.get('relg'))
             il, dx, dy = C.illum_at(pt, s['r_map'][:, 0], s['r_map'][:, 1])
             Bh = s['mu'].sum(1) / il.sum(1).clamp(min=1e-6)
             J = torch.stack([Bh[:, None] * dx, Bh[:, None] * dy, il], -1)

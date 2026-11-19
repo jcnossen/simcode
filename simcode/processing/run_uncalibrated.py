@@ -51,6 +51,7 @@ def build_parser():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--nn_min', type=float, default=3.0)
     ap.add_argument('--min_phot', type=float, default=300.0)
+    ap.add_argument('--intensity_map', type=int, default=0)  # pattern stage: Legendre degree of the per-orientation intensity map (0 = none; pattern_estimation.estimate_relmap)
     ap.add_argument('--redo', type=int, default=0)
     ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); no prefetch then
     ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
@@ -146,7 +147,8 @@ def main(argv=None):
             if po is not None: say(f'pattern: prior_off {po} px removed from the pass-1 priors')
             t_load = time.time() - t0
             t0 = time.time()
-            P, info, clean = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say, clean_rows=True)
+            P, info, clean = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say, clean_rows=True,
+                                              intensity_map=a.intensity_map)
             t_pat = time.time() - t0; t0 = time.time()
             # the dataset's brightness noise c, c_a on the same clean emitter-windows (pattern_estimation step 5); every solve
             # of the run (pass 1, pass 2) uses it (solve.pattern_cal)

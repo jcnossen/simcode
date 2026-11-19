@@ -211,10 +211,13 @@ def solve_emitters(o, pt_win, b, cal, nf=1, kin='average'):
     Reference implementation (test oracle of simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
     o: the emitter network's outputs I, L, C, x, y, lsxy. cal = solve_cal(...): prior_off (constant prior-position bias, px,
     removed), box (start box half-width, px), mix_T (posterior temperature) of the model's calibration + cmult / cmult_ang (the
-    brightness noise c, c_a of the dataset, estimated with the pattern)."""
+    brightness noise c, c_a of the dataset, estimated with the pattern).
+    o['relg'] (optional, 2026-11-19): per-row factors [n, 2] of the angle-0 / angle-1 relative intensities (the pattern's
+    intensity map at the row's position, pattern.relmap_factors); absent or None = the pattern as given."""
     I, Sig, r0, sp, ph, Cj = solve_inputs(o, cal)
     c, ca = brightness_noise(cal)
-    s = fringe_posterior(I, Sig, r0, sp, pt_win[b], [r0], Cj, nf=nf, box=cal['box'], kin=kin, temp=cal['mix_T'], cmult=c, cang=ca)
+    s = fringe_posterior(I, Sig, r0, sp, C.scale_rel(pt_win[b], o.get('relg')), [r0], Cj, nf=nf, box=cal['box'], kin=kin,
+                         temp=cal['mix_T'], cmult=c, cang=ca)
     return finish(s, I, Sig, r0, sp)
 
 

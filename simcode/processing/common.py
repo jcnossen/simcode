@@ -72,7 +72,9 @@ def region(movie, crop, margin):
 def pattern_frames(P, frames_abs, X0, Y0, dev='cuda'):
     """per-frame pattern [F,5] = (kx, ky, phase, depth, relint) in loaded-region coordinates from a pattern dict in the
     common file format (k [2,2], phi [6], m [6], logrel [6], dphi [2,K] on knot_frames; illumination
-    relint (1 + m cos(k.r - phi_s - dphi_a(t))), s = frame % 6, a = s // 3)."""
+    relint (1 + m cos(k.r - phi_s - dphi_a(t))), s = frame % 6, a = s // 3). The optional per-orientation intensity map
+    P['relmap'] (2026-11-19, pattern_estimation.estimate_relmap) is position-dependent and not part of this table: the solves
+    apply it per row (o['relg'] = simcode.solve.pattern.relmap_factors); the pass-2 networks' illumination maps do not include it."""
     kvec = torch.as_tensor(P['k'], device=dev).float(); phi = torch.as_tensor(P['phi'], device=dev).float()
     m = torch.as_tensor(P['m'], device=dev).float().clamp(0, 1)
     lr = torch.as_tensor(P['logrel'], device=dev).float(); rel = torch.exp(lr - lr.mean())

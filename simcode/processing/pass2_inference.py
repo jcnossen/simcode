@@ -102,6 +102,9 @@ class Pass2Front:
             t_ = time.time()
             k_ = torch.nonzero(keep)[:, 0]
             o = {kk: v[k_] for kk, v in oh.items()}
+            if pattern.get('relmap') is not None:          # the pattern's per-orientation intensity map at each row (2026-11-19)
+                from simcode.solve.pattern import relmap_factors
+                o['relg'] = relmap_factors(pattern['relmap'], o['x'] + X0, o['y'] + Y0)
             bw = b[k_]
             so = SV.solve_emitters(o, PW, bw, scal)
             sync(); timing['solve'] = timing.get('solve', 0) + time.time() - t_
