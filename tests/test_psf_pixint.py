@@ -72,5 +72,28 @@ def test_pixel_integration_fit_files_heldout():
         assert spsf.PSF.load(ce, roisize=11, device='cpu').pixel_integration == 'spectral'
 
 
+def test_config_and_stage_settings():
+    """psf.pixel_integration defaults to 'box', invalid values are refused, and at the default it is not part of the psf
+    stage settings (the fingerprint of a work folder recorded before the key is unchanged); 'exact' changes them"""
+    from types import SimpleNamespace
+    from simcode.pipeline import acquisition_config as AC
+    from simcode.pipeline import localization_pipeline as LP
+    assert AC.DEFAULTS['psf']['pixel_integration'] == 'box'
+    assert LP.LATE_DEFAULTS['psf.pixel_integration'] == AC.DEFAULTS['psf']['pixel_integration']
+    try:
+        AC.load(dict(name='t', movie='x.tif', out='o', psf=dict(pixel_integration='spectral')))
+        raise AssertionError('pixel_integration spectral accepted')
+    except ValueError:
+        pass
+    settings = lambda c: LP.LocalizationPipeline._settings(SimpleNamespace(c=c, setup=SimpleNamespace(defaults=lambda: {})), 'psf')
+    c = AC.load(dict(name='t', movie='x.tif', out='o'))
+    S = settings(c)
+    assert 'pixel_integration' not in S['psf']
+    old = json.loads(json.dumps(c)); old['psf'].pop('pixel_integration')          # a config from before the key
+    assert settings(old) == S
+    ce = AC.load(dict(name='t', movie='x.tif', out='o', psf=dict(pixel_integration='exact')))
+    assert settings(ce)['psf']['pixel_integration'] == 'exact' and settings(ce) != S
+
+
 if __name__ == '__main__':
-    test_pixel_integration_fit_files_heldout(); print('ok')
+    test_pixel_integration_fit_files_heldout(); test_config_and_stage_settings(); print('ok')

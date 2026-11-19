@@ -50,7 +50,7 @@ STAGE_SETTINGS = dict(order=['movie', 'pattern.pattern_frames', 'pattern.cache']
                       process=['process', 'train.model', 'pattern', 'optics'], report=[])
 # config keys added after work folders existed, with the default that reproduces the earlier behaviour: at that default they are
 # left out of a stage's settings, so a stage recorded before the key does not become stale (a non-default value does)
-LATE_DEFAULTS = {'pattern.intensity_map': 0}
+LATE_DEFAULTS = {'pattern.intensity_map': 0, 'psf.pixel_integration': 'box'}
 FULL_HASH_MAX = 1 << 30            # files up to 1 GB are fingerprinted by sha256; larger ones (a movie) by size and mtime
 
 
