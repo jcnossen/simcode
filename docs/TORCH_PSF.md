@@ -13,6 +13,14 @@ of that one file. Keep it that way: new code imports from `simcode.psf`, not fro
 (`simcode/solve/pattern.py` has its own copy of the cubic B-spline kernel for the intensity map; it does not import
 torch-psf.)
 
+The 4Pi PSF is torch-psf's too (since 2026-11-20; SIMCODE's own `simcode/fourpi/` was removed): `fourpi_psf(state)` =
+`FourPiPSF.from_state`, `fourpi_spline(state, ...)` = `FourPiPSF.to_spline` on SIMCODE's grid, `fourpi_channel` = one
+channel of a `FourPiSplinePSF` (its `luts[comp][c]`). The 4Pi networks, simulators and the 4Pi solve use the
+`FourPiSplinePSF` (`evaluate`, `luts[comp][c].render`). SIMCODE keeps three state keys of its in-situ 4Pi states that
+torch-psf does not read, in `simcode/psf/__init__.py` (module doc): per-arm `n_med` in `arms` (with `bot` for torch-psf's
+`bottom`), `beta` (a 4Pi phase linear in z, applied to the table's knots) and `spline` (a refined knot table plus the
+table change of a perturbed state); `reg` is torch-psf's `channel_offsets`.
+
 ## The pin
 
 `pyproject.toml` pins torch-psf to one commit. Current pin: `4b0ffc3` (2026-11-19). The models m1809 / m25 and the final
@@ -33,6 +41,12 @@ the simulator, without any error. So any new pin must give, for the final calibr
 Reference files: `calib_1809_2_psf_v4_axis.{json,psf.zip}` and `calib_2p5nM_m2_psf_v4_axis.{json,psf.zip}` (per
 excitation angle; psf.zip format 0.3.0 with an `integrated_spline` block).
 
+The same holds for the 4Pi PSF (the 4Pi networks are trained on the `FourPiSplinePSF` of their checkpoint's state, and
+the solve evaluates it): `fourpi_psf(state)` renders and `fourpi_spline(state, 15)` knots identical to the current pin for
+`<4Pi work folder>/psf4pi/NPC_f_dxy15.json` and `MT_f_dxy15.json`, and `PSF.load` of `models/fourpi/NPC_f_dxy15*.psf.zip`
+(`tests/test_psfzip.py::test_fourpi`; `tests/check_fourpi_T.py --save` before / `--ref` after for the networks and the
+solve).
+
 ## Pending: torch-psf's unified PSF classes (psf-unify)
 
 torch-psf is being refactored into a unified PSF design (branch `psf-unify`; design note
@@ -44,7 +58,8 @@ on the files above at every refactor stage), and nothing requires a retrain.
 When psf-unify is merged into torch-psf master, SIMCODE must be updated on its own branch before its pin moves:
 
 1. Adapt `simcode/psf/__init__.py` (and only it) to the renamed torch-psf names; keep SIMCODE's own names
-   (`calib_psf`, `integrated_spline`, `vectorial_psf`, `read_calib`, `write_calib_zip`, ...) unchanged.
+   (`calib_psf`, `integrated_spline`, `vectorial_psf`, `read_calib`, `write_calib_zip`, `fourpi_psf`, `fourpi_spline`,
+   ...) unchanged. psf-unify's `FourPiPSF.to_spline` has `zpad=None` by default: `fourpi_knots` passes `zpad` explicitly.
 2. When building splines, pass the kernel (`'bspline'`) and the `SPLINE` grid explicitly, so a new torch-psf default
    for new tables does not change SIMCODE's renders. Keep this until the next retrain.
 3. Run the two pixel checks above against the current pin.

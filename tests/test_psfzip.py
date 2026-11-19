@@ -13,9 +13,10 @@ Run: python tests/test_psfzip.py [<4Pi work folder>] (or pytest tests/test_psfzi
     reads the spline from the zip = the one built from the json
   - model folders: m1809 / m25 / g13 hold byte copies of the insitu zips; models.json / model.json point at the zips
   - bead fit zip: its Zernikes / NA / n_med = the fit json
-  - 4Pi: fourpi_state(zip) == the state json; torch_psf FourPiPSF of the zip renders bit-identically to
-    simcode.fourpi.coherent_psf, its 'raw' parameters are those of coherent_psf; the spline zip (spline_knots='rebuild') rebuilds the
-    knots of simcode.fourpi.spline_table.LUT4Pi on the same device (GPU when there is one)
+  - 4Pi: fourpi_state(zip) == the state json; torch_psf FourPiPSF of the zip renders bit-identically to the one SIMCODE
+    builds from the state json (simcode.psf.fourpi_psf), its 'raw' parameters are those of fourpi_psf; the spline zip
+    (spline_knots='rebuild') rebuilds the knots of SIMCODE's 4Pi table (simcode.psf.fourpi_spline(state, 15)) on the same
+    device (GPU when there is one)
 """
 import io, json, os, sys, zipfile
 import numpy as np, torch
@@ -154,7 +155,6 @@ def test_beads():
 
 def test_fourpi(work4pi):
     from simcode import psf as spsf
-    from simcode.fourpi.coherent_psf import psf_from_state
     js = os.path.join(work4pi, 'psf4pi', 'NPC_f_dxy15.json') if work4pi else 'the 4Pi work folder (--work4pi)'
     if not os.path.isfile(js):
         print('skip 4Pi: no', js); return
@@ -163,24 +163,22 @@ def test_fourpi(work4pi):
     assert spsf.fourpi_state(zp) == st and spsf.fourpi_state('NPC_f_dxy15') == st
     with zipfile.ZipFile(zp) as z:
         raw = json.loads(z.read('psf.json'))['source']['model']['fourpi']['raw']
-    q0 = psf_from_state(st, device='cpu')
+    q0 = spsf.fourpi_psf(st, device='cpu')
     for k, v in raw.items():          # the zip's exact parameters = those SIMCODE builds from the state
         assert torch.equal(torch.as_tensor(v, dtype=torch.float32).reshape(getattr(q0, k).shape), getattr(q0, k).detach()), k
-    p = spsf.PSF.load(zp, device=DEV); q = psf_from_state(st, device=DEV).eval()
+    p = spsf.PSF.load(zp, device=DEV); q = spsf.fourpi_psf(st, device=DEV).eval()
     pos = _positions(); ph = torch.linspace(-3, 3, len(pos), device=DEV)
     with torch.no_grad():
         assert torch.equal(p(pos, phi_extra=ph), q(pos, phi_extra=ph))
     sp = M('fourpi/NPC_f_dxy15_spline.psf.zip')
     if os.path.isfile(sp):
-        from simcode.fourpi.spline_table import LUT4Pi
         with zipfile.ZipFile(sp) as z:
             rebuild = 'rebuild' in json.loads(z.read('psf.json'))['channels'][0]
         # spline_knots='rebuild': torch_psf tabulates the source on the GPU when there is one (else the CPU); on the GPU
-        # the knots equal LUT4Pi on the GPU (the paper's 4Pi LUT) bit for bit
+        # the knots equal SIMCODE's 4Pi table on the GPU (the paper's 4Pi LUT) bit for bit
         dv = ('cuda' if torch.cuda.is_available() else 'cpu') if rebuild else DEV
-        S = spsf.PSF.load(sp, device=dv); L = LUT4Pi(st, P=15, dev=dv); pos, ph = pos.to(dv), ph.to(dv)
-        K0 = torch.stack([torch.stack([L.luts[i][c].knots for c in range(4)]) for i in range(3)])
-        assert torch.equal(S.knots, K0)
+        S = spsf.PSF.load(sp, device=dv); L = spsf.fourpi_spline(st, 15, device=dv); pos, ph = pos.to(dv), ph.to(dv)
+        assert torch.equal(S.knots, L.knots)
         assert spsf.fourpi_state(sp) == st
         with torch.no_grad():
             assert torch.equal(S.evaluate(pos, ph), L.evaluate(pos, ph))

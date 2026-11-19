@@ -34,7 +34,8 @@ their covariance, a background per channel and a pattern-free, Phi-free 3D prior
         'fourpi_prior'    FourPiPrior, T / zmax from the args (since 2026-11-15)
       the checkpoints trained before (v10, v11: FourPiEmitterNet; v2 .. v8, v3L: FourPiPrior; T = 6) carry the earlier tags of
       util/legacy_names.FOURPI_ARCH_TAGS.
-      net.lut = the 4Pi PSF spline table of the checkpoint's PSF state (z range args['zlut'], default +-0.6 um).
+      net.lut = the 4Pi PSF spline table of the checkpoint's PSF state (simcode.psf.fourpi_spline; z range args['zlut'],
+      default +-0.6 um).
 """
 import math, os
 import torch
@@ -406,7 +407,7 @@ def checkpoint_path(tag_or_path, work=None):
 def load(tag_or_path, dev='cuda', work=None):
     """4Pi emitter-network checkpoint (path, or a tag of <work>/models/head4pi_<tag>.pt, work = the 4Pi work folder) ->
     (net in eval mode, checkpoint dict), by the architecture tag args['arch']"""
-    from simcode.fourpi.spline_table import LUT4Pi
+    from simcode.psf import fourpi_spline
     f = checkpoint_path(tag_or_path, work)
     ck = torch.load(f, weights_only=False)
     a = ck['args']
@@ -414,14 +415,14 @@ def load(tag_or_path, dev='cuda', work=None):
     if cls is None:
         raise ValueError(f"{f}: 4Pi emitter network arch {a.get('arch')!r} is not supported ({list(ARCH_TAGS)})")
     tg = dict(T=a.get('T', 6), zmax=a.get('zmax', 0.6)) if a.get('arch') in ('fourpi_emitter', 'fourpi_prior') else {}   # T = 6 tags: the defaults
-    zl = dict(zip(('zmin', 'zmax'), a['zlut'])) if a.get('zlut') else {}
+    zr = tuple(a['zlut']) if a.get('zlut') else (-0.6, 0.6)
     if cls == 'FourPiEmitterNet':
         if a.get('arch') == 'fourpi_emitter': tg.update(vread=a['vread'], excess=a.get('excess', True))
         net = FourPiEmitterNet(ch=a['ch'], nblk=a['nblk'], wins=tuple(tuple(w) for w in a['wins']), bound=a.get('bound', 1.0), nbr_in=a.get('nbr_in', False), **tg).to(dev).eval()
-        net.load_state_dict(ck['state']); net.lut = LUT4Pi(ck['psf'], P=15, dev=dev, **zl)
+        net.load_state_dict(ck['state']); net.lut = fourpi_spline(ck['psf'], 15, z_range=zr, device=dev)
         return net, ck
     net = FourPiPrior(ch=a['ch'], nblk=a['nblk'], **tg).to(dev).eval()
     net.load_state_dict(ck['state'])
     if a.get('template') == 'lut':
-        net.tlut = LUT4Pi(ck['psf'], P=15, sub=1, dev=dev, **zl)
+        net.tlut = fourpi_spline(ck['psf'], 15, z_range=zr, oversample=1, device=dev)
     return net, ck

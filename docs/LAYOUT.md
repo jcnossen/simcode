@@ -140,10 +140,6 @@ simcode/
     base.py                   the Setup interface (defaults, validate, stages, st_<stage>, movie_files, reader)
     widefield.py              SIMCODE on DMD-SIMFLUX movies (the pipeline's own stages; registration with several channels)
     fourpi.py                 4Pi-SIMFLUX: config section fourpi, files, dcimg channel reader, camera, per-file registration, front, stages registration / process / report; acquisition(name, work, data); FourPiPlainSetup (fourpi_plain): no pattern, fourpi.window frames, the training recipe (section fourpi_train, sim_kw)
-  fourpi/                     the 4Pi PSF until torch-psf ships it (torch_psf.FourPiPSF on the torch-psf branch multichannel)
-    __init__.py               package doc
-    coherent_psf.py           coherent two-arm vectorial 4Pi PSF with four interference channels
-    spline_table.py           spline lookup table of that PSF, 4Pi phase analytic
   util/
     __init__.py               package marker
     checkpoint.py             atomic checkpoint save with a disk guard (every trainer)
@@ -239,7 +235,7 @@ directories under `out/` keep their names.
 |---|---|
 | `processing/front.py`, `processing/pass2_front.py`, `processing/front_fast.py` | `processing/pass1_inference.py`, `processing/pass2_inference.py`, `processing/inference_fast.py` |
 | `solve/autoc.py`; `config.CAL_AUTOC` / `CAL_AUTOC_START`; run record `fixed.autoc` | `solve/brightness_noise_fit.py`; `config.CAL_BRIGHTNESS_NOISE_FIT` / `CAL_BRIGHTNESS_NOISE_FIT_START`; `fixed.brightness_noise_fit` |
-| `fourpi/psf4pi.py`, `fourpi/lut4pi.py` | `fourpi/coherent_psf.py`, `fourpi/spline_table.py` (classes unchanged: PSF4Pi, LUT4Pi) |
+| `fourpi/psf4pi.py`, `fourpi/lut4pi.py`; then `fourpi/coherent_psf.py` (PSF4Pi, PSF4PiA, psf_from_state), `fourpi/spline_table.py` (LUT4Pi, evaluate_ch / evaluate_ch_grad), removed 2026-11-20 | torch_psf FourPiPSF / FourPiSplinePSF through `simcode.psf`: `fourpi_psf(state)`, `fourpi_spline(state, roisize, z_range, oversample, ...)` (LUT4Pi(state, P, zmin, zmax, hz, sub, zpad) -> fourpi_spline(state, P, (zmin, zmax), sub, hz, zpad)), `fourpi_channel(spline, pos, phi, c, grad)`; PSF4PiA -> FourPiPSF(depth_um=..., zmode=...) |
 | `util/cfgdict.py`, `util/ckpt.py`; `tests/test_cfgdict.py`, `tests/check_lut4pi_insitu.py` | `util/config_dict.py`, `util/checkpoint.py`; `tests/test_config_dict.py`, `tests/check_spline_table_insitu.py` |
 | `benchmark/gate.py`, `gate_report.py`, `gate_report_detector_matched.py` | `benchmark/gate_scenes.py`, `gate_scenes_report.py`, `gate_scenes_report_detector_matched.py` |
 | `emitter.model.ARCH_TAGS`, the legacy part of `emitter.fourpi.ARCH_TAGS`, `runconfig.KEYS_FORMAT1` | `util/legacy_names.py` (EMITTER_ARCH_TAGS, FOURPI_ARCH_TAGS, RUN_RECORD_FORMAT1_KEYS / _FIXED) |

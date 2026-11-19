@@ -19,6 +19,7 @@ centre contrast).
 """
 import math
 import torch
+from simcode.psf import fourpi_channel
 
 K_PAT = (3.839, 3.851)            # rad/px (MT; NPC 3.826 / 3.845)
 DELTA_A = (0.0, math.radians(-12.0))
@@ -65,7 +66,7 @@ class FourPiPatchSim:
 
     def render_ch(self, pos, Phi, c):
         """[n,A,P,P]: channel c for the A angle offsets delta_a"""
-        return torch.stack([self.lut.evaluate_ch(pos, Phi + self.delta[a], c) for a in range(len(self.delta))], 1)
+        return torch.stack([fourpi_channel(self.lut, pos, Phi + self.delta[a], c) for a in range(len(self.delta))], 1)
 
     def render(self, pos, Phi):
         """expected per-channel image per frame-angle: [n,A,4,P,P] for angle offsets delta_a"""
