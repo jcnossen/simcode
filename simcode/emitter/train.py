@@ -172,7 +172,8 @@ def parser():
     # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, simulate/batches.TrainingBatches calib; the
     # PSF-template column follows the batch's calib)
     ap.add_argument('--calib', default='')
-    # emitter brightness noise of the simulator 'c,c_a' (a dataset's measured values; simulate/batches.TrainingBatches bnoise);
+    # emitter brightness noise of the simulator 'c,c_a' or 'c_lo:c_hi,c_a' (c drawn uniformly per batch) (a dataset's measured
+    # values; simulate/batches.TrainingBatches bnoise);
     # '' = the presets' (pass 1) / pass-2 defaults
     ap.add_argument('--bnoise', default='')
     # training ranges 'lo,hi': ON-emitter density (/px^2) and mean on-time (frames); pass 2 '' = the batch defaults (g13: 3,80)

@@ -45,6 +45,8 @@ exp(ang_sd n_a) / mean_a: within a 6-frame window every step occurs once, so ste
 frame (relative sd sqrt(step_sd^2 + frame_sd^2) = c), and the per-angle factor's contrast ea_0 - ea_1 ~ ang_sd (n_0 - n_1) has the
 variance 2 ang_sd^2 of the solve's angle contrast 2 c_a^2 (the common part is the brightness). So frame_sd = c, step_sd = 0,
 ang_sd = c_a in every preset, and no per-batch step_sd draw in illumination_batch.
+c may be a range (c_lo, c_hi) (flag 'c_lo:c_hi,c_a', 2026-11-19): c is then drawn uniformly in it once per batch (pick), so a
+network is trained over the brightness-noise range measured on the data (the pass-1 networks; pass 2 at the dataset's own c).
 """
 import math
 import torch
@@ -69,11 +71,15 @@ BRIGHT_TAIL = (0.1, 2000.0, 20000.0)         # (frac, lo, hi) window photons of 
 
 
 def parse_bnoise(s):
-    """'c,c_a' (trainer flag --bnoise) -> (c, c_a); '' / None -> None (the presets' brightness noise)"""
+    """'c,c_a' or 'c_lo:c_hi,c_a' (trainer flag --bnoise) -> (c, c_a) with c a number or a range (c_lo, c_hi) (drawn uniformly
+    per batch); '' / None -> None (the presets' brightness noise)"""
     if not s: return None
-    v = [float(x) for x in str(s).split(',')]
-    if len(v) != 2 or min(v) < 0: raise ValueError(f'--bnoise c,c_a expected (two values >= 0), got {s!r}')
-    return tuple(v)
+    p = str(s).split(',')
+    if len(p) != 2: raise ValueError(f'--bnoise c,c_a or c_lo:c_hi,c_a expected, got {s!r}')
+    c = tuple(float(x) for x in p[0].split(':')); ca = float(p[1])
+    if len(c) not in (1, 2) or min(c + (ca,)) < 0 or (len(c) == 2 and c[1] < c[0]):
+        raise ValueError(f'--bnoise c,c_a or c_lo:c_hi,c_a expected (values >= 0, c_lo <= c_hi), got {s!r}')
+    return (c[0] if len(c) == 1 else c, ca)
 
 
 def z_target_px(z_um, sim):
@@ -107,8 +113,13 @@ class TrainingBatches:
                 rs.p['frame_sd'] = 0.09
                 rs.p_std = float(p_std)      # generic pattern draw (simulate/acquisition.AcquisitionSim._generic) in a share 1 - p_std of the FOVs
         # measured brightness noise (c, c_a) of a dataset (module doc): replaces the presets' / pass-2 frame_sd, step_sd, ang_sd
-        self.bnoise = None if bnoise is None else (float(bnoise[0]), float(bnoise[1]))
-        if self.bnoise is not None:
+        # c may be a range (c_lo, c_hi): drawn uniformly per batch in pick (self.c_range)
+        self.bnoise, self.c_range = None, None
+        if bnoise is not None:
+            c0 = bnoise[0]
+            if isinstance(c0, (tuple, list)):
+                self.c_range = (float(c0[0]), float(c0[1])); c0 = 0.5 * (self.c_range[0] + self.c_range[1])
+            self.bnoise = (float(c0), float(bnoise[1]))
             for rs in self.all_rs():
                 rs.p['frame_sd'], rs.p['step_sd'], rs.p['ang_sd'] = self.bnoise[0], 0.0, self.bnoise[1]
 
@@ -124,7 +135,11 @@ class TrainingBatches:
         return [r for d_ in self.rsm for r in d_.values()] if self.calibs else list(self.rs.values())
 
     def pick(self, pre):
-        """AcquisitionSim of preset `pre`; with a calib mixture, first draws the calib of this batch (self.ci, one extra draw)"""
+        """AcquisitionSim of preset `pre`; with a calib mixture, first draws the calib of this batch (self.ci, one extra draw);
+        with a brightness-noise range (self.c_range) the batch's c (frame_sd of every preset; one extra draw, before the calib's)"""
+        if self.c_range is not None:
+            c = self.c_range[0] + (self.c_range[1] - self.c_range[0]) * torch.rand(1).item()
+            for rs in self.all_rs(): rs.p['frame_sd'] = c
         if self.calibs:
             self.ci = int(torch.randint(0, len(self.calibs), (1,)).item()); self.rs = self.rsm[self.ci]
         return self.rs[pre]

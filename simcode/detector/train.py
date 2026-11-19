@@ -128,7 +128,8 @@ def parser():
     ap.add_argument('--ckpt_every', type=int, default=5000)
     # the PSF of the simulator (in-situ calibration json; a comma list = a mixture, simulate/batches.TrainingBatches calib)
     ap.add_argument('--calib', default='')
-    # emitter brightness noise of the simulator 'c,c_a' (a dataset's measured values; simulate/batches.TrainingBatches bnoise);
+    # emitter brightness noise of the simulator 'c,c_a' or 'c_lo:c_hi,c_a' (c drawn uniformly per batch) (a dataset's measured
+    # values; simulate/batches.TrainingBatches bnoise);
     # '' = the presets' (pass 1) / pass-2 defaults
     ap.add_argument('--bnoise', default='')
     # ('' = the batch defaults) training ranges 'lo,hi': ON-emitter density (/px^2); pass 2 also the mean on-time (frames)
