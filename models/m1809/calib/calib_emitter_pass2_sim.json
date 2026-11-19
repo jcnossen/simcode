@@ -2,16 +2,15 @@
  "n": 32239,
  "box": 1.5,
  "mix_T": 1.0,
- "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front n2 (analysis/psfmatch/fit_cal_set.py = plib.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['/home/jc/simcode2/out/psf_v2/eval/m1809v2/fe:rs05qm', '/home/jc/simcode2/out/psf_v2/eval/m1809v2/fe:rs05pm'], prior_off from iso (/home/jc/simcode2/out/psf_v2/eval/m1809v2/fe); base calib/calib_p2L.json",
+ "note": "2026-11-11 PSF-matched retrain: sim-sigma calibration of front s2 (simcode.calibration.fit_cal_set = gate_stats.fit_cal), tuning seed 202 of the averaged-PSF gate scenes ['fe:rs05qm', 'fe:rs05pm'], prior_off from iso (fe); base template_calib_emitter_pass2_sim.json",
  "fit_scenes": [
-  "/home/jc/simcode2/out/psf_v2/eval/m1809v2/fe:rs05qm",
-  "/home/jc/simcode2/out/psf_v2/eval/m1809v2/fe:rs05pm"
+  "fe:rs05qm",
+  "fe:rs05pm"
  ],
  "prior_off_note": "sc5nb prior bias (nm +1.16, -0.72) on gate iso / rs05q tuning seed 202, 700-2000 label ph, true pattern (bias.py)",
+ "note_brightness_noise_2026_11_17": "the fixed brightness noise cmult = cmult_ang = 0.1 was removed: c and c_a are estimated per dataset with the pattern (simcode/processing/pattern_estimation.estimate_brightness_noise; pattern_est.pt cmult / cmult_ang)",
  "prior_off": [
-  -0.002465598750859499,
-  -0.004134323913604021
- ],
- "note_2026_11_17": "the per-photon-bin solve scales kap_p / kap_I2 and the sigma factors sig_a / sig_g / sig_ph were removed: the emitter networks give one joint prior / intensity covariance (simcode/emitter/model.EmitterNet) and the solve reports the posterior sd (analysis/sigma_joint/)",
- "note_brightness_noise_2026_11_17": "the fixed brightness noise cmult = cmult_ang = 0.1 was removed: c and c_a are estimated per dataset with the pattern (simcode/processing/pattern_estimation.estimate_brightness_noise; pattern_est.pt cmult / cmult_ang)"
+  -0.0029216858092695475,
+  0.0013281478313729167
+ ]
 }

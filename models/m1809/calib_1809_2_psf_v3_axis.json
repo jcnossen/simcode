@@ -1,0 +1,202 @@
+{
+ "source": "simcode.pipeline in-situ calibration of /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simflux_5.5ms_500mW.tif (dataset 1809_2_psf_v3): per pattern axis PSF (Zernike 5-21 + focus + none blur, then frozen + photoselection 3); fit /mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v3/psf/fit_ps3b_f0.3_psf.pt",
+ "pixelsize_um": 0.10833,
+ "wavelength_um": 0.7,
+ "NA": 1.4900000095367432,
+ "n_imm": 1.518,
+ "n_med": 1.33,
+ "apod": [
+  0.0,
+  0.0,
+  0.0
+ ],
+ "zernike_noll": [
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21
+ ],
+ "zernike_waves": [
+  -0.003853030502796173,
+  0.018252337351441383,
+  -0.004821186885237694,
+  0.017624663189053535,
+  0.0032654970418661833,
+  -0.0002551310753915459,
+  -0.0052060289308428764,
+  -0.00019428515224717557,
+  0.00045966487959958613,
+  -0.0016000432660803199,
+  0.00010634848149493337,
+  -0.007751178927719593,
+  0.0015521957539021969,
+  -8.080253610387444e-05,
+  0.001526802545413375,
+  0.00038160281837917864,
+  1.4854578012091224e-06
+ ],
+ "focus_um": 0.3077380359172821,
+ "npupil": 64,
+ "oversample": 2,
+ "camera": {
+  "gain_e_per_adu": 0.4256,
+  "offset_adu": 103.926,
+  "readnoise_e": 0.9,
+  "maps": "camera_maps_1809_2_v2.npz",
+  "note": "paper camera v2 (models/m1809|m25 camera_maps_*_v2.npz, out/psf_v2/STATUS.md): gain 0.4256 e/ADU, offset map = fixed pattern + 103.93 ADU, read noise median 0.9 e (per-pixel map); the PSF fit used these maps per pixel (offset map subtracted, variance mu + rn^2 + extra^2 per pixel, extra = psf_v3.readnoise_extra_e)"
+ },
+ "pattern": {
+  "k_rad_per_px": [
+   [
+    -3.0361121132426843,
+    -0.06332418653825654
+   ],
+   [
+    0.0722638992883133,
+    -3.035080472349941
+   ]
+  ],
+  "pitch_nm": [
+   224.13845053520745,
+   224.19985960046563
+  ],
+  "depth": [
+   0.4964312471801269,
+   0.49989030890210223,
+   0.503592856783429,
+   0.5359260618330339,
+   0.5330509509323513,
+   0.5217187439654761
+  ],
+  "phase": [
+   0.292147596307904,
+   -1.7200325686318534,
+   2.417819291754098,
+   -1.864219011064094,
+   2.3274094712649025,
+   0.24525557813125634
+  ],
+  "relint": [
+   0.9780568113538111,
+   0.9834638134806839,
+   1.0384793762879074,
+   0.9962232287628827,
+   0.9858693972407242,
+   1.0179073746341167
+  ],
+  "note": "in-situ estimate from the track intensities (blocked slot order, angle = slot // 3); depth = regression modulation (diluted by bg / kinetics, low); used only by the simulators: the pipeline estimates the pattern from the data"
+ },
+ "tirf_depth_um": 0.082,
+ "emitter_z_median_um": 0.08799533545970917,
+ "psf_dipole_M_angle": [
+  [
+   [
+    0.3002367615699768,
+    -0.00141707225702703,
+    0.0
+   ],
+   [
+    -0.00141707225702703,
+    0.3681494891643524,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.33161377906799316
+   ]
+  ],
+  [
+   [
+    0.3681405484676361,
+    0.0016174621414393187,
+    0.0
+   ],
+   [
+    0.0016174621414393187,
+    0.3002457022666931,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.33161377906799316
+   ]
+  ]
+ ],
+ "psf3d": {
+  "fit": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v3/psf/fit_ps3b_f0.3_psf.pt",
+  "gamma": 0.0679718554019928,
+  "zeta": 0.35579803586006165,
+  "e_dir": [
+   [
+    0.020852461457252502,
+    -0.9997825026512146
+   ],
+   [
+    0.9997166395187378,
+    0.023802801966667175
+   ]
+  ],
+  "resid_var": 1.0459685325622559,
+  "avg": false
+ },
+ "emitter_z_quantiles_um": {
+  "q05": 0.017564861103892326,
+  "q25": 0.05751015618443489,
+  "q50": 0.08799533545970917,
+  "q75": 0.12187385559082031,
+  "q95": 0.17195656895637512
+ },
+ "emitter_z_range_um": [
+  0.0,
+  0.2
+ ],
+ "emitter_z_fit": {
+  "note": "fitted heights of 16000 held-out (cb1) samples under this PSF (x, y, z refit, z in [0, 0.2] um); quantiles = the fits not pinned within 5 nm of the limits",
+  "n": 16000,
+  "pinned_low": 0.1158125,
+  "pinned_high": 0.0626875,
+  "quantiles_all": {
+   "q05": 0.0008843847899697721,
+   "q25": 0.04311686009168625,
+   "q50": 0.08440965414047241,
+   "q75": 0.12573948502540588,
+   "q95": 0.19646015763282776
+  },
+  "quantiles_nonpinned": {
+   "q05": 0.017564861103892326,
+   "q25": 0.05751015618443489,
+   "q50": 0.08799533545970917,
+   "q75": 0.12187385559082031,
+   "q95": 0.17195656895637512
+  },
+  "heldout_nll_per_px": 2.1842204717378966,
+  "heldout_chi2_per_px": 1.0449954271316528,
+  "zmax_um": 0.2
+ },
+ "psf_v3": {
+  "run": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v3",
+  "fit": "/mnt/data/dmdsf/bn_dnapaint/1809/cover1/2/simcode_results/psf_v3/psf/fit_ps3b_f0.3_psf.pt",
+  "name": "in-situ PSF v3 (2026-11-18, out/psf_v3)",
+  "model": "Zernike Noll 5-21 + focus (start f0.3, chosen by the refit NLL of 16 starts), no blur (held-out bl - base +0.016 +- 0.003 nats / sample), photoselection 3 on the base (held-out ps3 - base -0.046 +- 0.003)",
+  "samples": "all 85337 track samples of the whole movie (120000 frames)",
+  "camera_maps": "camera_maps_1809_2_v2.npz (per pixel)",
+  "readnoise_extra_e": 0.5,
+  "zmax_um": 0.2,
+  "code": "simcode psfclean 3e199f4b (+ out/psf_v3/ps3base.py), torch-psf pixel-readnoise 64871e5"
+ }
+}

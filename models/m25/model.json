@@ -1,6 +1,6 @@
 {
  "m25": {
-  "psf": "calib_2p5nM_m2_psf_v2.psf.zip",
+  "psf": "calib_2p5nM_m2_psf_v3.psf.zip",
   "detector": "detector_pass1.pt",
   "emitter": "emitter_pass1.pt",
   "cal_sim": "calib/calib_emitter_pass1_sim.json",
@@ -9,9 +9,8 @@
   "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json"
  },
  "_recipe": {
-  "trainer_chain": "/home/jc/simcode2/out/psf_v2/train/chain.sh m25v2 (logs out/psf_v2/train/m25v2/; frozen source src_da9fe7d); pass-2 detector: /home/jc/simcode2/out/psf_v2/train/det2.sh (d2ded p_std 1 40k -> gft1 p_std 0.5 40k lr 3e-4 -> gft2 p_std 0.5 40k lr 1e-4 = p2det_m25.pt; frozen source src_da9fe7d_pstd1)",
-  "evaluation": "/home/jc/simcode2/out/psf_v2/eval/eval.sh m25v2 (out/psf_v2/eval/m25v2/accept_p*.txt) and eval/det2eval.sh (pass-2 detector: out/psf_v2/eval/m25v2/det2/accept_f2_vs_dd.txt; pass-2 calibrations and sigma rescale of f2 = det2/calib/*_f2.json)",
-  "note": "in-situ PSF + camera v2 (out/psf_v2/STATUS.md): det 40k, hd 18k (3D); pass-2 emitter network generic (p2head 24k -> p2headL 50k -> p2headL2 50k, p_std 0.25 / 0.25 / 0.5); pass-2 detector = generic fine-tuned from a dedicated (SIMCODE-pattern) detector: p_std 1 40k (lr 3e-4) -> p_std 0.5 40k (lr 3e-4) -> p_std 0.5 40k (lr 1e-4) (out/generic_mix/STATUS.md: the generic cost was in the detector); training heights from the calibration (non-pinned fitted heights, clipped 0-0.40 um), no TIRF brightness factor, the calibration camera read-noise map",
-  "joint_covariance_2026_11_17": "emitter_pass1.pt / emitter_pass2.pt = the recipe networks fine-tuned with the joint prior / intensity covariance (models/README.md; out/sigma_joint/train/m25/p1, p2 final.pt, sha256 394bb07bd409545d... / 7ea586c87301cea6...; analysis/sigma_joint/train.sh)"
+  "trainer_chain": "/home/jc/simcode2/out/train_v3/chain.sh m25 (logs out/train_v3/runs/m25/; frozen source out/train_v3/src_e8fc62f4 = psfclean e8fc62f4, torch-psf out/psf_v3/tpsf_64871e5)",
+  "evaluation": "/home/jc/simcode2/out/train_v3/eval/eval.sh m25 (out/train_v3/eval/m25/accept_*.txt, sims_m25.txt)",
+  "note": "in-situ PSF v3 (out/psf_v3: Zernike 5-21 + focus + general blur covariance + photoselection, angle-averaged, fit sampling npupil 64 / oversample 2), camera v2 (gain 0.4256, per-pixel read-noise map, no extra white noise), training heights from the calibration (non-pinned fitted heights, clipped 0-0.2 um), brightness noise of the dataset c 0.190 / c_a 0.065 (--bnoise); the full recipe of models/README.md: detector 40k, emitter 18k, detector_pass2 (dedicated) 40k -> _mix 40k -> _cont 40k, emitter_pass2 24k -> _long 50k -> _final 50k, joint-covariance fine-tunes emitter_joint 12k / emitter_pass2_joint 20k; solve calibrations fitted on seed 202 of the v3 gate scenes"
  }
 }

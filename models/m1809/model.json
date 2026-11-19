@@ -1,6 +1,6 @@
 {
  "m1809": {
-  "psf": "calib_1809_2_psf_v2.psf.zip",
+  "psf": "calib_1809_2_psf_v3.psf.zip",
   "detector": "detector_pass1.pt",
   "emitter": "emitter_pass1.pt",
   "cal_sim": "calib/calib_emitter_pass1_sim.json",
@@ -9,9 +9,8 @@
   "cal_sim_pass2": "calib/calib_emitter_pass2_sim.json"
  },
  "_recipe": {
-  "trainer_chain": "/home/jc/simcode2/out/psf_v2/train/chain.sh m1809v2 (logs out/psf_v2/train/m1809v2/; frozen source src_da9fe7d, branch rename)",
-  "evaluation": "/home/jc/simcode2/out/psf_v2/eval/eval.sh m1809v2 (out/psf_v2/eval/m1809v2/accept_p*.txt, simcmp_*.txt, sigu_test_p*.txt)",
-  "note": "in-situ PSF + camera v2 (out/psf_v2/STATUS.md): full chain det 40k, hd 18k (3D), generic pass 2 (p2det 40k p_std 0.25 -> p2det_c 40k p_std 0.5; p2head 24k -> p2headL 50k -> p2headL2 50k); training heights from the calibration (non-pinned fitted heights, clipped 0-0.40 um), no TIRF brightness factor, the calibration camera read-noise map",
-  "joint_covariance_2026_11_17": "emitter_pass1.pt / emitter_pass2.pt = the recipe networks fine-tuned with the joint prior / intensity covariance (models/README.md; out/sigma_joint/train/m1809/p1, p2 final.pt; paper branch analysis/sigma_joint/train.sh)"
+  "trainer_chain": "/home/jc/simcode2/out/train_v3/chain.sh m1809 (logs out/train_v3/runs/m1809/; frozen source out/train_v3/src_e8fc62f4 = psfclean e8fc62f4, torch-psf out/psf_v3/tpsf_64871e5)",
+  "evaluation": "/home/jc/simcode2/out/train_v3/eval/eval.sh m1809 (out/train_v3/eval/m1809/accept_*.txt, sims_m1809.txt)",
+  "note": "in-situ PSF v3 (out/psf_v3: Zernike 5-21 + focus + photoselection, angle-averaged, fit sampling npupil 64 / oversample 2), camera v2 (gain 0.4256, per-pixel read-noise map, no extra white noise), training heights from the calibration (non-pinned fitted heights, clipped 0-0.2 um), brightness noise of the dataset c 0.093 / c_a 0.084 (--bnoise); the full recipe of models/README.md: detector 40k, emitter 18k, detector_pass2 (dedicated) 40k -> _mix 40k -> _cont 40k, emitter_pass2 24k -> _long 50k -> _final 50k, joint-covariance fine-tunes emitter_joint 12k / emitter_pass2_joint 20k; solve calibrations fitted on seed 202 of the v3 gate scenes"
  }
 }
