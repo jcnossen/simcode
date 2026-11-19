@@ -111,7 +111,7 @@ Each run writes four tables:
 - `locs_p1_net` and `locs_p1_solve`: pass 1;
 - `locs_p2_net` and `locs_p2_solve`: pass 2, which is pattern-aware.
 
-`_net` is the emitter network's own position and σ, and `_solve` is the explicit pattern solve on the network intensities. The two tables of a pass have the same rows. By default you load `locs_p2_net`, the result table. Add `kind='solve'` to load the pass-2 solve, which is the table the paper's figures use. Add `pass_=1` to load pass 1.
+`_net` is the emitter network's own position and σ, and `_solve` is the explicit pattern solve on the network intensities. The two tables of a pass have the same rows. By default you load `locs_p2_solve`, the result table (the pass-2 solve, which is also the table the paper's figures use). Add `kind='net'` to load the pass-2 network's own output. Add `pass_=1` to load pass 1.
 
 The tables are HDF5 files in the torch-psf format. You can load, filter, drift-correct, render and export them in Python:
 

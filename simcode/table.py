@@ -5,13 +5,16 @@ Every run writes FOUR tables (2026-11-17), one row per stored localization = a 6
 3 frames):
   locs_p1_net     pass 1, the emitter network's own output (pattern-free position prior)          tag est,  kind net
   locs_p1_solve   pass 1, the explicit pattern solve of those rows                                 tag est,  kind solve
-  locs_p2_net     pass 2, the pattern-aware emitter network's own output  = THE RESULT TABLE        tag est2, kind net
-  locs_p2_solve   pass 2, the explicit pattern solve of those rows                                 tag est2, kind solve
+  locs_p2_net     pass 2, the pattern-aware emitter network's own output                           tag est2, kind net
+  locs_p2_solve   pass 2, the explicit pattern solve of those rows        = THE RESULT TABLE        tag est2, kind solve
 The two tables of a pass have the same rows in the same order (row i of locs_p2_net is row i of locs_p2_solve); pass-2 rows
 carry p1_index = the row of the linked pass-1 candidate in the pass-1 tables (-1: no partner among the stored pass-1 rows).
-The result table (DEFAULT_TABLE, what Dataset.from_run returns by default, the paper's SIMCODE result) is locs_p2_net: on
-held-out simulations the pass-2 network is within 1-6 % of the solve's precision and its sigma is calibrated, the solve's is
-overconfident (analysis/sigma_joint, paper_figures branch).
+The result table (DEFAULT_TABLE, what Dataset.from_run returns by default, the paper's SIMCODE result) is locs_p2_solve, the
+pass-2 pattern solve (2026-11-19; from 2026-11-17 to 2026-11-19 it was locs_p2_net): with the run's intensity map and
+brightness noise c the solve is the more precise of the two on real data (on the same rows: FRC 18.0 vs 20.4 nm on 1809_2,
+34.2 vs 34.3 nm on 2.5 nM_2; photon-disjoint pair precision 6.9 vs 7.6 / 9.4 vs 9.9 nm) and its sigma matches the pair
+scatter (pair z 1.02 / 0.95; the network's 0.74 / 0.71 over-covers) (out/model_studies/ev_real.json). Every table stays
+readable by pass and kind (Dataset.from_run(pass_=, kind=)).
 Columns:
   frame       window start (absolute movie frame; the window covers frame .. frame + 5)
   t           time centroid of the window's network intensities (absolute frame, fractional)
@@ -44,7 +47,7 @@ info) and <name>_info.json (counts, crop, columns). CSV / Picasso: exports of th
 network-prior variant files pass2_est2b_*; 2026-11-14: the per-tile rule 'u <= 0.45', the strict product; docs/CLEANUP_LOG.md.)
 The crop (x0, y0, size px) is the output region of the run: read from the run's pass-1 files (their 'crop' entry) unless
 --crop is given; (5, 5, 110) if neither is available.
-usage: python -m simcode.table <out dir> [--table locs_p2_net|...|all] [--drift drift.npy] [--crop x0,y0,size]
+usage: python -m simcode.table <out dir> [--table locs_p2_solve|...|all] [--drift drift.npy] [--crop x0,y0,size]
 """
 import argparse, glob, json, os
 import numpy as np
@@ -55,10 +58,10 @@ CROP = (5.0, 5.0, 110.0)
 SIGMA_MAX_NM = 12.0     # the paper's selection: max(sx, sy) * px_nm <= SIGMA_MAX_NM (nm) on the rows with p >= P_GOOD in the crop
 # the four tables of a run: name -> (tag of the chunk files, kind)
 TABLES = dict(locs_p1_net=('est', 'net'), locs_p1_solve=('est', 'solve'), locs_p2_net=('est2', 'net'), locs_p2_solve=('est2', 'solve'))
-DEFAULT_TABLE = 'locs_p2_net'           # the result table of a run (and the paper's SIMCODE result)
+DEFAULT_TABLE = 'locs_p2_solve'         # the result table of a run (and the paper's SIMCODE result): the pass-2 pattern solve
 TABLE_DOC = dict(locs_p1_net='pass 1, emitter network output (position prior, its sd)', locs_p1_solve='pass 1, pattern solve',
-                 locs_p2_net='pass 2, emitter network output (position prior, its sd) = the result table',
-                 locs_p2_solve='pass 2, pattern solve')
+                 locs_p2_net='pass 2, emitter network output (position prior, its sd)',
+                 locs_p2_solve='pass 2, pattern solve = the result table')
 
 
 def table_name(pass_, kind):

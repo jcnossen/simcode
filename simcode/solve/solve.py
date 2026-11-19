@@ -16,20 +16,19 @@ T = 6
 
 
 def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0.75,
-                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0, cang=0.0, two_b=False):
+                      kin_starts=((0.0, 0.0), (-0.6, 0.6), None), cmult=0.0):
     # (2026-11-17) joint prior / intensity covariance of the emitter network (EmitterNet: L_J = [[diag(sp), 0], [Cj, L]]):
-    # two_b (2026-11-19): one free brightness per pattern orientation (p[2] for the angle-0 frames, p[3] for the angle-1 frames;
-    # default: one brightness B for all frames, p[3] tied to p[2]).
     # Sig = L L^T is the intensity covariance GIVEN the prior error, Cj [n,T,2] the coupling. The joint Gaussian cost
     # e_J^T Sigma_J^-1 e_J (e_J = [p_xy - r0; mu - I]) = |(p_xy - r0) / sp|^2 + |L^-1 (I + Cj z_p - mu)|^2, z_p = (p_xy - r0) / sp:
     # the intensity residual uses I shifted by Cj z_p(p) (its x, y Jacobian gets - Cj / sp). The nuisance term c adds to the
     # intensity block of Sigma_J, i.e. to the conditional covariance Sig as before (the conditional mean shift is unchanged).
     # cmult (2026-11-09, critic 32 #5): nuisance-aware intensity covariance Sigma(p) = Sig + diag((cmult mu_t(p))^2) with the
     # CURRENT model mean mu_t (multiplicative per-frame emitter-brightness noise; not the observed I_t), re-whitened at every
-    # LM evaluation; cang: + a per-angle common factor, Sigma += cang^2 mu mu^T within each angle's frames (GLS Jacobian: d Sigma / d p ignored; the cost is the exact Gaussian NLL incl. log det Sigma(p) - log det
-    # Sig). Returned 'nll' = that cost (start / kinetic selection), 'chi2' = the whitened residual + prior part.
+    # LM evaluation (GLS Jacobian: d Sigma / d p ignored; the cost is the exact Gaussian NLL incl. log det Sigma(p) - log det Sig).
+    # (2026-11-19: the per-orientation term c_a^2 mu mu^T and the optional brightness per orientation were removed: no effect on
+    # the precision or the same-rows FRC of real or simulated data, out/model_studies.) Returned 'nll' = that cost (start /
+    # kinetic selection), 'chi2' = the whitened residual + prior part.
     n, T_ = I.shape; dev = I.device
-    Km, ang = C.angle_k(pt)
     H = dr.shape[1]
     ks = list(kin_starts) if kinetics else [None]
     nk = len(ks); ns = H * nk
@@ -40,14 +39,12 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0
     Linv = torch.linalg.solve_triangular(Lc, torch.eye(T_, device=dev).expand(n, T_, T_), upper=False)
     rep = lambda t_: t_.repeat_interleave(ns, 0)
     st = (r0[:, None] + dr).repeat_interleave(nk, 1).reshape(-1, 2)
-    Ir, r0r, spr, ptr, Lr, angr, Cr = (rep(t_) for t_ in (I, r0, sp, pt, Linv, ang, Cj))
-    cmult = float(cmult); cang = float(cang)
-    if cang > 0 and cmult <= 0: cmult = 1e-6
+    Ir, r0r, spr, ptr, Lr, Cr = (rep(t_) for t_ in (I, r0, sp, pt, Linv, Cj))
+    cmult = float(cmult)
     if cmult > 0:
         Sigr = rep(Sig); ld0 = 2 * torch.log(rep(Lc).diagonal(dim1=1, dim2=2).clamp(min=1e-12)).sum(1)
         eyeT = torch.eye(T_, device=dev)
     M = len(st)
-    oh = torch.nn.functional.one_hot(angr, 2).float()
     il0 = C.illum_at(ptr, st[:, 0], st[:, 1])[0]
     B0, ton0, toff0 = C.kinetics_init(Ir, il0, T_)
     ton = torch.empty(M, device=dev); toff = torch.empty(M, device=dev)
@@ -63,27 +60,25 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0
     NP = 6
     p = torch.cat([st, B0[:, None], B0[:, None], ton[:, None], toff[:, None]], 1)
     lo_xy, hi_xy = st - box, st + box
-    free = torch.tensor([1, 1, 1, float(bool(two_b)), float(kinetics), float(kinetics)], device=dev)
+    free = torch.tensor([1, 1, 1, 0, float(kinetics), float(kinetics)], device=dev)
     fixed_diag = torch.diag_embed((1 - free).expand(M, NP))
 
     def clamp(p):
         x = torch.maximum(torch.minimum(p[:, :2], hi_xy), lo_xy)
-        B = p[:, 2:4].clamp(min=1.0) if two_b else p[:, 2:4].clamp(min=1.0)[:, :1].expand(-1, 2)
+        B = p[:, 2:4].clamp(min=1.0)[:, :1].expand(-1, 2)
         t_on = p[:, 4].clamp(-1, T_ - 0.25); t_off = torch.maximum(p[:, 5], t_on + 0.25).clamp(max=T_ + 1)
         return torch.cat([x, B, t_on[:, None], t_off[:, None]], 1)
 
     def rj(p):
         il, dx, dy = C.illum_at(ptr, p[:, 0], p[:, 1])
         a_, d0, d1 = C.onfrac(p[:, 4], p[:, 5], T_)
-        Bt = (oh * p[:, None, 2:4]).sum(-1)
+        Bt = p[:, 2:3]
         mu = Bt * a_ * il
-        dB0, dB1 = (a_ * il * oh[..., 0], a_ * il * oh[..., 1]) if two_b else (a_ * il, torch.zeros_like(il))
-        Jm = torch.stack([Bt * a_ * dx, Bt * a_ * dy, dB0, dB1, Bt * il * d0, Bt * il * d1], -1) * free
+        Jm = torch.stack([Bt * a_ * dx, Bt * a_ * dy, a_ * il, torch.zeros_like(il), Bt * il * d0, Bt * il * d1], -1) * free
         ldx = 0.0
         if cmult > 0:
             mup = mu.clamp(min=0)
             Sp = Sigr + torch.diag_embed((cmult * mup) ** 2) + 1e-6 * eyeT
-            if cang > 0: Sp = Sp + cang ** 2 * (mup[:, :, None] * mup[:, None, :]) * (oh @ oh.transpose(1, 2))
             Lp, _ = torch.linalg.cholesky_ex(Sp)
             Lri = torch.linalg.solve_triangular(Lp, eyeT.expand(M, T_, T_), upper=False)
             ldx = 2 * torch.log(Lp.diagonal(dim1=1, dim2=2).clamp(min=1e-12)).sum(1) - ld0
@@ -123,7 +118,7 @@ def pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, iters=30, box=0
     out = dict(r=P_[..., :2], s=S_, nll=cf, dof=torch.full((n,), float(T_ + 2 - nfree), device=dev))
     # 2026-11-09 (critic 33 #2, automatic c): the model mean mu_t at each start's final solution (additive output)
     il_, _, _ = C.illum_at(ptr, p[:, 0], p[:, 1]); a_f, _, _ = C.onfrac(p[:, 4], p[:, 5], T_)
-    out['mu'] = ((oh * p[:, None, 2:4]).sum(-1) * a_f * il_).view(n, ns, T_)[ar, idx]
+    out['mu'] = (p[:, 2:3] * a_f * il_).view(n, ns, T_)[ar, idx]
     if cmult > 0: out['chi2'] = torch.nan_to_num(chi2, nan=1e30).view(n, ns)[ar, idx]
     return out
 
@@ -192,12 +187,11 @@ def kin_models(kin, o0, o1):
 
 
 @torch.no_grad()
-def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0, cang=0.0,
-                     two_b=False):
+def fringe_posterior(I, Sig, r0, sp, pt, bases, Cj, nf=1, box=1.5, kin='average', iters=30, temp=1.0, dedup=0.15, cmult=0.0):
     """posterior over the fringe starts and the kinetic model (model_average): both models fitted for every row (kin
     'average'), or one of them ('none', 'kinetic'). Outputs: model_average"""
     dr = start_offsets(pt, r0, bases, nf)
-    kw = dict(iters=iters, box=box, cmult=cmult, cang=cang, two_b=two_b)
+    kw = dict(iters=iters, box=box, cmult=cmult)
     o0 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=False, **kw) if kin != 'kinetic' else None
     o1 = pattern_solve_all(I, Sig, r0, sp, pt, dr, Cj, kinetics=True, **kw) if kin != 'none' else None
     return model_average(kin_models(kin, o0, o1), temp=temp, dedup=dedup)
@@ -213,15 +207,13 @@ def solve_emitters(o, pt_win, b, cal, nf=1, kin='average'):
     spread_pm^2) (mixture Fisher sd over the fringe starts + their spread; no calibration factor), q / dof, p, ...
     Reference implementation (test oracle of simcode/solve/solve_fast.solve_emitters_fast, which the pipeline uses).
     o: the emitter network's outputs I, L, C, x, y, lsxy. cal = solve_cal(...): prior_off (constant prior-position bias, px,
-    removed), box (start box half-width, px), mix_T (posterior temperature) of the model's calibration + cmult / cmult_ang (the
-    brightness noise c, c_a of the dataset, estimated with the pattern).
-    cal['B_per_angle'] (optional, default False; 2026-11-19): one free brightness per pattern orientation (pattern_solve_all two_b).
+    removed), box (start box half-width, px), mix_T (posterior temperature) of the model's calibration + cmult (the brightness
+    noise c of the dataset, estimated with the pattern).
     o['relg'] (optional, 2026-11-19): per-row factors [n, 2] of the angle-0 / angle-1 relative intensities (the pattern's
     intensity map at the row's position, pattern.relmap_factors); absent or None = the pattern as given."""
     I, Sig, r0, sp, ph, Cj = solve_inputs(o, cal)
-    c, ca = brightness_noise(cal)
     s = fringe_posterior(I, Sig, r0, sp, C.scale_rel(pt_win[b], o.get('relg')), [r0], Cj, nf=nf, box=cal['box'], kin=kin,
-                         temp=cal['mix_T'], cmult=c, cang=ca, two_b=brightness_per_angle(cal))
+                         temp=cal['mix_T'], cmult=brightness_noise(cal))
     return finish(s, I, Sig, r0, sp)
 
 
@@ -234,41 +226,42 @@ def finish(s, I, Sig, r0, sp):
                 mu=s['mu'], Sig=Sig, dof=s['dof'], chi2=s['q'])
 
 
-BN_KEYS = ('cmult', 'cmult_ang')
+BN_KEY = 'cmult'
+REMOVED_CAL_KEYS = ('cmult', 'cmult_ang')      # a fixed brightness noise in a model's calibration file (removed 2026-11-17)
 
 
-def solve_cal(cal, c, c_a):
+def solve_cal(cal, c):
     """the solve calibration of a dataset: the model's calibration (path or dict: prior_off, box, mix_T) + the brightness noise
-    c (cmult, relative per-frame scatter) and c_a (cmult_ang, shared within each pattern orientation) of the dataset, estimated
-    with its pattern (processing/pattern_estimation.estimate_pattern -> pattern_est.pt 'cmult' / 'cmult_ang'; 2026-11-17).
-    A model calibration that still holds a fixed c is refused (removed 2026-11-17)."""
+    c (cmult: the relative per-frame scatter of the emitter brightness, Sigma = Sigma_net + c^2 diag(mu^2)) of the dataset,
+    estimated with its pattern (processing/pattern_estimation.estimate_pattern -> pattern_est.pt 'cmult'; 2026-11-17).
+    A model calibration that still holds a fixed brightness noise is refused (removed 2026-11-17)."""
     import json
     d = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
-    old = [k for k in BN_KEYS if k in d]
+    old = [k for k in REMOVED_CAL_KEYS if k in d]
     if old: raise ValueError(f'solve calibration {cal if isinstance(cal, str) else ""}: {old} is a fixed brightness noise, removed '
-                             '2026-11-17 (c, c_a are estimated per dataset with the pattern); delete these keys')
-    d['cmult'] = float(c); d['cmult_ang'] = float(c_a)
+                             '2026-11-17 (c is estimated per dataset with the pattern); delete these keys')
+    d[BN_KEY] = float(c)
     return d
 
 
 def pattern_cal(cal, pattern):
-    """solve_cal with the brightness noise stored in a pattern (pattern_est.pt dict: 'cmult', 'cmult_ang')"""
-    if 'cmult' not in pattern or 'cmult_ang' not in pattern:
-        raise KeyError('the pattern has no brightness noise (cmult / cmult_ang): pattern_est.pt of a run before 2026-11-17; '
-                       're-run the pattern stage')
-    return solve_cal(cal, float(pattern['cmult']), float(pattern['cmult_ang']))
+    """solve_cal with the brightness noise stored in a pattern (pattern_est.pt dict: 'cmult'). A pattern of an earlier run
+    may also hold 'cmult_ang' (the per-orientation term c_a, removed 2026-11-19): it is ignored with a warning."""
+    if BN_KEY not in pattern:
+        raise KeyError('the pattern has no brightness noise (cmult): pattern_est.pt of a run before 2026-11-17; re-run the pattern stage')
+    if float(pattern.get('cmult_ang', 0.0) or 0.0) > 0:
+        import warnings
+        warnings.warn(f"pattern_est.pt with the per-orientation brightness noise c_a = {float(pattern['cmult_ang']):.3f} (cmult_ang; removed "
+                      "2026-11-19): ignored, the solve uses c only (its c was estimated together with c_a; re-run the pattern stage "
+                      "for the c of the current estimator)", stacklevel=2)
+    return solve_cal(cal, float(pattern[BN_KEY]))
 
 
 def brightness_noise(cal):
-    """(c, c_a) of a solve calibration made by solve_cal / pattern_cal"""
-    if any(k not in cal for k in BN_KEYS):
-        raise KeyError('solve calibration without the brightness noise c, c_a: build it with simcode.solve.solve.solve_cal / pattern_cal')
-    return float(cal['cmult']), float(cal['cmult_ang'])
-
-
-def brightness_per_angle(cal):
-    """cal['B_per_angle'] (default False): the solve fits one brightness per pattern orientation instead of one per window"""
-    return bool(cal.get('B_per_angle', False))
+    """c of a solve calibration made by solve_cal / pattern_cal"""
+    if BN_KEY not in cal:
+        raise KeyError('solve calibration without the brightness noise c: build it with simcode.solve.solve.solve_cal / pattern_cal')
+    return float(cal[BN_KEY])
 
 
 def solve_inputs(o, cal, mm=torch.matmul):

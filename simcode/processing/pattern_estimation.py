@@ -32,19 +32,16 @@ Steps (as SIMCODE's pattern_estimator: DFT of localizations weighted by intensit
   4. m_a: unbiased cross-cycle estimator on pairs of photon-disjoint consecutive windows (w, w + 6) of the same clean
      emitter: m^2 = sum Re(Z_w conj(Z_w+6) exp(i (eps diff))) / sum A_w A_w+6 (independent noise, position-error free).
   2-4 are iterated (`n_iter`).
-  5. brightness noise (2026-11-17; estimate_brightness_noise): c (relative per-frame scatter) and c_a (shared within each
-     orientation) of the intensity covariance Sigma = Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T (per angle) of the solve, from
-     the residuals of the network intensities of the same clean emitter-windows against the estimated pattern
-     (simcode/solve/brightness_noise_fit.py); stored in the pattern (cmult, cmult_ang) and used by every solve of the run.
-     2026-11-19: the component estimator (brightness_noise_fit, component section): the angle contrast of every clean window and
-     the depth differences of the photon-disjoint pairs (w, w + 6) of the same emitter, with the model's network-transfer table
-     (bn_transfer_pass1.json next to the pass-1 calibration, or cal['bn_transfer']); < 2000 clean windows: a warning, < 300: the
-     networks' training values (table 'theta_train').
-  6. (2026-11-19, option intensity_map = 1; default 0 = off) the per-orientation intensity map over the field of view
-     (estimate_relmap): the relative intensity of the two orientations varies over the field (illumination envelope per
-     orientation), seen as a smooth map of the angle contrast of the clean windows; stored as P['relmap'] (2D cubic B-spline,
-     knot spacing RELMAP_KNOT_PX) and applied per row by every solve (o['relg'], simcode/solve/pattern.relmap_factors; g_0 g_1 = 1);
-     estimated before step 5, so c_a holds only what the map does not explain.
+  5. (2026-11-19; always on) the per-orientation intensity map over the field of view (estimate_relmap): the
+     relative intensity of the two orientations varies over the field (illumination envelope per orientation), seen as a smooth
+     map of the angle contrast of the clean windows; stored as P['relmap'] (2D cubic B-spline, knot spacing RELMAP_KNOT_PX) and
+     applied per row by every solve (o['relg'], simcode/solve/pattern.relmap_factors; g_0 g_1 = 1).
+  6. brightness noise (2026-11-17; estimate_brightness_noise): c (the relative per-frame scatter of the emitter brightness) of
+     the solve's intensity covariance Sigma = Sigma_net + c^2 diag(mu^2), from the residuals of the network intensities of the
+     same clean emitter-windows against the estimated pattern with its intensity map (simcode/solve/brightness_noise_fit.py:
+     the plain residual fit of the solve's noise model); stored in the pattern (cmult) and used by every solve of the run.
+     (Removed 2026-11-19: the per-orientation term c_a (cmult_ang) and the component estimator with per-model network-transfer
+     tables; the map + one c + the full Sigma_net give the same precision and FRC, brightness_noise_fit.)
 """
 import math
 import numpy as np, torch
@@ -392,17 +389,15 @@ def estimate_relmap(D, sel, psi, rel, knot_px=RELMAP_KNOT_PX, smooth=RELMAP_SMOO
             f'clean windows): angle contrast over the field p1 / p99 {info["h_p1"]:+.3f} / {info["h_p99"]:+.3f} (rms {info["h_rms"]:.3f}); '
             f'held-out share of the contrast variance (checkerboard 11-px tiles) {gain:.3f}')
     if gain <= 0:
-        verbose('  WARNING intensity map: no held-out gain (too few clean windows or no field dependence); the map is kept but '
-                'consider pattern.intensity_map 0')
+        verbose('  intensity map: no held-out gain (too few clean windows or no field dependence); the map is kept (it is then '
+                'close to flat)')
     return relmap, info
 
 
-def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print, clean_rows=False, intensity_map=0):
-    """full estimation from pass-1 rows R (dict of concatenated arrays). Returns (pattern dict, info) (+ the indices into R of
-    the clean emitter-windows with clean_rows).
-    intensity_map (2026-11-19): 0 (default) = one relative intensity per step (as before); 1 = also the per-orientation
-    intensity map over the field of view (estimate_relmap: 2D cubic B-spline), stored as P['relmap'] and used by every solve of
-    the run."""
+def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, verbose=print, clean_rows=False):
+    """full estimation from pass-1 rows R (dict of concatenated arrays), steps 1-5 (incl. the per-orientation intensity map
+    P['relmap'], estimate_relmap; always on since 2026-11-19). Returns (pattern dict, info) (+ the indices into R of the clean
+    emitter-windows with clean_rows)."""
     D = select(R, nn_min=nn_min, min_phot=min_phot)
     verbose(f'pattern estimation: {len(D["w"])} localizations, on-through {D["on"].sum()}, clean (nn >= {nn_min}, '
             f'>= {min_phot:.0f} ph) {D["clean"].sum()}')
@@ -434,86 +429,43 @@ def estimate_pattern(R, shape, nn_min=3.0, min_phot=300.0, kf=150, n_iter=3, ver
              note='estimated from pass-1 pattern-free localizations (simcode/processing/pattern_estimation.py)')
     info = dict(k=kinfo, hist=hist, depth=dinfo, depth_vs_nn=nn_diag, eps_se=einfo['se'].tolist(), eps_n=einfo['n'].tolist(),
                 n_clean=int(sel.sum()), n_on=int(D['on'].sum()), n=int(len(D['w'])))
-    if intensity_map not in (0, 1, False, True):
-        raise ValueError(f'intensity_map {intensity_map!r}: 0 (none) or 1 (the B-spline intensity map; the Legendre degree of the first '
-                         '2026-11-19 version is no longer an option)')
-    if intensity_map:
-        P['relmap'], info['relmap'] = estimate_relmap(D, sel, psi, rel, verbose=verbose)
+    P['relmap'], info['relmap'] = estimate_relmap(D, sel, psi, rel, verbose=verbose)
     if clean_rows: return P, info, np.nonzero(R['out'].astype(bool))[0][sel]
     return P, info
 
 
 BN_NMAX = 120000      # clean emitter-windows used for the brightness-noise fit (evenly subsampled over the movie)
+BN_NMIN = 2000        # fewer clean emitter-windows: a warning (the estimate gets fewer SNR bins, it is noisier)
+BN_NMIN_HARD = 300    # fewer: no estimate; c = BN_FALLBACK_C, with a warning
+BN_FALLBACK_C = 0.1   # (the fixed c of the model calibrations before 2026-11-17)
 
 
-BN_NMIN = 2000        # fewer clean emitter-windows: a warning (the estimate gets fewer photon bins, it is noisier)
-BN_NMIN_HARD = 300    # fewer: no estimate; the networks' training brightness noise (transfer table 'theta_train') is used, with a warning
-
-
-def transfer_path(cal_path, cal):
-    """the network-transfer table of the brightness-noise estimator for a model's pass-1 calibration: cal['bn_transfer']
-    (relative to the calibration's folder), else <calibration folder>/bn_transfer_pass1.json if it exists, else None"""
-    import os
-    base = os.path.dirname(os.path.abspath(cal_path)) if isinstance(cal_path, str) else ''
-    p = cal.get('bn_transfer') or 'bn_transfer_pass1.json'
-    p = p if os.path.isabs(p) else os.path.join(base, p)
-    return p if os.path.exists(p) else None
-
-
-def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print, method='components', transfer=None):
-    """step 5: brightness noise (c, c_a) of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
-    load_pass1_rows, which carry each row's chunk / row), the estimated pattern P and the model's pass-1 solve calibration cal
-    (path or dict, without c). -> (c, c_a, info).
-    method 'components' (default, 2026-11-19): the component estimator with the model's network-transfer table (transfer = path;
-    default transfer_path(cal)); 'residual': the frame-residual fit (BN.estimate; until 2026-11-19, reads low with networks that
-    shrink the brightness fluctuations: brightness_noise_fit, component section)."""
+def estimate_brightness_noise(out, R, clean, P, cal, nmax=BN_NMAX, n_iter=3, verbose=print):
+    """step 6: brightness noise c of the run from its clean emitter-windows (indices `clean` into the pass-1 rows R of
+    load_pass1_rows, which carry each row's chunk / row; at most nmax, evenly over the movie), the estimated pattern P (with
+    its intensity map) and the model's pass-1 solve calibration cal (path or dict, without c): the residual fit of the solve's
+    noise model (brightness_noise_fit.estimate). -> (c, info)"""
     import json, warnings
     from simcode.solve import brightness_noise_fit as BN
-    cal_path = cal if isinstance(cal, str) else None
     cal = json.load(open(cal)) if isinstance(cal, str) else dict(cal)
-    tp = transfer if transfer is not None else transfer_path(cal_path, cal)
-    tr = BN.load_transfer(tp) if method == 'components' else None
     idx = np.asarray(clean)
-    # photon-disjoint pairs (w, w + 6) of the same emitter among the clean windows (the depth statistic of the component method)
-    d_, j_ = depth_pair_query(dict(x1=R['x'][idx], y1=R['y'][idx], w=R['wstart'][idx]), np.arange(len(idx)))
-    pa = np.nonzero(np.isfinite(d_))[0]; pb = j_[pa]
-    if len(idx) > nmax:      # evenly over the movie, the pairs' members first
-        sp = np.unique(np.linspace(0, len(pa) - 1, min(len(pa), nmax // 2)).round().astype(np.int64)) if len(pa) else np.zeros(0, np.int64)
-        mem = np.unique(np.r_[pa[sp], pb[sp]]); rest = np.setdiff1d(np.arange(len(idx)), mem)
-        nfill = max(nmax - len(mem), 0)
-        fill = rest[np.unique(np.linspace(0, len(rest) - 1, min(nfill, len(rest))).round().astype(np.int64))] if nfill and len(rest) else rest[:0]
-        keep = np.sort(np.r_[mem, fill]); pa, pb = pa[sp], pb[sp]
-        loc = -np.ones(len(idx), np.int64); loc[keep] = np.arange(len(keep))
-        pa, pb, idx = loc[pa], loc[pb], idx[keep]
-    # the row order of chunk_rows / solve_rows: by chunk, then by row
-    order = np.lexsort((R['row'][idx], R['chunk'][idx])); pos = np.empty(len(idx), np.int64); pos[order] = np.arange(len(idx))
-    pairs = (pos[pa], pos[pb])
+    if len(idx) > nmax: idx = idx[np.linspace(0, len(idx) - 1, nmax).round().astype(np.int64)]
     rule = ('clean emitter-windows of the pattern estimation (on through the window, isolated, >= min_phot), non-kinetic solve with '
-            'the estimated pattern; simcode/solve/brightness_noise_fit.py (' + method + ')')
-    info = dict(n_rows=int(len(idx)), n_clean=int(len(clean)), n_pairs=int(len(pairs[0])), method=method, transfer=tp, rule=rule)
+            'the estimated pattern and its intensity map; residual fit of Sigma_net + c^2 diag(mu^2), simcode/solve/brightness_noise_fit.py')
+    info = dict(n_rows=int(len(idx)), n_clean=int(len(clean)), rule=rule)
     if len(idx) < BN_NMIN_HARD:
-        th = tuple(tr['theta_train']) if tr is not None and 'theta_train' in tr else (0.1, 0.05)
-        msg = (f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN_HARD}): not estimated, using c {th[0]:.3f}, '
-               f'c_a {th[1]:.3f} (' + ('the networks\' training values' if tr is not None and 'theta_train' in tr else 'default') + ')')
+        msg = (f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN_HARD}): not estimated, using c {BN_FALLBACK_C:.3f}')
         warnings.warn(msg); verbose('  WARNING ' + msg)
-        info.update(c=th[0], c_a=th[1], fallback=True)
-        return th[0], th[1], info
+        info.update(c=BN_FALLBACK_C, fallback=True)
+        return BN_FALLBACK_C, info
     if len(idx) < BN_NMIN:
         msg = f'brightness noise: only {len(idx)} clean emitter-windows (< {BN_NMIN}): the estimate is noisier'
         warnings.warn(msg); verbose('  WARNING ' + msg)
     by = {int(f0): R['row'][idx[R['chunk'][idx] == f0]] for f0 in np.unique(R['chunk'][idx])}
     rows = BN.chunk_rows(out, P, by)
-    if method == 'components':
-        if tr is None:
-            msg = 'brightness noise: no network-transfer table for this model (K = a = 1; reads low with shrinking networks)'
-            warnings.warn(msg); verbose('  WARNING ' + msg)
-        th, cinfo = BN.estimate_components(rows, cal, tr, pairs=pairs, log=verbose)
-        info.update(components=cinfo)
-    else:
-        th, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
-        info.update(hist=hist)
-    q50 = BN.q_table(rows, BN.with_theta(cal, th))
-    verbose(f'  brightness noise: c {th[0]:.4f}, c_a {th[1]:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
+    c, hist, _ = BN.estimate(rows, cal, n_iter=n_iter, log=verbose)
+    q50 = BN.q_table(rows, BN.with_c(cal, c))
+    verbose(f'  brightness noise: c {c:.4f} ({len(idx)} clean emitter-windows); q/dof p50 per photon bin '
             + ' '.join(f'{lo:g}:{q:.2f}' for lo, q in q50))
-    info.update(c=th[0], c_a=th[1], q50_by_photons=q50)
-    return th[0], th[1], info
+    info.update(c=c, hist=hist, q50_by_photons=q50)
+    return c, info

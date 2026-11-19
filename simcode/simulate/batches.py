@@ -37,9 +37,10 @@ plane: z_target_px. A calibration with fitted spot heights (emitter_z_quantiles_
 height distribution, over its own range, without the TIRF factor (AcquisitionSim.draw_z / tirf_factor; no flag: the
 calibration's heights are used when it has them).
 GT set for the loss: emitters inside the image with >= 0.5 on-frames and >= 50 window photons.
-Brightness noise (bnoise = (c, c_a), 2026-11-18; None = the presets / pass-2 values above): the emitter brightness variation set
-to a dataset's measured brightness noise, in the parametrisation of the solve's intensity covariance (solve/brightness_noise_fit:
-Sigma = Sigma_net + c^2 diag(mu^2) + c_a^2 mu mu^T within each pattern angle, the brightness B fitted per window). In
+Brightness noise (bnoise = (c, c_a), 2026-11-18; None = the presets / pass-2 values above): the emitter brightness variation of
+the simulator, c = the relative per-frame scatter (the solve's c: Sigma = Sigma_net + c^2 diag(mu^2), solve/brightness_noise_fit)
+and c_a = the sd of a per-orientation brightness factor (a simulator knob only: the solve's per-orientation term c_a^2 mu mu^T
+was removed 2026-11-19; the retrains use c_a = 0). In
 AcquisitionSim.scene an emitter's frame photons carry mult = ea[angle] x (1 + step_sd n_step) x (1 + frame_sd n_frame), ea =
 exp(ang_sd n_a) / mean_a: within a 6-frame window every step occurs once, so step and frame factors are both independent per
 frame (relative sd sqrt(step_sd^2 + frame_sd^2) = c), and the per-angle factor's contrast ea_0 - ea_1 ~ ang_sd (n_0 - n_1) has the

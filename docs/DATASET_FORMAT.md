@@ -13,8 +13,8 @@ selection `select()` (docs/USAGE.md). A selection is not stored: it is computed 
 
 ## SIMCODE's fields and metadata
 
-A v2 table (SIMCODE v2, `simcode/table.py`; four per run: `locs_p1_net`, `locs_p1_solve`, `locs_p2_net` = the result,
-`locs_p2_solve`) in this layout:
+A v2 table (SIMCODE v2, `simcode/table.py`; four per run: `locs_p1_net`, `locs_p1_solve`, `locs_p2_net`,
+`locs_p2_solve` = the result) in this layout:
 
 | field | dtype | shape | meaning |
 |---|---|---|---|

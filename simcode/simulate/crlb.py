@@ -20,9 +20,9 @@ from simcode import psf as spsf
 from simcode.layers.blocks import extract_patches
 from simcode import config as _cfg
 
-# brightness noise (c, c_a) of the gate scenes for the solve (simcode.solve.solve.solve_cal): the emitters of these scenes have a
-# constant brightness (true photons = B x on-fraction x illumination, no per-frame or per-orientation scatter), so c = c_a = 0
-BRIGHTNESS_NOISE = (0.0, 0.0)
+# brightness noise c of the gate scenes for the solve (simcode.solve.solve.solve_cal): the emitters of these scenes have a
+# constant brightness (true photons = B x on-fraction x illumination, no per-frame scatter), so c = 0
+BRIGHTNESS_NOISE = 0.0
 
 a = types.SimpleNamespace(calib=_cfg.model(_cfg.INSITU_05))
 _CDIV = 3   # (2026-11-11) per-angle PSF CRLB batch divisor (memory only; same results)

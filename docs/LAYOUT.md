@@ -44,7 +44,7 @@ simcode/
   models.json                 the shipped models (m1809, g13: detector, emitter, cal_sim, detector_pass2, emitter_pass2,
                               cal_sim_pass2, psf), the default model, the paper's datasets (_production)
   dataset.py                  Dataset = torch_psf.Dataset + SIMCODE's loaders (from_run, load_table, from_columns, columns(), load_npz, from_decode, load_npy / from_smlmtorch) and the paper's selection select() / mask()
-  table.py                    the four localization tables of a run directory (pass 1 / 2 x network / solve; locs_p2_net = the result), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
+  table.py                    the four localization tables of a run directory (pass 1 / 2 x network / solve; locs_p2_solve = the result), torch_psf Dataset HDF5 table files, the paper's selection select() (applied at load); CLI simcode-table
   detector/
     __init__.py               package doc
     model.py                  Detector: the U-Net detector of pass 1 and pass 2 (illum=True: + illumination inputs, zero-initialised from pass 1); load() of every detector checkpoint
@@ -62,7 +62,7 @@ simcode/
     solve_fast.py             the same solve, fast (production; solve_emitters_fast, optional compiled LM step)
     pattern.py                pattern geometry of the solve (illumination at a position, angle index, fringe shifts, kinetics starts, chi2 p-value)
     z_conditioning.py         z after the solve: the network's 3D prior conditioned on the solved x, y; pass-2 rows linked to pass-1 candidates for their z
-    brightness_noise_fit.py   the dataset's brightness noise (c, c_a) from the solve's own residuals on the clean emitter-windows (a step of the pattern estimation)
+    brightness_noise_fit.py   the dataset's brightness noise c from the solve's own residuals on the clean emitter-windows (a step of the pattern estimation)
     fourpi.py                 FourPiSolve: the explicit 4Pi solve on the window read-outs (pattern + 4Pi phase, kinetics modes, phase mode, residual background; T frames, k None = no pattern), kinetics starts
   pattern/
     __init__.py               package doc
@@ -111,7 +111,7 @@ simcode/
     frame_order.py            stage order: blocked-order cache of a movie with another frame order
     camera.py                 stage camera: gain, read noise, offset from the variance-vs-level fit
     spots.py                  stage spots: spot finding and Gaussian fits for the tracks
-    psf_fit.py                in-situ PSF fit of stage psf (torch_psf fit_tracks with the sample selection, camera conversion and photoselection hook; held-out check by torch_psf heldout_tracks)
+    psf_fit.py                in-situ PSF fit of stage psf (torch_psf fit_tracks with the sample selection, camera conversion and photoselection hook; held-out check by torch_psf heldout_tracks, refit with simcode.psf.calib_psf)
     psf_stage.py              stage psf: multi-start in-situ PSF, line blur, photoselection, held-out, calibration files
     training.py               stage train: a PSF-matched model with the recipe of models/README.md, gate dumps, calibrations, acceptance, model.json
     acceptance.py             stage train acceptance on the gate dumps (sigma calibration, pass-2 vs pass-1 RMS / CRLB)
@@ -196,6 +196,15 @@ the solve calibrations (estimated per run with the pattern; a calibration that s
 kinetic selection threshold 9.21 and the kin_gate of the fast solve (both models are fitted and averaged), the pass-2
 network-prior variant files `pass2_est2b_<f0>.npz` (`pass2_inference.direct_view`; replaced by the network columns
 x_net, ... of `pass2_est2_<f0>.npz`), the tables `locs_p1` / `locs_p2` (now `locs_p{1,2}_{net,solve}`).
+Removed 2026-11-19 (one noise model: the intensity map + one c + the full network covariance): the per-orientation brightness
+noise c_a (solve `cang`, `cmult_ang` in `pattern_est.pt` (an older file is read with c only and a warning), its estimation in
+the pattern step), the free brightness per orientation (calibration key `B_per_angle`, solve `two_b`), the component
+brightness-noise estimator with its per-model network-transfer tables (`brightness_noise_fit.estimate_components`,
+`load_transfer`, `bn_transfer_pass1.json`; c is the plain residual fit), the option without the intensity map
+(`pattern.intensity_map` / `--intensity_map` are accepted, 0 is ignored with a warning), and in `pipeline/psf_fit.heldout` the
+8 x Catmull-Rom refit table with its `xy_limit` option and the `vp_grad` option (the refit renders with `simcode.psf.calib_psf`;
+torch-psf always differentiates through the closed-form I / bg). The default table of a run is the pass-2 solve
+`locs_p2_solve` again (`locs_p2_net` 2026-11-17 to 2026-11-19).
 
 ## Outside the package
 

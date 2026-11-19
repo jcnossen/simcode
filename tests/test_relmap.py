@@ -1,5 +1,5 @@
 """
-The per-orientation intensity map of the pattern (pattern.intensity_map, 2026-11-19; processing/pattern_estimation.estimate_relmap,
+The per-orientation intensity map of the pattern (2026-11-19, always on; processing/pattern_estimation.estimate_relmap,
 solve/pattern.relmap_factors / scale_rel, the solves' o['relg']). Run:  python tests/test_relmap.py   (or: pytest tests)
 CPU or GPU, a few seconds. Checks:
   - the 2D cubic B-spline map (solve/pattern.relmap_contrast / relmap_design: partition of unity, linear maps reproduced exactly,
@@ -10,8 +10,7 @@ CPU or GPU, a few seconds. Checks:
     noise, per-window brightness, a static per-emitter contrast scatter) to < 0.02 rms over the field, with a held-out gain, mean 0
   - the solve with o['relg'] = the solve with the explicitly scaled per-row pattern (reference and fast solve), and it differs
     from the solve without the map
-  - config: pattern.intensity_map defaults to 0, invalid values are refused; at the default it is not part of the stage
-    settings (work folders recorded before the key stay up to date)
+  - config: pattern.intensity_map (deprecated) defaults to 1; 0 is accepted with a warning and set to 1; other values are refused
 """
 import math, os, sys
 import numpy as np, torch
@@ -127,7 +126,7 @@ def _rows(n=400, seed=1):
 def test_solve_relg():
     from simcode.solve import solve as SV, solve_fast as MF
     o, PW, b = _rows()
-    cal = SV.solve_cal(dict(prior_off=[0.0, 0.0], box=0.5, mix_T=1.0), 0.05, 0.1)
+    cal = SV.solve_cal(dict(prior_off=[0.0, 0.0], box=0.5, mix_T=1.0), 0.05)
     rm = lin_map(0.25, -0.1, 0.05, box=(10.0, 50.0, 10.0, 50.0))
     g = C.relmap_factors(rm, o['x'], o['y'])
     ptr = C.scale_rel(PW[b], g); bi = torch.arange(len(b), device=DEV)
@@ -142,11 +141,15 @@ def test_solve_relg():
 
 def test_config():
     from simcode.pipeline import acquisition_config as AC
+    import warnings
     from simcode.pipeline import localization_pipeline as LP
-    assert AC.DEFAULTS['pattern']['intensity_map'] == 0
-    assert LP.LATE_DEFAULTS['pattern.intensity_map'] == AC.DEFAULTS['pattern']['intensity_map']
+    assert AC.DEFAULTS['pattern']['intensity_map'] == 1 and 'pattern.intensity_map' not in LP.LATE_DEFAULTS
     c = AC.load(dict(name='t', movie='x.tif', out='o', pattern=dict(intensity_map=1)))
     assert c['pattern']['intensity_map'] == 1
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter('always')
+        c = AC.load(dict(name='t', movie='x.tif', out='o', pattern=dict(intensity_map=0)))
+    assert c['pattern']['intensity_map'] == 1 and any('intensity_map' in str(x.message) for x in w)
     for bad in (-1, 2.5, True, 4, 11):
         try:
             AC.load(dict(name='t', movie='x.tif', out='o', pattern=dict(intensity_map=bad)))

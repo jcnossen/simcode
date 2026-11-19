@@ -5,7 +5,8 @@ is `python -m simcode.run`, which calls this module's stages with the production
   pass1    detector + per-candidate head: network per-frame intensities with covariance, per-frame bg,
            pattern-free position prior; candidates p >= cand_pmin are stored         (simcode/processing/pass1_inference.py, inference_fast.py)
   pattern  pattern k, per-step phases, depth, relative intensities and the per-angle phase drift eps(t), from the pass-1
-           network intensities alone, and the brightness noise c, c_a of the solve on the same clean emitter-windows
+           network intensities alone, with the per-orientation intensity map over the field of view, and the brightness noise c
+           of the solve on the same clean emitter-windows
            (simcode/processing/pattern_estimation.py; stored in pattern_est.pt, used by every solve of the run)
   pass1_solve  the explicit intensity-domain pattern solve of the pass-1 rows (pass2_est_<f0>.npz, table tag est)
   pass2    the pattern-aware pass 2 (pass-2 detector + emitter network fed the estimated pattern, then the same solve;
@@ -51,7 +52,9 @@ def build_parser():
     ap.add_argument('--nframes', type=int, default=0)
     ap.add_argument('--nn_min', type=float, default=3.0)
     ap.add_argument('--min_phot', type=float, default=300.0)
-    ap.add_argument('--intensity_map', type=int, default=0, choices=(0, 1))  # pattern stage: 1 = the per-orientation intensity map (2D cubic B-spline; 0 = none; pattern_estimation.estimate_relmap)
+    # deprecated (2026-11-19): the pattern stage always estimates the per-orientation intensity map (pattern_estimation.estimate_relmap);
+    # 1 = that, 0 is ignored with a warning
+    ap.add_argument('--intensity_map', type=int, default=1, choices=(0, 1))
     ap.add_argument('--redo', type=int, default=0)
     ap.add_argument('--claim', type=int, default=0)     # 1: claim each chunk (several workers on one output directory); no prefetch then
     ap.add_argument('--min_free_gb', type=float, default=2.0)   # a chunk is not started with less free space on the output file system
@@ -72,6 +75,10 @@ def build_parser():
 
 def main(argv=None):
     a = build_parser().parse_args(argv)
+    if a.intensity_map == 0:
+        import warnings
+        warnings.warn('--intensity_map 0 is deprecated and ignored: the pattern stage always estimates the per-orientation intensity '
+                      'map (2026-11-19)', stacklevel=2)
     from simcode.util.proctitle import set_title; set_title('pipeline')     # recognizable name in nvidia-smi / ps
     for k in ('calib', 'emitter', 'detector', 'cal', 'detector_pass2', 'emitter_pass2', 'cal_pass2'):
         setattr(a, k, config.resolve(getattr(a, k)))
@@ -147,15 +154,14 @@ def main(argv=None):
             if po is not None: say(f'pattern: prior_off {po} px removed from the pass-1 priors')
             t_load = time.time() - t0
             t0 = time.time()
-            P, info, clean = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say, clean_rows=True,
-                                              intensity_map=a.intensity_map)
+            P, info, clean = estimate_pattern(R, movie.shape, nn_min=a.nn_min, min_phot=a.min_phot, verbose=say, clean_rows=True)
             t_pat = time.time() - t0; t0 = time.time()
-            # the dataset's brightness noise c, c_a on the same clean emitter-windows (pattern_estimation step 5); every solve
-            # of the run (pass 1, pass 2) uses it (solve.pattern_cal)
+            # the dataset's brightness noise c on the same clean emitter-windows (pattern_estimation step 6); every solve of the
+            # run (pass 1, pass 2) uses it (solve.pattern_cal)
             from simcode.processing.pattern_estimation import estimate_brightness_noise
-            c, ca, binfo = estimate_brightness_noise(a.out, R, clean, P, a.cal, verbose=say)
-            P['cmult'] = float(c); P['cmult_ang'] = float(ca); info['brightness_noise'] = binfo
-            RT['pattern'] = dict(load_s=t_load, estimate_s=t_pat, brightness_noise_s=time.time() - t0, cmult=float(c), cmult_ang=float(ca))
+            c, binfo = estimate_brightness_noise(a.out, R, clean, P, a.cal, verbose=say)
+            P['cmult'] = float(c); info['brightness_noise'] = binfo
+            RT['pattern'] = dict(load_s=t_load, estimate_s=t_pat, brightness_noise_s=time.time() - t0, cmult=float(c))
             atomic_json(f'{a.out}/pattern_est.json', info, indent=1, default=float)
             atomic_torch_save(P, f'{a.out}/pattern_est.pt')
             save_rt(); say(f'pattern estimation {RT["pattern"]["estimate_s"]:.1f}s -> {a.out}/pattern_est.pt')
@@ -166,7 +172,7 @@ def main(argv=None):
         for tag, pf in pats:
             Pt = torch.load(pf)
             from simcode.solve.solve import pattern_cal
-            scal1 = pattern_cal(a.cal, Pt)                 # the model's calibration + the run's brightness noise c, c_a
+            scal1 = pattern_cal(a.cal, Pt)                 # the model's calibration + the run's brightness noise c
             RT.setdefault(f'pass2_{tag}', {})
             U = units(f'pass2_{tag}')
             for f0 in U.todo(chunks):
@@ -189,7 +195,7 @@ def main(argv=None):
         for tag, pf in pats:
             Pt = torch.load(pf)
             from simcode.solve.solve import pattern_cal
-            scal2 = pattern_cal(a.cal_pass2, Pt)           # the pass-2 model calibration + the run's brightness noise c, c_a
+            scal2 = pattern_cal(a.cal_pass2, Pt)           # the pass-2 model calibration + the run's brightness noise c
             RT.setdefault(f'pass2_{tag}', {})
             U = units(f'pass2_{tag}')
             mv2 = movie

@@ -50,7 +50,7 @@ STAGE_SETTINGS = dict(order=['movie', 'pattern.pattern_frames', 'pattern.cache']
                       process=['process', 'train.model', 'pattern', 'optics'], report=[])
 # config keys added after work folders existed, with the default that reproduces the earlier behaviour: at that default they are
 # left out of a stage's settings, so a stage recorded before the key does not become stale (a non-default value does)
-LATE_DEFAULTS = {'pattern.intensity_map': 0, 'psf.pixel_integration': 'box'}
+LATE_DEFAULTS = {'psf.pixel_integration': 'box'}
 FULL_HASH_MAX = 1 << 30            # files up to 1 GB are fingerprinted by sha256; larger ones (a movie) by size and mtime
 
 
@@ -282,14 +282,14 @@ class LocalizationPipeline:
         return L
 
     def dataset_pass1(self, **kw):
-        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (kind='net': the emitter network's output,
-        the default; kind='solve': the pattern solve; the paper's selection: ds.select()); with process.cycle_aligned_only only
-        the windows that start at a cycle boundary"""
+        """the pass-1 localizations of the processed movie as a simcode.dataset.Dataset (kind='solve': the pattern solve, the
+        default; kind='net': the emitter network's output; the paper's selection: ds.select()); with process.cycle_aligned_only
+        only the windows that start at a cycle boundary"""
         return self._dataset(1, **kw)
 
     def dataset_pass2(self, **kw):
-        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset (kind='net', the
-        default = the result table locs_p2_net; kind='solve': the pattern solve)"""
+        """the pass-2 (pattern-aware, final) localizations of the processed movie as a simcode.dataset.Dataset (kind='solve', the
+        default = the result table locs_p2_solve; kind='net': the emitter network's output)"""
         return self._dataset(2, **kw)
 
     # ---- dependency chain (STAGE_SETTINGS above)

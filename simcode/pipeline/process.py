@@ -34,8 +34,6 @@ def argv(ds, out, calib=None, nframes=None, chunk_list=None, model=None):
     if n: a += ['--nframes', n]
     cl = p['chunk_list'] if chunk_list is None else chunk_list
     if cl: a += ['--chunk_list', cl]
-    im = ds.c['pattern'].get('intensity_map', 0)
-    if im: a += ['--intensity_map', im]
     return a + [str(v) for v in p['extra']]
 
 
@@ -66,7 +64,7 @@ def cycle_subset(out):
     from simcode.dataset import Dataset
     r = {}
     for n, p in (('locs_p1_net', 1), ('locs_p2_net', 2)):
-        try: L = Dataset.from_run(out, pass_=p, info=False)
+        try: L = Dataset.from_run(out, pass_=p, kind='net', info=False)
         except FileNotFoundError: continue
         r[n] = int((L['frame'] % 6 == 0).sum())
     return r
@@ -97,7 +95,8 @@ def run(ds):
     if pit:
         lo, hi = ds.c['pattern']['pitch_px']
         chk.append(dict(name='estimated pitch inside pattern.pitch_px', value=pit, ok=all(lo < v < hi for v in pit)))
-    n = S.get('locs_p2_net', {}).get('n_rows', 0)
+    from simcode import table as SP
+    n = S.get(SP.DEFAULT_TABLE, {}).get('n_rows', 0)
     chk.append(dict(name='rows > 0', value=n, ok=n > 0))
     r['pattern_pitch_px'] = pit
     return dict(r, checks=chk)
