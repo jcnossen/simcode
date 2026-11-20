@@ -14,7 +14,7 @@ import argparse, json, math, os, sys, time
 import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
-from simcode.psf import FourPiPSF
+from simcode.psf import FourPiPSF, ZMode
 
 def run(a):
     P4 = a.work; OUT = f'{P4}/psf4pi'
@@ -27,9 +27,9 @@ def run(a):
     base = json.load(open(f'{P4}/smlm/psf/{a.cell}_base.json'))['bead']
     zst = torch.tensor(zc['zstage'], device=dev, dtype=torch.float32)
     if a.asym:   # asymmetric arms (oil 1.5 top / silicone 1.35 bottom), stage mode for the bead stack, init from a symmetric fit
-        m = FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=(a.NA_t, a.NA_b), n_imm=(a.n_imm_t, a.n_imm_b), n_med=a.n_med,
-                      zernike_indices=(4,) + tuple(range(5, 22)), npupil=a.npupil, oversample=2, mirror=a.mirror,
-                      depth_um=(a.depth_t, a.depth_b), zmode='stage', device=dev)
+        m = ZMode(FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=(a.NA_t, a.NA_b), n_imm=(a.n_imm_t, a.n_imm_b),
+                            n_med=a.n_med, zernike_indices=(4,) + tuple(range(5, 22)), npupil=a.npupil, oversample=2,
+                            mirror=a.mirror, depth_um=(a.depth_t, a.depth_b), device=dev), 'stage')
         s0 = json.load(open(f'{OUT}/{a.cell}_{a.init_sym}.json'))['psf']
         with torch.no_grad():
             m.top.zcoef[1:].copy_(torch.tensor(s0['zt'], device=dev)); m.bot.zcoef[1:].copy_(torch.tensor(s0['zb'], device=dev))
@@ -64,7 +64,7 @@ def run(a):
     def model():
         pos = torch.stack([x, y, z0 + a.s * torch.exp(lzs) * zst], 1)
         pe = sum(dr[i] * tk ** (i + 1) for i in range(a.drift_order)) if a.drift_order else None
-        return m(pos, phi_extra=pe, intensity=torch.exp(lN), bg=torch.exp(lbg))
+        return m(pos, phi=pe, intensity=torch.exp(lN), bg=torch.exp(lbg))
 
     def loss():
         mu = model().clamp(min=1e-3)

@@ -45,7 +45,7 @@ def separation(st, fit, zst_nm):
     z = float(np.mean(fit['z0'])) + fit['args']['s'] * fit['zscale'] * (zst_nm - zst_nm.mean()) / 1000.0
     pos = torch.tensor(np.c_[np.zeros_like(z), np.zeros_like(z), z], dtype=torch.float32)
     with torch.no_grad():
-        g = sum(m(pos, phi_extra=torch.full((len(z),), ph)) for ph in (0.0, np.pi)) / 2      # incoherent part
+        g = sum(m(pos, phi=torch.full((len(z),), ph)) for ph in (0.0, np.pi)) / 2      # incoherent part
     S = g.sum(1).numpy()
     sg = np.array([gfit(im)[2:4] for im in S])
     fx = least_squares(lambda p: curve(zst_nm, p) - sg[:, 0], [1.2, 800, 400, 0, 0]).x

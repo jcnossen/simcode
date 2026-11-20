@@ -16,7 +16,7 @@ import numpy as np, torch
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
-from simcode.psf import fourpi_spline, fourpi_channel
+from simcode.psf import fourpi_spline, fourpi_channel, fourpi_component
 from simcode.simulate.fourpi_patches import FourPiPatchSim, DELTA_A, K_PAT
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson, fisher, crlb, lm_poisson_j, fisher_j
@@ -77,7 +77,7 @@ def main(P4, n=6000, seed=11, dev='cuda', eps_range=0.3, suffix=''):
     def inc_sum(x, y, z):
         tot = 0
         for c in range(4):
-            tot = tot + lut.luts[0][c].render(torch.stack([x + doff[:len(x), c, 0], y + doff[:len(x), c, 1], z], 1))
+            tot = tot + fourpi_component(lut, 0, c, torch.stack([x + doff[:len(x), c, 0], y + doff[:len(x), c, 1], z], 1))
         return tot
 
     dsum = img.sum((1, 2)).reshape(n, -1)

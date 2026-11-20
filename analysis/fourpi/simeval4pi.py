@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simmovie4pi import reg_map, phi0_field, GAIN, OFF, PX
-from simcode.psf import fourpi_spline, fourpi_channel
+from simcode.psf import fourpi_spline, fourpi_channel, fourpi_component
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson_j, fisher_j, crlb
 
@@ -67,12 +67,12 @@ def classical(d, meta, F, lut, dev):
     def inc(x, y, z):
         g = 0
         for c in range(4):
-            g = g + lut.luts[0][c].render(torch.stack([x, y, z], 1))
+            g = g + fourpi_component(lut, 0, c, torch.stack([x, y, z], 1))
         return g
 
     def fj(th):
         x, y, z, N, b = th.unbind(1)
-        out = [L.render(torch.stack([x, y, z], 1), True) for L in [lut.luts[0][c] for c in range(4)]]
+        out = [fourpi_component(lut, 0, c, torch.stack([x, y, z], 1), True) for c in range(4)]
         g = sum(o[0] for o in out); gx = sum(o[1] for o in out); gy = sum(o[2] for o in out); gz = sum(o[3] for o in out)
         mu = N[:, None, None] * g + b[:, None, None]
         J = torch.stack([N[:, None, None] * gx, N[:, None, None] * gy, N[:, None, None] * gz, g, torch.ones_like(g)], -1)

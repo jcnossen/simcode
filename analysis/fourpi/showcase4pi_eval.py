@@ -31,7 +31,7 @@ if REPO not in sys.path: sys.path.insert(0, REPO)
 from simcode.psf import fourpi_state
 from simmovie4pi import PX
 from simeval4pi import gt_units, match, crlb_units, EDGES
-from simcode.psf import fourpi_spline
+from simcode.psf import fourpi_spline, fourpi_component
 sys.path.insert(0, os.path.join(REPO, "analysis", "fourpi_classical"))
 from pixel_lm import lm_poisson_j, fisher_j, crlb
 
@@ -44,7 +44,7 @@ def astig_fit(F, lut, dev, chunk=20000):
     v = 24 * 1.3
     def fj(th):
         x, y, z, N, b = th.unbind(1)
-        out = [L.render(torch.stack([x, y, z], 1), True) for L in [lut.luts[0][c] for c in range(4)]]
+        out = [fourpi_component(lut, 0, c, torch.stack([x, y, z], 1), True) for c in range(4)]
         g = sum(o[0] for o in out); gx = sum(o[1] for o in out); gy = sum(o[2] for o in out); gz = sum(o[3] for o in out)
         mu = N[:, None, None] * g + b[:, None, None]
         J = torch.stack([N[:, None, None] * gx, N[:, None, None] * gy, N[:, None, None] * gz, g, torch.ones_like(g)], -1)
