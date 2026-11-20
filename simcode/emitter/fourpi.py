@@ -43,6 +43,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from simcode.layers.blocks import ResBlock, norm_photons
 from simcode.util.legacy_names import FOURPI_ARCH_TAGS
+from simcode.psf import fourpi_component
 
 VREAD = 1.14 ** 2 + 0.2 ** 2     # read variance per pixel (e^2) of the 4Pi-SIMFLUX camera (1.14 e read noise + 0.2 e offset error)
 ARCH_TAGS = {'fourpi_emitter': 'FourPiEmitterNet', 'fourpi_prior': 'FourPiPrior'}
@@ -86,10 +87,10 @@ def window(kind, par, inc, ex, ey, coh=None, grad=None):
 def windows_at(lut, c, pos, wins, ox, oy):
     """all K windows of channel c at positions pos [n,3] -> [n,K,P,P], and the normalised incoherent template [n,P,P]"""
     if needs_grad(wins):
-        v, gx, gy, gz = lut.luts[0][c].render(pos, True); inc = v.clamp(min=1e-7); grad = (gx, gy, gz)
+        v, gx, gy, gz = fourpi_component(lut, 0, c, pos, True); inc = v.clamp(min=1e-7); grad = (gx, gy, gz)
     else:
-        inc = lut.luts[0][c].render(pos).clamp(min=1e-7); grad = None
-    coh = (lut.luts[1][c].render(pos), lut.luts[2][c].render(pos)) if needs_coh(wins) else None
+        inc = fourpi_component(lut, 0, c, pos).clamp(min=1e-7); grad = None
+    coh = (fourpi_component(lut, 1, c, pos), fourpi_component(lut, 2, c, pos)) if needs_coh(wins) else None
     ex = ox[None] - pos[:, 0, None, None]; ey = oy[None] - pos[:, 1, None, None]
     return torch.stack([window(k, p, inc, ex, ey, coh, grad) for k, p in wins], 1), inc / inc.sum((-1, -2), keepdim=True)
 
@@ -143,7 +144,7 @@ class FourPiPrior(nn.Module):
         else:   # (2026-11-12, opt-in, v7) 4Pi channel PSF template (phase-averaged LUT component) at the head's own prior
             ip = q[:, 6 * TC:6 * TC + 6].detach()
             px_, py_ = 1.5 * torch.tanh(ip[:, 0]), 1.5 * torch.tanh(ip[:, 1]); pz_ = self.zmax * torch.tanh(ip[:, 2])
-            g = torch.stack([tl.luts[0][c].render(torch.stack([px_ + doff[:, c, 0], py_ + doff[:, c, 1], pz_], 1))
+            g = torch.stack([fourpi_component(tl, 0, c, torch.stack([px_ + doff[:, c, 0], py_ + doff[:, c, 1], pz_], 1))
                              for c in range(4)], 1).clamp(min=0)
             g = g / g.sum((-1, -2), keepdim=True).clamp(min=1e-6)
             r2c = (o[None, None, None, :] - (px_[:, None, None, None] + doff[:, :, 0, None, None])) ** 2 \
@@ -245,9 +246,9 @@ class FourPiEmitterNet(nn.Module):
             for c in range(4):
                 pos = torch.stack([dxy[:, 0] + doff[:, c, 0], dxy[:, 1] + doff[:, c, 1], z], 1)
                 if needs_grad(self.wins):
-                    inc_, *grad = lut.luts[0][c].render(pos, True); cr, ci = (lut.luts[j][c].render(pos) for j in (1, 2))
+                    inc_, *grad = fourpi_component(lut, 0, c, pos, True); cr, ci = (fourpi_component(lut, j, c, pos) for j in (1, 2))
                 else:
-                    inc_, cr, ci = (lut.luts[j][c].render(pos) for j in range(3)); grad = None
+                    inc_, cr, ci = (fourpi_component(lut, j, c, pos) for j in range(3)); grad = None
                 inc = inc_.clamp(min=1e-7)
                 ex = ox[None] - pos[:, 0, None, None]; ey = oy[None] - pos[:, 1, None, None]
                 Ws.append(torch.stack([window(k, par, inc, ex, ey, (cr, ci), grad) for k, par in self.wins], 1))

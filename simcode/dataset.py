@@ -4,8 +4,16 @@ SIMCODE's localization Dataset: torch_psf.Dataset plus SIMCODE's loaders and the
 torch_psf.Dataset (torch-psf docs/DATASET_FORMAT.md, docs/API.md) holds the localizations as a dict of CPU tensors and does
 everything generic: fields by key or attribute, indexing (masks, slices, indices), filters (filter, filter_finite,
 filter_photons, filter_crlb, filter_frames; in-place variants with a trailing _), crop / crop_from_edge, concatenate and +,
-drift (set_drift, drift_at, apply_drift, undo_drift, estimate_drift = DME v2), render, frc, info, and the files: save / load
-(.hdf5 = the torch-psf format, .csv = ThunderSTORM), save_picasso / load_picasso. This module adds:
+render, frc, info, and the files: save / load (.hdf5 = the torch-psf format, .csv = ThunderSTORM), save_picasso /
+load_picasso. This module adds:
+
+  drift     the drift as state of the object (as torch-psf before 2026-11-20; torch-psf's own Dataset now returns the drift
+            as a torch_psf.Drift result and has no drift state): ds.drift ([F, D] px per movie frame or None),
+            ds.drift_applied, set_drift(drift, info), drift_at(), apply_drift(drift=None), undo_drift(),
+            estimate_drift(n_frames, rows, dims, apply, device, return_info) (DME v2: torch_psf Dataset.estimate_drift);
+            the drift goes with every object indexed / copied from ds and with concatenate; save('.hdf5') writes it in the
+            file's /drift group (attributes applied, info) and load reads it back (torch-psf's own reader reads the record
+            of an applied drift)
 
   loaders   Dataset.load(path)  a run directory (from_run), .hdf5 (load_table: a table of simcode.run / simcode.table, the
                                 torch-psf format), .npz (load_npz: a table of a run before 2026-11-15, a subset file of
@@ -42,10 +50,15 @@ import json, os
 import numpy as np
 import torch
 from simcode import table as SP
-from simcode.psf import Dataset as _TorchPSFDataset
+from simcode.psf import Dataset as _TorchPSFDataset, Drift
 
 _RENAME = dict(p='score', I='intensities')                     # v2 table column -> field
 _META = dict(px_nm='pixel_nm')                                 # v2 table metadata -> torch_psf names
+
+
+def _f64(v):
+    """drift array (numpy / list / tensor) -> float64 CPU tensor"""
+    return (v.detach() if torch.is_tensor(v) else torch.from_numpy(np.array(v))).to(torch.float64)
 
 
 def _read_json(path):
@@ -79,7 +92,136 @@ def decode_table(path):
 
 
 class Dataset(_TorchPSFDataset):
-    """torch_psf.Dataset with SIMCODE's loaders and select() (module docstring)."""
+    """torch_psf.Dataset with SIMCODE's loaders, select() and the drift state (module docstring)."""
+
+    def __init__(self, fields, meta=None, drift=None, drift_applied=False):
+        super().__init__(fields, meta)
+        self.drift = None if drift is None else _f64(drift)
+        self.drift_applied = bool(drift_applied)
+
+    def __getitem__(self, idx):
+        r = super().__getitem__(idx)
+        if isinstance(r, Dataset):
+            r.drift, r.drift_applied = self.drift, self.drift_applied
+        return r
+
+    def copy(self):
+        r = super().copy()
+        r.drift, r.drift_applied = (None if self.drift is None else self.drift.clone()), self.drift_applied
+        return r
+
+    def to(self, device):
+        r = super().to(device)
+        r.drift, r.drift_applied = (None if self.drift is None else self.drift.to(device)), self.drift_applied
+        return r
+
+    @classmethod
+    def concatenate(cls, items, set_group=False):
+        """Rows of several datasets: the fields they all have, metadata of the first (n_frames = the largest); set_group:
+        field `group` = index of the source. The drift of the first when all have the same (else none); refused when some
+        are drift corrected and some are not."""
+        items = list(items)
+        if not items:
+            raise ValueError('nothing to concatenate')
+        if len({d.drift_applied for d in items}) > 1:
+            raise ValueError('some datasets are drift corrected and some are not')
+        keys = [k for k in items[0].fields if all(k in d.fields for d in items)]
+        F = {k: torch.cat([d.fields[k] for d in items]) for k in keys}
+        if set_group:
+            F['group'] = torch.cat([torch.full((len(d),), i, dtype=torch.int64) for i, d in enumerate(items)])
+        meta = dict(items[0].meta)
+        if any(d.meta.get('n_frames') for d in items):
+            meta['n_frames'] = max(d.num_frames for d in items)
+        d0 = items[0].drift
+        same = all((d.drift is None and d0 is None) or (d.drift is not None and d0 is not None and torch.equal(d.drift, d0))
+                   for d in items)
+        return cls(F, meta, d0 if same else None, items[0].drift_applied)
+
+    # ------------------------------------------------------------------ drift (module docstring)
+    def drift_at(self):
+        """Drift [n, D'] (px) at each localization's centre frame (clipped to the drift's frame range)."""
+        if self.drift is None:
+            raise ValueError('no drift: estimate_drift() or set_drift() first')
+        return Drift(self.drift).at(self.center_frame)
+
+    def set_drift(self, drift, info=None):
+        """Store a drift [F, D'] (px per movie frame, D' <= D) without applying it. Returns self."""
+        if self.drift_applied:
+            raise ValueError('positions are drift corrected: undo_drift() first')
+        self.drift = _f64(drift)
+        if info is not None:
+            self.meta['drift'] = info
+        return self
+
+    def apply_drift(self, drift=None):
+        """pos -= drift[centre frame] (the stored drift, or `drift`). Returns self."""
+        if self.drift_applied:
+            raise ValueError('positions are already drift corrected')
+        if drift is not None:
+            self.drift = _f64(drift)
+        d = self.drift_at()
+        p = self.fields['pos'].clone()
+        p[:, :d.shape[1]] -= d.to(p)
+        self.fields['pos'] = p
+        self.drift_applied = True
+        return self
+
+    def undo_drift(self):
+        """Add the applied drift back. Returns self."""
+        if not self.drift_applied:
+            raise ValueError('no drift correction has been applied')
+        d = self.drift_at()
+        p = self.fields['pos'].clone()
+        p[:, :d.shape[1]] += d.to(p)
+        self.fields['pos'] = p
+        self.drift_applied = False
+        return self
+
+    def estimate_drift(self, n_frames=None, rows=None, dims=2, apply=False, device=None, return_info=False):
+        """Drift with DME v2 (torch_psf Dataset.estimate_drift: rows `rows` (mask) or all, only those with finite positions and
+        0 < crlb < 1 px; time = centre frame; dims 2 or 3). Stores the drift [F, dims] px in self.drift and the run record in
+        meta['drift']; returns the drift (and the record with return_info). apply=True also subtracts it."""
+        if self.drift_applied:
+            raise ValueError('positions are already drift corrected: undo_drift() first')
+        D = super().estimate_drift(n_frames=n_frames, rows=rows, dims=dims, device=device)
+        self.drift = D.curve
+        self.meta['drift'] = D.info
+        if apply:
+            self.apply_drift()
+        return (self.drift, D.info) if return_info else self.drift
+
+    def info(self):
+        R = super().info()
+        R['drift'] = 'none' if self.drift is None else ('applied' if self.drift_applied else 'stored, not applied')
+        return R
+
+    def save_hdf5(self, path):
+        """torch_psf Dataset.save_hdf5, plus the drift (when set) as the dataset /drift with the attributes applied and info
+        (the record meta['drift'])."""
+        out = super().save_hdf5(path)
+        if self.drift is not None:
+            import h5py
+            with h5py.File(out, 'a') as f:
+                d = f.create_dataset('drift', data=self.drift.cpu().numpy())
+                d.attrs['applied'] = self.drift_applied
+                d.attrs['info'] = json.dumps(self.meta.get('drift', {}), default=str)
+        return out
+
+    @classmethod
+    def load_hdf5(cls, path):
+        """torch_psf Dataset.load_hdf5, plus the drift of the file's /drift (when it has one)."""
+        import h5py, warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='File holds an unapplied drift curve')
+            L = super().load_hdf5(path)
+        with h5py.File(path, 'r') as f:
+            if 'drift' in f:
+                L.drift = torch.from_numpy(f['drift'][...]).to(torch.float64)
+                L.drift_applied = bool(f['drift'].attrs.get('applied', False))
+                info = f['drift'].attrs.get('info')
+                if info is not None and 'drift' not in L.meta:
+                    L.meta['drift'] = json.loads(info)
+        return L
 
     # ------------------------------------------------------------------ loaders
     @classmethod

@@ -12,7 +12,8 @@ dependencies = [
     # DME v2 drift estimation (MIT), pinned to the commit the paper results were made with
     "dme @ git+https://github.com/jcnossen/drift-estimation.git@374300f12b893a934067703c34a0097c6659bdc1",
     # torch-psf (MIT): PSF models, PSF files (psf.zip, calibration json), bead / in-situ PSF fits, TIFF reader
-    "torch-psf @ git+https://github.com/jcnossen/torch-psf.git@4b0ffc3249ea6512779d81258b03128607515519",
+    # pin: the head of torch-psf branch psf-unify (to become the torch-psf master commit once psf-unify is merged there)
+    "torch-psf @ git+https://github.com/jcnossen/torch-psf.git@3cf144c2d449063dd081d2697549e14f546128a7",
 ]
 # Optional: h5py (hdf5 tables). DME is the installed dme package (no checkout setting); an editable install of a checkout at the
 # pinned commit is the same package: pip install -e <drift-estimation checkout>.

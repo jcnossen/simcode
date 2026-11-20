@@ -88,7 +88,7 @@ def test_negative_heights():
     sim = Simulator(_cal(V2), H=16, W=16, T=6, psf_roi=15, zmin=-0.2, zmax=0.4)
     assert sim.psf.z_limits[0] <= -0.2 and sim.psf.z_limits[1] >= 0.4
     vec = spsf.vectorial_psf(_cal(V2), 15, device='cuda')
-    vec = vec.resized(15, pixel_integration='spectral')     # the spline is the exact pixel integral (a v2 calibration: 'box')
+    vec = vec.resampled(15, pixel_integration='spectral')     # the spline is the exact pixel integral (a v2 calibration: 'box')
     zk = torch.tensor([-0.2, -0.13, 0.0, 0.4], device='cuda'); o = torch.zeros(4, device='cuda')
     r = sim.render_psf(o, o, zk)
     with torch.no_grad():

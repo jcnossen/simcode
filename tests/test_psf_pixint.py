@@ -25,7 +25,7 @@ def synth(B=48, T=6, R=11, photons=3000.0, seed=0):
     """tracks.npz-like dict rendered with the exact pixel integral (ADU, gain 0.5, offset 100)"""
     g = torch.Generator().manual_seed(seed)
     vec = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(OPT), R, npupil=32, oversample=2, device='cpu',
-                                        pixel_integration='exact').set_zernike({6: 0.04})
+                                        pixel_integration='spectral').set_zernike({6: 0.04})
     xy = torch.rand(B, 2, generator=g) - 0.5
     z = 0.02 + 0.12 * torch.rand(B, generator=g)
     with torch.no_grad():

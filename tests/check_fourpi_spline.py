@@ -1,7 +1,8 @@
 """The switch of SIMCODE's 4Pi PSF to torch-psf (2026-11-20): simcode.psf.fourpi_psf / fourpi_spline / fourpi_channel
 (torch_psf FourPiPSF / FourPiSplinePSF) vs the removed SIMCODE 4Pi code (simcode/fourpi/coherent_psf.py PSF4Pi /
 PSF4PiA / psf_from_state, simcode/fourpi/spline_table.py LUT4Pi), read from git at OLD (31197be8) into a temporary
-package. Needs the torch-psf pin of that commit (4b0ffc3: the old code uses torch_psf.vectorial.gauss_blur_os / BLUR_PAD).
+package. Needs the torch-psf pin of that commit (4b0ffc3: the old code uses torch_psf.vectorial.gauss_blur_os / BLUR_PAD)
+and SIMCODE code of that pin (c09480a7): a record of that switch. Later pin moves: tests/check_psf_pins.py (docs/TORCH_PSF.md).
 Per state, max |difference| / peak (0 = bit-identical) of
   - the model: forward(pos, phi_extra=Phi) (4 channels, z -0.55 .. 0.55 um, lateral offsets +-1.5 px), with the
     intensity / bg arguments, and the autograd gradients of a fixed weighted sum of the images with respect to every

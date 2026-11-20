@@ -80,7 +80,7 @@ def test_psf_render_spline_simulator():
                 assert torch.equal(a.render(pos), b.render(pos)), (zp, kw)
         if 'gauss' in zp: continue
         ka, kb = spsf.calib_psf(js, device=DEV), spsf.calib_psf(zp, device=DEV)
-        assert torch.equal(ka.coefs, kb.coefs), zp
+        assert torch.equal(ka.knots, kb.knots), zp
         sa, sb = (Simulator(p, H=16, W=16, T=6, device=DEV, psf_roi=15) for p in (js, zp))
         with torch.no_grad():
             assert torch.equal(sa.psf.render(pos), sb.psf.render(pos)), zp
@@ -107,7 +107,7 @@ def test_write_calib_zip_spline():
     a, b = spsf.camera_maps(out), spsf.camera_maps(out0)
     assert set(a) == set(b) and all(np.array_equal(a[k], b[k]) for k in a)
     s1, s2 = spsf.calib_psf(out, 11, device=DEV), spsf.calib_psf(jj, 11, device=DEV)
-    assert torch.equal(s1.coefs, s2.coefs) and s1.roisize == 11
+    assert torch.equal(s1.knots, s2.knots) and s1.roisize == 11
     v = spsf.vectorial_psf(out, 11, device=DEV)
     assert isinstance(v, spsf.VectorialPSF)
     with torch.no_grad():
@@ -155,7 +155,7 @@ def test_fourpi(work4pi):
     p = spsf.PSF.load(zp, device=DEV); q = spsf.fourpi_psf(st, device=DEV).eval()
     pos = _positions(); ph = torch.linspace(-3, 3, len(pos), device=DEV)
     with torch.no_grad():
-        assert torch.equal(p(pos, phi_extra=ph), q(pos, phi_extra=ph))
+        assert torch.equal(p(pos, phi=ph), q(pos, phi=ph))
     sp = M('fourpi/NPC_f_dxy15_spline.psf.zip')
     if os.path.isfile(sp):
         with zipfile.ZipFile(sp) as z:
