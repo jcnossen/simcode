@@ -7,6 +7,13 @@ px (pixel centres at integers, x = column; z in px of the lateral pixel size), `
 `n_frames` = frames covered, `photons`, `bg`, `id`, any further field [n, ...]; metadata `pixel_nm`, `image_size`,
 `n_frames`, ...; `ds.save('x.hdf5')` / `Dataset.load('x.hdf5')`.
 
+Files are written with torch-psf's dataset format_version 2 (since the psf-unify pin, 2026-11-20; the layout of the
+fields and metadata is unchanged, and readers of version 1 do not check the version). torch-psf's own `Dataset` no longer
+holds a drift (its `estimate_drift` returns a `torch_psf.Drift`); SIMCODE's `Dataset` keeps the drift as state of the
+object (`ds.drift`, `set_drift` / `apply_drift` / `undo_drift` / `estimate_drift`, docs/USAGE.md) and saves it as the
+`/drift` dataset of the file (attributes `applied`, `info`), as before; `torch_psf.Dataset.load` of such a file reads the
+record of an applied drift and warns about an unapplied curve (read it with `torch_psf.Drift.load(path)`).
+
 `simcode.dataset.Dataset` is that class plus SIMCODE's loaders (run directories; the tables of `simcode.run` / `simcode.table` are files of
 this format, `locs_p{1,2}_{net,solve}.hdf5`, with the metadata `pixel_nm`, `crop`, `tag`, `kind`, `table`, `info`; the `.npz` tables of runs before 2026-11-15, the paper's DECODE npz, the preprint code's `.npy`) and the paper's
 selection `select()` (docs/USAGE.md). A selection is not stored: it is computed when needed.

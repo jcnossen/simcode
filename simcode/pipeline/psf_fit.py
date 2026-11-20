@@ -30,6 +30,7 @@ FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
 # _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box'). Default 'exact' since
 # 2026-11-19 (the v4 PSFs; 'box' only to reproduce older fits)
 FIT_PIXEL_INTEGRATION = 'exact'
+TORCH_PSF_PIXEL_INTEGRATION = {'exact': 'spectral'}        # SIMCODE (config psf.pixel_integration) -> torch-psf VectorialPSF names
 
 
 class Fit:
@@ -39,10 +40,11 @@ class Fit:
     def __init__(self, R, optics, dev='cuda', blur='none', photosel=0, kdir=None, init_fit=None, freeze_base=False,
                  init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2, pixel_integration=None):
         self.dev, self.R, self.c, self.zmax = dev, R, (R - 1) / 2, zmax
-        pix = pixel_integration or FIT_PIXEL_INTEGRATION       # the kwarg only when not 'box' (torch-psf before pixel_integration)
+        pix = pixel_integration or FIT_PIXEL_INTEGRATION
+        pix = TORCH_PSF_PIXEL_INTEGRATION.get(pix, pix)        # SIMCODE's name -> torch-psf's (its constructor has no 'exact')
         self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE, device=dev,
-                                                   **({} if pix == 'box' else dict(pixel_integration=pix)))
-        self.pixel_integration = getattr(self.model, 'pixel_integration', 'box')     # torch-psf name ('exact' -> 'spectral')
+                                                   pixel_integration=pix)
+        self.pixel_integration = self.model.pixel_integration      # torch-psf name ('spectral' for 'exact')
         m = self.model
         if init_zcoef is not None:
             with torch.no_grad(): m.zcoef.copy_(torch.as_tensor(init_zcoef).to(dev))

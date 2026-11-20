@@ -35,6 +35,7 @@ import math
 import torch
 from simcode.simulate.fourpi_patches import DELTA_A, K_PAT
 from simcode.emitter.fourpi import window, WINDOWS_TC
+from simcode.psf import fourpi_component
 
 ANG = (0, 0, 0, 1, 1, 1)
 
@@ -68,7 +69,7 @@ class FourPiSolve:
             ex = self.ox[None] - p[:, 0, None, None]; ey = self.oy[None] - p[:, 1, None, None]
             row = []; grow = [[], [], []]
             for c in range(4):
-                ev = [comp[c].render(p, True) for comp in self.lut.luts]
+                ev = [fourpi_component(self.lut, k, c, p, True) for k in range(3)]
                 inc = ev[0][0].clamp(min=1e-7)
                 ws = [window(k, par, inc, ex, ey, (ev[1][0], ev[2][0]), ev[0][1:]) for k, par in self.wins]
                 for v, gx, gy, gz in ev:
@@ -90,7 +91,7 @@ class FourPiSolve:
         if W is not None:   # exact: the network's actual windows W [n,4,K,P,P] (fixed), PSF components from the LUT at theta
             for c in range(4):
                 pc = torch.stack([x + doff[:, c, 0], y + doff[:, c, 1], z], 1)
-                ev = [comp[c].render(pc, True) for comp in self.lut.luts]          # 3 x (v, gx, gy, gz) [n,P,P]
+                ev = [fourpi_component(self.lut, k, c, pc, True) for k in range(3)]    # 3 x (v, gx, gy, gz) [n,P,P]
                 Kt = torch.stack([torch.stack([torch.einsum('nkuv,nuv->nk', W[:, c], e_) for e_ in ev_]) for ev_ in ev])  # [comp, 4, n, K]
                 Kt = Kt.permute(2, 1, 0, 3)                                           # [n, 4 (val, dx, dy, dz), comp, K]
                 kc = getattr(self, 'coh_scale', 1.0)       # interference-contrast scale of the PSF model (real data: in-situ value)

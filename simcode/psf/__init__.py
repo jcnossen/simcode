@@ -1,20 +1,24 @@
-"""The one place where SIMCODE uses torch_psf (github.com/jcnossen/torch-psf; pinned in pyproject.toml). Every other module
+"""The one place where SIMCODE imports torch_psf (github.com/jcnossen/torch-psf; pinned in pyproject.toml). Every other module
 imports the PSF models, the PSF / calibration file reader, the fits, the movie readers and the localization Dataset from
-here, so a change of the torch_psf API is a change of this file only. What SIMCODE requires of a new torch-psf pin (the
-rendered pixels of the final calibrations must not change) and the pending migration to torch-psf's unified PSF classes:
-docs/TORCH_PSF.md.
+here, so a renamed or moved torch_psf name is a change of this file only; the methods of these objects that other modules
+call are listed in docs/TORCH_PSF.md, with what SIMCODE requires of a new torch-psf pin (the rendered pixels of the final
+calibrations must not change) and the migration to torch-psf's unified PSF classes (psf-unify, 2026-11-20).
 
 From torch_psf (names as there): PSF (base class; PSF.load(path | dict, roisize, device, angle, oversample): calibration
-json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf.to_spline), VectorialPSF, CubicSplinePSF
-(knots= / knot_u0_px / knot_z0_um wrap a stored knot array), GaussianPSF, AstigmaticGaussianPSF, FourPiPSF,
-FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset (localizations: torch_psf.dataset; SIMCODE's
-layer is simcode/dataset.py), TiffMovie, ArrayMovie, open_movie, solve_linear (closed-form I / bg of the variable
-projection; torch_psf.fit), Tracks, extract_rois, fit_tracks (in-situ PSF fit on tracks; torch_psf.estimation),
-heldout_tracks / paired_nll / split_checkerboard (held-out check of a frozen PSF on track samples, the paired per-sample
-NLL difference, the checkerboard split; torch_psf.estimation), spot_deviance, maps_from_movie (per-pixel sCMOS offset / read-noise maps from a sparse movie; torch_psf.camera),
+json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf.to_spline; one render signature
+render(pos, grad, *, dipM, phi, xy, focus, angle)), VectorialPSF, SplinePSF (the spline tables: pixel or density values,
+Catmull-Rom or cubic B-spline kernel; knots= / knot_u0_px / knot_z0_um wrap a stored knot array), to_spline (a model or a
+per-angle list -> SplinePSF, kernel / value / grid explicit), ZMode (z as emitter height or stage defocus), GaussianPSF,
+AstigmaticGaussianPSF, FourPiPSF, FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset / Drift
+(localizations and a drift curve: torch_psf.dataset; SIMCODE's layer is simcode/dataset.py), TiffMovie, ArrayMovie,
+open_movie, solve_linear (closed-form I / bg of the variable projection; torch_psf.fit), Tracks, extract_rois, fit_tracks
+(in-situ PSF fit on tracks; torch_psf.estimation), heldout_tracks / paired_nll / split_checkerboard (held-out check of a
+frozen PSF on track samples, the paired per-sample NLL difference, the checkerboard split; torch_psf.estimation),
+spot_deviance, maps_from_movie (per-pixel sCMOS offset / read-noise maps from a sparse movie; torch_psf.camera),
 white_photon_transfer (camera gain from the white background noise; torch_psf.camera), fit_gaussian_free_sigma
-(spot fit with a free Gaussian width; torch_psf.gaussian), filter_frames, emitter_height_pos_fn, save_zip / is_psf_zip /
-convert_calibration (the psf.zip format, torch-psf docs/PSF_FORMAT.md).
+(spot fit with a free Gaussian width; torch_psf.gaussian), filter_frames, save_zip / is_psf_zip / convert_calibration
+(the psf.zip format, torch-psf docs/PSF_FORMAT.md). Other modules call methods of these objects directly; the methods
+SIMCODE relies on are listed in docs/TORCH_PSF.md.
 
 SIMCODE-specific:
 
@@ -23,21 +27,23 @@ SIMCODE-specific:
                                            [2][3]. vectorial_psf(path, angle=0 / 1 / None) gives that angle's VectorialPSF (None
                                            = the angle average: mean dipole tensor, mean blur covariance); calib_psf(path,
                                            angle=...) its spline (None = the mean of the angle images). torch_psf
-                                           PSF.load(<psf.zip>, angle=k) reads the per-angle terms since 4b0ffc3 (it refuses
-                                           angle=k for a model without them); read_calib restores them from older zips
+                                           PSF.load(<psf.zip>, angle=k) reads the per-angle terms (it refuses angle=k for a
+                                           model without them); read_calib restores them from older zips
                                            (provenance.unused_model_keys).
   calib_psf(path, roisize, angle, device)  THE PSF renderer of SIMCODE and of the baselines (2026-11-19; analysis/baselines
                                            zpsf: SMLM, SIMFLUX, DECODE): the integrated cubic B-spline of the calibration
-                                           (torch_psf IntegratedSplinePSF: point samples of the exact vectorial model on
-                                           SPLINE's knot grid, the exact pixel integral of the spline; 1.7e-5 of the peak
+                                           (torch_psf SplinePSF, kernel 'bspline', value 'density': point samples of the
+                                           exact vectorial model on SPLINE's knot grid interpolated by the cubic B-spline,
+                                           the exact pixel integral of the spline; psf.zip type 'integrated_spline'; 1.7e-5 of the peak
                                            from the vectorial model at 'exact' pixel integration). A psf.zip written with
                                            it (write_calib_zip) carries the coefficients (per pattern angle + their mean);
                                            any other calibration (calib json, a psf.zip without them) builds them on load
                                            from its vectorial model (integrated_spline; cached per file). angle 0 / 1 =
                                            that pattern angle, None = the mean of the angle images. A Gaussian calibration
                                            ('psf_gauss_sigma_um') gives its GaussianPSF.
-  integrated_spline(calib, device)         the IntegratedSplinePSF of a calibration (path or calib dict, e.g. a perturbed
-                                           one) built from its vectorial model on the SPLINE grid (all angles).
+  integrated_spline(calib, device)         the integrated B-spline (SplinePSF) of a calibration (path or calib dict, e.g. a
+                                           perturbed one) built from its vectorial model on the SPLINE grid with SPLINE_KIND
+                                           (all angles; torch_psf to_spline, kernel and grid passed explicitly).
   vectorial_psf(path, roisize, angle)      the calibration's VectorialPSF (the source model; the PSF fits, the CRLB).
 
 Calibration files (the one reader of the non-PSF entries of a calibration): a SIMCODE calibration is either the calib json
@@ -63,7 +69,8 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
                                  analysis/fourpi/fit_psf4pi.py; FourPiPSF.state()). Also reads the per-arm terms of SIMCODE's
                                  in-situ states ('arms' {'top' | 'bot': {NA, n_med, apod, saf, pupil_phase, pupil_amp}},
                                  analysis/fourpi_plain/insitu4pi.py): FourPiPSF.from_state reads 'arms' {'top' | 'bottom'}
-                                 without a per-arm n_med, so 'bot' is renamed and n_med is set on the arm.
+                                 without a per-arm n_med, so 'bot' is renamed and n_med is set on the arm. zmode (None = the
+                                 state's) = torch_psf ZMode(model, zmode).
   fourpi_spline(state, roisize, z_range, oversample, dz_um, zpad, device)  THE 4Pi PSF of the networks, the simulators and
                                  the solve: the FourPiSplinePSF (FourPiPSF.to_spline; 4Pi phase analytic) of a state on
                                  SIMCODE's grid (default 15 px, 4 knots / px, z -0.6 .. 0.6 um in 10 nm planes, zpad 3; the
@@ -76,20 +83,22 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
                                  grid, i.e. exactly K for the base state itself; roisize is kept, the file's grid replaces
                                  z_range / oversample / dz_um / zpad).
   fourpi_knots(state, ...)     the knots [3 (inc, cr, ci), C, nz, n, n] of that table (with reg / beta; no 'spline').
+  fourpi_component(spline, k, c, pos, grad)  component k (0 inc, 1 cr, 2 ci) of channel c of a FourPiSplinePSF at pos [N, 3]:
+                                 [N, P, P] (grad: value, d/dx, d/dy, d/dz); one table of the FourPiSplinePSF's knot bank
+                                 (spline.table, a SplinePSF with the axes (phase, channel)).
   fourpi_channel(spline, pos, phi, c, grad)  channel c of a FourPiSplinePSF at pos [N, 3] and the 4Pi phase phi [N]: [N, P, P]
                                  (grad: value, d/dx, d/dy, d/dz, d/dphi); FourPiSplinePSF.evaluate gives all channels.
 """
 import json, os
 import numpy as np
 import torch
-from torch_psf import (PSF, VectorialPSF, CubicSplinePSF, GaussianPSF, AstigmaticGaussianPSF, FourPiPSF, FourPiSplinePSF,
-                       Optics, Camera, ZStackEstimator, Dataset)
+from torch_psf import (PSF, VectorialPSF, SplinePSF, to_spline, ZMode, GaussianPSF, AstigmaticGaussianPSF, FourPiPSF,
+                       FourPiSplinePSF, Optics, Camera, ZStackEstimator, Dataset, Drift)
 from torch_psf.movie import TiffMovie, ArrayMovie, open_movie
 from torch_psf.fit import solve_linear
 from torch_psf.spots import Tracks, extract_rois
 from torch_psf.detect import filter_frames
 from torch_psf.estimation import fit_tracks, spot_deviance, heldout_tracks, paired_nll, split_checkerboard
-from torch_psf.pixint import IntegratedSplinePSF
 from torch_psf import psfzip as _pz
 from torch_psf.psfzip import save_zip, is_psf_zip, convert_calibration
 from torch_psf.camera import maps_from_movie, white_photon_transfer
@@ -106,12 +115,16 @@ def has_angle_psf(c):
 
 
 # ============================================================================================ the PSF renderer
-# knot grid of the integrated cubic B-spline of a calibration (IntegratedSplinePSF.from_vectorial): emitter heights 0 - 0.4 um
+# knot grid of the integrated cubic B-spline of a calibration (torch_psf to_spline, SPLINE_KIND): emitter heights 0 - 0.4 um
 # (user decision 2026-11-19; 6 extra planes each side absorb the boundary of the B-spline prefilter), 10 nm planes, 4 knots / px
 # (3 knots / px: 5.3e-5 of the peak from the exact vectorial model on the v4 PSFs, 4: 1.7e-5; out/onepsf), offsets up to 2 px
 # on a 41 x 41 ROI (a smaller ROI supports larger offsets: 15 px at 11 x 11)
 SPLINE = dict(z_range=(0.0, 0.4), roisize=41, xy_limit=2.0, oversample=4, dz_um=0.01, zpad=6)
-_SPLINES = {}                       # (file, mtime, size, device) -> IntegratedSplinePSF of calib_psf (built on load)
+# its interpolant, passed explicitly so that torch-psf's default for new tables does not change SIMCODE's renders: the cubic
+# B-spline of point samples of the PSF density, integrated exactly over each pixel (psf.zip type 'integrated_spline'). The
+# trained models (m1809, m25) use it: keep it until a retrain.
+SPLINE_KIND = dict(kernel='bspline', value='density', backend='sep')
+_SPLINES = {}                       # (file, mtime, size, device) -> the SplinePSF of calib_psf (built on load)
 
 
 def vectorial_psf(calib, roisize=15, angle=None, device='cuda'):
@@ -126,8 +139,9 @@ def vectorial_psf(calib, roisize=15, angle=None, device='cuda'):
 
 
 def integrated_spline(calib, device='cuda', **grid):
-    """the IntegratedSplinePSF (all pattern angles: coefs_angle when the calibration has per-angle terms) of a calibration (path
-    or calib dict) built from its vectorial model on the SPLINE grid (grid: overrides of SPLINE)"""
+    """the integrated cubic B-spline (torch_psf SplinePSF; all pattern angles: an 'angle' table axis when the calibration has
+    per-angle terms) of a calibration (path or calib dict) built from its vectorial model on the SPLINE grid with SPLINE_KIND
+    (grid: overrides of SPLINE)"""
     g = dict(SPLINE, **grid)
     c = calib if isinstance(calib, dict) else read_calib(calib)
     vecs = ([vectorial_psf(calib, g['roisize'], k, device) for k in range(2)] if has_angle_psf(c)
@@ -138,7 +152,7 @@ def integrated_spline(calib, device='cuda', **grid):
         warnings.warn(f"{'calibration dict' if isinstance(calib, dict) else os.path.basename(str(calib))}: fitted with pixel_integration "
                       f"{v0.pixel_integration!r}; its PSF spline is the exact pixel integral of the same parameters (up to ~1 % of "
                       f"the peak from the {v0.pixel_integration!r} rendering)", stacklevel=2)
-    return IntegratedSplinePSF.from_vectorial(vecs, **g)
+    return to_spline(vecs, **SPLINE_KIND, **g)
 
 
 def _zip_channel_type(path):
@@ -148,7 +162,7 @@ def _zip_channel_type(path):
 
 
 def calib_psf(calib, roisize=None, angle=None, device='cuda', z_range=None):
-    """THE PSF of a calibration (module doc): IntegratedSplinePSF for roisize x roisize ROIs (default SPLINE roisize) of pattern
+    """THE PSF of a calibration (module doc): the integrated spline (SplinePSF) for roisize x roisize ROIs (default SPLINE roisize) of pattern
     angle `angle` (None = the mean of the angle images); from the psf.zip's integrated_spline channel, else built from the
     vectorial model (integrated_spline, cached per file / device); calib may also be a calib dict (built, not cached).
     z_range: heights (um) the spline must cover (default SPLINE's); one beyond the stored spline's range is built from the
@@ -176,7 +190,7 @@ def calib_psf(calib, roisize=None, angle=None, device='cuda', z_range=None):
             _SPLINES[key] = spl
     if spl.n_angles == 0 and has_angle_psf(c):
         raise ValueError('a calibration with per-angle PSF terms but a spline without per-angle coefficients')
-    out = spl.for_angle(angle) if angle is not None else spl
+    out = spl.for_angle(angle) if angle is not None and spl.n_angles else spl       # no angle terms: the same for every angle
     return out if out.roisize == P else out.resized(P)
 
 
@@ -277,7 +291,7 @@ def write_calib_zip(json_path, out=None, spline=True, **kw):
     with open(json_path) as f:
         gauss = json.load(f).get('psf_gauss_sigma_um') is not None
     if spline and not gauss:
-        kw['integrated_spline'] = dict(SPLINE)
+        kw['integrated_spline'] = dict(SPLINE, **SPLINE_KIND)
     convert_calibration(json_path, out, **kw)
     return out
 
@@ -305,17 +319,23 @@ def fourpi_state(path, root=None):
 
 # ============================================================================================ 4Pi PSF models
 FOURPI_TABLE_KEYS = ('reg', 'beta', 'spline', 'spline_base')     # state keys read by fourpi_spline / fourpi_knots, not torch_psf
+# interpolant of the 4Pi tables (the 4Pi networks are trained on it; passed explicitly, as SPLINE_KIND): Catmull-Rom of the
+# pixel values, grouped-convolution evaluation
+FOURPI_KIND = dict(kernel='catmull', backend='conv')
 
 
 def fourpi_psf(state, device=None, roisize=None, zmode=None):
     """torch_psf FourPiPSF of a 4Pi PSF state (module doc): FourPiPSF.from_state, plus SIMCODE's in-situ per-arm terms
-    ('arms' with 'bot' and a per-arm n_med); roisize default meta.R, zmode default the state's ('emitter')"""
+    ('arms' with 'bot' and a per-arm n_med); roisize default meta.R, zmode default the state's ('emitter'; else torch_psf
+    ZMode(model, zmode))"""
     arms = state.get('arms') or {}
     s = state
     if 'bot' in arms:          # SIMCODE in-situ state: {'top' | 'bot': {NA, n_med, apod, saf, pupil_phase, pupil_amp}}
         s = dict(state)
         s['arms'] = {nm: {k: v for k, v in (arms.get(src) or {}).items() if k != 'n_med'} for nm, src in (('top', 'top'), ('bottom', 'bot'))}
-    p = FourPiPSF.from_state(s, device=device, roisize=roisize, zmode=zmode)
+    p = FourPiPSF.from_state(s, device=device, roisize=roisize)
+    if zmode is not None:
+        p = ZMode(p, zmode)
     if 'bot' in arms:
         with torch.no_grad():
             for arm, src in ((p.top, 'top'), (p.bot, 'bot')):
@@ -344,8 +364,9 @@ def fourpi_knots(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.0
         with torch.no_grad():
             p.channel_offsets.copy_(torch.as_tensor(state['reg'], dtype=torch.float32).reshape(p.channel_offsets.shape))
     with torch.no_grad():
-        T = p.to_spline(roisize, tuple(z_range), oversample=oversample, dz_um=dz_um, zpad=zpad, xy_limit=xy_limit, chunk=chunk)
-    K = T.knots
+        T = p.to_spline(roisize, tuple(z_range), value='pixel', **FOURPI_KIND, oversample=oversample, dz_um=dz_um, zpad=zpad,
+                        xy_limit=xy_limit, chunk=chunk)
+    K = T.knots.reshape(*T.table.table_map.shape, *T.knots.shape[-3:])          # the knot bank [3 C, ...] -> [3, C, ...]
     if state.get('beta'):
         K = _rotate_beta(K, state['beta'], z_range, dz_um, zpad)
         T = None
@@ -360,7 +381,7 @@ def fourpi_spline(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.
     if T is not None:
         return T
     return FourPiSplinePSF(roisize, tuple(z_range), K, oversample=oversample, dz_um=dz_um, zpad=zpad, tau=state['tau'],
-                           device=device, pixel_um=state['meta']['px'])
+                           device=device, pixel_um=state['meta']['px'], **FOURPI_KIND)
 
 
 def _fourpi_refined(state, roisize, device, chunk):
@@ -378,7 +399,17 @@ def _fourpi_refined(state, roisize, device, chunk):
             raise ValueError(f"{state['spline']}: knots {tuple(K.shape)}, the table of its grid {tuple(d.shape)}")
         K = K + d
     return FourPiSplinePSF(roisize, zr, K, oversample=S, dz_um=hz, zpad=zpad, tau=state['tau'], device=K.device,
-                           pixel_um=state['meta']['px'])
+                           pixel_um=state['meta']['px'], **FOURPI_KIND)
+
+
+def fourpi_component(spline, k, c, pos, grad=False):
+    """component k (0 inc, 1 cr, 2 ci) of channel c of a FourPiSplinePSF at pos [N, 3] (x, y px, z um): [N, P, P]; grad: (value,
+    d/dx, d/dy, d/dz). One table of the spline's knot bank (spline.table: SplinePSF with the axes (phase, channel)), without
+    the spline's channel_offsets / intensity_ratio (SIMCODE's tables have the offsets baked in)"""
+    T = spline.table
+    if T.axes != ('phase', 'channel'):
+        raise ValueError(f'fourpi_component: a 4Pi table with the axes (phase, channel) expected, not {T.axes}')
+    return T.evaluate_tables(pos, T.table_map[k, c], grad)
 
 
 def fourpi_channel(spline, pos, phi, c, grad=False):
@@ -386,7 +417,7 @@ def fourpi_channel(spline, pos, phi, c, grad=False):
     [N, P, P]; grad: (value, d/dx, d/dy, d/dz, d/dphi)"""
     cP, sP = torch.cos(phi)[:, None, None], torch.sin(phi)[:, None, None]
     if not grad:
-        inc, cr, ci = (row[c].render(pos) for row in spline.luts)
+        inc, cr, ci = (fourpi_component(spline, k, c, pos) for k in range(3))
         return inc + cP * cr - sP * ci
-    a, b, e = (row[c].render(pos, True) for row in spline.luts)
+    a, b, e = (fourpi_component(spline, k, c, pos, True) for k in range(3))
     return [a[k] + cP * b[k] - sP * e[k] for k in range(4)] + [-sP * b[0] - cP * e[0]]

@@ -7,7 +7,8 @@ Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
              intensities, the other columns), metadata, from_run(pass_) of the HDF5 tables and of the npz tables of runs
              before 2026-11-15 (columns=); select / mask equal table.select; columns(); the subclass survives indexing and
              the filters
-  hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata; select after the round trip
+  hdf5       save -> plain torch_psf.Dataset.load: the same fields, values, dtypes and metadata (the drift curve: torch_psf
+             Drift.load); select and the drift after the round trip (SIMCODE's Dataset.load)
   old files  the preprint code's .npy, the paper's DECODE npz,
              Picasso (the paper's sf.hdf5)
   drift      apply at the window centre (frame + 3); estimate (DME v2) close to simcode.util.drift.drift_of_table
@@ -15,7 +16,7 @@ Run: python tests/test_dataset.py (or pytest tests/test_dataset.py).
   real       out/paper2/1809_2/v2_matched/locs_p2.npz (a run before 2026-11-15): counts of the info json; FRC of a subset =
              analysis/paper/frc_fair.py
 """
-import json, os, sys, tempfile
+import json, os, sys, tempfile, warnings
 import numpy as np
 import torch
 
@@ -23,7 +24,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 from simcode import table as SP
 from simcode.dataset import Dataset
-from simcode.psf import Dataset as TorchPSFDataset
+from simcode.psf import Dataset as TorchPSFDataset, Drift
 from tests.test_tables import _run_dir
 
 REAL = os.path.join(REPO, 'out/paper2/1809_2/v2_matched/locs_p2.npz')
@@ -104,15 +105,18 @@ def test_hdf5_roundtrip():
         T, info = _table(d)
         L = Dataset.from_run(d); L.set_drift(np.cumsum(np.random.default_rng(1).normal(0, 0.01, (L.num_frames, 2)), 0))
         f = L.save(f'{d}/a.hdf5')
-        M = TorchPSFDataset.load(f)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')          # torch-psf's reader: 'File holds an unapplied drift curve' (Drift.load reads it)
+            M = TorchPSFDataset.load(f)
         assert type(M) is TorchPSFDataset and set(M.keys()) == set(L.keys())
         nan = lambda t: torch.nan_to_num(t, 7.0) if t.is_floating_point() else t
         for k in L.keys():
             assert M[k].dtype == L[k].dtype and torch.equal(nan(M[k]), nan(L[k])), k
-        assert torch.equal(M.drift, L.drift) and not M.drift_applied
+        assert torch.equal(Drift.load(f).curve, L.drift)
         assert {k: v for k, v in M.meta.items() if k != 'source'} == {k: v for k, v in L.meta.items() if k != 'source'}
         N = Dataset.load(f)
         assert type(N) is Dataset and torch.equal(N.mask(), L.mask()) and int(N.mask().sum()) == info['n_main']
+        assert torch.equal(N.drift, L.drift) and not N.drift_applied
         N.apply_drift(); assert torch.allclose(N.pos, L.pos - L.drift[L.center_frame.long()], atol=0, rtol=0)
 
 

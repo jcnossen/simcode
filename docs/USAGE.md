@@ -60,7 +60,7 @@ ds.set_drift(np.load('drift.npy'))              # or use a saved estimate
 img = sel.render(pixel_nm=10)                   # 2D histogram [ny, nx]
 res = sel.frc()                                 # nm; halves = alternating 300-frame blocks, 1/7 threshold (= simcode.evaluation.frc)
 sel.save('sel.hdf5')                            # torch-psf format (docs/DATASET_FORMAT.md of torch-psf)
-again = Dataset.load('sel.hdf5')                # also torch_psf.Dataset.load('sel.hdf5') without SIMCODE
+again = Dataset.load('sel.hdf5')                # with its drift; torch_psf.Dataset.load('sel.hdf5') without SIMCODE (its drift: torch_psf.Drift.load)
 sel.save_picasso('sel_picasso.hdf5')            # Picasso (+ .yaml); sel.save('sel.csv'): ThunderSTORM
 ```
 

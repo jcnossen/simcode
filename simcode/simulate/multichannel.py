@@ -38,7 +38,7 @@ from dataclasses import dataclass
 import numpy as np
 import torch
 import torch.nn.functional as F
-from simcode.psf import fourpi_spline
+from simcode.psf import fourpi_spline, fourpi_component
 
 
 
@@ -117,7 +117,7 @@ class MultiChannelAcquisitionSim:
         self.spec = {c.name: c for c in cells}
         self.cells = [c.name for c in cells]
         self.reg = {c.name: cell_map(c, dev) for c in cells}
-        self.C = len(self.luts[0].luts[0])
+        self.C = self.luts[0].n_channels
         self.ang = (0, 0, 0, 1, 1, 1) if patterns else (0,) * T        # angle index (pattern orientation, 4Pi offset delta_a) of every frame
         self.patterns, self.phase_field_deg, self.reg_shift_sd, self.reg_lin_sd = patterns, phase_field_deg, reg_shift_sd, reg_lin_sd
         self.g_reg = torch.Generator(device=dev).manual_seed(seed + 7919)
@@ -258,7 +258,7 @@ class MultiChannelAcquisitionSim:
                 Xi = ((ix.long() + pad)[:, None, None] + o_[None, None, :] - h).expand(-1, P, P)
                 ok = (Yi >= 0) & (Yi < img.shape[-2]) & (Xi >= 0) & (Xi < img.shape[-1])
                 bi = sb[idx][:, None, None].expand(-1, P, P)
-                inc, cr, cim = (row[c].render(pos) for row in lut.luts)                         # 3 components, once
+                inc, cr, cim = (fourpi_component(lut, k, c, pos) for k in range(3))               # 3 components, once
                 for a in sorted(set(self.ang)):
                     ph = (Phi[idx] + (delta[sb[idx]] if a else 0.0))[:, None, None]
                     g = inc + torch.cos(ph) * cr - torch.sin(ph) * cim                                 # [m,P,P]
@@ -328,7 +328,7 @@ class MultiChannelAcquisitionSim:
             for c in range(NC):
                 rx, ry = torch.round(lx[k, c]), torch.round(ly[k, c])
                 pos = torch.stack([lx[k, c] - rx, ly[k, c] - ry, z[k]], 1)
-                inc, cr, cim = (row[c].render(pos) for row in lut.luts)
+                inc, cr, cim = (fourpi_component(lut, k, c, pos) for k in range(3))
                 sx = (ctr[k, c, 0] - rx.long())[:, None] + o[None] + hl; sy = (ctr[k, c, 1] - ry.long())[:, None] + o[None] + hl   # stamp index of the patch pixels
                 vx = (sx >= 0) & (sx < Pl); vy = (sy >= 0) & (sy < Pl)
                 gi = (torch.arange(len(k), device=dev)[:, None, None], sy.clamp(0, Pl - 1)[:, :, None], sx.clamp(0, Pl - 1)[:, None, :])
