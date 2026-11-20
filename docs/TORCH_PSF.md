@@ -37,8 +37,8 @@ the table's knots) and `spline` (a refined knot table plus the table change of a
 
 ## The pin
 
-`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `94558aaabb58`, the head of torch-psf's
-`psf-unify` branch; it is to become the torch-psf master commit that contains psf-unify once that is merged there. The
+`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `44b387a`, torch-psf master with the unified PSF
+classes (psf-unify) merged (its `torch_psf/` tree is that of the tested psf-unify head `94558aa`). The
 models m1809 / m25 and the final in-situ PSF files of the paper data (`<movie>/simcode_results/psf_v4/`) were made with
 the previous pin `4b0ffc3` (2026-11-19); the checks below show that the new pin renders them identically.
 
