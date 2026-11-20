@@ -50,7 +50,7 @@ def knot_spline(zstack, S, u0, z0, hz, P, xmax=None):
     spacing hz um) for P x P ROIs (also even); offset limit P / 2 + 1 px (or xmax), reduced to what the knots support"""
     return SplinePSF(P, (float(z0), float(z0) + (zstack.shape[0] - 1) * float(hz)), oversample=int(S), dz_um=float(hz),
                      zpad=0, xy_limit=P / 2 + 1 if xmax is None else xmax, device=zstack.device,
-                     knots=zstack.contiguous(), knot_u0_px=float(u0), knot_z0_um=float(z0), kernel='catmull', value='pixel',
+                     knots=zstack.contiguous(), knot_u0_px=float(u0), knot_z0_um=float(z0), kernel='catmull', integrated=False,
                      backend='conv')
 
 

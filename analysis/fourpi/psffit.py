@@ -25,7 +25,7 @@ class SumPSF(torch.nn.Module):
         super().__init__()
         self.R, self.two_arm, self.depth = R, two_arm, depth
         mk = lambda: VectorialPSF(R, pixel_um=px, NA=NA, n_imm=n_imm, n_med=n_med, wavelength_um=lam, zernike_indices=ZIDX,
-                                  npupil=npupil, oversample=os_, device='cpu')
+                                  npupil=npupil, oversample=os_, device='cpu', pixel_integration='midpoint')
         self.p1 = mk()
         self.logblur = torch.nn.Parameter(torch.tensor(math.log(0.05)))      # isotropic blur variance (px^2)
         if two_arm:

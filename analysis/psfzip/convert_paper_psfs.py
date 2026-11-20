@@ -66,7 +66,7 @@ def beads(dev):
     noll = sorted(int(k) for k in B['zernike'])
     optics = spsf.Optics(pixel_um=0.10833, NA=B['NA'], wavelength_um=0.70, n_med=B['n_med'])   # simcode.psf.beads defaults
     vec = spsf.VectorialPSF.from_optics(optics, 26, zernike_indices=tuple(noll), focus_um=0.0, z_range=(-1.0, 1.0),
-                                        device=dev)
+                                        device=dev, pixel_integration='midpoint')      # the bead fit's (simcode.psf.beads)
     import torch
     with torch.no_grad():
         vec.zcoef.copy_(torch.tensor([B['zernike'][str(j)] for j in noll], device=vec.dev))
@@ -110,7 +110,7 @@ def fourpi(dev, spline, work, knots='rebuild'):
     spsf.save_zip(out, p, provenance=prov, channels=chans)
     print(out, flush=True)
     if spline:
-        S = p.to_spline(15, (-0.6, 0.6), value='pixel', **spsf.FOURPI_KIND, oversample=4, dz_um=0.01, zpad=3)   # = fourpi_spline's table
+        S = p.to_spline(15, (-0.6, 0.6), **spsf.FOURPI_KIND, oversample=4, dz_um=0.01, zpad=3)   # = fourpi_spline's table
         out = os.path.join(d, 'NPC_f_dxy15_spline.psf.zip')
         spsf.save_zip(out, S, source=p, channels=chans, spline_knots=knots,
                       provenance=dict(prov, spline='simcode.psf.fourpi_spline(state, 15) grid (formerly simcode/fourpi/spline_table.LUT4Pi(state, P=15)): 4 x oversampled, z -0.6 .. 0.6 um, '

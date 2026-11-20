@@ -29,7 +29,7 @@ def run(a):
     if a.asym:   # asymmetric arms (oil 1.5 top / silicone 1.35 bottom), stage mode for the bead stack, init from a symmetric fit
         m = ZMode(FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=(a.NA_t, a.NA_b), n_imm=(a.n_imm_t, a.n_imm_b),
                             n_med=a.n_med, zernike_indices=(4,) + tuple(range(5, 22)), npupil=a.npupil, oversample=2,
-                            mirror=a.mirror, depth_um=(a.depth_t, a.depth_b), device=dev), 'stage')
+                            mirror=a.mirror, depth_um=(a.depth_t, a.depth_b), device=dev, pixel_integration='midpoint'), 'stage')
         s0 = json.load(open(f'{OUT}/{a.cell}_{a.init_sym}.json'))['psf']
         with torch.no_grad():
             m.top.zcoef[1:].copy_(torch.tensor(s0['zt'], device=dev)); m.bot.zcoef[1:].copy_(torch.tensor(s0['zb'], device=dev))
@@ -38,7 +38,7 @@ def run(a):
             m.d_bot.copy_(torch.tensor(s0['d_bot'], device=dev)); m.logblur.fill_(math.log(s0['blur_px2']))
     else:
         m = FourPiPSF(R, pixel_um=a.px, wavelength_um=a.lam, NA=a.NA, n_imm=a.n, npupil=a.npupil, oversample=2, mirror=a.mirror,
-                      device=dev)
+                      device=dev, pixel_integration='midpoint')
         zt = torch.tensor(base['psf']['zcoef1'], device=dev)
         with torch.no_grad():
             m.top.zcoef.copy_(zt); m.bot.zcoef.copy_(-zt if a.bot_init == 'neg' else zt)
