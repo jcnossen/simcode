@@ -8,7 +8,7 @@ From torch_psf (names as there): PSF (base class; PSF.load(path | dict, roisize,
 json, torch-psf PSF file or psf.zip -> model, angle = per-pattern-angle PSF; psf.to_spline; one render signature
 render(pos, grad, *, dipM, phi, xy, focus, angle)), VectorialPSF, SplinePSF (the spline tables: pixel or density values,
 Catmull-Rom or cubic B-spline kernel; knots= / knot_u0_px / knot_z0_um wrap a stored knot array), to_spline (a model or a
-per-angle list -> SplinePSF, kernel / value / grid explicit), ZMode (z as emitter height or stage defocus), GaussianPSF,
+per-angle list -> SplinePSF, kernel / integrated / grid explicit), ZMode (z as emitter height or stage defocus), GaussianPSF,
 AstigmaticGaussianPSF, FourPiPSF, FourPiSplinePSF, Optics, Camera, ZStackEstimator (bead z-stacks), Dataset / Drift
 (localizations and a drift curve: torch_psf.dataset; SIMCODE's layer is simcode/dataset.py), TiffMovie, ArrayMovie,
 open_movie, solve_linear (closed-form I / bg of the variable projection; torch_psf.fit), Tracks, extract_rois, fit_tracks
@@ -32,7 +32,7 @@ SIMCODE-specific:
                                            (provenance.unused_model_keys).
   calib_psf(path, roisize, angle, device)  THE PSF renderer of SIMCODE and of the baselines (2026-11-19; analysis/baselines
                                            zpsf: SMLM, SIMFLUX, DECODE): the integrated cubic B-spline of the calibration
-                                           (torch_psf SplinePSF, kernel 'bspline', value 'density': point samples of the
+                                           (torch_psf SplinePSF, kernel 'bspline', integrated: point samples of the
                                            exact vectorial model on SPLINE's knot grid interpolated by the cubic B-spline,
                                            the exact pixel integral of the spline; psf.zip type 'integrated_spline'; 1.7e-5 of the peak
                                            from the vectorial model at 'exact' pixel integration). A psf.zip written with
@@ -85,7 +85,7 @@ zip, the pattern in 'patterns', tirf_depth_um / emitter_z_* in 'acquisition', so
   fourpi_knots(state, ...)     the knots [3 (inc, cr, ci), C, nz, n, n] of that table (with reg / beta; no 'spline').
   fourpi_component(spline, k, c, pos, grad)  component k (0 inc, 1 cr, 2 ci) of channel c of a FourPiSplinePSF at pos [N, 3]:
                                  [N, P, P] (grad: value, d/dx, d/dy, d/dz); one table of the FourPiSplinePSF's knot bank
-                                 (spline.table, a SplinePSF with the axes (phase, channel)).
+                                 (spline.spline, a SplinePSF with the axes (phase, channel)).
   fourpi_channel(spline, pos, phi, c, grad)  channel c of a FourPiSplinePSF at pos [N, 3] and the 4Pi phase phi [N]: [N, P, P]
                                  (grad: value, d/dx, d/dy, d/dz, d/dphi); FourPiSplinePSF.evaluate gives all channels.
 """
@@ -123,7 +123,7 @@ SPLINE = dict(z_range=(0.0, 0.4), roisize=41, xy_limit=2.0, oversample=4, dz_um=
 # its interpolant, passed explicitly so that torch-psf's default for new tables does not change SIMCODE's renders: the cubic
 # B-spline of point samples of the PSF density, integrated exactly over each pixel (psf.zip type 'integrated_spline'). The
 # trained models (m1809, m25) use it: keep it until a retrain.
-SPLINE_KIND = dict(kernel='bspline', value='density', backend='sep')
+SPLINE_KIND = dict(kernel='bspline', integrated=True, backend='sep')
 _SPLINES = {}                       # (file, mtime, size, device) -> the SplinePSF of calib_psf (built on load)
 
 
@@ -139,7 +139,7 @@ def vectorial_psf(calib, roisize=15, angle=None, device='cuda'):
 
 
 def integrated_spline(calib, device='cuda', **grid):
-    """the integrated cubic B-spline (torch_psf SplinePSF; all pattern angles: an 'angle' table axis when the calibration has
+    """the integrated cubic B-spline (torch_psf SplinePSF; all pattern angles: an 'angle' spline axis when the calibration has
     per-angle terms) of a calibration (path or calib dict) built from its vectorial model on the SPLINE grid with SPLINE_KIND
     (grid: overrides of SPLINE)"""
     g = dict(SPLINE, **grid)
@@ -147,7 +147,7 @@ def integrated_spline(calib, device='cuda', **grid):
     vecs = ([vectorial_psf(calib, g['roisize'], k, device) for k in range(2)] if has_angle_psf(c)
             else vectorial_psf(calib, g['roisize'], None, device))
     v0 = vecs[0] if isinstance(vecs, list) else vecs
-    if v0.pixel_integration != 'spectral':
+    if v0.pixel_integration != 'exact':
         import warnings
         warnings.warn(f"{'calibration dict' if isinstance(calib, dict) else os.path.basename(str(calib))}: fitted with pixel_integration "
                       f"{v0.pixel_integration!r}; its PSF spline is the exact pixel integral of the same parameters (up to ~1 % of "
@@ -321,7 +321,8 @@ def fourpi_state(path, root=None):
 FOURPI_TABLE_KEYS = ('reg', 'beta', 'spline', 'spline_base')     # state keys read by fourpi_spline / fourpi_knots, not torch_psf
 # interpolant of the 4Pi tables (the 4Pi networks are trained on it; passed explicitly, as SPLINE_KIND): Catmull-Rom of the
 # pixel values, grouped-convolution evaluation
-FOURPI_KIND = dict(kernel='catmull', backend='conv')
+FOURPI_KIND = dict(kernel='catmull', integrated=False, backend='conv')
+_FOURPI_SPLINE = dict(kernel=FOURPI_KIND['kernel'], backend=FOURPI_KIND['backend'])     # FourPiSplinePSF(knots, ...)
 
 
 def fourpi_psf(state, device=None, roisize=None, zmode=None):
@@ -364,9 +365,9 @@ def fourpi_knots(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.0
         with torch.no_grad():
             p.channel_offsets.copy_(torch.as_tensor(state['reg'], dtype=torch.float32).reshape(p.channel_offsets.shape))
     with torch.no_grad():
-        T = p.to_spline(roisize, tuple(z_range), value='pixel', **FOURPI_KIND, oversample=oversample, dz_um=dz_um, zpad=zpad,
+        T = p.to_spline(roisize, tuple(z_range), **FOURPI_KIND, oversample=oversample, dz_um=dz_um, zpad=zpad,
                         xy_limit=xy_limit, chunk=chunk)
-    K = T.knots.reshape(*T.table.table_map.shape, *T.knots.shape[-3:])          # the knot bank [3 C, ...] -> [3, C, ...]
+    K = T.knots.reshape(*T.spline.spline_index.shape, *T.knots.shape[-3:])          # the knot bank [3 C, ...] -> [3, C, ...]
     if state.get('beta'):
         K = _rotate_beta(K, state['beta'], z_range, dz_um, zpad)
         T = None
@@ -381,7 +382,7 @@ def fourpi_spline(state, roisize=15, z_range=(-0.6, 0.6), oversample=4, dz_um=0.
     if T is not None:
         return T
     return FourPiSplinePSF(roisize, tuple(z_range), K, oversample=oversample, dz_um=dz_um, zpad=zpad, tau=state['tau'],
-                           device=device, pixel_um=state['meta']['px'], **FOURPI_KIND)
+                           device=device, pixel_um=state['meta']['px'], **_FOURPI_SPLINE)
 
 
 def _fourpi_refined(state, roisize, device, chunk):
@@ -399,17 +400,17 @@ def _fourpi_refined(state, roisize, device, chunk):
             raise ValueError(f"{state['spline']}: knots {tuple(K.shape)}, the table of its grid {tuple(d.shape)}")
         K = K + d
     return FourPiSplinePSF(roisize, zr, K, oversample=S, dz_um=hz, zpad=zpad, tau=state['tau'], device=K.device,
-                           pixel_um=state['meta']['px'], **FOURPI_KIND)
+                           pixel_um=state['meta']['px'], **_FOURPI_SPLINE)
 
 
 def fourpi_component(spline, k, c, pos, grad=False):
     """component k (0 inc, 1 cr, 2 ci) of channel c of a FourPiSplinePSF at pos [N, 3] (x, y px, z um): [N, P, P]; grad: (value,
-    d/dx, d/dy, d/dz). One table of the spline's knot bank (spline.table: SplinePSF with the axes (phase, channel)), without
+    d/dx, d/dy, d/dz). One spline of the knot bank (spline.spline: SplinePSF with the axes (phase, channel)), without
     the spline's channel_offsets / intensity_ratio (SIMCODE's tables have the offsets baked in)"""
-    T = spline.table
+    T = spline.spline
     if T.axes != ('phase', 'channel'):
         raise ValueError(f'fourpi_component: a 4Pi table with the axes (phase, channel) expected, not {T.axes}')
-    return T.evaluate_tables(pos, T.table_map[k, c], grad)
+    return T.evaluate_splines(pos, T.spline_index[k, c], grad)
 
 
 def fourpi_channel(spline, pos, phi, c, grad=False):

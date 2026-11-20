@@ -1,6 +1,6 @@
 """
 psf.pixel_integration of the psf stage (simcode.pipeline.psf_fit): the fit with pixel_integration 'exact' (torch-psf
-VectorialPSF pixel_integration 'spectral') stores it in _psf.pt / _psf.json, model_from_pt and heldout() use it (or an
+VectorialPSF pixel_integration 'exact') stores it in _psf.pt / _psf.json, model_from_pt and heldout() use it (or an
 override), and calib_dict writes it; 'box' (deprecated since the default became 'exact', 2026-11-19) leaves the files as before. Small synthetic tracks (CPU or GPU).
 Needs a torch-psf with VectorialPSF.pixel_integration (skipped otherwise).
 Run: python tests/test_psf_pixint.py (or pytest tests/test_psf_pixint.py)
@@ -25,7 +25,7 @@ def synth(B=48, T=6, R=11, photons=3000.0, seed=0):
     """tracks.npz-like dict rendered with the exact pixel integral (ADU, gain 0.5, offset 100)"""
     g = torch.Generator().manual_seed(seed)
     vec = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(OPT), R, npupil=32, oversample=2, device='cpu',
-                                        pixel_integration='spectral').set_zernike({6: 0.04})
+                                        pixel_integration='exact').set_zernike({6: 0.04})
     xy = torch.rand(B, 2, generator=g) - 0.5
     z = 0.02 + 0.12 * torch.rand(B, generator=g)
     with torch.no_grad():
@@ -47,14 +47,18 @@ def test_pixel_integration_fit_files_heldout():
                   log=lambda *a: None, init_zcoef=[0.0, 0.04] + [0.0] * 15)
         rb = P.fit(D, os.path.join(d, 'box'), pixel_integration='box', **kw)
         re = P.fit(D, os.path.join(d, 'ex'), **kw)                                  # the default: exact
-        assert rb['pixel_integration'] == 'box' and re['pixel_integration'] == 'spectral'
-        assert torch.load(os.path.join(d, 'ex_psf.pt'), weights_only=False)['pixel_integration'] == 'spectral'
-        assert json.load(open(os.path.join(d, 'ex_psf.json')))['pixel_integration'] == 'spectral'
+        assert rb['pixel_integration'] == 'midpoint' and re['pixel_integration'] == 'exact'
+        assert torch.load(os.path.join(d, 'ex_psf.pt'), weights_only=False)['pixel_integration'] == 'exact'
+        assert json.load(open(os.path.join(d, 'ex_psf.json')))['pixel_integration'] == 'exact'
         F, _ = P.model_from_pt(os.path.join(d, 'ex_psf.pt'), 11, DEV)
-        assert F.model.pixel_integration == 'spectral' and all(v.pixel_integration == 'spectral' for v in F.angle_models())
+        assert F.model.pixel_integration == 'exact' and all(v.pixel_integration == 'exact' for v in F.angle_models())
         Fb, _ = P.model_from_pt(os.path.join(d, 'box_psf.pt'), 11, DEV)
-        assert Fb.model.pixel_integration == 'box'
-        assert P.model_from_pt(os.path.join(d, 'box_psf.pt'), 11, DEV, 'exact')[0].model.pixel_integration == 'spectral'
+        assert Fb.model.pixel_integration == 'midpoint'
+        assert P.model_from_pt(os.path.join(d, 'box_psf.pt'), 11, DEV, 'exact')[0].model.pixel_integration == 'exact'
+        for old, new in (('spectral', 'exact'), ('box', 'midpoint')):     # the names stored before torch-psf's api-renames
+            S = torch.load(os.path.join(d, 'ex_psf.pt'), weights_only=False); S['pixel_integration'] = old
+            assert P.model_from_pt(S, 11, DEV)[0].model.pixel_integration == new
+            assert P.psf_calib(S).get('pixel_integration', 'midpoint') == new
         H = P.heldout(D, {'box': os.path.join(d, 'box_psf.pt'), 'ex': os.path.join(d, 'ex_psf.pt'),
                           'box_as_ex': (os.path.join(d, 'box_psf.pt'), 'exact')}, '', nsamples=48, iters=60, dev=DEV,
                       log=lambda *a: None)
@@ -68,8 +72,8 @@ def test_pixel_integration_fit_files_heldout():
         cam = dict(gain=0.5, offset=100.0, readnoise_e=1.0, gain_source='', offset_source='', readnoise_source='')
         ce = psf_stage.calib_dict(DS(), os.path.join(d, 'ex_psf.json'), os.path.join(d, 'ex_psf.pt'), pat, cam, '', True)
         cb = psf_stage.calib_dict(DS(), os.path.join(d, 'box_psf.json'), os.path.join(d, 'box_psf.pt'), pat, cam, '', True)
-        assert ce['pixel_integration'] == 'spectral' and 'pixel_integration' not in cb
-        assert spsf.PSF.load(ce, roisize=11, device='cpu').pixel_integration == 'spectral'
+        assert ce['pixel_integration'] == 'exact' and 'pixel_integration' not in cb
+        assert spsf.PSF.load(ce, roisize=11, device='cpu').pixel_integration == 'exact'
 
 
 def test_config_and_stage_settings():

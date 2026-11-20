@@ -53,6 +53,10 @@ def main(argv=None):
                                fit_height=bool(a.fit_height), intensity=a.intensity,
                                bead_diameter_um=a.bead_diameter or None, zernike_indices=tuple(range(5, a.zmax + 1)),
                                oversample_pupil=a.oversample, progress=log)
+    # the starting model with the midpoint pixel integration of these fits (torch-psf's default was 'box' = 'midpoint' up to
+    # its api-renames of 2026-11-20, now 'exact'): passed explicitly, so the bead fit is unchanged
+    est.start = spsf.VectorialPSF.from_optics(optics, a.roi, zernike_indices=tuple(range(5, a.zmax + 1)), npupil=est.npupil,
+                                              oversample=a.oversample, device=est.dev, pixel_integration='midpoint')
     m = est.estimate(stacks, a.dz)
     rep = dict(est.report)
     if ho is not None:
