@@ -37,9 +37,8 @@ the table's knots) and `spline` (a refined knot table plus the table change of a
 
 ## The pin
 
-`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `b423783`, the head of torch-psf's `api-renames`
-branch (on master `fe57af1`); it is to become the torch-psf master commit that contains api-renames once that is merged
-there. Before it: `44b387a`, torch-psf master with the unified PSF classes (psf-unify) merged. The
+`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `272eb24`, torch-psf master with the API renames merged
+(its `torch_psf/` tree is that of the tested `api-renames` head `b423783`). Before it: `44b387a`, torch-psf master with the unified PSF classes (psf-unify) merged. The
 models m1809 / m25 and the final in-situ PSF files of the paper data (`<movie>/simcode_results/psf_v4/`) were made with
 the previous pin `4b0ffc3` (2026-11-19); the checks below show that the new pin renders them identically.
 
