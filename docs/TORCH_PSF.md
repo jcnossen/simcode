@@ -37,7 +37,7 @@ the table's knots) and `spline` (a refined knot table plus the table change of a
 
 ## The pin
 
-`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `0f581bdc2079`, the head of torch-psf's
+`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `94558aaabb58`, the head of torch-psf's
 `psf-unify` branch; it is to become the torch-psf master commit that contains psf-unify once that is merged there. The
 models m1809 / m25 and the final in-situ PSF files of the paper data (`<movie>/simcode_results/psf_v4/`) were made with
 the previous pin `4b0ffc3` (2026-11-19); the checks below show that the new pin renders them identically.
@@ -95,11 +95,11 @@ torch-psf's unified PSF classes (design note `docs/notes/psf_unify_design.md` in
 Checked on 2026-11-20 against the previous pin (`tests/check_psf_pins.py`, CPU and CUDA): the 2D renders and coefficient
 banks of the final psf_v4 calibrations (json and zip) and of the v2 / v3 / v4 files of `models/` bit-identical; the 4Pi
 models, gradients, knots and tables bit-identical; `tests/check_fourpi_T.py` (networks, simulators, solve) 130 of 130
-outputs bit-identical. On CUDA with a few emitters at once (torch-psf 0f581bd evaluates the Catmull-Rom weights of the three
-axes in one matmul again, as 4b0ffc3): every single table (fourpi_component, fourpi_channel, a Catmull-Rom knot spline)
-bit-identical at N = 1 - 32; FourPiSplinePSF.evaluate (all channels at once) differs at N <= 5 by up to 7e-8 of the
-peak in value and 1.8e-6 of the d/dz peak (it computes the weights of the N x C channel positions in one product, the
-previous pin per channel; cuBLAS picks another kernel for the other shape). The integrated B-spline (2D) is not affected.
+outputs bit-identical. On CUDA with a few emitters at once (N = 1 - 32; torch-psf 94558aa computes the Catmull-Rom
+weights once per distinct position in one matmul, as 4b0ffc3): every single table (fourpi_component, fourpi_channel, a
+Catmull-Rom knot spline) and FourPiSplinePSF.evaluate at N >= 2 bit-identical; evaluate of a single emitter (N = 1)
+differs by up to 1.8e-8 of the peak in value and 7.9e-7 of the d/dz peak (its 12 tables in one grouped convolution,
+the previous pin one convolution per table; cuDNN picks another algorithm). The integrated B-spline (2D) is not affected.
 
 ## Files SIMCODE writes
 
