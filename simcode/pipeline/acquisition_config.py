@@ -52,7 +52,7 @@ dict, a yaml / json path, or a Python file that defines `config`. load_all(cfg) 
                 (default 8000) cb0 samples of another draw; 'train' = the lowest training NLL (before). The training NLL also
                 depends on the local z optimum each sample reached from the fit's single z start
   psf.pixel_integration  pixel integration of the fitted vectorial PSF (added 2026-11-19): 'exact' (default since 2026-11-19:
-                the exact pixel integral of the band-limited image, torch-psf VectorialPSF pixel_integration 'spectral'; ~2x the
+                the exact pixel integral of the band-limited image, torch-psf VectorialPSF pixel_integration 'exact'; ~2x the
                 cost of 'box' without blur, about the same with a blur; the in-situ PSFs v4) or 'box' (deprecated, accepted with a
                 warning to reproduce older fits: the mean of 2 x 2 point samples per pixel, the fits up to psf_v3). Stored in the
                 fits and the calibration, so every consumer renders the PSF with it (out/pixint_fit). Work folders whose psf

@@ -15,14 +15,14 @@ torch-psf API change can break them too. The method-level touch points (what SIM
 
 | Module | torch-psf objects and what is used |
 |---|---|
-| `simcode/psf/__init__.py` | `PSF.load(path \| dict, roisize, device, angle)`; `to_spline(model or per-angle list, kernel, value, backend, z_range, roisize, xy_limit, oversample, dz_um, zpad)`; `SplinePSF.n_angles / for_angle / resized / roisize / z_range / knots / table_map / evaluate_tables`; `FourPiPSF.from_state`, `ZMode(model, mode)`, `FourPiPSF.top / bot` (`n_med`), `channel_offsets`, `to_spline(roisize, z_range, value, kernel, backend, oversample, dz_um, zpad, xy_limit, chunk)`; `FourPiSplinePSF(roisize, z_range, knots, ..., kernel, backend)`, `.table`, `.knots`; `psfzip.read_zip`, `convert_calibration(..., integrated_spline=)`, `save_zip`, `is_psf_zip` |
+| `simcode/psf/__init__.py` | `PSF.load(path \| dict, roisize, device, angle)`; `to_spline(model or per-angle list, kernel, integrated, backend, z_range, roisize, xy_limit, oversample, dz_um, zpad)`; `SplinePSF.n_angles / for_angle / resized / roisize / z_range / knots / spline_index / evaluate_splines`; `FourPiPSF.from_state`, `ZMode(model, mode)`, `FourPiPSF.top / bot` (`n_med`), `channel_offsets`, `to_spline(roisize, z_range, kernel, integrated, backend, oversample, dz_um, zpad, xy_limit, chunk)`; `FourPiSplinePSF(roisize, z_range, knots, ..., kernel, backend)`, `.spline`, `.knots`; `psfzip.read_zip`, `convert_calibration(..., integrated_spline=)`, `save_zip`, `is_psf_zip` |
 | `simcode/dataset.py` | `Dataset` (subclass: `__init__(fields, meta)`, `__getitem__`, `copy`, `to`, `info`, `save_hdf5` / `load_hdf5`, `estimate_drift` -> `Drift`), `Drift(curve).at(center_frame)` |
-| `simcode/pipeline/psf_fit.py` | `VectorialPSF.from_optics(optics, R, npupil, oversample, device, pixel_integration)` (torch-psf names: `'spectral'`, not SIMCODE's `'exact'`), `.resized(R)`, `.focus_um`, `.blur`, `.zcoef`; `fit_tracks` (`group_psf_kwargs` -> `dict(dipM=...)`), `heldout_tracks`, `paired_nll`, `split_checkerboard`; the `SplinePSF` of `calib_psf`: `for_angle`, `render(pos, grad)` |
-| `simcode/pipeline/psf_stage.py`, `simcode/psf/beads.py` | `VectorialPSF.render(pos)`, `.zcoef / .NA / .n_med / .zidx`; `ZStackEstimator` |
+| `simcode/pipeline/psf_fit.py` | `VectorialPSF.from_optics(optics, R, npupil, oversample, device, pixel_integration)` (torch-psf names `'midpoint'` / `'exact'`; SIMCODE's config `'box'` and the stored names of older fits `'box'` / `'spectral'` are mapped by `psf_fit.torch_psf_pixel_integration`), `.resized(R)`, `.focus_um`, `.blur`, `.zcoef`; `fit_tracks` (`group_psf_kwargs` -> `dict(dipM=...)`), `heldout_tracks`, `paired_nll`, `split_checkerboard`; the `SplinePSF` of `calib_psf`: `for_angle`, `render(pos, grad)` |
+| `simcode/pipeline/psf_stage.py`, `simcode/psf/beads.py` | `VectorialPSF.render(pos)`, `.zcoef / .NA / .n_med / .zidx`; `ZStackEstimator` (`start`: a `VectorialPSF.from_optics(..., pixel_integration='midpoint')`, the bead fits' pixel integration, passed explicitly since torch-psf's default became `'exact'`) |
 | `simcode/emitter/model.py`, `simcode/simulate/{simulator, acquisition, crlb, psf_perturbation}.py` | the `SplinePSF` of `calib_psf`: `render(pos, grad)`, `resized(P)`, `roisize`, `for_angle(k)` |
-| `simcode/emitter/fourpi.py`, `simcode/solve/fourpi.py`, `simcode/simulate/{multichannel, fourpi_patches}.py` | the `FourPiSplinePSF` of `fourpi_spline`: `n_channels`, `evaluate(pos, Phi, grad)`, and through `simcode.psf.fourpi_component` / `fourpi_channel` one table of its knot bank (`table.evaluate_tables`) |
+| `simcode/emitter/fourpi.py`, `simcode/solve/fourpi.py`, `simcode/simulate/{multichannel, fourpi_patches}.py` | the `FourPiSplinePSF` of `fourpi_spline`: `n_channels`, `evaluate(pos, Phi, grad)`, and through `simcode.psf.fourpi_component` / `fourpi_channel` one spline of its knot bank (`spline.evaluate_splines`) |
 | `simcode/channels/registration.py`, `simcode/pipeline/{spots, camera}.py`, `simcode/calibration/camera_maps.py`, `simcode/processing/*`, `simcode/io/movie.py` | `filter_frames`, `extract_rois`, `AstigmaticGaussianPSF`, `spot_deviance`, `fit_gaussian_free_sigma`, `white_photon_transfer`, `maps_from_movie`, `TiffMovie` / `ArrayMovie` / `open_movie`, `solve_linear` |
-| `tests/test_psfzip.py`, `tests/test_heights.py`, `tests/test_psf_pixint.py`, `tests/test_dataset.py` | `SplinePSF.knots`, `FourPiPSF(pos, phi=)`, `VectorialPSF.resampled(P, pixel_integration=)`, `VectorialPSF(..., pixel_integration='spectral')`, `Drift.load` |
+| `tests/test_psfzip.py`, `tests/test_heights.py`, `tests/test_psf_pixint.py`, `tests/test_dataset.py` | `SplinePSF.knots`, `FourPiPSF(pos, phi=)`, `VectorialPSF.resampled(P, pixel_integration=)`, `VectorialPSF(..., pixel_integration='exact')`, `Drift.load` |
 
 (`simcode/solve/pattern.py` has its own copy of the cubic B-spline kernel for the intensity map; it does not import
 torch-psf.)
@@ -37,8 +37,9 @@ the table's knots) and `spline` (a refined knot table plus the table change of a
 
 ## The pin
 
-`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `44b387a`, torch-psf master with the unified PSF
-classes (psf-unify) merged (its `torch_psf/` tree is that of the tested psf-unify head `94558aa`). The
+`pyproject.toml` pins torch-psf to one commit. Current pin (2026-11-20): `b423783`, the head of torch-psf's `api-renames`
+branch (on master `fe57af1`); it is to become the torch-psf master commit that contains api-renames once that is merged
+there. Before it: `44b387a`, torch-psf master with the unified PSF classes (psf-unify) merged. The
 models m1809 / m25 and the final in-situ PSF files of the paper data (`<movie>/simcode_results/psf_v4/`) were made with
 the previous pin `4b0ffc3` (2026-11-19); the checks below show that the new pin renders them identically.
 
@@ -101,6 +102,20 @@ Catmull-Rom knot spline) and FourPiSplinePSF.evaluate at N >= 2 bit-identical; e
 differs by up to 1.8e-8 of the peak in value and 7.9e-7 of the d/dz peak (its 12 tables in one grouped convolution,
 the previous pin one convolution per table; cuDNN picks another algorithm). The integrated B-spline (2D) is not affected.
 
+## api-renames (2026-11-20)
+
+torch-psf renamed, without aliases (old API names raise; files keep reading the names they stored):
+
+| torch-psf before (44b387a) | api-renames (b423783) | SIMCODE |
+|---|---|---|
+| `pixel_integration` `'box'` / `'spectral'` (default `'box'`) | `'midpoint'` / `'exact'` (default `'exact'`; a file without the key = `'midpoint'`; stored `'box'` / `'spectral'` still read) | `psf_fit`: config `'exact'` passed as is, config `'box'` and stored names of older `_psf.pt` / `_psf.json` mapped (`torch_psf_pixel_integration`); new fits store `'exact'` / `'midpoint'`; `simcode.psf.beads` passes a `'midpoint'` start model (bead fits unchanged) |
+| `to_spline(..., value='density' \| 'pixel')` | `integrated=True \| False` | `SPLINE_KIND = kernel='bspline', integrated=True`; `FOURPI_KIND = kernel='catmull', integrated=False, backend='conv'` |
+| `SplinePSF.value`, `.table_map`, `evaluate_tables` / `render_tables`, `retabulated` | `.integrated`, `.spline_index`, `evaluate_splines` / `render_splines`, `resampled` | `fourpi_component`, `fourpi_knots` |
+| `FourPiSplinePSF.table` | `.spline` | `fourpi_component`, `fourpi_knots` |
+| psf.zip 0.5 block `spline_table` | `cubic_spline` (old files still read) | SIMCODE writes no 0.5 zip |
+
+Checked against SIMCODE 32e98cdd on torch-psf 44b387a: see the commit of the pin.
+
 ## Files SIMCODE writes
 
 * psf.zip: torch-psf declares the format version per class (stage 4). What SIMCODE writes is unchanged: the calibration
@@ -108,8 +123,10 @@ the previous pin one convolution per table; cuDNN picks another algorithm). The 
   calibration 0.2.0), the 4Pi zips (`FourPiPSF` / its `phase_spline` table) 0.2.0; their `psf.json` and arrays are
   byte-identical to those of the previous pin (only the text of `fit_report.pdf` differs), so older SIMCODE / torch-psf
   versions read them. torch-psf now also writes 0.4.0 (non-box 4Pi pixel integration, dipole component tables) and 0.5.0
-  (an explicit `spline_table` block: Catmull-Rom density, B-spline pixel or per-angle pixel tables); SIMCODE builds none
+  (an explicit `cubic_spline` block, `spline_table` before api-renames: Catmull-Rom density, B-spline pixel or per-angle pixel tables); SIMCODE builds none
   of these, and readers before psf-unify refuse them. Reading: psf.zip 0.2 - 0.5.
+  Since api-renames the vectorial model block stores `pixel_integration: 'exact'` where it stored `'spectral'` (the only
+  change of `psf.json`; same version 0.3.0); torch-psf 4b0ffc3 and 44b387a read it with the same pixels (checked).
 * Localization tables (`locs_p{1,2}_{net,solve}.hdf5`, `Dataset.save`): torch-psf dataset format_version 2 (the version
   attribute; the layout of SIMCODE's tables is unchanged, older readers do not check the version). A `Dataset` with a
   drift is saved with the `/drift` dataset (attributes `applied`, `info`) as before; torch-psf's own reader takes the

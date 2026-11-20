@@ -26,11 +26,18 @@ from simcode.psf import Tracks, fit_tracks, heldout_tracks, paired_nll, split_ch
 FIT_NPUPIL, FIT_OVERSAMPLE = 64, 2
 # pixel integration of the fitted VectorialPSF (psf.pixel_integration; torch_psf VectorialPSF.pixel_integration): 'box' = the
 # mean of FIT_OVERSAMPLE^2 point samples per pixel (the fits up to psf_v3), 'exact' = the exact pixel integral of the
-# band-limited image (torch-psf 'spectral', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
-# _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'box'). Default 'exact' since
+# band-limited image (torch-psf 'exact', at FIT_OVERSAMPLE samples per px; out/pixint_fit). Written into the fit's
+# _psf.pt / _psf.json and the calibration (calib_dict: pixel_integration, only when not 'midpoint') under torch-psf's names
+# ('midpoint' / 'exact'; fits before 2026-11-20 stored 'box' / 'spectral', read as before). Default 'exact' since
 # 2026-11-19 (the v4 PSFs; 'box' only to reproduce older fits)
 FIT_PIXEL_INTEGRATION = 'exact'
-TORCH_PSF_PIXEL_INTEGRATION = {'exact': 'spectral'}        # SIMCODE (config psf.pixel_integration) -> torch-psf VectorialPSF names
+# SIMCODE's config name 'box' and the names stored by torch-psf before its api-renames (2026-11-20) -> torch-psf's names
+PIXEL_INTEGRATION_NAMES = {'box': 'midpoint', 'spectral': 'exact'}
+
+
+def torch_psf_pixel_integration(name):
+    """pixel integration name of the config (exact | box) or of a _psf.pt / _psf.json (any torch-psf version) -> torch-psf's"""
+    return PIXEL_INTEGRATION_NAMES.get(name, name)
 
 
 class Fit:
@@ -40,11 +47,10 @@ class Fit:
     def __init__(self, R, optics, dev='cuda', blur='none', photosel=0, kdir=None, init_fit=None, freeze_base=False,
                  init_zcoef=None, readnoise_e=1.9, offset_adu=99.3, gamma_init=0.05, zmax=0.2, pixel_integration=None):
         self.dev, self.R, self.c, self.zmax = dev, R, (R - 1) / 2, zmax
-        pix = pixel_integration or FIT_PIXEL_INTEGRATION
-        pix = TORCH_PSF_PIXEL_INTEGRATION.get(pix, pix)        # SIMCODE's name -> torch-psf's (its constructor has no 'exact')
+        pix = torch_psf_pixel_integration(pixel_integration or FIT_PIXEL_INTEGRATION)
         self.model = spsf.VectorialPSF.from_optics(spsf.Optics.from_dict(optics), R, npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE, device=dev,
                                                    pixel_integration=pix)
-        self.pixel_integration = self.model.pixel_integration      # torch-psf name ('spectral' for 'exact')
+        self.pixel_integration = self.model.pixel_integration      # torch-psf name ('midpoint' for the config's 'box')
         m = self.model
         if init_zcoef is not None:
             with torch.no_grad(): m.zcoef.copy_(torch.as_tensor(init_zcoef).to(dev))
@@ -258,8 +264,8 @@ def psf_calib(pt, pixel_integration=None, optics=None):
              apod=[float(v) for v in torch.as_tensor(S['apod']).tolist()], zernike_noll=list(range(5, 22)),
              zernike_waves=[float(v) for v in torch.as_tensor(S['zcoef']).tolist()], focus_um=float(S['focus']),
              npupil=FIT_NPUPIL, oversample=FIT_OVERSAMPLE)
-    pix = pixel_integration or S.get('pixel_integration', 'box')
-    if pix != 'box': d['pixel_integration'] = pix
+    pix = torch_psf_pixel_integration(pixel_integration or S.get('pixel_integration', 'box'))
+    if pix != 'midpoint': d['pixel_integration'] = pix
     ex = S.get('extras', {})
     if 'blur_px2' in ex: d['psf_blur_px2'] = ex['blur_px2'][0]
     if 'dipole_M' in ex: d['psf_dipole_M_angle'] = ex['dipole_M']
