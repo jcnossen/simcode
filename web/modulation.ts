@@ -1,3 +1,4 @@
+import { fieldMaps } from './pattern-field';
 import type { MovieDepth } from './movie-depth';
 import type { PhotometrySnapshot } from 'torch-dense/movie';
 import { axisAt, phaseDegrees, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
@@ -304,28 +305,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       valid.map((i) => means[0][i] / denom[i]),
     );
   });
-  const maps = Array.from({ length: 32 * 32 }, (_, i) => {
-    const x = ((i % 32) * (r.width - 1)) / 31,
-      y = (Math.floor(i / 32) * (r.height - 1)) / 31,
-      b = basis(x, y);
-    const angles = patterns.map((p) => {
-      const c = p.phase,
-        u = b[1],
-        v = b[2];
-      const kx = p.kx_rad_px + (2 * (c[1] + 2 * c[3] * u + c[4] * v)) / (r.width - 1);
-      const ky = p.ky_rad_px + (2 * (c[2] + c[4] * u + 2 * c[5] * v)) / (r.height - 1);
-      return ((Math.atan2(ky, kx) * 180) / Math.PI + 360) % 360;
-    });
-    const row: Record<string, number> = { x_px: x, y_px: y };
-    patterns.forEach((p, i) => {
-      const label = axisName(i);
-      row['orientation_' + label + '_deg'] = angles[i];
-      row['depth_' + label] = dot(p.depth, b);
-      row['phase_' + label + '_rad'] = p.kx_rad_px * x + p.ky_rad_px * y + dot(p.phase, b);
-      if (i) row['ratio_A_over_' + label] = dot(ratios[i - 1], b);
-    });
-    return row;
-  });
+  const maps = fieldMaps({patterns,ratios},r.width,r.height);
   return {
     schedule: Array.from(
       { length: schedule.phases * schedule.axes },

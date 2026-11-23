@@ -9,6 +9,8 @@ mount(
   'SIMCODE bead calibration',
   async (r, out) => {
     estimator.positions(r);
+    const simulated = example()?.modulation;
+    if(simulated) download(out,'true-modulation.json',JSON.stringify(simulated),'application/json');
     const schedule = order();
     if (schedule.phases < 3) {
       const message = document.createElement('p');
@@ -46,20 +48,24 @@ mount(
     const c = document.createElement('canvas');
     const fields = [...result.patterns.map((_,i) => ['depth_' + axisName(i), 'Modulation depth ' + axisName(i)]),
       ...result.ratios.map((_,i) => ['ratio_A_over_' + axisName(i+1), 'Intensity ratio A / ' + axisName(i+1)])];
-    const cols = Math.min(3, fields.length);
+    const overview = fields.flatMap(([key,label]) => simulated
+      ? [{key,label:label+' · true',maps:simulated.maps},{key,label:label+' · fit',maps:result.maps}]
+      : [{key,label,maps:result.maps}]);
+    const cols = simulated ? 2 : Math.min(3, fields.length);
     c.width = 6 + 328 * cols;
-    c.height = 370 * Math.ceil(fields.length / cols);
+    c.height = 370 * Math.ceil(overview.length / cols);
     const g = c.getContext('2d')!;
     g.fillStyle = 'white';
     g.fillRect(0, 0, c.width, c.height);
-    fields.forEach(([key, label], p) => {
+    overview.forEach(({key, label,maps}, p) => {
       g.save();
       g.translate(0, Math.floor(p / cols) * 370);
       const ox = 20 + (p % cols) * 328,
         oy = 54,
-        vals = result.maps.map((v) => v[key]),
-        lo = Math.min(...vals),
-        hi = Math.max(...vals);
+        vals = maps.map(v => v[key]),
+        scale = [...result.maps.map(v=>v[key]), ...(simulated?.maps.map(v=>v[key]) ?? [])],
+        lo = Math.min(...scale),
+        hi = Math.max(...scale);
       g.fillStyle = '#193136';
       g.font = '20px sans-serif';
       g.fillText(label, ox, 33);

@@ -1,3 +1,4 @@
+import {fieldMaps} from './pattern-field';
 import { getDevice } from 'torch-web/gpu/device';
 import { VecEngine } from 'torch-web/gpu/ops';
 import { tiffStackBlob } from 'torch-web/psfgrab/tiffstack';
@@ -12,7 +13,25 @@ export function depthAt(dir: number, u: number, v: number) {
   return dir ? 0.88 + 0.05 * v : 0.84 + 0.06 * u;
 }
 export const ratioAt = (u: number) => 1.12 - 0.16 * u;
+const phaseOffset = (u:number,v:number) => 0.25*u*v;
+// Express the generator's camera coordinates in the estimator's edge-to-edge basis.
+export function exampleModulation(pixelNm:number, schedule:Schedule) {
+  const b=-1/size, s=(size-1)/size;
+  function surface(fn:(u:number,v:number)=>number) {
+    const c=fn(b,b), x=fn(b+s,b)-c, y=fn(b,b+s)-c;
+    return [c,x,y,0,fn(b+s,b+s)-c-x-y,0];
+  }
+  const patterns=Array.from({length:schedule.axes},(_,i)=>{
+    const angle=angleAt(i,schedule.axes), k=tau*pixelNm/pitchNm;
+    return {pitch_nm:pitchNm, orientation_deg:angle, kx_rad_px:k*Math.cos(angle*Math.PI/180),
+      ky_rad_px:k*Math.sin(angle*Math.PI/180), depth:surface((u,v)=>depthAt(i,u,v)),phase:surface(phaseOffset),
+      phase_steps_rad:Array.from({length:schedule.phases},(_,j)=>tau*j/schedule.phases)};
+  });
+  const ratios=patterns.slice(1).map(()=>surface(ratioAt));
+  return {schedule, patterns,ratios,basis:'[1,u,v,u²,uv,v²], u,v normalized to [-1,1]',maps:fieldMaps({patterns,ratios},size,size)};
+}
 export interface ExampleTruth {
+  modulation: ReturnType<typeof exampleModulation>;
   coefficients: number[];
   psfs: Float32Array[];
   drift: number[][];
@@ -28,7 +47,7 @@ export function illumination(pixelNm: number, x: number, y: number, t: number, s
     v = (2 * y) / size - 1;
   return (
     depthAt(dir, u, v) *
-    Math.cos(k * (x * Math.cos(angle) + y * Math.sin(angle)) + 0.25 * u * v + phaseRadians(t, schedule))
+    Math.cos(k * (x * Math.cos(angle) + y * Math.sin(angle)) + phaseOffset(u,v) + phaseRadians(t, schedule))
   );
 }
 const beadCount = 12000,

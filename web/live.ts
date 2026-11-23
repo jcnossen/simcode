@@ -3,7 +3,7 @@ import { PointCloudView } from 'torch-web/ui/pointcloud';
 import { NCOL } from 'torch-web/smlm/movie';
 import { drawZernikeSets } from 'torch-web/ui/zernike-bars';
 import { axisAt, axisName, phaseAt, type Schedule } from './schedule';
-import { angleAt, depthAt, pitchNm, ratioAt, type ExampleTruth } from './generate';
+import { illumination, type ExampleTruth } from './generate';
 import { movieView } from './movie-view';
 import { modulation } from './modulation';
 import type { PhotometrySnapshot } from 'torch-dense/movie';
@@ -95,12 +95,12 @@ export function plot(
 export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder: () => Schedule) {
   let schedule: Schedule;
   let truth: ExampleTruth | undefined;
-  function compare(selector: string, rows: [string, number, number][], digits: number) {
+  function compare(selector: string, rows: [string, number, number | undefined][], digits: number) {
     const table = panel.querySelector<HTMLTableElement>(selector)!;
     table.innerHTML = '<tr><th>Parameter</th><th>True</th><th>Estimated</th></tr>';
     for (const [label, actual, estimate] of rows) {
       const row = table.insertRow();
-      for (const value of [label, actual.toFixed(digits), estimate.toFixed(digits)]) row.insertCell().textContent = value;
+      for (const value of [label, actual.toFixed(digits), estimate?.toFixed(digits) ?? '—']) row.insertCell().textContent = value;
     }
   }
   let panel: HTMLElement,
@@ -130,22 +130,36 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   }
   let width = 0,
     height = 0;
-  function overlay(result: ReturnType<typeof modulation>, name: string) {
-    if (truth) {
-      const rows: [string, number, number][] = [];
-      result.patterns.forEach((p, i) => {
-        const label = axisName(i);
-        if (schedule.estimatePhases) {
-          p.phase_steps_rad.forEach((a,j) => rows.push([label + ' step ' + j + ' (°)',
-            360*j/schedule.phases, a*180/Math.PI]));
-        }
-        rows.push([label + ' pitch (nm)', pitchNm, p.pitch_nm],
-          [label + ' angle (°)', angleAt(i, truth!.schedule.axes), p.orientation_deg],
-          [label + ' depth at field center', depthAt(i, 0, 0), p.depth[0]]);
-      });
-      result.ratios.forEach((r,i) => rows.push(['A/' + axisName(i+1) + ' intensity at field center', ratioAt(0), r[0]]));
-      compare('.pattern-values', rows, 3);
+  type Fit = ReturnType<typeof modulation>;
+  let lastFit:Fit|undefined;
+  function displayPattern(fit?:Fit) {
+    lastFit=fit;
+    if(!truth) return;
+    const rows:[string, number,number|undefined][]=[];
+    truth.modulation.patterns.forEach((p,i)=>{
+      const q=fit?.patterns[i], axis=axisName(i);
+      for(const [key,label] of [['pitch_nm','pitch (nm)'],['orientation_deg','angle (°)'],['kx_rad_px','kx (rad/px)'],['ky_rad_px','ky (rad/px)']] as const)
+        rows.push([axis+' '+label,p[key],q?.[key]]);
+      p.phase_steps_rad.forEach((v,j)=>rows.push([axis+' step '+(j+1)+' (°, '+(schedule.estimatePhases?'fitted':'fixed')+')',v*180/Math.PI,q && q.phase_steps_rad[j]*180/Math.PI]));
+    });
+    compare('.pattern-values',rows,4);
+    const coefficients:[string,number,number|undefined][]=[];
+    function terms(label:string,c:number[],estimate?:number[]) {
+      ['1','u','v','u²','uv','v²'].forEach((term,j)=>coefficients.push([label+' · '+term,c[j],estimate?.[j]]));
     }
+    truth.modulation.patterns.forEach((p,i)=>{
+      terms(axisName(i)+' depth',p.depth,fit?.patterns[i]?.depth);
+      terms(axisName(i)+' phase offset (rad)',p.phase,fit?.patterns[i]?.phase);
+    });
+    truth.modulation.ratios.forEach((c,i)=>terms('A/'+axisName(i+1)+' intensity ratio',c,fit?.ratios[i]));
+    compare('.field-coefficients',coefficients,6);
+    const slider=panel.querySelector<HTMLInputElement>('.field-x')!, sy=panel.querySelector<HTMLInputElement>('.field-y')!;
+    const i=Number(slider.value)+32*Number(sy.value), actual=truth.modulation.maps[i], estimate=fit?.maps[i];
+    panel.querySelector('.field-position')!.textContent='Camera position ('+actual.x_px.toFixed(1)+', '+actual.y_px.toFixed(1)+') px';
+    compare('.field-values',Object.keys(actual).filter(k=>!['x_px','y_px'].includes(k)).map(k=>[k.replaceAll('_',' '),actual[k],estimate?.[k]]),4);
+  }
+  function overlay(result: ReturnType<typeof modulation>, name: string) {
+    displayPattern(result);
     viewer.setPattern((x, y, t) => {
       const p = result.patterns[axisAt(t, schedule)],
         u = (2 * x) / (width - 1) - 1,
@@ -195,7 +209,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             <figure class="reconstruction"><figcaption>Bead reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure></div>
             <figure class="zernike-chart"><figcaption>Zernike coefficients (waves RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
             <figure class="pattern-zoom"></figure>
-            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><table class="pattern-values"></table></section>' : ''}
+            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><h3>Modulation across the field</h3><label>X <input type="range" class="field-x" min="0" max="31" value="16"></label> <label>Y <input type="range" class="field-y" min="0" max="31" value="16"></label><p class="field-position"></p><table class="field-values"></table><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
         </div>`;
@@ -216,6 +230,14 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         panel.querySelector('.pattern-zoom')!,
         'Movie frame being processed',
       );
+      displayPattern();
+      if (truth) {
+        for(const slider of panel.querySelectorAll<HTMLInputElement>('.field-x,.field-y')) slider.oninput=()=>displayPattern(lastFit);
+        const simulation=truth;
+        const k=simulation.modulation.patterns[0];
+        const pixelNm=Math.hypot(k.kx_rad_px,k.ky_rad_px)*k.pitch_nm/(2*Math.PI);
+        viewer.setPattern((x,y,t)=>(1+illumination(pixelNm,x,y,t,simulation.schedule))/2,'True simulated pattern',simulation.schedule);
+      }
       panel.focus({ preventScroll: true });
       panel.scrollIntoView({ block: 'start' });
       scoreStage = '';
@@ -259,7 +281,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       if (report && destination && report.parentElement !== destination) destination.prepend(report);
       const pupilLink = panel.querySelector<HTMLAnchorElement>('a[href="#psf-report"]')!;
       pupilLink.hidden = !document.querySelector('#psf-report:not([hidden])');
-      if (schedule.phases < 3) panel.querySelector('.pattern-zoom small')!.textContent = 'Movie ROI · PSF and photometry only';
+      if (!truth && schedule.phases < 3) panel.querySelector('.pattern-zoom small')!.textContent = 'Movie ROI · PSF and photometry only';
       const m = u.model;
       const sets = [{ z: Array.from(m.zcoef), color: '#2f6feb', label: 'Estimated' }];
       if (truth) sets.push({ z: m.noll.map(n => truth!.coefficients[n-5] ?? 0), color: '#c25d25', label: 'True (simulation)' });
@@ -301,6 +323,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
           ? 'Stack iteration ' + u.index + '/' + u.total
           : u.stage === 'profile'
             ? 'Optical trial ' + u.index + '/' + u.total
+            : u.stage === 'diversity' ? 'Phase diversity '+u.index+'/'+u.total
             : u.stage === 'frame'
               ? 'Frame ' + u.index + '/' + u.total
               : 'Final mean focus';
