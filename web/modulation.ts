@@ -1,4 +1,5 @@
 import type { PhotometrySnapshot } from 'torch-dense/movie';
+import { axisAt, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
 const tau = 2 * Math.PI;
 function fft(a: Float64Array, b: Float64Array) {
   const n = a.length;
@@ -144,9 +145,9 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
   }
   return k;
 }
-export function modulation(r: PhotometrySnapshot) {
-  if (r.drift.length < 6 || r.xy.length < 6)
-    throw Error('Modulation maps need six phases and at least six beads across the field.');
+export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
+  if (r.drift.length < 3 * schedule.axes || r.xy.length < 6)
+    throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
   const basis = (x: number, y: number) => {
     x = (2 * x) / (r.width - 1) - 1;
     y = (2 * y) / (r.height - 1) - 1;
@@ -154,11 +155,11 @@ export function modulation(r: PhotometrySnapshot) {
   };
   const X = r.xy.map(([x, y]) => basis(x, y)),
     means: number[][] = [];
-  const patterns = [0, 1].map((dir) => {
-    const frames = r.drift.map((_, t) => t).filter((t) => Math.floor((t % 6) / 3) === dir);
+  const patterns = Array.from({ length: schedule.axes }, (_, dir) => {
+    const frames = r.drift.map((_, t) => t).filter((t) => axisAt(t, schedule) === dir);
     const harmonic = (k: number[]) => {
       const A = frames.map((t) => {
-        const p = ((t % 3) * tau) / 3 + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
+        const p = (phaseAt(t, schedule) * tau) / 3 + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
         return [1, Math.cos(p), -Math.sin(p)];
       });
       return r.xy.map((_, i) =>
@@ -205,11 +206,11 @@ export function modulation(r: PhotometrySnapshot) {
       beads: valid.length,
     };
   });
-  const valid = r.xy.map((_, i) => (means[0][i] > 1 && means[1][i] > 1 ? i : -1)).filter((i) => i >= 0);
-  const ratio = robust(
-    valid.map((i) => X[i]),
-    valid.map((i) => means[0][i] / means[1][i]),
-  );
+  const ratios = means.slice(1).map(denom => {
+    const valid = r.xy.map((_, i) => means[0][i] > 1 && denom[i] > 1 ? i : -1).filter(i => i >= 0);
+    if (valid.length < 6) throw Error('Too few shared beads for an intensity ratio map.');
+    return robust(valid.map(i => X[i]), valid.map(i => means[0][i] / denom[i]));
+  });
   const maps = Array.from({ length: 32 * 32 }, (_, i) => {
     const x = ((i % 32) * (r.width - 1)) / 31,
       y = (Math.floor(i / 32) * (r.height - 1)) / 31,
@@ -222,24 +223,24 @@ export function modulation(r: PhotometrySnapshot) {
       const ky = p.ky_rad_px + (2 * (c[2] + c[4] * u + 2 * c[5] * v)) / (r.height - 1);
       return ((Math.atan2(ky, kx) * 180) / Math.PI + 360) % 360;
     });
-    return {
-      x_px: x,
-      y_px: y,
-      orientation_A_deg: angles[0],
-      orientation_B_deg: angles[1],
-      depth_A: dot(patterns[0].depth, b),
-      depth_B: dot(patterns[1].depth, b),
-      ratio_A_over_B: dot(ratio, b),
-      phase_A_rad: patterns[0].kx_rad_px * x + patterns[0].ky_rad_px * y + dot(patterns[0].phase, b),
-      phase_B_rad: patterns[1].kx_rad_px * x + patterns[1].ky_rad_px * y + dot(patterns[1].phase, b),
-    };
+    const row: Record<string, number> = { x_px: x, y_px: y };
+    patterns.forEach((p, i) => {
+      const label = axisName(i);
+      row['orientation_' + label + '_deg'] = angles[i];
+      row['depth_' + label] = dot(p.depth, b);
+      row['phase_' + label + '_rad'] = p.kx_rad_px*x + p.ky_rad_px*y + dot(p.phase,b);
+      if (i) row['ratio_A_over_' + label] = dot(ratios[i-1], b);
+    });
+    return row;
   });
   return {
-    schedule: 'A0 A120 A240 B0 B120 B240',
-    coordinate_system: 'x right, y down. Orientation is the wavevector angle. Ratio is mean A / mean B.',
+    schedule: Array.from({length: 3 * schedule.axes}, (_,t) => axisName(axisAt(t,schedule)) + (phaseAt(t,schedule)*120)).join(' '),
+    angle_indices: cycle(schedule),
+    coordinate_system: 'x right, y down. Orientation is the wavevector angle. Ratios divide mean axis 0 intensity by each other axis.',
     basis: '[1,u,v,u²,uv,v²], u,v normalized to [-1,1]',
     patterns,
-    ratio,
+    ratio: ratios[0],
+    ratios,
     maps,
   };
 }

@@ -15,6 +15,12 @@ export type Acquisition = Record<(typeof keys)[number], number>;
 export function acquisitionSettings() {
   const section = document.querySelector<HTMLElement>('#settings')!;
   const inputs = Array.from(section.querySelectorAll('input'));
+  const diameter = inputs[keys.indexOf('diameterNm')];
+  const movieInput = document.querySelector('#inputs label')!;
+  const sample = document.createElement('div');
+  sample.className = 'movie-sample';
+  movieInput.before(sample);
+  sample.append(movieInput, diameter.closest('label')!);
   // An empty stack step means read the calibration TIFF metadata.
   function valid(key: (typeof keys)[number], value: string) {
     if (!value.trim()) return key === 'stepNm';
@@ -34,7 +40,7 @@ export function acquisitionSettings() {
   } catch {
     /* Browser privacy settings can disable cookies. */
   }
-  section.addEventListener('input', () => {
+  function save() {
     const data = values();
     if (!keys.every((key) => valid(key, data[key])) || +data.na > +data.immersionIndex) return;
     const secure = location.protocol === 'https:' ? '; Secure' : '';
@@ -46,7 +52,9 @@ export function acquisitionSettings() {
         '; Max-Age=31536000; Path=/; SameSite=Lax' +
         secure;
     } catch {}
-  });
+  }
+  section.addEventListener('input', save);
+  diameter.addEventListener('input', save);
   return () => {
     const data = values();
     if (!keys.every((key) => valid(key, data[key])) || +data.na > +data.immersionIndex)

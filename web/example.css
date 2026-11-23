@@ -157,3 +157,13 @@
 .live-pupil td {
   padding: 3px;
 }
+
+.compared-psfs { display: flex; flex-wrap: wrap; gap: 1rem; }
+.truth-comparison table { margin-bottom: .8rem; font-variant-numeric: tabular-nums; }
+
+.movie-sample { display: grid; align-content: start; gap: .5rem; }
+.movie-sample input[type=number] { width: 7em; }
+.pattern-order { border: 1px solid #c5d2d1; border-radius: 8px; margin: .8rem 0; }
+.pattern-order label { display: inline-flex; align-items: center; gap: .4rem; margin-right: 1rem; }
+.pattern-order input[type=checkbox] { width: auto; }
+.pattern-order output { font-family: monospace; letter-spacing: .08em; }

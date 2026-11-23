@@ -1,3 +1,5 @@
+import { axisAt, axisName, phaseAt, type Schedule } from './schedule';
+import { angleAt, depthAt, pitchNm, ratioAt, type ExampleTruth } from './generate';
 import { movieView } from './movie-view';
 import { modulation } from './modulation';
 import type { PhotometrySnapshot } from 'torch-dense/movie';
@@ -8,9 +10,10 @@ export function drawPsf(
   canvas: HTMLCanvasElement,
   pixels: Float32Array,
   exposure = Math.max(...pixels, 1e-12),
+  displaySide = Math.sqrt(pixels.length),
 ) {
   const side = Math.sqrt(pixels.length);
-  canvas.width = canvas.height = side;
+  canvas.width = canvas.height = displaySide;
   const ctx = canvas.getContext('2d')!,
     image = ctx.createImageData(side, side);
 
@@ -18,7 +21,8 @@ export function drawPsf(
     const value = (255 * Math.max(0, p)) / exposure;
     image.data.set([value, value, value, 255], 4 * i);
   });
-  ctx.putImageData(image, 0, 0);
+  const offset = Math.floor((displaySide - side) / 2);
+  ctx.putImageData(image, offset, offset);
 }
 
 export function plot(
@@ -84,25 +88,46 @@ export function plot(
   });
 }
 
-export function liveEstimator() {
+export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder: () => Schedule) {
+  let schedule: Schedule;
+  let truth: ExampleTruth | undefined;
+  function compare(selector: string, rows: [string, number, number][], digits: number) {
+    const table = panel.querySelector<HTMLTableElement>(selector)!;
+    table.innerHTML = '<tr><th>Parameter</th><th>True</th><th>Estimated</th></tr>';
+    for (const [label, actual, estimate] of rows) {
+      const row = table.insertRow();
+      for (const value of [label, actual.toFixed(digits), estimate.toFixed(digits)]) row.insertCell().textContent = value;
+    }
+  }
   let panel: HTMLElement,
     engine: VecEngine | null = null;
   let viewer: ReturnType<typeof movieView>;
   let width = 0,
     height = 0;
   function overlay(result: ReturnType<typeof modulation>, name: string) {
+    if (truth) {
+      const rows: [string, number, number][] = [];
+      result.patterns.forEach((p, i) => {
+        const label = axisName(i);
+        rows.push([label + ' pitch (nm)', pitchNm, p.pitch_nm],
+          [label + ' angle (°)', angleAt(i, truth!.schedule.axes), p.orientation_deg],
+          [label + ' depth at field center', depthAt(i, 0, 0), p.depth[0]]);
+      });
+      result.ratios.forEach((r,i) => rows.push(['A/' + axisName(i+1) + ' intensity at field center', ratioAt(0), r[0]]));
+      compare('.pattern-values', rows, 3);
+    }
     viewer.setPattern((x, y, t) => {
-      const p = result.patterns[Math.floor((t % 6) / 3)],
+      const p = result.patterns[axisAt(t, schedule)],
         u = (2 * x) / (width - 1) - 1,
         v = (2 * y) / (height - 1) - 1;
       const poly = (c: number[]) => c[0] + c[1] * u + c[2] * v + c[3] * u * u + c[4] * u * v + c[5] * v * v;
       return (
         (1 +
           poly(p.depth) *
-            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + ((t % 3) * 2 * Math.PI) / 3)) /
+            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + (phaseAt(t, schedule) * 2 * Math.PI) / 3)) /
         2
       );
-    }, name);
+    }, name, schedule);
   }
   let scoreStage = '',
     scores: number[][] = [],
@@ -110,6 +135,8 @@ export function liveEstimator() {
     origin: number[] = [];
   return {
     start() {
+      schedule = getOrder();
+      truth = getTruth();
       panel = document.querySelector<HTMLElement>('.estimator-live') ?? document.createElement('section');
       panel.className = 'estimator-live';
       document.querySelector('article')!.before(panel);
@@ -129,7 +156,9 @@ export function liveEstimator() {
             <div class="fit-movie"></div>
           </figure>
           <div><figure class="pattern-zoom"></figure>
-            <figure><figcaption>Current PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
+            <div class="compared-psfs"><figure><figcaption>Current PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
+            ${truth ? '<figure><figcaption class="true-caption">Simulated PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><table class="pattern-values"></table></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
           </div>
@@ -169,7 +198,7 @@ export function liveEstimator() {
     },
     photometry(snapshot: PhotometrySnapshot) {
       try {
-        overlay(modulation(snapshot), 'Preliminary fitted pattern');
+        overlay(modulation(snapshot, schedule), 'Preliminary fitted pattern');
       } catch {
         /* A later exposure group can resolve an underdetermined pattern. */
       }
@@ -193,7 +222,31 @@ export function liveEstimator() {
       engine.setZernike(m.zcoef);
       engine.setImages([{ x: 0, y: 0, ze: u.emitterHeightUm, f: u.focusUm, I: 1, bg: 0 }]);
       await engine.run(1, 'psf');
-      drawPsf(panel.querySelector('.psf')!, await engine.readPsf(1));
+      const estimated = await engine.readPsf(1);
+      const frameIndex = u.stage === 'frame' ? u.index - 1 : 0;
+      const reference = truth?.psfs[frameIndex];
+      if (truth && reference) {
+        const exposure = Math.max(...estimated, ...reference, 1e-12);
+        drawPsf(panel.querySelector('.psf')!, estimated, exposure);
+        drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
+        panel.querySelector('.true-caption')!.textContent = u.stage === 'frame'
+          ? 'Simulated PSF · frame ' + u.index : 'Simulated PSF · mean focus';
+        compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
+          n >= 5 && n <= 11 ? [['Z' + n + ' (waves RMS)', truth!.coefficients[n - 5], m.zcoef[i]]] : []), 3);
+        const rows: [string, number, number][] = [['Focus relative to bead (nm)',
+          truth.meanFocusNm + truth.drift[frameIndex][2], (u.focusUm - u.emitterHeightUm) * 1000]];
+        if (u.driftNm) {
+          const start = origin.length ? origin : u.driftNm;
+          u.driftNm.forEach((v, i) => rows.push(['Drift ' + ['X','Y','Z'][i] + ' (nm)',
+            truth!.drift[frameIndex][i], v - start[i]]));
+        } else if (u.stage === 'final' && motion.length) {
+          ['X','Y','Z'].forEach((axis,i) => {
+            const span = (values: number[][]) => Math.max(...values.map(v=>v[i])) - Math.min(...values.map(v=>v[i]));
+            rows.push([axis + ' peak-to-peak drift (nm)', span(truth!.drift), span(motion)]);
+          });
+        }
+        compare('.drift-values', rows, 1);
+      } else drawPsf(panel.querySelector('.psf')!, estimated);
       const z6 = m.noll.indexOf(6);
       const stage =
         u.stage === 'calibration'

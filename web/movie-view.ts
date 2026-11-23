@@ -1,3 +1,4 @@
+import { axisAt, phaseAt, defaultSchedule, type Schedule } from './schedule';
 export type Pattern = (x: number, y: number, frame: number) => number;
 
 // Cache display pixels only. The uploaded TIFF and the estimator retain their native sampling.
@@ -34,6 +35,7 @@ export function movieView(
     patternLabel = '',
     stage = '',
     total = 0;
+  let schedule = defaultSchedule;
   let image: ImageData | undefined;
   function updateZoom() {
     const a = images[current];
@@ -61,7 +63,7 @@ export function movieView(
     zc.putImageData(rgba, 0, 0);
     caption.textContent =
       (renderPattern
-        ? patternLabel + ' · ' + (current % 6 < 3 ? 'A' : 'B') + ' ' + (current % 3) * 120 + '°'
+        ? patternLabel + ' · ' + 'axis ' + axisAt(current, schedule) + ' · ' + phaseAt(current, schedule) * 120 + '°'
         : 'Movie ROI · awaiting fitted pattern') +
       ' · x ' +
       Math.round(left + side / 2) +
@@ -148,7 +150,8 @@ export function movieView(
       slider.max = String(images.length);
       if (auto) show(index);
     },
-    setPattern(pattern: Pattern | null, name: string) {
+    setPattern(pattern: Pattern | null, name: string, order: Schedule) {
+      schedule = order;
       renderPattern = pattern;
       patternLabel = name;
       updateZoom();

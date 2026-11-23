@@ -1,26 +1,33 @@
+import type { Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
 import { frameCount, generateMovie, illumination, pitchNm, size, zDriftPeakToPeakNm } from './generate';
+import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
 
-export function installMovieExample(settings: () => Acquisition) {
+export function installMovieExample(settings: () => Acquisition, getSchedule: () => Schedule) {
   const inputs = document.querySelector<HTMLElement>('#inputs')!;
   const movie = inputs.querySelector<HTMLInputElement>('input[type=file]')!;
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><div class="example-content"><div class="generated-movie"></div><div class="truth"><figure class="pattern-zoom"></figure><figure><figcaption>True PSF</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure></div><div class="example-actions"><p>400 × 400 pixels · 100 frames · 12,000 beads · ${pitchNm} nm illumination pitch · ${zDriftPeakToPeakNm} nm peak-to-peak Z drift</p><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="estimate-example" value="Estimate generated movie" hidden> <input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><div class="example-content"><div class="generated-movie"></div><div class="truth"><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><label>Flat pupil at the same focus<canvas class="psf ideal"></canvas></label><small class="true-modes"></small></figure><figure><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure></div><div class="example-actions"><p>400 × 400 pixels · 100 frames · 12,000 beads · ${pitchNm} nm illumination pitch · ${zDriftPeakToPeakNm} nm peak-to-peak Z drift</p><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="estimate-example" value="Estimate generated movie" hidden> <input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const psfs: Float32Array[] = [];
   const drift: number[][] = [];
-  let psfExposure = 1;
+  const ideals: Float32Array[] = [];
+  let truth: ExampleTruth | undefined;
   const viewer = movieView(
     view.querySelector('.generated-movie')!,
     view.querySelector('.pattern-zoom')!,
     'Generated bead movie',
     (i) => {
-      if (psfs[i]) drawPsf(view.querySelector('.psf')!, psfs[i], psfExposure);
+      if (psfs[i]) {
+        const exposure = Math.max(...psfs[i], ...ideals[i], 1e-12);
+        drawPsf(view.querySelector('.psf')!, psfs[i], exposure);
+        drawPsf(view.querySelector('.ideal')!, ideals[i], exposure);
+      }
       if (drift[i])
         plot(view.querySelector('.trace')!, drift.slice(0, i + 1), frameCount, ['X', 'Y', 'Z'], 'Frame');
     },
@@ -68,6 +75,8 @@ export function installMovieExample(settings: () => Acquisition) {
     estimate.hidden = true;
     generated = null;
     viewer.reset();
+    truth = undefined;
+    ideals.length = 0;
     psfs.length = 0;
     drift.length = 0;
     progress.value = 0;
@@ -77,15 +86,17 @@ export function installMovieExample(settings: () => Acquisition) {
       c.getContext('2d')!.clearRect(0, 0, c.width, c.height);
     try {
       const s = settings();
-      viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t)) / 2, 'Simulated pattern');
+      const schedule = getSchedule();
+      viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
-      const file = await generateMovie(s, controller.signal, (frame, t, psf, motion, coefficients) => {
+      const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, ideal) => {
         if (!t) {
           first = motion;
-          psfExposure = Math.max(...psf, 1e-12);
+          truth = { coefficients, psfs, drift, meanFocusNm: 80, schedule };
           view.querySelector('.true-modes')!.textContent =
             coefficients.map((v, i) => 'Z' + (i + 5) + ' ' + v.toFixed(3)).join(' · ') + ' waves RMS';
         }
+        ideals.push(ideal.slice());
         psfs.push(psf.slice());
         drift.push(motion.map((v, i) => v - first[i]));
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
@@ -130,9 +141,16 @@ export function installMovieExample(settings: () => Acquisition) {
     }
     cancel();
   }
+  document.querySelector('.pattern-order')!.addEventListener('change', () => {
+    cancel();
+    if (generated && !view.open) view.open = true;
+    if (view.open) void start();
+  });
+  inputs.addEventListener('input', e => { if ((e.target as HTMLInputElement).type === 'number') cancel(); });
   inputs.addEventListener('drop', replaced, true);
   inputs.addEventListener('change', (e) => {
     if (!installing) replaced(e);
   });
   document.querySelector('#settings')!.addEventListener('input', cancel);
+  return () => generated ? truth : undefined;
 }
