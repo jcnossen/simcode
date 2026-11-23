@@ -113,6 +113,7 @@ export function movieView(
     updateZoom();
   };
   return {
+    display: () => ({canvas, bin}),
     frame(
       pixels: Float32Array,
       width: number,

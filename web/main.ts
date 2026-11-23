@@ -6,7 +6,7 @@ import { mount, download } from 'torch-dense/app';
 import { modulation } from './modulation';
 const estimator = liveEstimator(() => example(), () => order());
 mount(
-  'SIMCODE bead calibration',
+  'Joint PSF and modulation pattern estimator',
   async (r, out) => {
     estimator.positions(r);
     const simulated = example()?.modulation;

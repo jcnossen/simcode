@@ -110,23 +110,61 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   cloudHost.className = 'bead-cloud';
   const cloudCanvas = document.createElement('canvas');
   cloudCanvas.setAttribute('aria-label','Fitted bead positions in the camera plane');
-  cloudHost.append(cloudCanvas);
+  const cameraLayer = document.createElement('canvas');
+  cameraLayer.className = 'registered-frame';
+  cloudHost.append(cloudCanvas, cameraLayer);
+  // This overlay is a camera-plane view. Keep pan and pinch, suppress 3D orbit.
+  cloudCanvas.addEventListener('pointerdown', e => {
+    if (e.shiftKey || e.button === 2) e.stopImmediatePropagation();
+  }, true);
+  let selectedFrame = 0, pixelNm = 1;
+  let fittedDrift: number[][] = [];
+  let marker: HTMLDivElement;
+  function registerFrame() {
+    if (!cloud || !renderedPositions || !viewer || !marker || !cloud.scale) return;
+    const d = fittedDrift[selectedFrame];
+    marker.hidden = cameraLayer.hidden = !d;
+    if (!d) return;
+    const W = cloudCanvas.width, H = cloudCanvas.height;
+    if (cameraLayer.width !== W) cameraLayer.width = W;
+    if (cameraLayer.height !== H) cameraLayer.height = H;
+    const scale = cloud.scale / pixelNm; // camera pixels per cloud display pixel
+    // The fitted spot at (x,y) is observed at (x+dx,y+dy) in the raw frame.
+    const left = width/2 + cloud.cx/pixelNm - W*scale/2 + d[0];
+    const top = height/2 + cloud.cy/pixelNm - H*scale/2 + d[1];
+    const ctx = cameraLayer.getContext('2d')!;
+    ctx.clearRect(0,0,W,H);
+    const {canvas, bin} = viewer.display();
+    // Each preview sample is taken at the first camera pixel of its bin.
+    const edge = (1-bin)/2;
+    ctx.drawImage(canvas,(edge-left)/scale,(edge-top)/scale,canvas.width*bin/scale,canvas.height*bin/scale);
+    const clip = (v:number, limit:number) => Math.min(Math.max(v,0),limit);
+    const x0=clip(left, width), x1=clip(left+W*scale, width);
+    const y0=clip(top, height), y1=clip(top+H*scale, height);
+    marker.hidden = x0>=x1 || y0>=y1;
+    Object.assign(marker.style,{left:100*(x0-edge)/(canvas.width*bin)+'%',top:100*(y0-edge)/(canvas.height*bin)+'%',
+      width:100*(x1-x0)/(canvas.width*bin)+'%',height:100*(y1-y0)/(canvas.height*bin)+'%'});
+  }
   let imageDepth: MovieDepth | undefined;
   let device: GPUDevice;
   let cloud: PointCloudView | undefined;
   let renderedPositions: number[][] | undefined;
   function positions(snapshot: PhotometrySnapshot) {
-    if (!device || snapshot.xy === renderedPositions) return;
-    const pixelNm = snapshot.settings.optics.pixel_um * 1000;
+    fittedDrift = snapshot.drift.slice();
+    if (!device || snapshot.xy === renderedPositions) { registerFrame(); return; }
+    pixelNm = snapshot.settings.optics.pixel_um * 1000;
     cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:pixelNm/2,capNm:pixelNm,
       maxCrlbNm:0,colorZ:false,zlo:0,zhi:1,zExag:1}));
     cloudHost.hidden = false;
     cloud.start(snapshot.width,snapshot.height,pixelNm);
+    cloud.onChange = registerFrame;
+    const displayShortSide = Math.min(cloudCanvas.clientWidth, cloudCanvas.clientHeight)*(window.devicePixelRatio || 1);
+    if(displayShortSide) cloud.scale = Math.min(96,snapshot.width,snapshot.height)*pixelNm/displayShortSide;
     const rows = new Float32Array(snapshot.xy.length * NCOL);
     snapshot.xy.forEach(([x,y],i)=>{rows[i*NCOL+1]=x;rows[i*NCOL+2]=y;});
     cloud.append(rows);
     renderedPositions = snapshot.xy;
-    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted XY positions · scroll to zoom, drag to pan';
+    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted spots on XY drift-corrected frames · scroll to zoom, drag to pan';
   }
   let width = 0,
     height = 0;
@@ -198,7 +236,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       panel.hidden = false;
       panel.tabIndex = -1;
       panel.innerHTML = `
-        <header class="estimator-heading"><h2>Estimating PSF and pattern</h2><a href="#psf-report" hidden>View pupil and aberrations</a><button type="button" hidden>Back to inputs</button></header>
+        <header class="estimator-heading"><h2>Joint PSF and modulation pattern estimator</h2><a href="#psf-report" hidden>View pupil and aberrations</a><button type="button" hidden>Back to inputs</button></header>
         <div class="estimate-grid">
           <figure class="processing-movie"><figcaption>Input movie</figcaption>
             <div class="fit-movie"></div>
@@ -206,16 +244,17 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
 
             <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
             ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
-            <figure class="reconstruction"><figcaption>Bead reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure></div>
-            <figure class="zernike-chart"><figcaption>Zernike coefficients (waves RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
-            <figure class="pattern-zoom"></figure>
+            <div class="reconstruction-row"><figure class="reconstruction"><figcaption>Reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure><figure class="pattern-zoom"></figure></div></div>
+            <figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
             ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><h3>Modulation across the field</h3><label>X <input type="range" class="field-x" min="0" max="31" value="16"></label> <label>Y <input type="range" class="field-y" min="0" max="31" value="16"></label><p class="field-position"></p><table class="field-values"></table><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
         </div>`;
       renderedPositions = undefined;
+      fittedDrift = [];
+      cameraLayer.hidden = true;
       cloudHost.hidden = true;
-      panel.querySelector('.reconstruction')!.append(cloudHost);
+      panel.querySelector('.cloud-status')!.before(cloudHost);
       panel.querySelector('header')!.after(status);
       panel.querySelector('button')!.onclick = () => {
         panel.before(status);
@@ -229,7 +268,16 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         panel.querySelector('.fit-movie')!,
         panel.querySelector('.pattern-zoom')!,
         'Movie frame being processed',
+        i => { selectedFrame = i; registerFrame(); },
       );
+      const frame = viewer.display().canvas;
+      const wrap = document.createElement('div');
+      wrap.className = 'movie-with-roi';
+      frame.before(wrap);
+      marker = document.createElement('div');
+      marker.className = 'reconstruction-roi';
+      marker.hidden = true;
+      wrap.append(frame,marker);
       displayPattern();
       if (truth) {
         for(const slider of panel.querySelectorAll<HTMLInputElement>('.field-x,.field-y')) slider.oninput=()=>displayPattern(lastFit);
@@ -285,7 +333,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       const m = u.model;
       const sets = [{ z: Array.from(m.zcoef), color: '#2f6feb', label: 'Estimated' }];
       if (truth) sets.push({ z: m.noll.map(n => truth!.coefficients[n-5] ?? 0), color: '#c25d25', label: 'True (simulation)' });
-      drawZernikeSets(panel.querySelector('.zernike-chart canvas')!, m.noll, sets);
+      drawZernikeSets(panel.querySelector('.zernike-chart canvas')!, m.noll, sets, 'mλ');
       engine ??= new VecEngine(
         dev,
         { ...m.optics, roisize: m.roisize, npupil: m.npupil, oversample: m.oversample, zernike_noll: m.noll },
@@ -302,7 +350,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         drawPsf(panel.querySelector('.psf')!, estimated, exposure);
         drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
-          n >= 5 && n <= 11 ? [['Z' + n + ' (waves RMS)', truth!.coefficients[n - 5], m.zcoef[i]]] : []), 3);
+          n >= 5 && n <= 11 ? [['Z' + n + ' (mλ RMS)', 1000 * truth!.coefficients[n - 5], 1000 * m.zcoef[i]]] : []), 1);
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',
           truth.firstFocusNm + truth.drift[frameIndex][2], (u.focusUm - u.emitterHeightUm) * 1000]];
         if (u.driftNm) {
@@ -332,7 +380,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         ' · focus relative to bead ' +
         Math.round((u.focusUm - u.emitterHeightUm) * 1000) +
         ' nm' +
-        (z6 < 0 ? '' : ' · Z6 ' + m.zcoef[z6].toFixed(3) + ' waves RMS');
+        (z6 < 0 ? '' : ' · Z6 ' + (1000 * m.zcoef[z6]).toFixed(1) + ' mλ RMS');
       if (u.score !== undefined) {
         if (scoreStage !== u.stage) {
           scores = [];
@@ -354,6 +402,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         );
       }
       if (u.driftNm) {
+        const nm = m.optics.pixel_um * 1000;
+        fittedDrift[u.index-1] = [u.driftNm[0]/nm,u.driftNm[1]/nm];
+        registerFrame();
         if (!origin.length) origin = u.driftNm;
         motion.push(u.driftNm.map((v, i) => v - origin[i]));
         const fig = panel.querySelector<HTMLElement>('.motion')!;

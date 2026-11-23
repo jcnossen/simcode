@@ -109,7 +109,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
               row.insertCell().textContent=String(value);
           });
           view.querySelector('.true-modes')!.textContent =
-            coefficients.map((v, i) => 'Z' + (i + 5) + ' ' + v.toFixed(3)).join(' · ') + ' waves RMS';
+            coefficients.map((v, i) => 'Z' + (i + 5) + ' ' + (1000*v).toFixed(1)).join(' · ') + ' mλ RMS';
         }
         psfs.push(psf.slice());
         drift.push(motion.map((v, i) => v - first[i]));

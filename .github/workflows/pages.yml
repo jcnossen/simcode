@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: jcnossen/torch-psf
-          ref: 951e2d44a80a0408e8f699b2b10fb596865b0e1a
+          ref: f351c3f02853b4f206a5359768dfaad9fd29e3ac
           path: dependencies/torch-psf
       - uses: actions/setup-node@v4
         with:
