@@ -8,7 +8,14 @@ const estimator = liveEstimator(() => example(), () => order());
 mount(
   'SIMCODE bead calibration',
   async (r, out) => {
-    const result = modulation(r, order());
+    const schedule = order();
+    if (schedule.phases < 3) {
+      const message = document.createElement('p');
+      message.textContent = 'PSF and bead photometry complete. This phase schedule provides fewer than three steps for the harmonic pattern fit.';
+      out.append(message);
+      return;
+    }
+    const result = modulation(r, schedule);
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');
@@ -19,6 +26,16 @@ mount(
         row.insertCell().textContent = v;
     });
     out.append(table);
+    if (schedule.estimatePhases) {
+      const phases = document.createElement('table');
+      phases.innerHTML = '<tr><th>Axis</th><th>Estimated phase steps (° relative to step 0)</th></tr>';
+      result.patterns.forEach((p,i) => {
+        const row = phases.insertRow();
+        row.insertCell().textContent = axisName(i);
+        row.insertCell().textContent = p.phase_steps_rad.map(v => (v * 180 / Math.PI).toFixed(1)).join(', ');
+      });
+      out.append(phases);
+    }
     const c = document.createElement('canvas');
     const fields = [...result.patterns.map((_,i) => ['depth_' + axisName(i), 'Modulation depth ' + axisName(i)]),
       ...result.ratios.map((_,i) => ['ratio_A_over_' + axisName(i+1), 'Intensity ratio A / ' + axisName(i+1)])];

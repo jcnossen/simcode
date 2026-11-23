@@ -1,5 +1,5 @@
 import type { PhotometrySnapshot } from 'torch-dense/movie';
-import { axisAt, phaseDegrees, phaseRadians, cycle, axisName, defaultSchedule } from './schedule';
+import { axisAt, phaseDegrees, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
 const tau = 2 * Math.PI;
 function fft(a: Float64Array, b: Float64Array) {
   const n = a.length;
@@ -86,12 +86,20 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
   if (n > 4096) throw Error('Carrier FFT exceeds the supported field size (2048 px).');
   const re = new Float64Array(n * n),
     im = re.slice();
+  // Remove spatially uniform phase-dependent gain before searching for a carrier.
+  const phasors = cs.map((a) => {
+    const denom = Math.max(cap, Math.hypot(a[1], a[2]));
+    return [a[1] / denom, a[2] / denom];
+  });
+  const offset = [0, 1].map((j) => phasors.reduce((s, p) => s + p[j], 0) / phasors.length);
+  phasors.forEach((p) => {
+    p[0] -= offset[0];
+    p[1] -= offset[1];
+  });
   r.xy.forEach(([x, y], i) => {
-    const j = Math.round(scale * y) * n + Math.round(scale * x),
-      a = cs[i];
-    const norm = Math.max(cap, Math.hypot(a[1], a[2]));
-    re[j] += a[1] / norm;
-    im[j] += a[2] / norm;
+    const j = Math.round(scale * y) * n + Math.round(scale * x);
+    re[j] += phasors[i][0];
+    im[j] += phasors[i][1];
   });
   for (let y = 0; y < n; y++) fft(re.subarray(y * n, (y + 1) * n), im.subarray(y * n, (y + 1) * n));
   const col = new Float64Array(n),
@@ -123,10 +131,9 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
       const phase = kx * x + ky * y,
         co = Math.cos(phase),
         sn = Math.sin(phase),
-        a = cs[i],
-        norm = Math.max(cap, Math.hypot(a[1], a[2]));
-      cr += (a[1] * co + a[2] * sn) / norm;
-      si += (a[2] * co - a[1] * sn) / norm;
+        a = phasors[i];
+      cr += a[0] * co + a[1] * sn;
+      si += a[1] * co - a[0] * sn;
     });
     return cr * cr + si * si;
   };
@@ -146,6 +153,7 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
   return k;
 }
 export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
+  if (schedule.phases < 3) throw Error('The harmonic pattern fit requires three or more phase steps.');
   if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
   const basis = (x: number, y: number) => {
@@ -156,10 +164,11 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
   const X = r.xy.map(([x, y]) => basis(x, y)),
     means: number[][] = [];
   const patterns = Array.from({ length: schedule.axes }, (_, dir) => {
+    let steps = Array.from({ length: schedule.phases }, (_, i) => (tau * i) / schedule.phases);
     const frames = r.drift.map((_, t) => t).filter((t) => axisAt(t, schedule) === dir);
     const harmonic = (k: number[]) => {
       const A = frames.map((t) => {
-        const p = phaseRadians(t, schedule) + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
+        const p = steps[phaseAt(t, schedule)] + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
         return [1, Math.cos(p), -Math.sin(p)];
       });
       return r.xy.map((_, i) =>
@@ -174,6 +183,65 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
     cs = harmonic(k);
     k = carrier(r, cs);
     cs = harmonic(k);
+    if (schedule.estimatePhases) {
+      // At a given slot the bead intensity is a sinusoid in spatial position.
+      // Its complex amplitude gives the phase; the common spatial origin drops
+      // out when referencing slot zero. Refit bead DC for non-uniform phase steps.
+      const means = r.xy.map((_, i) => frames.reduce((v, t) => v + r.intensity[t][i], 0) / frames.length);
+      const bright = [...means].sort((a, b) => a - b)[
+        Math.min(Math.floor(0.7 * means.length), means.length - 6)
+      ];
+      const selected = means.map((v, i) => (v >= bright && v > 1 ? i : -1)).filter((i) => i >= 0);
+      if (selected.length < 6)
+        throw Error('Too few bright beads to estimate individual illumination phases.');
+      let baseline = means;
+      const positions = selected.map((i) => dot(k, r.xy[i]));
+      for (let round = 0; round < 4; round++) {
+        const sums = steps.map(() => [0, 0]);
+        const normal = steps.map(() => Array.from({ length: 3 }, () => [0, 0, 0]));
+        const rhs = steps.map(() => [0, 0, 0]);
+        for (const t of frames) {
+          const slot = phaseAt(t, schedule),
+            shift = k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
+          selected.forEach((i, j) => {
+            const dc = baseline[i];
+            if (dc <= 1) return;
+            const angle = positions[j] + shift,
+              x = [1, Math.cos(angle), -Math.sin(angle)];
+            const y = (r.intensity[t][i] - dc) / Math.max(1, means[i]);
+            for (let a = 0; a < 3; a++) {
+              rhs[slot][a] += x[a] * y;
+              for (let b = 0; b < 3; b++) normal[slot][a][b] += x[a] * x[b];
+            }
+          });
+        }
+        for (let j = 0; j < steps.length; j++) {
+          const [, c, s] = solve(normal[j], rhs[j]);
+          sums[j] = [c, s];
+        }
+        // With unknown bead brightness the first projection has an unknown
+        // constant complex offset. Equal modulation amplitude places the
+        // slot phasors on a circle; its centre estimates that offset.
+        const center =
+          round === 0
+            ? regression(
+                sums.map(([c, s]) => [2 * c, 2 * s, 1]),
+                sums.map(([c, s]) => c * c + s * s),
+              )
+            : [0, 0];
+        const angles = sums.map(([c, s]) => Math.atan2(s - center[1], c - center[0]));
+        const next = angles.map((a) => (a - angles[0] + tau) % tau);
+        const change = Math.max(
+          ...next.map((a, j) => Math.abs(Math.atan2(Math.sin(a - steps[j]), Math.cos(a - steps[j])))),
+        );
+        steps = next;
+        cs = harmonic(k);
+        baseline = cs.map((p) => p[0]);
+        if (change < 1e-4) break;
+      }
+      k = carrier(r, cs);
+      cs = harmonic(k);
+    }
     const valid = cs
       .map((a, i) => (a[0] > 1 && Math.hypot(a[1], a[2]) > 0.01 * a[0] ? i : -1))
       .filter((i) => i >= 0);
@@ -197,6 +265,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
     );
     means.push(cs.map((a) => a[0]));
     return {
+      phase_steps_rad: steps,
       kx_rad_px: k[0],
       ky_rad_px: k[1],
       pitch_nm: (tau / Math.hypot(...k)) * r.settings.optics.pixel_um * 1000,
@@ -206,10 +275,13 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
       beads: valid.length,
     };
   });
-  const ratios = means.slice(1).map(denom => {
-    const valid = r.xy.map((_, i) => means[0][i] > 1 && denom[i] > 1 ? i : -1).filter(i => i >= 0);
+  const ratios = means.slice(1).map((denom) => {
+    const valid = r.xy.map((_, i) => (means[0][i] > 1 && denom[i] > 1 ? i : -1)).filter((i) => i >= 0);
     if (valid.length < 6) throw Error('Too few shared beads for an intensity ratio map.');
-    return robust(valid.map(i => X[i]), valid.map(i => means[0][i] / denom[i]));
+    return robust(
+      valid.map((i) => X[i]),
+      valid.map((i) => means[0][i] / denom[i]),
+    );
   });
   const maps = Array.from({ length: 32 * 32 }, (_, i) => {
     const x = ((i % 32) * (r.width - 1)) / 31,
@@ -228,16 +300,29 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
       const label = axisName(i);
       row['orientation_' + label + '_deg'] = angles[i];
       row['depth_' + label] = dot(p.depth, b);
-      row['phase_' + label + '_rad'] = p.kx_rad_px*x + p.ky_rad_px*y + dot(p.phase,b);
-      if (i) row['ratio_A_over_' + label] = dot(ratios[i-1], b);
+      row['phase_' + label + '_rad'] = p.kx_rad_px * x + p.ky_rad_px * y + dot(p.phase, b);
+      if (i) row['ratio_A_over_' + label] = dot(ratios[i - 1], b);
     });
     return row;
   });
   return {
-    schedule: Array.from({length: schedule.phases * schedule.axes}, (_,t) => axisName(axisAt(t,schedule)) + Number(phaseDegrees(t,schedule).toFixed(4))).join(' '),
+    schedule: Array.from(
+      { length: schedule.phases * schedule.axes },
+      (_, t) =>
+        axisName(axisAt(t, schedule)) +
+        Number(
+          ((patterns[axisAt(t, schedule)].phase_steps_rad[phaseAt(t, schedule)] * 360) / tau).toFixed(4),
+        ),
+    ).join(' '),
+    nominal_schedule: Array.from(
+      { length: schedule.phases * schedule.axes },
+      (_, t) => axisName(axisAt(t, schedule)) + Number(phaseDegrees(t, schedule).toFixed(4)),
+    ).join(' '),
+    phase_step_mode: schedule.estimatePhases ? 'estimated relative to first exposure per axis' : 'nominal',
     phases_per_axis: schedule.phases,
     angle_indices: cycle(schedule),
-    coordinate_system: 'x right, y down. Orientation is the wavevector angle. Ratios divide mean axis 0 intensity by each other axis.',
+    coordinate_system:
+      'x right, y down. Orientation is the wavevector angle. Ratios divide mean axis 0 intensity by each other axis.',
     basis: '[1,u,v,u²,uv,v²], u,v normalized to [-1,1]',
     patterns,
     ratio: ratios[0],

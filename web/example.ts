@@ -134,7 +134,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     }
     cancel();
   }
-  document.querySelector('.pattern-order')!.addEventListener('change', () => {
+  document.querySelector('.pattern-order')!.addEventListener('change', (event) => {
+    if ((event.target as HTMLElement).matches('.free-phases')) return;
     cancel();
     if (generated && !view.open) view.open = true;
     if (view.open) void start();

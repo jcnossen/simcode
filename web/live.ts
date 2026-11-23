@@ -1,4 +1,5 @@
-import { axisAt, axisName, phaseRadians, type Schedule } from './schedule';
+import { drawZernikeSets } from 'torch-web/ui/zernike-bars';
+import { axisAt, axisName, phaseAt, type Schedule } from './schedule';
 import { angleAt, depthAt, pitchNm, ratioAt, type ExampleTruth } from './generate';
 import { movieView } from './movie-view';
 import { modulation } from './modulation';
@@ -109,6 +110,10 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       const rows: [string, number, number][] = [];
       result.patterns.forEach((p, i) => {
         const label = axisName(i);
+        if (schedule.estimatePhases) {
+          p.phase_steps_rad.forEach((a,j) => rows.push([label + ' step ' + j + ' (°)',
+            360*j/schedule.phases, a*180/Math.PI]));
+        }
         rows.push([label + ' pitch (nm)', pitchNm, p.pitch_nm],
           [label + ' angle (°)', angleAt(i, truth!.schedule.axes), p.orientation_deg],
           [label + ' depth at field center', depthAt(i, 0, 0), p.depth[0]]);
@@ -124,7 +129,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       return (
         (1 +
           poly(p.depth) *
-            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + phaseRadians(t, schedule))) /
+            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + p.phase_steps_rad[phaseAt(t, schedule)])) /
         2
       );
     }, name, schedule);
@@ -134,6 +139,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     motion: number[][] = [],
     origin: number[] = [];
   return {
+    period: () => schedule.axes * schedule.phases,
     start() {
       schedule = getOrder();
       truth = getTruth();
@@ -155,13 +161,14 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
           <figure class="processing-movie"><figcaption>Input movie</figcaption>
             <div class="fit-movie"></div>
           </figure>
-          <div><figure class="pattern-zoom"></figure>
-            <div class="compared-psfs"><figure><figcaption>Current PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
-            ${truth ? '<figure><figcaption class="true-caption">Simulated PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+
+            <div class="compared-psfs"><figure><figcaption>Estimated PSF · current fit</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
+            ${truth ? '<figure><figcaption class="true-caption">True PSF · simulation</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+            <figure class="zernike-chart"><figcaption>Zernike coefficients (waves RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
+            <figure class="pattern-zoom"></figure>
             ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><table class="pattern-values"></table></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
-          </div>
         </div>`;
       panel.querySelector('header')!.after(status);
       panel.querySelector('button')!.onclick = () => {
@@ -197,6 +204,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       viewer.frame(pixels, width, height, index - 1, total, stage === 'fit' ? 'Fitting' : 'Reading');
     },
     photometry(snapshot: PhotometrySnapshot) {
+      if (schedule.phases < 3) return;
       try {
         overlay(modulation(snapshot, schedule), 'Preliminary fitted pattern');
       } catch {
@@ -213,7 +221,11 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       if (report && destination && report.parentElement !== destination) destination.prepend(report);
       const pupilLink = panel.querySelector<HTMLAnchorElement>('a[href="#psf-report"]')!;
       pupilLink.hidden = !document.querySelector('#psf-report:not([hidden])');
+      if (schedule.phases < 3) panel.querySelector('.pattern-zoom small')!.textContent = 'Movie ROI · PSF and photometry only';
       const m = u.model;
+      const sets = [{ z: Array.from(m.zcoef), color: '#2f6feb', label: 'Estimated' }];
+      if (truth) sets.push({ z: m.noll.map(n => truth!.coefficients[n-5] ?? 0), color: '#c25d25', label: 'True (simulation)' });
+      drawZernikeSets(panel.querySelector('.zernike-chart canvas')!, m.noll, sets);
       engine ??= new VecEngine(
         dev,
         { ...m.optics, roisize: m.roisize, npupil: m.npupil, oversample: m.oversample, zernike_noll: m.noll },
@@ -230,7 +242,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         drawPsf(panel.querySelector('.psf')!, estimated, exposure);
         drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
         panel.querySelector('.true-caption')!.textContent = u.stage === 'frame'
-          ? 'Simulated PSF · frame ' + u.index : 'Simulated PSF · mean focus';
+          ? 'True PSF · simulated frame ' + u.index : 'True PSF · simulation at mean focus';
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
           n >= 5 && n <= 11 ? [['Z' + n + ' (waves RMS)', truth!.coefficients[n - 5], m.zcoef[i]]] : []), 3);
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',
