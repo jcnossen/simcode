@@ -149,9 +149,10 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       if (truthLayer.height !== H) truthLayer.height = H;
       const gt = truthLayer.getContext('2d')!;
       gt.clearRect(0, 0, W, H);
-      const [dx,dy] = truth.drift[selectedFrame];
-      // First-frame centers plus simulated motion, in the same raw-frame ROI as the image.
-      const ox = dx/truth.pixelNm + 0.5 - left, oy = dy/truth.pixelNm + 0.5 - top;
+      // Both localization catalogs live in the static reconstruction plane.
+      // Register the first-exposure truth to that plane once. Only the camera image moves.
+      const ox = 0.5 - fittedDrift[0][0] - width/2 - cloud.cx/pixelNm + W*scale/2;
+      const oy = 0.5 - fittedDrift[0][1] - height/2 - cloud.cy/pixelNm + H*scale/2;
       const dpr = window.devicePixelRatio || 1;
       const arm = Math.min(2.5*dpr, Math.max(dpr, 0.8/scale));
       gt.strokeStyle = '#267bff';
@@ -403,10 +404,13 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       );
       engine.setZernike(m.zcoef);
       const side = m.roisize, center = Math.floor(side / 2), area = side * side;
+      const frameIndex = u.stage === 'frame' ? u.index-1 : u.stage === 'final' ? selectedFrame : 0;
+      const focusUm = u.stage === 'final' && fittedDrift[frameIndex]?.[2] !== undefined
+        ? u.emitterHeightUm + fittedDrift[frameIndex][2]/1000 : u.focusUm;
       const dz = m.optics.pixel_um;
       // Each plane uses the same emitter and pupil. The center plane is the live XY view.
       engine.setImages(Array.from({length:side}, (_, row) => ({
-        x:0, y:0, ze:u.emitterHeightUm, f:u.focusUm + (center-row)*dz, I:1, bg:0,
+        x:0, y:0, ze:u.emitterHeightUm, f:focusUm + (center-row)*dz, I:1, bg:0,
       })));
       await engine.run(side, 'psf');
       const stack = await engine.readPsf(side);
@@ -416,7 +420,6 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         const start = row*area + center*side;
         axial.set(stack.subarray(start,start+side),row*side);
       }
-      const frameIndex = u.stage === 'frame' ? u.index - 1 : 0;
       const reference = truth?.psfs[frameIndex];
       const exposure = Math.max(...estimated,...axial,...(reference ?? []),1e-12);
       drawPsf(panel.querySelector('.psf')!, estimated, exposure);
@@ -426,7 +429,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
           n >= 5 && n <= 11 ? [['Z' + n + ' (mλ RMS)', 1000 * truth!.coefficients[n - 5], 1000 * m.zcoef[i]]] : []), 1);
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',
-          truth.firstFocusNm + truth.drift[frameIndex][2], (u.focusUm - u.emitterHeightUm) * 1000]];
+          truth.firstFocusNm + truth.drift[frameIndex][2], (focusUm - u.emitterHeightUm) * 1000]];
         if (u.driftNm) {
           const start = origin.length ? origin : u.driftNm;
           u.driftNm.forEach((v, i) => rows.push(['Drift ' + ['X','Y','Z'][i] + ' (nm)',
@@ -448,11 +451,11 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             : u.stage === 'diversity' ? 'Phase diversity '+u.index+'/'+u.total
             : u.stage === 'frame'
               ? 'Frame ' + u.index + '/' + u.total
-              : 'Final mean focus';
+              : 'Final fit · frame '+(frameIndex+1);
       panel.querySelector('.parameters')!.textContent =
         stage + ' · XZ: focus increases upward, ' + (dz*1000).toFixed(1) + ' nm/row' +
         ' · focus relative to bead ' +
-        Math.round((u.focusUm - u.emitterHeightUm) * 1000) +
+        Math.round((focusUm - u.emitterHeightUm) * 1000) +
         ' nm' +
         (z6 < 0 ? '' : ' · Z6 ' + (1000 * m.zcoef[z6]).toFixed(1) + ' mλ RMS');
       if (u.score !== undefined) {
@@ -477,7 +480,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       }
       if (u.driftNm) {
         const nm = m.optics.pixel_um * 1000;
-        fittedDrift[u.index-1] = [u.driftNm[0]/nm,u.driftNm[1]/nm];
+        fittedDrift[u.index-1] = [u.driftNm[0]/nm,u.driftNm[1]/nm,u.driftNm[2]];
         registerFrame();
         if (!origin.length) origin = u.driftNm;
         motion.push(u.driftNm.map((v, i) => v - origin[i]));
