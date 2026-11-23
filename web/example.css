@@ -195,7 +195,7 @@
 }
 
 .estimate-grid > * { min-width: 0; }
-.estimate-grid .compared-psfs { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,125px),1fr)); align-content: start; }
+.estimate-grid .compared-psfs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-content: start; }
 .compared-psfs .psf { width: min(100%,200px); height: auto; }
 .estimate-grid .zernike-chart { grid-column: 1 / -1; }
 .zernike-chart canvas { display: block; width: 100%; height: 180px; }
@@ -251,3 +251,7 @@ main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
 .pupil-preview canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
 .live-pupil .pupil-grid { display: none; }
 @media(max-width: 600px) { .optics-row { grid-template-columns: 1fr; } }
+
+.compared-psfs:has(.reference) { grid-template-columns: repeat(3,minmax(0,1fr)); }
+
+.gpu-subtitle { font-size: .9rem; color: #43585a; margin-top: .25rem; }

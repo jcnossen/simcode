@@ -267,8 +267,8 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             <div class="fit-movie"></div>
           </figure>
 
-            <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
-            ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+            <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF · XY</figcaption><canvas class="psf" aria-label="Estimated lateral PSF at the current focus"></canvas></figure><figure><figcaption>Estimated PSF · XZ</figcaption><canvas class="psf axial" aria-label="Estimated through-focus PSF at the central Y coordinate"></canvas></figure>
+            ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div><small class="parameters">Preparing optics…</small>
             <div class="reconstruction-row"><figure class="reconstruction"><figcaption>Reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure><figure class="pattern-zoom"></figure></div></div>
             <div class="optics-row"><figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure><div class="pupil-preview"></div></div>
             <section class="modulation-field" hidden></section>
@@ -402,14 +402,26 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         [],
       );
       engine.setZernike(m.zcoef);
-      engine.setImages([{ x: 0, y: 0, ze: u.emitterHeightUm, f: u.focusUm, I: 1, bg: 0 }]);
-      await engine.run(1, 'psf');
-      const estimated = await engine.readPsf(1);
+      const side = m.roisize, center = Math.floor(side / 2), area = side * side;
+      const dz = m.optics.pixel_um;
+      // Each plane uses the same emitter and pupil. The center plane is the live XY view.
+      engine.setImages(Array.from({length:side}, (_, row) => ({
+        x:0, y:0, ze:u.emitterHeightUm, f:u.focusUm + (center-row)*dz, I:1, bg:0,
+      })));
+      await engine.run(side, 'psf');
+      const stack = await engine.readPsf(side);
+      const estimated = stack.subarray(center*area,(center+1)*area);
+      const axial = new Float32Array(area);
+      for(let row=0; row<side; row++) {
+        const start = row*area + center*side;
+        axial.set(stack.subarray(start,start+side),row*side);
+      }
       const frameIndex = u.stage === 'frame' ? u.index - 1 : 0;
       const reference = truth?.psfs[frameIndex];
+      const exposure = Math.max(...estimated,...axial,...(reference ?? []),1e-12);
+      drawPsf(panel.querySelector('.psf')!, estimated, exposure);
+      drawPsf(panel.querySelector('.axial')!, axial, exposure);
       if (truth && reference) {
-        const exposure = Math.max(...estimated, ...reference, 1e-12);
-        drawPsf(panel.querySelector('.psf')!, estimated, exposure);
         drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
           n >= 5 && n <= 11 ? [['Z' + n + ' (mλ RMS)', 1000 * truth!.coefficients[n - 5], 1000 * m.zcoef[i]]] : []), 1);
@@ -426,7 +438,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
           });
         }
         compare('.drift-values', rows, 1);
-      } else drawPsf(panel.querySelector('.psf')!, estimated);
+      }
       const z6 = m.noll.indexOf(6);
       const stage =
         u.stage === 'calibration'
@@ -438,7 +450,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
               ? 'Frame ' + u.index + '/' + u.total
               : 'Final mean focus';
       panel.querySelector('.parameters')!.textContent =
-        stage +
+        stage + ' · XZ: focus increases upward, ' + (dz*1000).toFixed(1) + ' nm/row' +
         ' · focus relative to bead ' +
         Math.round((u.focusUm - u.emitterHeightUm) * 1000) +
         ' nm' +

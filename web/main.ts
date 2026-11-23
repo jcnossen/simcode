@@ -1,3 +1,4 @@
+import { getDevice } from 'torch-web/gpu/device';
 import { scheduleControls, axisName } from './schedule';
 import { liveEstimator } from './live';
 import { installMovieExample } from './example';
@@ -104,5 +105,16 @@ mount(
 );
 
 document.querySelector('#purpose')!.textContent = 'Fit a bead movie to recover the PSF, illumination patterns and field maps.';
+const gpuSubtitle = document.createElement('p');
+gpuSubtitle.className = 'gpu-subtitle';
+document.querySelector('#purpose')!.after(gpuSubtitle);
+gpuSubtitle.textContent = 'Checking WebGPU adapter…';
+getDevice().then(({info}) => {
+  const name = info.description.trim() || [info.vendor, info.architecture, info.device].filter(Boolean).join(' ');
+  gpuSubtitle.textContent = name
+    ? 'Uses WebGPU, currently using: ' + name
+    : 'Uses WebGPU · adapter name unavailable';
+  if (info.isFallback) gpuSubtitle.textContent += ' (software adapter)';
+}).catch(() => { gpuSubtitle.textContent = 'WebGPU unavailable'; });
 const order = scheduleControls();
 const example = installMovieExample(acquisitionSettings(), order);
