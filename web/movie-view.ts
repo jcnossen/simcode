@@ -1,4 +1,4 @@
-import { axisAt, phaseAt, defaultSchedule, type Schedule } from './schedule';
+import { axisAt, phaseDegrees, defaultSchedule, type Schedule } from './schedule';
 export type Pattern = (x: number, y: number, frame: number) => number;
 
 // Cache display pixels only. The uploaded TIFF and the estimator retain their native sampling.
@@ -63,7 +63,7 @@ export function movieView(
     zc.putImageData(rgba, 0, 0);
     caption.textContent =
       (renderPattern
-        ? patternLabel + ' · ' + 'axis ' + axisAt(current, schedule) + ' · ' + phaseAt(current, schedule) * 120 + '°'
+        ? patternLabel + ' · ' + 'axis ' + axisAt(current, schedule) + ' · ' + Number(phaseDegrees(current, schedule).toFixed(2)) + '°'
         : 'Movie ROI · awaiting fitted pattern') +
       ' · x ' +
       Math.round(left + side / 2) +

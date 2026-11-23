@@ -1,5 +1,5 @@
 import type { PhotometrySnapshot } from 'torch-dense/movie';
-import { axisAt, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
+import { axisAt, phaseDegrees, phaseRadians, cycle, axisName, defaultSchedule } from './schedule';
 const tau = 2 * Math.PI;
 function fft(a: Float64Array, b: Float64Array) {
   const n = a.length;
@@ -146,7 +146,7 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
   return k;
 }
 export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
-  if (r.drift.length < 3 * schedule.axes || r.xy.length < 6)
+  if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
   const basis = (x: number, y: number) => {
     x = (2 * x) / (r.width - 1) - 1;
@@ -159,7 +159,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
     const frames = r.drift.map((_, t) => t).filter((t) => axisAt(t, schedule) === dir);
     const harmonic = (k: number[]) => {
       const A = frames.map((t) => {
-        const p = (phaseAt(t, schedule) * tau) / 3 + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
+        const p = phaseRadians(t, schedule) + k[0] * r.drift[t][0] + k[1] * r.drift[t][1];
         return [1, Math.cos(p), -Math.sin(p)];
       });
       return r.xy.map((_, i) =>
@@ -234,7 +234,8 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
     return row;
   });
   return {
-    schedule: Array.from({length: 3 * schedule.axes}, (_,t) => axisName(axisAt(t,schedule)) + (phaseAt(t,schedule)*120)).join(' '),
+    schedule: Array.from({length: schedule.phases * schedule.axes}, (_,t) => axisName(axisAt(t,schedule)) + Number(phaseDegrees(t,schedule).toFixed(4))).join(' '),
+    phases_per_axis: schedule.phases,
     angle_indices: cycle(schedule),
     coordinate_system: 'x right, y down. Orientation is the wavevector angle. Ratios divide mean axis 0 intensity by each other axis.',
     basis: '[1,u,v,u²,uv,v²], u,v normalized to [-1,1]',

@@ -167,3 +167,17 @@
 .pattern-order label { display: inline-flex; align-items: center; gap: .4rem; margin-right: 1rem; }
 .pattern-order input[type=checkbox] { width: auto; }
 .pattern-order output { font-family: monospace; letter-spacing: .08em; }
+
+#inputs .drop {
+  block-size: 8rem;
+  min-inline-size: 0;
+  align-content: center;
+  grid-template-columns: minmax(0, 1fr);
+  padding-block: 0.75rem;
+}
+#inputs .drop span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pattern-order { min-inline-size: 0; overflow-wrap: anywhere; }

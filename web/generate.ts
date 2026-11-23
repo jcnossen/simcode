@@ -1,7 +1,7 @@
 import { getDevice } from 'torch-web/gpu/device';
 import { VecEngine } from 'torch-web/gpu/ops';
 import { tiffStackBlob } from 'torch-web/psfgrab/tiffstack';
-import { axisAt, phaseAt, type Schedule } from './schedule';
+import { axisAt, phaseRadians, type Schedule } from './schedule';
 import type { Acquisition } from './settings';
 
 export const size = 400,
@@ -28,7 +28,7 @@ export function illumination(pixelNm: number, x: number, y: number, t: number, s
     v = (2 * y) / size - 1;
   return (
     depthAt(dir, u, v) *
-    Math.cos(k * (x * Math.cos(angle) + y * Math.sin(angle)) + 0.25 * u * v + (tau * phaseAt(t, schedule)) / 3)
+    Math.cos(k * (x * Math.cos(angle) + y * Math.sin(angle)) + 0.25 * u * v + phaseRadians(t, schedule))
   );
 }
 const beadCount = 12000,

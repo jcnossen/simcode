@@ -1,4 +1,4 @@
-import { axisAt, axisName, phaseAt, type Schedule } from './schedule';
+import { axisAt, axisName, phaseRadians, type Schedule } from './schedule';
 import { angleAt, depthAt, pitchNm, ratioAt, type ExampleTruth } from './generate';
 import { movieView } from './movie-view';
 import { modulation } from './modulation';
@@ -124,7 +124,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       return (
         (1 +
           poly(p.depth) *
-            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + (phaseAt(t, schedule) * 2 * Math.PI) / 3)) /
+            Math.cos(p.kx_rad_px * x + p.ky_rad_px * y + poly(p.phase) + phaseRadians(t, schedule))) /
         2
       );
     }, name, schedule);
