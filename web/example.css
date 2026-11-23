@@ -81,7 +81,7 @@
   display: block;
   margin-top: 0.5rem;
 }
-.example-actions .estimate-example {
+.movie-caption .estimate-example {
   background: #125a60;
   color: white;
   border-radius: 4px;
@@ -232,3 +232,6 @@ main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
 .field-values { font-variant-numeric: tabular-nums; }
 .field-position { margin: 0 0 .4rem; }
 @media(max-width: 600px) { .field-layout { grid-template-columns: 1fr; } }
+
+.movie-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .4rem; }
+.movie-caption .estimate-example:disabled { background: #dce4e3; color: #4c5c5b; cursor: default; }

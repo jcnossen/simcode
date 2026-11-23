@@ -12,7 +12,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><div class="example-content"><figure><figcaption>Movie frame</figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z excursion · XYZ random walk</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="estimate-example" value="Estimate generated movie" hidden> <input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span><input type="button" class="estimate-example" value="Estimate generated movie" disabled></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z excursion · XYZ random walk</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
   // Keep example validation independent of the real-movie upload form.
@@ -51,7 +51,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     }
   };
   new MutationObserver(() => {
-    estimate.disabled = submit.disabled;
+    estimate.disabled = submit.disabled || !generated;
   }).observe(submit, { attributes: true, attributeFilter: ['disabled'] });
   progress.max = frameCount;
   let active: AbortController | null = null;
@@ -81,7 +81,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     download.removeAttribute('href');
     download.hidden = true;
     again.hidden = true;
-    estimate.hidden = true;
+    estimate.disabled = true;
     generated = null;
     viewer.reset();
     truth = undefined;
@@ -128,7 +128,6 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         installing = false;
       }
       generated = file;
-      estimate.hidden = false;
       download.href = URL.createObjectURL(file);
       download.hidden = false;
       status.textContent = frameCount + ' frames generated. Movie selected for fitting.';
@@ -155,7 +154,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   function replaced(e: Event) {
     if ((e.target as Element).closest('label') === movie.closest('label')) {
       generated = null;
-      estimate.hidden = true;
+      estimate.disabled = true;
     }
     cancel();
   }
