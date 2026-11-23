@@ -20,7 +20,12 @@ export function acquisitionSettings() {
   const sample = document.createElement('div');
   sample.className = 'movie-sample';
   movieInput.before(sample);
-  sample.append(movieInput, diameter.closest('label')!);
+  const controls = document.createElement('div');
+  controls.className = 'sample-controls';
+  const estimate = section.closest('form')!.querySelector('button')!;
+  estimate.textContent = 'Estimate';
+  controls.append(diameter.closest('label')!, estimate);
+  sample.append(movieInput, controls);
   // An empty stack step means read the calibration TIFF metadata.
   function valid(key: (typeof keys)[number], value: string) {
     if (!value.trim()) return key === 'stepNm';

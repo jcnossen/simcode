@@ -238,3 +238,16 @@ main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
 
 .reconstruction-row .true-bead-positions { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .bead-cloud .true-bead-positions[hidden], .bead-cloud .registered-frame[hidden] { display: none; }
+
+.sample-controls { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+.sample-controls button { margin: 0; }
+.movie-with-roi { touch-action: none; }
+.movie-with-roi:has(.reconstruction-roi:not([hidden])) canvas { cursor: grab; }
+.movie-with-roi:has(.reconstruction-roi:not([hidden])):active canvas { cursor: grabbing; }
+.optics-row { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); align-items: start; gap: 1rem; }
+.optics-row .zernike-chart { grid-column: auto; }
+.pupil-preview .pupil-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .75rem; }
+.pupil-preview figure { max-width: 180px; width: 100%; }
+.pupil-preview canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.live-pupil .pupil-grid { display: none; }
+@media(max-width: 600px) { .optics-row { grid-template-columns: 1fr; } }

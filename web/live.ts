@@ -124,6 +124,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   let selectedFrame = 0, pixelNm = 1;
   let fittedDrift: number[][] = [];
   let marker: HTMLDivElement;
+  let lastPupilGrid: Element | null = null;
   function registerFrame() {
     if (!cloud || !renderedPositions || !viewer || !marker || !cloud.scale) return;
     const d = fittedDrift[selectedFrame];
@@ -269,7 +270,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
             ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
             <div class="reconstruction-row"><figure class="reconstruction"><figcaption>Reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure><figure class="pattern-zoom"></figure></div></div>
-            <figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
+            <div class="optics-row"><figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure><div class="pupil-preview"></div></div>
             <section class="modulation-field" hidden></section>
             ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
@@ -303,6 +304,34 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       marker.className = 'reconstruction-roi';
       marker.hidden = true;
       wrap.append(frame,marker);
+      let drag: {id:number; x:number; y:number; cx:number; cy:number} | undefined;
+      const pointerPixels = (event:PointerEvent) => {
+        const box = frame.getBoundingClientRect(), {bin} = viewer.display();
+        return {x:(event.clientX-box.left)*frame.width*bin/box.width+(1-bin)/2,
+          y:(event.clientY-box.top)*frame.height*bin/box.height+(1-bin)/2};
+      };
+      wrap.onpointerdown = event => {
+        if (!cloud || !renderedPositions || event.button !== 0 || drag) return;
+        const drift = fittedDrift[selectedFrame];
+        if (!drift) return;
+        const {x,y} = pointerPixels(event), box = marker.getBoundingClientRect();
+        if (marker.hidden || event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) {
+          cloud.cx = (x - drift[0] - width/2)*pixelNm;
+          cloud.cy = (y - drift[1] - height/2)*pixelNm;
+          cloud.request();
+        }
+        drag = {id:event.pointerId,x,y,cx:cloud.cx,cy:cloud.cy};
+        wrap.setPointerCapture(event.pointerId);
+        event.preventDefault();
+      };
+      wrap.onpointermove = event => {
+        if (!cloud || !drag || drag.id !== event.pointerId) return;
+        const {x,y} = pointerPixels(event);
+        cloud.cx = drag.cx + (x-drag.x)*pixelNm;
+        cloud.cy = drag.cy + (y-drag.y)*pixelNm;
+        cloud.request();
+      };
+      wrap.onlostpointercapture = () => { drag = undefined; };
       inspectField = fieldInspector(panel.querySelector('.modulation-field')!);
       displayPattern();
       if (truth) {
@@ -352,6 +381,14 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       const destination =
         u.stage === 'final' ? document.querySelector('article') : panel.querySelector('.live-pupil');
       if (report && destination && report.parentElement !== destination) destination.prepend(report);
+      const pupilGrid = report?.querySelector('.pupil-grid');
+      if (pupilGrid && pupilGrid !== lastPupilGrid) {
+        const preview = pupilGrid.cloneNode(true) as HTMLElement;
+        const source = pupilGrid.querySelectorAll('canvas');
+        preview.querySelectorAll('canvas').forEach((canvas,i) => canvas.getContext('2d')!.drawImage(source[i],0,0));
+        panel.querySelector('.pupil-preview')!.replaceChildren(preview);
+        lastPupilGrid = pupilGrid;
+      }
       const pupilLink = panel.querySelector<HTMLAnchorElement>('a[href="#psf-report"]')!;
       pupilLink.hidden = !document.querySelector('#psf-report:not([hidden])');
       if (!truth && schedule.phases < 3) panel.querySelector('.pattern-zoom small')!.textContent = 'Movie ROI · PSF and photometry only';
