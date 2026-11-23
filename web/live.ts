@@ -1,3 +1,6 @@
+import { MovieDepth } from './movie-depth';
+import { PointCloudView } from 'torch-web/ui/pointcloud';
+import { NCOL } from 'torch-web/smlm/movie';
 import { drawZernikeSets } from 'torch-web/ui/zernike-bars';
 import { axisAt, axisName, phaseAt, type Schedule } from './schedule';
 import { angleAt, depthAt, pitchNm, ratioAt, type ExampleTruth } from './generate';
@@ -103,6 +106,28 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   let panel: HTMLElement,
     engine: VecEngine | null = null;
   let viewer: ReturnType<typeof movieView>;
+  const cloudHost = document.createElement('div');
+  cloudHost.className = 'bead-cloud';
+  const cloudCanvas = document.createElement('canvas');
+  cloudCanvas.setAttribute('aria-label','Fitted bead positions in the camera plane');
+  cloudHost.append(cloudCanvas);
+  let imageDepth: MovieDepth | undefined;
+  let device: GPUDevice;
+  let cloud: PointCloudView | undefined;
+  let renderedPositions: number[][] | undefined;
+  function positions(snapshot: PhotometrySnapshot) {
+    if (!device || snapshot.xy === renderedPositions) return;
+    const pixelNm = snapshot.settings.optics.pixel_um * 1000;
+    cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:pixelNm/2,capNm:pixelNm,
+      maxCrlbNm:0,colorZ:false,zlo:0,zhi:1,zExag:1}));
+    cloudHost.hidden = false;
+    cloud.start(snapshot.width,snapshot.height,pixelNm);
+    const rows = new Float32Array(snapshot.xy.length * NCOL);
+    snapshot.xy.forEach(([x,y],i)=>{rows[i*NCOL+1]=x;rows[i*NCOL+2]=y;});
+    cloud.append(rows);
+    renderedPositions = snapshot.xy;
+    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted XY positions · scroll to zoom, drag to pan';
+  }
   let width = 0,
     height = 0;
   function overlay(result: ReturnType<typeof modulation>, name: string) {
@@ -139,8 +164,11 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     motion: number[][] = [],
     origin: number[] = [];
   return {
+    positions,
+    depthData: () => imageDepth,
     period: () => schedule.axes * schedule.phases,
     start() {
+      imageDepth = undefined;
       schedule = getOrder();
       truth = getTruth();
       panel = document.querySelector<HTMLElement>('.estimator-live') ?? document.createElement('section');
@@ -162,14 +190,18 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             <div class="fit-movie"></div>
           </figure>
 
-            <div class="compared-psfs"><figure><figcaption>Estimated PSF · current fit</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
-            ${truth ? '<figure><figcaption class="true-caption">True PSF · simulation</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+            <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF</figcaption><canvas class="psf" aria-label="Current fitted point PSF"></canvas><small class="parameters">Preparing optics…</small></figure>
+            ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
+            <figure class="reconstruction"><figcaption>Bead reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure></div>
             <figure class="zernike-chart"><figcaption>Zernike coefficients (waves RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
             <figure class="pattern-zoom"></figure>
             ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><table class="pattern-values"></table></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
         </div>`;
+      renderedPositions = undefined;
+      cloudHost.hidden = true;
+      panel.querySelector('.reconstruction')!.append(cloudHost);
       panel.querySelector('header')!.after(status);
       panel.querySelector('button')!.onclick = () => {
         panel.before(status);
@@ -201,12 +233,17 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     ) {
       width = widthArg;
       height = heightArg;
+      if (stage==='read' && schedule.phases>=3) {
+        imageDepth ??= new MovieDepth(width,height,schedule);
+        imageDepth.add(pixels,index-1);
+      }
       viewer.frame(pixels, width, height, index - 1, total, stage === 'fit' ? 'Fitting' : 'Reading');
     },
     photometry(snapshot: PhotometrySnapshot) {
+      positions(snapshot);
       if (schedule.phases < 3) return;
       try {
-        overlay(modulation(snapshot, schedule), 'Preliminary fitted pattern');
+        overlay(modulation(snapshot, schedule, imageDepth), 'Preliminary fitted pattern');
       } catch {
         /* A later exposure group can resolve an underdetermined pattern. */
       }
@@ -215,6 +252,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       overlay(result, 'Fitted pattern');
     },
     async update(dev: GPUDevice, u: MovieIteration) {
+      device = dev;
       const report = document.getElementById('psf-report');
       const destination =
         u.stage === 'final' ? document.querySelector('article') : panel.querySelector('.live-pupil');
@@ -241,8 +279,6 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         const exposure = Math.max(...estimated, ...reference, 1e-12);
         drawPsf(panel.querySelector('.psf')!, estimated, exposure);
         drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
-        panel.querySelector('.true-caption')!.textContent = u.stage === 'frame'
-          ? 'True PSF · simulated frame ' + u.index : 'True PSF · simulation at mean focus';
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
           n >= 5 && n <= 11 ? [['Z' + n + ' (waves RMS)', truth!.coefficients[n - 5], m.zcoef[i]]] : []), 3);
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',

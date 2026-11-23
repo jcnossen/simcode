@@ -1,3 +1,4 @@
+import type { MovieDepth } from './movie-depth';
 import type { PhotometrySnapshot } from 'torch-dense/movie';
 import { axisAt, phaseDegrees, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
 const tau = 2 * Math.PI;
@@ -152,7 +153,7 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
   }
   return k;
 }
-export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
+export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth) {
   if (schedule.phases < 3) throw Error('The harmonic pattern fit requires three or more phase steps.');
   if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
@@ -259,10 +260,27 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
         design,
         residual.map((v) => phase0 + Math.atan2(Math.sin(v - phase0), Math.cos(v - phase0))),
       );
-    const depth = robust(
+    const beadDepth = robust(
       design,
       valid.map((i) => Math.hypot(cs[i][1], cs[i][2]) / cs[i][0] / transfer),
     );
+    let depth = beadDepth;
+    let depthTiles = 0;
+    if (image && r.xy.length >= 6 * image.nx * image.ny) {
+      const phaseDesign = steps.map(a => [1, Math.cos(a), -Math.sin(a)]);
+      const columns = steps.map((_,j) => regression(phaseDesign,steps.map((_,i) => Number(i===j))));
+      const weights = [0,1,2].map(j => columns.map(c => c[j]));
+      const tiles = image.samples(dir,weights,k[0],k[1],transfer);
+      if (tiles.length >= 9) {
+        try {
+          depth = robust(tiles.map(t => basis(t.x,t.y)),tiles.map(t => t.depth));
+          depthTiles = tiles.length;
+        } catch (e) {
+          // Signal confined to one row or column cannot support a quadratic surface.
+          if (!(e instanceof Error && e.message === 'Insufficient independent bead or phase samples.')) throw e;
+        }
+      }
+    }
     means.push(cs.map((a) => a[0]));
     return {
       phase_steps_rad: steps,
@@ -272,6 +290,9 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule) {
       orientation_deg: ((Math.atan2(k[1], k[0]) * 180) / Math.PI + 360) % 360,
       phase,
       depth,
+      bead_depth: beadDepth,
+      depth_method: depthTiles ? 'random-bead image power' : 'bead photometry',
+      depth_tiles: depthTiles,
       beads: valid.length,
     };
   });

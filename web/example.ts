@@ -1,7 +1,7 @@
 import type { Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
-import { frameCount, generateMovie, illumination, pitchNm, size, zDriftPeakToPeakNm } from './generate';
+import { defaultFrameCount, generateMovie, illumination, pitchNm, size, zDriftPeakToPeakNm } from './generate';
 import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
@@ -12,8 +12,19 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><div class="example-content"><figure><figcaption>Movie frame</figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 100 frames · 12,000 beads · ${pitchNm} nm illumination pitch · ${zDriftPeakToPeakNm} nm peak-to-peak Z drift</p><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="estimate-example" value="Estimate generated movie" hidden> <input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><div class="example-content"><figure><figcaption>Movie frame</figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z drift</p><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="estimate-example" value="Estimate generated movie" hidden> <input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
+  const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
+  // Keep example validation independent of the real-movie upload form.
+  const options = document.createElement('form');
+  options.id = 'generated-movie-options';
+  options.hidden = true;
+  options.onsubmit = event => event.preventDefault();
+  view.closest('form')!.after(options);
+  countInput.setAttribute('form', options.id);
+  // Classic TIFF offsets are unsigned 32-bit; each float32 frame has a 126-byte directory.
+  countInput.max = String(Math.floor((2**32 - 1024)/(size*size*4 + 126)));
+  let frameCount = defaultFrameCount;
   const psfs: Float32Array[] = [];
   const drift: number[][] = [];
   let truth: ExampleTruth | undefined;
@@ -60,6 +71,9 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       again.hidden = false;
       return;
     }
+    if (!countInput.reportValidity()) return;
+    frameCount = countInput.valueAsNumber;
+    progress.max = frameCount;
     const controller = new AbortController();
     active = controller;
     submit.disabled = true;
@@ -95,7 +109,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
         progress.value = t + 1;
         status.textContent = 'Generating frame ' + (t + 1) + ' of ' + frameCount;
-      });
+      }, frameCount);
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
@@ -110,7 +124,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       estimate.hidden = false;
       download.href = URL.createObjectURL(file);
       download.hidden = false;
-      status.textContent = '100 frames generated. Movie selected for fitting.';
+      status.textContent = frameCount + ' frames generated. Movie selected for fitting.';
     } catch (e) {
       if (!controller.signal.aborted) status.textContent = e instanceof Error ? e.message : String(e);
     } finally {
@@ -124,6 +138,10 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   view.ontoggle = () => {
     if (!view.open) cancel();
     else if (download.hidden) void start();
+  };
+  countInput.onchange = () => {
+    cancel();
+    if (countInput.reportValidity() && view.open) void start();
   };
   again.onclick = () => void start();
   // Selecting a real file or changing its calibration takes priority over an in-flight example.

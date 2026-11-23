@@ -8,6 +8,7 @@ const estimator = liveEstimator(() => example(), () => order());
 mount(
   'SIMCODE bead calibration',
   async (r, out) => {
+    estimator.positions(r);
     const schedule = order();
     if (schedule.phases < 3) {
       const message = document.createElement('p');
@@ -15,7 +16,13 @@ mount(
       out.append(message);
       return;
     }
-    const result = modulation(r, schedule);
+    if (r.drift.length < schedule.axes * schedule.phases) {
+      const message = document.createElement('p');
+      message.textContent = 'PSF and bead intensities are available. Estimating a pattern needs one complete illumination cycle.';
+      out.append(message);
+      return;
+    }
+    const result = modulation(r, schedule, estimator.depthData());
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');
@@ -81,6 +88,9 @@ mount(
       g.restore();
     });
     out.append(c);
+    const method=document.createElement('p');
+    method.textContent='Depth estimate · '+result.patterns.map((p,i)=>axisName(i)+' — '+p.depth_method).join(' / ');
+    out.append(method);
     const blob = await new Promise<Blob | null>((resolve) => c.toBlob(resolve));
     if (blob) download(out, 'fov-overview.png', blob, 'image/png');
   },

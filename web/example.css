@@ -199,3 +199,9 @@
 .compared-psfs .psf { width: min(100%,200px); height: auto; }
 .estimate-grid .zernike-chart { grid-column: 1 / -1; }
 .zernike-chart canvas { display: block; width: 100%; height: 180px; }
+
+.example-length { display: inline-flex; align-items: center; gap: .6rem; margin-block-start: .8rem; }
+.example-length input[type=number] { width: 7em; }
+.bead-cloud { position: relative; margin-top: .4rem; }
+.bead-cloud > canvas:first-child { display: block; width: 100%; height: 200px; touch-action: none; background: #101918; }
+.bead-cloud .cloud-overlay { position: absolute; inset: 0; height: 100%; width: 100%; pointer-events: none; }

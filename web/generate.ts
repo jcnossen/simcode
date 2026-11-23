@@ -5,7 +5,7 @@ import { axisAt, phaseRadians, type Schedule } from './schedule';
 import type { Acquisition } from './settings';
 
 export const size = 400,
-  frameCount = 100;
+  defaultFrameCount = 100;
 export const pitchNm = 200;
 export const angleAt = (i: number, axes: number) => axes === 2 ? [13, 104][i] : 13 + 180 * i / axes;
 export function depthAt(dir: number, u: number, v: number) {
@@ -19,7 +19,7 @@ export interface ExampleTruth {
   meanFocusNm: number;
   schedule: Schedule;
 }
-export const zDriftPeakToPeakNm = 1000;
+export const zDriftPeakToPeakNm = 400;
 export function illumination(pixelNm: number, x: number, y: number, t: number, schedule: Schedule) {
   const dir = axisAt(t, schedule),
     angle = (angleAt(dir, schedule.axes) * Math.PI) / 180,
@@ -50,6 +50,7 @@ export async function generateMovie(
     driftNm: number[],
     coefficients: number[],
   ) => void,
+  frameCount = defaultFrameCount,
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
   // Include appreciable astigmatism and coma in every realization.
