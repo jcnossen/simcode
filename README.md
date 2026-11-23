@@ -1,5 +1,7 @@
 # simcode
 
+[Open the bead calibration app](https://jcnossen.github.io/simcode/) in a WebGPU-enabled browser.
+
 Using SIMCODE on your own microscope: `docs/QUICKSTART.md`.
 
 SIMCODE v2 localizes emitters in DMD-SIMFLUX DNA-PAINT data, where the illumination pattern is modulated and stepped every
