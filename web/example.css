@@ -7,9 +7,9 @@
 }
 .example-content {
   display: grid;
-  grid-template-columns: minmax(160px, 280px) 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.5rem;
-  align-items: center;
+  align-items: start;
   margin-top: 1rem;
 }
 .example-content canvas {
@@ -40,11 +40,11 @@
 .example-actions {
   grid-column: 1/-1;
 }
-.truth figure,
+.example-content figure,
 .estimate-grid figure {
   margin: 0 0 0.8rem;
 }
-.truth figcaption,
+.example-content figcaption,
 .estimate-grid figcaption {
   font-weight: 600;
   margin-bottom: 0.35rem;
@@ -181,3 +181,15 @@
   white-space: nowrap;
 }
 .pattern-order { min-inline-size: 0; overflow-wrap: anywhere; }
+
+.example-content .example-drift {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(100%, 410px);
+  text-align: center;
+}
+.example-content .psf,
+.example-content .pattern-zoom canvas {
+  width: 100%;
+  height: auto;
+}

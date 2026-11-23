@@ -49,7 +49,6 @@ export async function generateMovie(
     psf: Float32Array,
     driftNm: number[],
     coefficients: number[],
-    ideal: Float32Array,
   ) => void,
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
@@ -59,7 +58,6 @@ export async function generateMovie(
       : j === 7 || j === 8 ? 0.05 + 0.04 * Math.random() : 0.015 + 0.04 * Math.random();
     return (Math.random() < 0.5 ? -1 : 1) * magnitude;
   });
-  const flat = noll.map(() => 0);
   const { device } = await getDevice();
   signal.throwIfAborted();
   const engine = new VecEngine(
@@ -159,12 +157,6 @@ export async function generateMovie(
           s.offset +
           Math.max(0, Math.round(frame[i + 1] + Math.sqrt(frame[i + 1]) * a * Math.sin(b))) / s.gain;
       }
-      // Render the flat-pupil reference separately, at identical focus and sampling.
-      engine.setZernike(flat);
-      engine.setImages([images[images.length - 1]]);
-      await engine.run(1, 'psf');
-      const ideal = await engine.readPsf(1);
-      engine.setZernike(coefficients);
       frames.push(frame);
       show(
         frame,
@@ -172,7 +164,6 @@ export async function generateMovie(
         bank.subarray(bank.length - roi * roi),
         [dx * s.pixelNm, dy * s.pixelNm, dz * 1000],
         coefficients,
-        ideal,
       );
       await new Promise<void>((resolve) => setTimeout(resolve, 40));
     }
