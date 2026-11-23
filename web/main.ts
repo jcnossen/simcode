@@ -93,7 +93,7 @@ mount(
       g.textAlign = 'left';
       g.restore();
     });
-    out.append(c);
+    // Keep the downloadable overview at publication resolution.
     const method=document.createElement('p');
     method.textContent='Depth estimate · '+result.patterns.map((p,i)=>axisName(i)+' — '+p.depth_method).join(' / ');
     out.append(method);

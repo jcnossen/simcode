@@ -1,3 +1,4 @@
+import { fieldInspector } from './field-inspector';
 import { MovieDepth } from './movie-depth';
 import { PointCloudView } from 'torch-web/ui/pointcloud';
 import { NCOL } from 'torch-web/smlm/movie';
@@ -169,9 +170,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   let width = 0,
     height = 0;
   type Fit = ReturnType<typeof modulation>;
-  let lastFit:Fit|undefined;
+  let inspectField: ReturnType<typeof fieldInspector>;
   function displayPattern(fit?:Fit) {
-    lastFit=fit;
+    inspectField(fit,truth?.modulation);
     if(!truth) return;
     const rows:[string, number,number|undefined][]=[];
     truth.modulation.patterns.forEach((p,i)=>{
@@ -191,10 +192,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     });
     truth.modulation.ratios.forEach((c,i)=>terms('A/'+axisName(i+1)+' intensity ratio',c,fit?.ratios[i]));
     compare('.field-coefficients',coefficients,6);
-    const slider=panel.querySelector<HTMLInputElement>('.field-x')!, sy=panel.querySelector<HTMLInputElement>('.field-y')!;
-    const i=Number(slider.value)+32*Number(sy.value), actual=truth.modulation.maps[i], estimate=fit?.maps[i];
-    panel.querySelector('.field-position')!.textContent='Camera position ('+actual.x_px.toFixed(1)+', '+actual.y_px.toFixed(1)+') px';
-    compare('.field-values',Object.keys(actual).filter(k=>!['x_px','y_px'].includes(k)).map(k=>[k.replaceAll('_',' '),actual[k],estimate?.[k]]),4);
+
   }
   function overlay(result: ReturnType<typeof modulation>, name: string) {
     displayPattern(result);
@@ -246,7 +244,8 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
             ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div>
             <div class="reconstruction-row"><figure class="reconstruction"><figcaption>Reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure><figure class="pattern-zoom"></figure></div></div>
             <figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure>
-            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><h3>Modulation across the field</h3><label>X <input type="range" class="field-x" min="0" max="31" value="16"></label> <label>Y <input type="range" class="field-y" min="0" max="31" value="16"></label><p class="field-position"></p><table class="field-values"></table><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
+            <section class="modulation-field" hidden></section>
+            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
         </div>`;
@@ -278,9 +277,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       marker.className = 'reconstruction-roi';
       marker.hidden = true;
       wrap.append(frame,marker);
+      inspectField = fieldInspector(panel.querySelector('.modulation-field')!);
       displayPattern();
       if (truth) {
-        for(const slider of panel.querySelectorAll<HTMLInputElement>('.field-x,.field-y')) slider.oninput=()=>displayPattern(lastFit);
         const simulation=truth;
         const k=simulation.modulation.patterns[0];
         const pixelNm=Math.hypot(k.kx_rad_px,k.ky_rad_px)*k.pitch_nm/(2*Math.PI);

@@ -218,3 +218,17 @@
 .movie-with-roi { position: relative; overflow: hidden; }
 .movie-with-roi canvas { display: block; }
 .reconstruction-roi { position: absolute; pointer-events: none; border: 2px dotted #65ffe3; box-sizing: border-box; }
+
+body > main { max-width: 1207.5px; }
+main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
+.estimator-heading h2 { font-size: 1.15rem; }
+.modulation-field { grid-column: 1 / -1; }
+.field-layout { display: grid; grid-template-columns: minmax(128px, 1fr) auto; gap: 1.5rem; align-items: start; }
+.field-tiles { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-content: start; }
+.field-tiles figure { width: 128px; max-width: 100%; }
+.field-tile { position: relative; }
+.field-tile canvas { display: block; width: 100%; aspect-ratio: 1; image-rendering: pixelated; touch-action: none; cursor: crosshair; }
+.field-tile i { position: absolute; pointer-events: none; transform: translate(-50%,-50%); width: 7px; height: 7px; border-radius: 100%; border: 1px solid white; box-shadow: 0 0 0 1px black; }
+.field-values { font-variant-numeric: tabular-nums; }
+.field-position { margin: 0 0 .4rem; }
+@media(max-width: 600px) { .field-layout { grid-template-columns: 1fr; } }
