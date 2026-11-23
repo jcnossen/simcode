@@ -35,10 +35,26 @@ export interface ExampleTruth {
   coefficients: number[];
   psfs: Float32Array[];
   drift: number[][];
-  meanFocusNm: number;
+  firstFocusNm: number;
   schedule: Schedule;
 }
 export const zDriftPeakToPeakNm = 400;
+export const focusMidpointNm = 80;
+
+// Scale the entire trajectory once to keep the excursion comparable between movies.
+function randomWalk(frames: number, span: number): Float64Array {
+  const path = new Float64Array(frames);
+  let low = 0, high = 0;
+  for (let i = 1; i < frames; i++) {
+    const step = Math.sqrt(-2 * Math.log1p(-Math.random())) * Math.cos(2 * Math.PI * Math.random());
+    path[i] = path[i - 1] + step;
+    low = Math.min(low, path[i]);
+    high = Math.max(high, path[i]);
+  }
+  if (high === low) return path;
+  const midpoint = (high + low) / 2;
+  return path.map(value => (value - midpoint) * span / (high - low));
+}
 export function illumination(pixelNm: number, x: number, y: number, t: number, schedule: Schedule) {
   const dir = axisAt(t, schedule),
     angle = (angleAt(dir, schedule.axes) * Math.PI) / 180,
@@ -117,13 +133,13 @@ export async function generateMovie(
       : [[0, 0, 0]];
     const q = (Math.PI * s.diameterNm) / pitchNm;
     const transfer = q < 0.001 ? 1 : (3 * (Math.sin(q) - q * Math.cos(q))) / q ** 3;
+    const xPixels = randomWalk(frameCount, 0.56);
+    const yPixels = randomWalk(frameCount, 0.42);
+    const zNm = randomWalk(frameCount, zDriftPeakToPeakNm);
     for (let t = 0; t < frameCount; t++) {
       signal.throwIfAborted();
-      const time = (tau * t) / frameCount,
-        dx = 0.28 * Math.sin(time),
-        dy = 0.21 * Math.sin(2 * time + 0.5),
-        dz = (zDriftPeakToPeakNm / 2000) * Math.sin(time),
-        focus = radius + 0.08 + dz;
+      const dx = xPixels[t], dy = yPixels[t], dz = zNm[t] / 1000;
+      const focus = radius + focusMidpointNm / 1000 + dz;
       const images = [];
       for (let sy = 0; sy < shifts; sy++)
         for (let sx = 0; sx < shifts; sx++)

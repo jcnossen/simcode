@@ -304,7 +304,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
           n >= 5 && n <= 11 ? [['Z' + n + ' (waves RMS)', truth!.coefficients[n - 5], m.zcoef[i]]] : []), 3);
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',
-          truth.meanFocusNm + truth.drift[frameIndex][2], (u.focusUm - u.emitterHeightUm) * 1000]];
+          truth.firstFocusNm + truth.drift[frameIndex][2], (u.focusUm - u.emitterHeightUm) * 1000]];
         if (u.driftNm) {
           const start = origin.length ? origin : u.driftNm;
           u.driftNm.forEach((v, i) => rows.push(['Drift ' + ['X','Y','Z'][i] + ' (nm)',
