@@ -212,9 +212,9 @@
 .reconstruction-row { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: .65rem; align-items: start; }
 .reconstruction-row figcaption { min-width: 0; }
 .reconstruction-row .pattern-zoom canvas, .reconstruction-row .bead-cloud > canvas:first-child { display: block; width: 100%; height: auto; aspect-ratio: 1; }
-.reconstruction-row .bead-cloud > canvas:first-child { height: 100%; position: absolute; inset: 0; }
+.reconstruction-row .bead-cloud > canvas:first-child { height: 100%; position: absolute; inset: 0; opacity: .48; }
 .reconstruction-row .bead-cloud { aspect-ratio: 1; isolation: isolate; background: black; margin: 0; }
-.reconstruction-row .registered-frame { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; opacity: .58; pointer-events: none; }
+.reconstruction-row .registered-frame { position: absolute; inset: 0; width: 100%; height: 100%; mix-blend-mode: screen; opacity: .92; pointer-events: none; }
 .movie-with-roi { position: relative; overflow: hidden; }
 .movie-with-roi canvas { display: block; }
 .reconstruction-roi { position: absolute; pointer-events: none; border: 2px dotted #65ffe3; box-sizing: border-box; }
@@ -235,3 +235,5 @@ main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
 
 .movie-caption { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .4rem; }
 .movie-caption .estimate-example:disabled { background: #dce4e3; color: #4c5c5b; cursor: default; }
+
+.reconstruction-row .true-bead-positions { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }

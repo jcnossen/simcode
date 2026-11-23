@@ -97,10 +97,15 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       const schedule = getSchedule();
       viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
-      const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients) => {
+      const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, beads) => {
         if (!t) {
           first = motion;
-          truth = { modulation:exampleModulation(s.pixelNm,schedule), coefficients, psfs, drift, firstFocusNm: focusMidpointNm + motion[2], schedule };
+          const firstFrameXY = new Float32Array(2 * beads.length);
+          beads.forEach(({x,y}, i) => {
+            firstFrameXY[2*i] = x + motion[0]/s.pixelNm;
+            firstFrameXY[2*i+1] = y + motion[1]/s.pixelNm;
+          });
+          truth = { firstFrameXY, pixelNm: s.pixelNm, modulation:exampleModulation(s.pixelNm,schedule), coefficients, psfs, drift, firstFocusNm: focusMidpointNm + motion[2], schedule };
           const table=view.querySelector<HTMLTableElement>('.example-pattern table')!;
           table.innerHTML='<tr><th>Axis</th><th>Pitch (nm)</th><th>Angle (°)</th><th>Steps (°)</th><th>Center depth</th><th>Center A/axis ratio</th></tr>';
           truth.modulation.patterns.forEach((p,i)=>{

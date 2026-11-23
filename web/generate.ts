@@ -31,6 +31,8 @@ export function exampleModulation(pixelNm:number, schedule:Schedule) {
   return {schedule, patterns,ratios,basis:'[1,u,v,u²,uv,v²], u,v normalized to [-1,1]',maps:fieldMaps({patterns,ratios},size,size)};
 }
 export interface ExampleTruth {
+  firstFrameXY: Float32Array;
+  pixelNm: number;
   modulation: ReturnType<typeof exampleModulation>;
   coefficients: number[];
   psfs: Float32Array[];
@@ -84,6 +86,7 @@ export async function generateMovie(
     psf: Float32Array,
     driftNm: number[],
     coefficients: number[],
+    beads: ReadonlyArray<{x:number; y:number}>,
   ) => void,
   frameCount = defaultFrameCount,
 ) {
@@ -200,6 +203,7 @@ export async function generateMovie(
         bank.subarray(bank.length - roi * roi),
         [dx * s.pixelNm, dy * s.pixelNm, dz * 1000],
         coefficients,
+        beads,
       );
       await new Promise<void>((resolve) => setTimeout(resolve, 40));
     }

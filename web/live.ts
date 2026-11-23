@@ -113,7 +113,10 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   cloudCanvas.setAttribute('aria-label','Fitted bead positions in the camera plane');
   const cameraLayer = document.createElement('canvas');
   cameraLayer.className = 'registered-frame';
-  cloudHost.append(cloudCanvas, cameraLayer);
+  const truthLayer = document.createElement('canvas');
+  truthLayer.className = 'true-bead-positions';
+  truthLayer.setAttribute('aria-label', 'Ground-truth bead centers');
+  cloudHost.append(cloudCanvas, cameraLayer, truthLayer);
   // This overlay is a camera-plane view. Keep pan and pinch, suppress 3D orbit.
   cloudCanvas.addEventListener('pointerdown', e => {
     if (e.shiftKey || e.button === 2) e.stopImmediatePropagation();
@@ -125,6 +128,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     if (!cloud || !renderedPositions || !viewer || !marker || !cloud.scale) return;
     const d = fittedDrift[selectedFrame];
     marker.hidden = cameraLayer.hidden = !d;
+    truthLayer.hidden = !d || !truth?.drift[selectedFrame];
     if (!d) return;
     const W = cloudCanvas.width, H = cloudCanvas.height;
     if (cameraLayer.width !== W) cameraLayer.width = W;
@@ -139,6 +143,28 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     // Each preview sample is taken at the first camera pixel of its bin.
     const edge = (1-bin)/2;
     ctx.drawImage(canvas,(edge-left)/scale,(edge-top)/scale,canvas.width*bin/scale,canvas.height*bin/scale);
+    if (truth && !truthLayer.hidden) {
+      if (truthLayer.width !== W) truthLayer.width = W;
+      if (truthLayer.height !== H) truthLayer.height = H;
+      const gt = truthLayer.getContext('2d')!;
+      gt.clearRect(0, 0, W, H);
+      const [dx,dy] = truth.drift[selectedFrame];
+      // First-frame centers plus simulated motion, in the same raw-frame ROI as the image.
+      const ox = dx/truth.pixelNm + 0.5 - left, oy = dy/truth.pixelNm + 0.5 - top;
+      const dpr = window.devicePixelRatio || 1;
+      const arm = Math.min(2.5*dpr, Math.max(dpr, 0.8/scale));
+      gt.strokeStyle = '#267bff';
+      gt.lineWidth = dpr;
+      gt.beginPath();
+      const xy = truth.firstFrameXY;
+      for (let i = 0; i < xy.length; i += 2) {
+        const x = (xy[i]+ox)/scale, y = (xy[i+1]+oy)/scale;
+        if (x < -arm || y < -arm || x > W+arm || y > H+arm) continue;
+        gt.moveTo(x-arm,y); gt.lineTo(x+arm,y);
+        gt.moveTo(x,y-arm); gt.lineTo(x,y+arm);
+      }
+      gt.stroke();
+    }
     const clip = (v:number, limit:number) => Math.min(Math.max(v,0),limit);
     const x0=clip(left, width), x1=clip(left+W*scale, width);
     const y0=clip(top, height), y1=clip(top+H*scale, height);
@@ -154,7 +180,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     fittedDrift = snapshot.drift.slice();
     if (!device || snapshot.xy === renderedPositions) { registerFrame(); return; }
     pixelNm = snapshot.settings.optics.pixel_um * 1000;
-    cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:pixelNm/2,capNm:pixelNm,
+    cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:pixelNm/4,capNm:pixelNm,
       maxCrlbNm:0,colorZ:false,zlo:0,zhi:1,zExag:1}));
     cloudHost.hidden = false;
     cloud.start(snapshot.width,snapshot.height,pixelNm);
@@ -165,7 +191,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     snapshot.xy.forEach(([x,y],i)=>{rows[i*NCOL+1]=x;rows[i*NCOL+2]=y;});
     cloud.append(rows);
     renderedPositions = snapshot.xy;
-    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted spots on XY drift-corrected frames · scroll to zoom, drag to pan';
+    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted spots on XY drift-corrected frames' + (truth ? ' · blue crosses: true bead centers' : '') + ' · scroll to zoom, drag to pan';
   }
   let width = 0,
     height = 0;
@@ -251,7 +277,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         </div>`;
       renderedPositions = undefined;
       fittedDrift = [];
-      cameraLayer.hidden = true;
+      cameraLayer.hidden = truthLayer.hidden = true;
       cloudHost.hidden = true;
       panel.querySelector('.cloud-status')!.before(cloudHost);
       panel.querySelector('header')!.after(status);
