@@ -1,4 +1,4 @@
-import { footprint, modes, opticalBank, type GelOptics } from 'torch-dense/gel';
+import { footprint, median, modes, opticalBank, type GelOptics } from 'torch-dense/gel';
 
 // The same spatial contrast filter is applied to the movie and to the through-focus PSF.
 function texture(image: Float32Array, w: number, h: number, stride: number) {
@@ -19,8 +19,28 @@ function dot(a: Float32Array, b: Float32Array) {
     return sum;
 }
 
+// At the ends of a uniform sweep only one side of an axial neighbourhood is
+// observed. Shortest-path distances there can compress or fold a few planes.
+// Use the long-baseline image separations to initialize a steady sweep; the
+// subsequent joint image fit still estimates each plane independently.
+export function initializeSweep(z: number[]) {
+    const count = z.length;
+    if (count < 16) return z;
+    const slopes: number[] = [];
+    for (let lag = Math.ceil(count/5); lag <= count/2; lag += Math.max(1,Math.floor(count/16))) {
+        for (let t=lag;t<count;t++) slopes.push((z[t]-z[t-lag])/lag);
+    }
+    const step=median(slopes), span=step*(count-1);
+    if (!(step>0)) return z;
+    const intercept=median(z.map((v,t)=>v-t*step));
+    const edge=Math.ceil(count*.1);
+    const steady=z.every((v,t)=>(t<edge || t>=count-edge || Math.abs(v-intercept-t*step)<.05*span)
+        && (t===0 || Math.abs(v-z[t-1])<3.5*step));
+    return steady ? z.map((_,t)=>t*step) : z;
+}
+
 export async function inferFocus(device: GPUDevice, frames: Float32Array, w: number, h: number,
-        period: number, settings: GelOptics, coefficients = modes.map(() => 0)) {
+        period: number, settings: GelOptics, coefficients = modes.map(() => 0), regularizeSweep = false) {
     const n = w*h, T = frames.length/(period*n);
     if (!Number.isInteger(T) || T < 5) throw Error('Gel focus estimation needs five or more complete illumination cycles.');
     if (T > 1024) throw Error('Select a gel movie with at most 1,024 focus stops.');
@@ -79,5 +99,5 @@ export async function inferFocus(device: GPUDevice, frames: Float32Array, w: num
     const z=left.map((v,i)=>(span+v-right[i])/2);
     const changes=z.slice(1).map((v,i)=>v-z[i]).filter(v=>Math.abs(v)>.005).sort((a,b)=>a-b);
     if(changes[Math.floor(changes.length/2)]<0) for(let i=0;i<T;i++) z[i]=span-z[i];
-    return z;
+    return regularizeSweep ? initializeSweep(z) : z;
 }

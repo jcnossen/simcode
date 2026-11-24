@@ -12,6 +12,7 @@ import { defaultAberration, exampleCoefficients } from './example-aberration';
 import { inferFocus } from './gel-focus';
 import { axisAt, phaseRadians, defaultSchedule, type Schedule } from './schedule';
 import { calibrate } from 'torch-dense/movie';
+const compactSampling = 'SIMCODE PSF sampling: compact-v1';
 const noise = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
 async function generate(device: GPUDevice, settings: GelOptics, count: number, planes: number, gain: number, offset: number, schedule: Schedule, aberration = defaultAberration, photons = defaultPhotons) {
     if (!Number.isInteger(count) || count < 8 || count > 4000 || !Number.isInteger(planes) || planes < 10 || planes > 201)
@@ -64,7 +65,7 @@ async function generate(device: GPUDevice, settings: GelOptics, count: number, p
             total:stage.length*period});
     }
 
-    postMessage({ type: 'generated', movie: tiffStackBlob(planesOut, planesOut.length, 1, h, w),
+    postMessage({ type: 'generated', movie: tiffStackBlob(planesOut, planesOut.length, 1, h, w, {info:compactSampling}),
         truth: { beads, coefficients: coeff, drift_um: motion, phase_rad: phase, depths: depth, k_cycles_um: k, intensity_ratio: ratio }, bursts: stage.length });
 }
 self.onmessage = async ({ data }) => {
@@ -98,8 +99,9 @@ self.onmessage = async ({ data }) => {
             initial=model.zcoef;
         }
         status('Estimating relative focus from the bead images and vectorial PSF');
-        const stage=await inferFocus(device,raw,movie.W,movie.H,period,settings,initial);
-        const scan:GelScan={frames:raw,width:movie.W,height:movie.H,stage,scanIndex:stage.map((_,i)=>i),estimateFocus:true};
+        const compact=movie.description.split(/\r?\n/).includes('Info='+compactSampling);
+        const stage=await inferFocus(device,raw,movie.W,movie.H,period,settings,initial,compact);
+        const scan:GelScan={frames:raw,width:movie.W,height:movie.H,stage,scanIndex:stage.map((_,i)=>i),estimateFocus:true,sampling:compact?'compact':'wide'};
         const snapshot=(coefficients:number[],focus:number[])=>postMessage({type:'fit-optics',coefficients,focus,optics:settings.optics,modes,period});
         snapshot(initial??modes.map(()=>0),stage);
         const canonical=sequence.axes===2 && sequence.phases===3 && !sequence.interleaved;
