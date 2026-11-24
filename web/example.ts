@@ -87,7 +87,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     status.textContent = 'Generation stopped.';
   }
   async function start() {
-    if (active || document.querySelector('main.gel-selected')) return;
+    if (active || document.querySelector('main.gel-selected,main.stack-selected')) return;
     if (fitting) {
       status.textContent = 'A movie is being fitted. Generate the example when the fit finishes.';
       again.hidden = false;
@@ -187,7 +187,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   again.onclick = () => void start();
   // Selecting a real file or changing its calibration takes priority over an in-flight example.
   function replaced(e: Event) {
-    if ((e.target as Element).closest('label') === movie.closest('label')) {
+    if ((e.target as Element).closest('[data-kind=slide]')) {
       generated = null;
     }
     cancel();

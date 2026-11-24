@@ -1,13 +1,16 @@
 import {fitProgress} from './fit-progress';
 import type { Optics as AcquisitionOptics } from 'torch-web/psf/vectorial';
 import { TiffMovie } from 'torch-web/io/tiff';
-import { plot } from './live';
+import { plot, type liveEstimator } from './live';
+import type { VolumeSlices } from './gel-psf-view';
+import { getDevice } from 'torch-web/gpu/device';
+import { fieldMaps } from './pattern-field';
 import type { gelPattern } from './gel-pattern';
 import type { Acquisition } from './settings';
 import { axisAt, phaseAt, phaseRadians, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { moviePupilReport } from 'torch-dense/report';
-export function gelView(acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}) {
+export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}) {
     const options = document.createElement('div');
     options.innerHTML = `<div class="gel-fields">
     <label>Beads in the volume<input data-key="beads" type="number" value="160" min="8" max="4000"></label>
@@ -31,6 +34,7 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
     let movie:File|undefined, stack:File|undefined, active=false;
     let worker: Worker | undefined, busy = false, generated = false, reader: TiffMovie | undefined, revision = 0;
     let truth: {
+        drift_um:number[][];
         beads: {x:number; y:number; z:number}[];
         phase_rad: number[];
         k_cycles_um: number[][];
@@ -96,20 +100,36 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
         moviePupilReport(report)({optics,noll:modes,zcoef:coefficients,npupil:64,roisize:25,oversample:2,focus_um:0,z_range_um:[-1,1]});
         preview.querySelector('.pupil-grid')!.replaceChildren(...report.querySelectorAll('.pupil-grid figure'));
     }
-    function table(headers: string[], rows: string[][]) {
-        const t = document.createElement('table');
-        const head = t.createTHead().insertRow();
-        headers.forEach(s => { const th = document.createElement('th'); th.textContent = s; head.append(th); });
-        const body = t.createTBody();
-        rows.forEach(row => { const tr = body.insertRow(); row.forEach(c => { tr.insertCell().textContent = c; }); });
-        results.append(t);
+    let reference:VolumeSlices|undefined;
+    let generatedSchedule:Schedule|undefined;
+    let presenting=false;
+    function endFit(){
+        if(presenting) estimator.end();
+    }
+    function field(k:number[][],depth:(number|null)[],phase:number[],steps:number[][],ratios:(number|null)[],pixel:number) {
+        const constant=(v:number|null)=>[v??NaN,0,0,0,0,0];
+        const patterns=k.map(([kx,ky,kz],i)=>({
+            pitch_nm:1000/Math.hypot(kx,ky), kz_cycles_um:kz, orientation_deg:Math.atan2(ky,kx)*180/Math.PI,
+            kx_rad_px:2*Math.PI*kx*pixel, ky_rad_px:2*Math.PI*ky*pixel,
+            depth:constant(depth[i]),phase:constant(phase[i]),phase_steps_rad:steps[i],
+        }));
+        const model={patterns,ratios:ratios.map(constant)};
+        return {...model,maps:fieldMaps(model,reader!.W,reader!.H)};
     }
     const getWorker = () => {
         if (worker)
             return worker;
         worker = new Worker(new URL('./gel-worker.ts', import.meta.url), { type: 'module' });
-        worker.onerror = e => { progress.stop(); status.textContent = e.message; worker?.terminate(); worker = undefined; generated = false; busy = false; controls(); };
-        worker.onmessage = async ({ data: d }) => {
+        worker.onerror = e => { endFit(); progress.stop(); status.textContent = e.message; worker?.terminate(); worker = undefined; generated = false; busy = false; controls(); };
+        // Keep asynchronous GPU previews in worker message order.
+        let pending=Promise.resolve();
+        const current=worker;
+        worker.onmessage = ({data}) => {
+            pending=pending.then(()=>worker===current ? handle(data) : undefined).catch(e=>{
+                endFit(); progress.stop(); status.textContent=String(e); busy=false; controls();
+            });
+        };
+        async function handle(d:MessageEvent['data']) {
             if (d.type === 'status') {
                 status.textContent = d.message;
                 if (/Calibrating the initial pupil|Estimating relative focus|Calibrating the initial pupil from the optional/.test(d.message)) progress.update(1);
@@ -121,6 +141,7 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
             }
             if (d.type === 'example-optics') {
                 const order: Schedule = d.schedule, period = order.axes * order.phases;
+                reference=d.reference; generatedSchedule=order;
                 trueFocus = d.focus.flatMap((z:number) => Array(period).fill(z));
                 updateFocus();
                 displayOffset = d.offset;
@@ -142,19 +163,32 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
             if (d.type === 'fit-frames') {
                 const n=d.w*d.h, count=d.chunk.length/n;
                 totalFitFrames=d.total; progress.update(0,(d.first+count)/d.total);
-                for(let j=0;j<count;j++) viewer.frame(d.chunk.subarray(j*n,(j+1)*n),d.w,d.h,d.first+j,d.total,'Reading',displayOffset,j===count-1);
+                estimator.setDimensions(d.w,d.h);
+                for(let j=0;j<count;j++) estimator.movie().frame(d.chunk.subarray(j*n,(j+1)*n),d.w,d.h,d.first+j,d.total,'Reading',displayOffset,j===count-1);
                 return;
             }
             if(d.type==='fit-optics') {
                 fittedFocus=d.focus.flatMap((z:number)=>Array(d.period).fill(z));
-                updateFocus();
-                pupil(d.optics,d.modes,d.coefficients,'Estimated pupil');
+                const {device}=await getDevice();
+                if(d.slices) {
+                    await estimator.update(device,{stage:'profile',index:1,total:1,emitterHeightUm:5,focusUm:5,
+                        model:{optics:d.optics,noll:d.modes,zcoef:d.coefficients,npupil:64,roisize:27,oversample:2,focus_um:5,z_range_um:[4,6]}},d.slices);
+                }
+                if(d.xyz && d.driftPx){
+                    const nm=d.optics.pixel_um*1000;
+                    const drift:number[][]=d.driftPx.flatMap(([x,y]:number[],i:number)=>Array(d.period).fill([x,y,1000*(d.focus[i]-d.focus[0])]));
+                    estimator.positions({xy:d.xyz,drift,width:reader!.W,height:reader!.H,settings:{optics:d.optics}});
+                    const motion=drift.map(([x,y,z])=>[(x-drift[0][0])*nm,(y-drift[0][1])*nm,z]);
+                    const actual=truth?.drift_um.flatMap(([x,y],i)=>Array(trueFocus.length/truth!.drift_um.length).fill([
+                        (x-truth!.drift_um[0][0])*1000,(y-truth!.drift_um[0][1])*1000,(trueFocus[i*trueFocus.length/truth!.drift_um.length]-trueFocus[0])*1000]));
+                    estimator.drift(motion,actual?.length===motion.length ? actual : undefined);
+                }
                 return;
             }
-            if(d.type==='fit-plane') { progress.update(3,(d.index+1)/totalFitFrames); viewer.processing(d.index,'Fitting'); return; }
+            if(d.type==='fit-plane') { progress.update(3,(d.index+1)/totalFitFrames); estimator.movie().processing(d.index,'Fitting'); return; }
             if(d.type==='fit-pattern') {
                 const order:Schedule=d.sequence;
-                viewer.setPattern((x,y,t)=>{
+                estimator.movie().setPattern((x,y,t)=>{
                     const p=d.patterns[axisAt(t,order)],k=p.k_cycles_um;
                     const angle=2*Math.PI*((k[0]*x+k[1]*y)*d.pixel+k[2]*fittedFocus[t])+p.phase_rad+p.phase_steps_rad[phaseAt(t,order)];
                     return (1+(p.depth??0)*Math.cos(angle))/2;
@@ -166,7 +200,7 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
                     throw Error(d.message);
                 if (d.type === 'generated') {
                     const file = new File([d.movie], 'gel-movie.tif');
-                    const picker = document.querySelector<HTMLInputElement>('#inputs .drop input')!;
+                    const picker = document.querySelector<HTMLInputElement>('#inputs [data-kind=gel] input[type=file]')!;
                     const transfer = new DataTransfer();
                     transfer.items.add(file);
                     movie = file;
@@ -185,92 +219,22 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
                 else if (d.type === 'fit') {
                     const r = d.result, m = d.modulation;
                     status.textContent = `Recovered ${r.xyz_px_px_um.length} beads from ${r.estimated_focus_um.length} focus stops.`;
-                    const sections = document.createElement('div');
-                    sections.className = 'gel-slices';
-                    results.append(sections);
-                    const cloud = document.createElement('figure');
-                    const projection = document.createElement('canvas'), caption = document.createElement('figcaption');
-                    const stops = r.estimated_focus_um as number[];
-                    const lo = Math.min(...stops), hi = Math.max(...stops), width = reader!.W;
-                    projection.width = 240; projection.height = 180;
-                    const pen = projection.getContext('2d')!;
-                    const align = document.createElement('input');
-                    align.type='checkbox';
-                    const errors = trueFocus.length===fittedFocus.length
-                        ? fittedFocus.map((z,t)=>z-trueFocus[t]).sort((a,b)=>a-b) : [];
-                    const mid=Math.floor(errors.length/2);
-                    const offset=errors.length ? (errors[mid]+errors[Math.floor((errors.length-1)/2)])/2 : 0;
-                    function drawProjection() {
-                        const correction=align.checked ? offset : 0;
-                        const fit=r.xyz_px_px_um as number[][];
-                        let zmin=lo-correction, zmax=hi-correction;
-                        for(const b of truth?.beads??[]) { zmin=Math.min(zmin,b.z); zmax=Math.max(zmax,b.z); }
-                        for(const b of fit) { zmin=Math.min(zmin,b[2]-correction); zmax=Math.max(zmax,b[2]-correction); }
-                        const py=(z:number)=>179*(zmax-z)/Math.max(.001,zmax-zmin);
-                        pen.fillStyle='#102125'; pen.fillRect(0,0,240,180);
-                        pen.strokeStyle='#6baaff'; pen.beginPath();
-                        for(const b of truth?.beads??[]) {
-                            const u=239*b.x/(width-1),v=py(b.z);
-                            pen.moveTo(u-2,v); pen.lineTo(u+2,v); pen.moveTo(u,v-2); pen.lineTo(u,v+2);
-                        }
-                        pen.stroke(); pen.fillStyle='#e4f3e3';
-                        for(const [x,,z] of fit) pen.fillRect(239*x/(width-1)-.8,py(z-correction)-.8,1.6,1.6);
-                        caption.textContent='Bead reconstruction · XZ ('+zmin.toFixed(1)+'–'+zmax.toFixed(1)+' µm in Z)'+(truth?' · blue crosses show truth':'');
-                    }
-                    projection.style.width='240px'; cloud.append(projection,caption); sections.append(cloud);
-                    if(truth && errors.length) {
-                        const label=document.createElement('label');
-                        label.append(align,' Align Z origins using focus traces (fit minus truth '+offset.toFixed(2)+' µm)');
-                        cloud.append(label);
-                        align.onchange=drawProjection;
-                    }
-                    drawProjection();
-                    for (const [label, slice] of [['Estimated PSF · XY', d.sections.xy[3]], ['Estimated PSF · XZ', d.sections.xz]] as const) {
-                        const f = document.createElement('figure'), c = document.createElement('canvas'), caption = document.createElement('figcaption');
-                        caption.textContent = label;
-                        c.width = slice.width;
-                        c.height = slice.height;
-                        const g = c.getContext('2d')!, im = g.createImageData(c.width, c.height);
-                        const hi = Math.max(...slice.data);
-                        for (let p = 0; p < slice.data.length; p++) {
-                            const intensity = 255 * Math.log1p(99 * slice.data[p] / hi) / Math.log(100), i = label.endsWith('XZ') ? (c.height - 1 - Math.floor(p / c.width)) * c.width + p % c.width : p;
-                            im.data[4 * i] = im.data[4 * i + 1] = im.data[4 * i + 2] = intensity;
-                            im.data[4 * i + 3] = 255;
-                        }
-                        g.putImageData(im, 0, 0);
-                        f.append(c, caption);
-                        sections.append(f);
-                    }
                     if (m) {
-                        const row=(label:string,k:number[],depth:number|null,phase:number,coherence?:number)=>[
-                            label,(1000/Math.hypot(k[0],k[1])).toFixed(2),(Math.atan2(k[1],k[0])*180/Math.PI).toFixed(2),
-                            k[2].toFixed(3),depth?.toFixed(3)??'Unresolved',phase.toFixed(3),coherence?.toFixed(3)??'—'];
-                        const rows:string[][]=[];
-                        (m as ReturnType<typeof gelPattern>).patterns.forEach((p,i)=>{
-                            const axis=String.fromCharCode(65+i);
-                            rows.push(row(axis+' fit',p.k_cycles_um,p.depth,p.phase_rad,p.coherence));
-                            if(truth?.k_cycles_um[i])rows.push(row(axis+' true',truth.k_cycles_um[i],truth.depths[i],truth.phase_rad[i]));
-                        });
-                        table(['Axis','Pitch (nm)','Angle (°)','kz (cycles/µm)','Depth','Phase (rad)','Coherence'],rows);
-                        table(['Axis','Depth method','Depth from individual bead intensities'],
-                            (m as ReturnType<typeof gelPattern>).patterns.map((p,i)=>[String.fromCharCode(65+i),p.depth_method,p.bead_depth?.toFixed(3)??'Unresolved']));
-                        const ratio = document.createElement('p');
-                        ratio.textContent = 'Intensity ratios (A / each other axis) · ' + (m.intensity_ratios ?? [m.intensity_ratio]).map((v:number|null)=>v?.toFixed(3)??'Unresolved').join(', ') + (truth ? ' · true ' + truth.intensity_ratio : '');
-                        if (m.intensity_ratios?.length) results.append(ratio);
+                        const fit=m as ReturnType<typeof gelPattern>, ps=fit.patterns;
+                        estimator.displayPattern(field(ps.map(p=>p.k_cycles_um),ps.map(p=>p.depth),ps.map(p=>p.phase_rad),
+                            ps.map(p=>p.phase_steps_rad),fit.intensity_ratios,acquisition().pixelNm/1000));
                         link(results, 'modulation.json', new Blob([JSON.stringify(m)], { type: 'application/json' }));
                     }
                     else {
                         status.textContent += ' Pattern fit unavailable. ' + d.patternError;
                     }
-                    table(['Pupil (mλ RMS)', ...r.noll.map((n: number) => 'Z' + n)], [['Fit', ...r.pupil_waves.map((v: number) => (v * 1000).toFixed(1))],
-                        ...(truth ? [['True', ...truth.coefficients.map((v: number) => (v * 1000).toFixed(1))]] : [])]);
                     link(results, 'psf.zip', new Blob([d.archive], { type: 'application/zip' }));
                     link(results, 'gel-fit.json', new Blob([JSON.stringify(r)], { type: 'application/json' }));
-                    progress.finish();
+                    progress.finish(); endFit();
                 }
             }
             catch (e) {
-                progress.stop();
+                endFit(); progress.stop();
                 status.textContent = e instanceof Error ? e.message : String(e);
             }
             finally {
@@ -286,7 +250,7 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
         worker = undefined;
         busy = false;
         generated = false;
-        truth = undefined;
+        truth = undefined; reference=undefined;
         reader = undefined;
 
         revision++;
@@ -313,20 +277,19 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
             clear(results);
             status.textContent = action === 'generate' ? 'Generating vectorial gel scan…' : 'Opening gel scan…';
             if (uploaded) {
-                progress.start();
                 const source = await TiffMovie.open([uploaded]);
-                if (version !== revision)
-                    return;
-                reader = source;
-                viewer.reset();
-                viewer.setPattern(null,'',schedule());
-                fittedFocus=[]; selected=0; updateFocus();
-                preview.querySelector('h3')!.textContent='Estimating pupil…';
-                preview.querySelector('.pupil-grid')!.replaceChildren();
-                pupilKey='';
-                status.after(preview);
-                preview.hidden=false;
-                options.closest('details')!.open=false;
+                if (version !== revision) return;
+                reader=source;
+                fittedFocus=[]; selected=0;
+                const seq=generatedSchedule ?? schedule(), px=acquisition().pixelNm/1000;
+                const actual=truth && field(truth.k_cycles_um,truth.depths,truth.phase_rad,
+                    truth.depths.map(()=>Array.from({length:seq.phases},(_,j)=>2*Math.PI*j/seq.phases)),
+                    truth.depths.slice(1).map(()=>truth!.intensity_ratio),px);
+                presenting=true;
+                estimator.start({status,progress,coefficients:truth?.coefficients,reference,
+                    firstFrameXY:truth && Float32Array.from(truth.beads.flatMap(b=>[b.x,b.y])),field:actual,
+                    onBack:()=>{presenting=false;panel.append(status,results);clear(results);}});
+                estimator.output().append(results);
             }
             const a = acquisition();
             displayOffset=a.offset;
@@ -337,7 +300,7 @@ export function gelView(acquisition: () => Acquisition, schedule: () => Schedule
         catch (e) {
             busy = false;
             controls();
-            progress.stop();
+            endFit(); progress.stop();
             status.textContent = String(e);
         }
     }

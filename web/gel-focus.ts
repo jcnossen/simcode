@@ -64,14 +64,32 @@ export async function inferFocus(device: GPUDevice, frames: Float32Array, w: num
         if (j < 0) return Infinity;
         return dz*(j-1+(lut[j-1]-c)/Math.max(1e-9,lut[j-1]-lut[j]));
     }
-    const fingerprints = Array.from({length:T}, (_, t) => {
+    const stride=Math.max(1,Math.ceil(Math.sqrt(n/1536)));
+    function fingerprint(t:number, step:number) {
         const img = new Float32Array(n);
         for(let c=0;c<period;c++) for(let p=0;p<n;p++) img[p]+=frames[(t*period+c)*n+p]/period;
-        const f = texture(img,w,h,Math.max(1,Math.ceil(Math.sqrt(n/1536))));
+        const f = texture(img,w,h,step);
         const scale = Math.sqrt(Math.max(0,dot(f.values,f.values)-f.noise/period));
-        if (!scale) throw Error('Too little bead contrast to estimate relative focus.');
-        return f.values.map(v=>v/scale);
+        return scale>0 && Number.isFinite(scale) ? f.values.map(v=>v/scale) : null;
+    }
+    let samples=Array.from({length:T},(_,t)=>fingerprint(t,stride));
+    // On small fields a sparse grid can miss the few beads visible near a scan edge.
+    // Correlations require the same sampled pixels in every plane.
+    const maxSamples=16_000_000;
+    const finer=Math.max(1,Math.ceil(Math.sqrt(n*T/maxSamples)));
+    if(finer<stride && samples.some((s,t)=>!s && fingerprint(t,finer))) {
+        samples=samples.map((_,t)=>fingerprint(t,finer));
+    }
+    const stops:number[]=[], fingerprints:Float32Array[]=[];
+    let gap=0, longestGap=0;
+    samples.forEach((f,t)=>{
+        if(f){stops.push(t); fingerprints.push(f); gap=0;}
+        else {gap++; longestGap=Math.max(longestGap,gap);}
     });
+    const count=stops.length;
+    if(count<5 || count<T*.8 || longestGap>2)
+        throw Error('Too little bead contrast to estimate relative focus: '+count+' of '+T+
+            ' focus stops had measurable texture above photon noise. Check the signal, camera offset and illumination sequence.');
     // Short reliable image-to-image distances connect repeated and reversed sweeps
     // without prescribing a scan direction or total travel.
     const edges = fingerprints.map((a,i) => {
@@ -79,14 +97,14 @@ export async function inferFocus(device: GPUDevice, frames: Float32Array, w: num
             .filter(v=>v.corr>.45).sort((x,y)=>y.corr-x.corr).slice(0,8);
         return neighbors.map(({j,corr})=>({j,d:Math.max(.005,separation(Math.min(1,corr)))}));
     });
-    for(let i=0;i<T;i++) for(const {j,d} of edges[i])
+    for(let i=0;i<count;i++) for(const {j,d} of edges[i])
         if(!edges[j].some(e=>e.j===i)) edges[j].push({j:i,d});
     function distances(start:number) {
-        const d = Array<number>(T).fill(Infinity), seen = new Uint8Array(T);
+        const d = Array<number>(count).fill(Infinity), seen = new Uint8Array(count);
         d[start]=0;
-        for(let k=0;k<T;k++){
+        for(let k=0;k<count;k++){
             let v=-1;
-            for(let i=0;i<T;i++) if(!seen[i] && (v<0 || d[i]<d[v])) v=i;
+            for(let i=0;i<count;i++) if(!seen[i] && (v<0 || d[i]<d[v])) v=i;
             if(!Number.isFinite(d[v])) throw Error('The movie has disconnected focus planes. Adjacent planes need overlapping bead images.');
             seen[v]=1;
             for(const e of edges[v]) d[e.j]=Math.min(d[e.j],d[v]+e.d);
@@ -99,5 +117,13 @@ export async function inferFocus(device: GPUDevice, frames: Float32Array, w: num
     const z=left.map((v,i)=>(span+v-right[i])/2);
     const changes=z.slice(1).map((v,i)=>v-z[i]).filter(v=>Math.abs(v)>.005).sort((a,b)=>a-b);
     if(changes[Math.floor(changes.length/2)]<0) for(let i=0;i<T;i++) z[i]=span-z[i];
-    return regularizeSweep ? initializeSweep(z) : z;
+    // Initialize short gaps from the nearest measured slope in acquisition order.
+    // The downstream joint fit is still free to update each individual stop.
+    let rightStop=1;
+    const full=Array.from({length:T},(_,t)=>{
+        while(rightStop<count-1 && t>stops[rightStop]) rightStop++;
+        const a=rightStop-1,b=rightStop;
+        return z[a]+(t-stops[a])*(z[b]-z[a])/(stops[b]-stops[a]);
+    });
+    return regularizeSweep ? initializeSweep(full) : full;
 }

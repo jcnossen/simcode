@@ -1,3 +1,4 @@
+import {volumePsfSlices} from './gel-psf-view';
 import {defaultPhotons, photonCount} from './example-photons';
 import { getDevice } from 'torch-web/gpu/device';
 import { TiffMovie } from 'torch-web/io/tiff';
@@ -41,7 +42,8 @@ async function generate(device: GPUDevice, settings: GelOptics, count: number, p
         }
     }
     const focus = stage.map((z,t) => z + motion[t][2]);
-    postMessage({type:'example-optics', focus, schedule, optics:settings.optics, modes, coefficients:coeff,
+    const reference=volumePsfSlices(bank);
+    postMessage({type:'example-optics',reference, focus, schedule, optics:settings.optics, modes, coefficients:coeff,
         k, phase, depth, offset});
     const frames = new Float32Array(stage.length * period * n), px = settings.optics.pixel_um;
     const planesOut: Float32Array[] = [];
@@ -102,7 +104,13 @@ self.onmessage = async ({ data }) => {
         const compact=movie.description.split(/\r?\n/).includes('Info='+compactSampling);
         const stage=await inferFocus(device,raw,movie.W,movie.H,period,settings,initial,compact);
         const scan:GelScan={frames:raw,width:movie.W,height:movie.H,stage,scanIndex:stage.map((_,i)=>i),estimateFocus:true,sampling:compact?'compact':'wide'};
-        const snapshot=(coefficients:number[],focus:number[])=>postMessage({type:'fit-optics',coefficients,focus,optics:settings.optics,modes,period});
+        let previewBank:Float32Array|undefined;
+        const snapshot=(coefficients:number[],focus:number[],beads?:{x:number;y:number;z:number}[],driftPx?:number[][],bank?:Float32Array)=>{
+            const slices=bank && bank!==previewBank ? volumePsfSlices(bank) : undefined;
+            previewBank=bank;
+            postMessage({slices,
+            xyz:beads?.map(b=>[b.x,b.y,b.z]),driftPx,type:'fit-optics',coefficients,focus,optics:settings.optics,modes,period});
+        };
         snapshot(initial??modes.map(()=>0),stage);
         const canonical=sequence.axes===2 && sequence.phases===3 && !sequence.interleaved;
         const fit=await fitGel(device,scan,settings,status,canonical?illuminationSeeds:undefined,initial,snapshot,
@@ -115,18 +123,18 @@ self.onmessage = async ({ data }) => {
         catch (e) {
             patternError = e instanceof Error ? e.message : String(e);
         }
-        snapshot(fit.coefficients,stage.map((z,i)=>z+fit.drift[i][2]));
+        snapshot(fit.coefficients,stage.map((z,i)=>z+fit.drift[i][2]),fit.beads,fit.drift.map(d=>[d[0]/settings.optics.pixel_um,d[1]/settings.optics.pixel_um]));
         if(modulation) postMessage({type:"fit-pattern",patterns:modulation.patterns,sequence,pixel:settings.optics.pixel_um});
         const vectorial = { optics: settings.optics, noll: modes, zcoef: fit.coefficients, focus_um: 0, npupil: 96, oversample: 2, roisize: 25, z_range_um: [-1, 1] as [
                 number,
                 number
             ] };
         let sections;
-        const archive = await buildPsfZip(device, { vectorial, report: { estimator: '3D bead gel' }, pdf: volume => {
+        const archive = await buildPsfZip(device, { vectorial, report: { estimator: '3D bead volume (experimental)' }, pdf: volume => {
                 sections = volumeSlices(volume.stack, { ...vectorial, nxy: volume.W, nz: volume.Z, dxy_um: settings.optics.pixel_um,
                     zmin: volume.z_um[0], zmax: volume.z_um[volume.Z - 1], ze_um: 0 }, 'z');
                 return makeFitReport({
-                    title: '3D bead gel PSF', settings: { 'bead diameter (nm)': 1000 * settings.diameterUm },
+                    title: '3D bead volume (experimental) PSF', settings: { 'bead diameter (nm)': 1000 * settings.diameterUm },
                     results: { beads: fit.beads.length, bursts: scan.stage.length }, zernike: { noll: modes, values: fit.coefficients },
                     pupil: pupilMaps(settings.optics, modes, fit.coefficients, vectorial.npupil), psf: sections,
                 });

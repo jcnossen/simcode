@@ -18,7 +18,7 @@ export function fieldInspector(host: HTMLElement) {
     ];
     const other = field.patterns.flatMap((_,i) => {
       const a=axisName(i);
-      return [['orientation_'+a+'_deg','Angle '+a+' (°)'], ['phase_offset_'+a+'_rad','Phase offset '+a+' (rad)'], ['phase_'+a+'_rad','Phase '+a+' (rad)']];
+      return [['pitch_'+a+'_nm','Pitch '+a+' (nm)'],...(field.patterns[i].kz_cycles_um===undefined ? [] : [['kz_'+a,'Axial frequency '+a+' (cycles/µm)']]),['orientation_'+a+'_deg','Angle '+a+' (°)'], ['phase_offset_'+a+'_rad','Phase offset '+a+' (rad)'], ['phase_'+a+'_rad','Phase '+a+' (rad)']];
     });
     const header=table.createTHead().insertRow();
     for (const text of ['Parameter','Fitted',...(truth?['True']:[])]) {
@@ -35,8 +35,9 @@ export function fieldInspector(host: HTMLElement) {
       const i=y*32+x, position=field!.maps[i];
       host.querySelector('.field-position')!.textContent='Camera ('+position.x_px.toFixed(1)+', '+position.y_px.toFixed(1)+') px';
       for (const {key,fitted,actual} of cells) {
-        fitted.textContent=fit?.maps[i][key]?.toFixed(4) ?? '—';
-        if (actual) actual.textContent=truth?.maps[i][key]?.toFixed(4) ?? '—';
+        const value=(v?:number)=>v!==undefined && Number.isFinite(v) ? v.toFixed(4) : '—';
+        fitted.textContent=value(fit?.maps[i][key]);
+        if (actual) actual.textContent=value(truth?.maps[i][key]);
       }
       for(const marker of markers) {
         marker.style.left=(x+.5)*100/32+'%';
@@ -57,7 +58,7 @@ export function fieldInspector(host: HTMLElement) {
         ctx.fillRect(i%32,Math.floor(i/32),1,1);
       });
       const marker=document.createElement('i'); markers.push(marker);
-      const range=document.createElement('small'); range.textContent=lo.toFixed(3)+' – '+hi.toFixed(3);
+      const range=document.createElement('small'); range.textContent=Number.isFinite(lo) && Number.isFinite(hi) ? lo.toFixed(3)+' – '+hi.toFixed(3) : 'Unresolved';
       tile.append(cv,marker); fig.append(title,tile,range); tiles.append(fig);
       function point(e:PointerEvent) {
         const box=cv.getBoundingClientRect();

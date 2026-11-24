@@ -6,12 +6,17 @@ import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
 import { modulation } from './modulation';
 import { gelView } from './gel-view';
-const estimator = liveEstimator(() => example.truth(), () => order());
+type InputKind='slide'|'stack'|'gel';
+let kind:InputKind='slide';
+const selected:Partial<Record<InputKind,File>>={};
+const framesPerStep=document.createElement('input');
+const simulation=()=>kind==='slide' ? example.truth() : undefined;
+const estimator = liveEstimator(simulation, () => order());
 mount(
   'Joint PSF and modulation pattern estimator',
   async (r, out) => {
     estimator.positions(r);
-    const simulated = example.truth()?.modulation;
+    const simulated = simulation()?.modulation;
     if(simulated) download(out,'true-modulation.json',JSON.stringify(simulated),'application/json');
     const schedule = order();
     if (schedule.phases < 3) {
@@ -103,6 +108,7 @@ mount(
     if (blob) download(out, 'fov-overview.png', blob, 'image/png');
   },
   estimator,
+  ()=>({file:selected[kind],framesPerStep:kind==='stack' ? framesPerStep.valueAsNumber : undefined}),
 );
 
 document.querySelector('#purpose')!.textContent = 'Fit a bead movie to recover the PSF, illumination patterns and field maps.';
@@ -132,58 +138,86 @@ installSampleChoice();
 
 function installSampleChoice() {
   const form = document.querySelector<HTMLFormElement>('#inputs')!.closest('form')!;
-  const choice = document.createElement('fieldset');
-  choice.className = 'sample-choice';
-  choice.innerHTML = '<legend>Sample geometry</legend>' +
-    '<label><input type="radio" name="sampleGeometry" value="slide" checked> 2D bead slide</label>' +
-    '<label><input type="radio" name="sampleGeometry" value="gel"> 3D bead gel</label>';
   const inputs = form.querySelector<HTMLElement>('#inputs')!;
   const submit = inputs.querySelector<HTMLButtonElement>('button')!;
   const exampleBox = form.querySelector<HTMLDetailsElement>('.movie-example')!;
-  const api = gelView(settings, order, submit, example.readAberration, example.readPhotons);
+  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons);
   const main = form.closest('main')!;
-  const radios = choice.querySelectorAll<HTMLInputElement>('input');
-  form.prepend(choice);
+  const cards=document.createElement('div');
+  cards.className='input-cards';
+  cards.setAttribute('role','radiogroup');
+  cards.setAttribute('aria-label','Acquisition input');
+  const existing=inputs.querySelectorAll<HTMLLabelElement>('label.drop');
+  const controls=inputs.querySelector('.sample-controls')!;
+  const labels=[existing[0],existing[1],existing[0].cloneNode(true) as HTMLLabelElement];
+  const names=['2D bead slide movie','2D bead slide Z stack','3D bead volume (experimental)'];
+  const modes:InputKind[]=['slide','stack','gel'];
+  const step=document.querySelector<HTMLInputElement>('#settings input[placeholder]')!;
+  const stepLabel=step.closest('label')!;
+  const repeatLabel=document.createElement('label');
+  framesPerStep.type='number'; framesPerStep.min='1'; framesPerStep.step='1'; framesPerStep.value='1'; framesPerStep.required=true;
+  repeatLabel.append('Frames per step',framesPerStep);
+  const scanFields=document.createElement('div');
+  scanFields.className='scan-fields';
+  scanFields.append(stepLabel,repeatLabel);
+  const tiles=labels.map((label,i)=>{
+    const mode=modes[i], tile=document.createElement('div');
+    tile.className='input-card'; tile.dataset.kind=mode;
+    tile.setAttribute('role','radio'); tile.setAttribute('aria-label',names[i]);
+    const title=label.querySelector('strong')!, filename=label.querySelector('span')!;
+    title.textContent=names[i];filename.textContent='Drop a TIFF here';
+    const input=label.querySelector<HTMLInputElement>('input')!;
+    input.setAttribute('aria-label','Browse '+names[i]);input.onchange=null;
+    label.className='browse-tiff';label.replaceChildren('Browse TIFF',input);
+    tile.append(title,filename,label);
+    if(mode==='stack') tile.append(scanFields);
+    cards.append(tile);
+    const select=()=>choose(mode);
+    tile.onclick=select;
+    tile.onkeydown=e=>{
+      if(e.target!==tile)return;
+      if(e.key===' '||e.key==='Enter'){e.preventDefault();select();}
+      const delta=['ArrowLeft','ArrowUp'].includes(e.key)?-1:['ArrowRight','ArrowDown'].includes(e.key)?1:0;
+      if(delta){e.preventDefault();const j=(i+delta+3)%3;choose(modes[j]);tiles[j].focus();}
+    };
+    const set=(file?:File)=>{
+      selected[mode]=file;
+      filename.textContent=file?.name ?? 'Drop a TIFF here';
+      if(mode==='gel')api.select(file);
+      choose(mode,true);
+    };
+    input.onchange=()=>set(input.files?.[0]);
+    tile.ondragover=e=>e.preventDefault();
+    label.ondrop=null;
+    tile.ondrop=e=>{e.preventDefault();if(e.dataTransfer?.files[0])set(e.dataTransfer.files[0]);};
+    return tile;
+  });
+  inputs.replaceChildren(cards,controls);
   exampleBox.append(api.options);
-  exampleBox.addEventListener('toggle',()=>{ if(exampleBox.open) api.openExample(); });
+  exampleBox.addEventListener('toggle',()=>{if(exampleBox.open)api.openExample();});
   form.after(api.panel);
-  const selected: (File | undefined)[] = [];
-  inputs.querySelectorAll<HTMLLabelElement>('.drop').forEach((drop,i) => {
-    const input = drop.querySelector('input')!;
-    const set = (file?:File) => { selected[i]=file; if (i===0) example.select(file); api.select(selected[0],selected[1]); };
-    input.addEventListener('change', () => set(input.files?.[0]));
-    drop.addEventListener('drop', e => set(e.dataTransfer?.files[0]));
-  });
-  const update = () => {
-    const isGel = radios[1].checked;
-    exampleBox.open = false;
-    main.classList.toggle('gel-selected', isGel);
-    const lengthLabel = isGel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
-    api.activate(isGel);
-    lengthLabel.after(example.aberrationControl, example.photonControls);
-    example.refresh();
-    api.panel.hidden = !isGel;
-    api.options.hidden = !isGel;
-  };
-  try {
-    if (document.cookie.split('; ').includes('simcode_sample=gel')) radios[1].checked = true;
-  } catch {}
-  const requested = new URLSearchParams(location.search).get('sample');
-  if (requested === 'slide' || requested === 'gel') radios[requested === 'gel' ? 1 : 0].checked = true;
-  update();
-  choice.addEventListener('change', () => {
-    update();
-    try {
-      document.cookie = 'simcode_sample=' + (radios[1].checked ? 'gel' : 'slide') +
-        '; Max-Age=31536000; Path=/; SameSite=Lax';
-    } catch {}
-  });
-  // A gel scan must never enter the planar movie fitter, including via keyboard submission.
-  form.addEventListener('submit', e => {
-    if (radios[1].checked) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      api.fit();
-    }
-  }, true);
+  function choose(next:InputKind,refresh=false){
+    if(next===kind && !refresh)return;
+    const changed=kind!==next;
+    kind=next;
+    tiles.forEach((tile,i)=>{
+      const current=modes[i]===kind;
+      tile.setAttribute('aria-checked',String(current));tile.tabIndex=current?0:-1;
+    });
+    if(changed)exampleBox.open=false;
+    const gel=kind==='gel',scan=kind==='stack';
+    main.classList.toggle('gel-selected',gel);
+    main.classList.toggle('stack-selected',scan);
+    framesPerStep.disabled=step.disabled=!scan;
+    exampleBox.hidden=scan;
+    api.activate(gel);
+    const target=gel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
+    target.after(example.aberrationControl,example.photonControls);
+    example.select(selected[kind]);
+    api.panel.hidden=api.options.hidden=!gel;
+  }
+  choose('slide',true);
+  form.addEventListener('submit',e=>{
+    if(kind==='gel'){e.preventDefault();e.stopImmediatePropagation();api.fit();}
+  },true);
 }

@@ -1,6 +1,6 @@
 import { axisName } from './schedule';
 export interface PatternField {
-  patterns: { pitch_nm:number; orientation_deg:number; kx_rad_px:number; ky_rad_px:number; depth:number[]; phase:number[]; phase_steps_rad:number[] }[];
+  patterns: { pitch_nm:number; kz_cycles_um?:number; orientation_deg:number; kx_rad_px:number; ky_rad_px:number; depth:number[]; phase:number[]; phase_steps_rad:number[] }[];
   ratios:number[][];
 }
 const dot = (a:number[], b:number[]) => a.reduce((sum,v,i)=>sum+v*b[i],0);
@@ -20,6 +20,8 @@ export function fieldMaps({patterns,ratios}:PatternField,width:number,height:num
     const row: Record<string, number> = { x_px: x, y_px: y };
     patterns.forEach((p, i) => {
       const label = axisName(i);
+      row['pitch_' + label + '_nm'] = p.pitch_nm;
+      if(p.kz_cycles_um !== undefined) row['kz_' + label] = p.kz_cycles_um;
       row['orientation_' + label + '_deg'] = angles[i];
       row['depth_' + label] = dot(p.depth, b);
       row['phase_offset_' + label + '_rad'] = dot(p.phase,b);

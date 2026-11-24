@@ -1,3 +1,6 @@
+import type {VolumeSlices} from './gel-psf-view';
+import type { PatternField } from './pattern-field';
+import { moviePupilReport } from 'torch-dense/report';
 import { fitProgress } from './fit-progress';
 import { fieldInspector } from './field-inspector';
 import { MovieDepth } from './movie-depth';
@@ -81,8 +84,9 @@ export function plot(
   c.fillText(String(total), right, bottom + 18);
   c.textAlign = 'left';
   names.forEach((name, j) => {
-    c.fillStyle = c.strokeStyle = colors[j];
-    c.fillText(name, left + j * 66, 15);
+    c.fillStyle = c.strokeStyle = colors[j % colors.length];
+    c.fillText(name, left + j * (names.length>3 ? 54 : 66), 15);
+    c.setLineDash(j>=3 ? [4,3] : []);
     c.lineWidth = 1.8;
     c.beginPath();
     rows.forEach((row, i) => {
@@ -104,7 +108,32 @@ export function plot(
   });
 }
 
+type DisplayField = PatternField & {maps: Record<string,number>[]};
+type VolumeSession = {
+  status: HTMLElement;
+  progress: ReturnType<typeof fitProgress>;
+  coefficients?: number[];
+  reference?: VolumeSlices;
+  firstFrameXY?: Float32Array;
+  field?: DisplayField;
+  onBack: () => void;
+};
+
 export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder: () => Schedule) {
+  let volume: VolumeSession | undefined;
+  let renderVolumePupil: ReturnType<typeof moviePupilReport> | undefined;
+  let orbit=false;
+  function frameCloud(){
+    if(!cloud || !renderedPositions) return;
+    cloud.reset();
+    if(orbit) {
+      cloud.rot=30; cloud.tilt=50;
+      const diagonal=Math.hypot(width*pixelNm,height*pixelNm,(zRange[1]-zRange[0])*1000);
+      cloud.scale=1.06*diagonal/Math.max(1,Math.min(cloudCanvas.width,cloudCanvas.height));
+    }
+    cloud.request();
+  }
+  let zRange = [0, 1];
   let schedule: Schedule;
   let truth: ExampleTruth | undefined;
   function compare(selector: string, rows: [string, number, number | undefined][], digits: number) {
@@ -130,20 +159,26 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   cloudHost.append(cloudCanvas, cameraLayer, truthLayer);
   // This overlay is a camera-plane view. Keep pan and pinch, suppress 3D orbit.
   cloudCanvas.addEventListener('pointerdown', e => {
-    if (e.shiftKey || e.button === 2) e.stopImmediatePropagation();
+    if (!volume && (e.shiftKey || e.button === 2)) e.stopImmediatePropagation();
   }, true);
-  const progress=fitProgress("slide");
+  const slideProgress=fitProgress('slide');
+  let progress=slideProgress;
   let selectedFrame = 0, pixelNm = 1;
   let fittedDrift: number[][] = [];
   let marker: HTMLDivElement;
   let lastPupilGrid: Element | null = null;
   function registerFrame() {
     if (!cloud || !renderedPositions || !viewer || !marker || !cloud.scale) return;
+    if (orbit || cloud.tilt || cloud.rot) {
+      cameraLayer.hidden = truthLayer.hidden = marker.hidden = true;
+      return;
+    }
     const d = fittedDrift[selectedFrame];
     // Keep the previous registered composite until this frame has its own drift.
     if (!d) return;
     cameraLayer.hidden = false;
-    truthLayer.hidden = !truth?.drift[selectedFrame];
+    const xy = volume?.firstFrameXY ?? truth?.firstFrameXY;
+    truthLayer.hidden = !xy;
     const W = cloudCanvas.width, H = cloudCanvas.height;
     if (cameraLayer.width !== W) cameraLayer.width = W;
     if (cameraLayer.height !== H) cameraLayer.height = H;
@@ -157,7 +192,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     // Each preview sample is taken at the first camera pixel of its bin.
     const edge = (1-bin)/2;
     ctx.drawImage(canvas,(edge-left)/scale,(edge-top)/scale,canvas.width*bin/scale,canvas.height*bin/scale);
-    if (truth && !truthLayer.hidden) {
+    if (xy) {
       if (truthLayer.width !== W) truthLayer.width = W;
       if (truthLayer.height !== H) truthLayer.height = H;
       const gt = truthLayer.getContext('2d')!;
@@ -171,7 +206,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       gt.strokeStyle = '#267bff';
       gt.lineWidth = dpr;
       gt.beginPath();
-      const xy = truth.firstFrameXY;
+
       for (let i = 0; i < xy.length; i += 2) {
         const x = (xy[i]+ox)/scale, y = (xy[i+1]+oy)/scale;
         if (x < -arm || y < -arm || x > W+arm || y > H+arm) continue;
@@ -191,32 +226,45 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   let device: GPUDevice;
   let cloud: PointCloudView | undefined;
   let renderedPositions: number[][] | undefined;
-  function positions(snapshot: PhotometrySnapshot) {
+  function positions(snapshot: Pick<PhotometrySnapshot,'xy'|'width'|'height'|'drift'> & {settings:Pick<PhotometrySnapshot['settings'],'optics'>}) {
     fittedDrift = snapshot.drift.slice();
     if (!device || snapshot.xy === renderedPositions) { registerFrame(); return; }
     pixelNm = snapshot.settings.optics.pixel_um * 1000;
-    cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:pixelNm/4,capNm:pixelNm,
-      maxCrlbNm:0,colorZ:false,zlo:0,zhi:1,zExag:1}));
+    cloud ??= new PointCloudView(device,cloudCanvas,()=>({mode:'fixed',blurNm:orbit ? Math.max(pixelNm/4,(cloud?.scale || pixelNm)*1.15) : pixelNm/4,capNm:pixelNm,
+      maxCrlbNm:0,orbitOnDrag:orbit,peakPerPixel:orbit ? .09 : undefined,colorZ:orbit,zlo:zRange[0],zhi:zRange[1],zExag:1}));
     cloudHost.hidden = false;
+    const previous = renderedPositions && [cloud.cx,cloud.cy,cloud.scale,cloud.tilt,cloud.rot];
+    if(volume && snapshot.xy.length) {
+      const zs=snapshot.xy.map(v=>v[2]);
+      zRange=[Math.min(...zs),Math.max(...zs)];
+    }
     cloud.start(snapshot.width,snapshot.height,pixelNm);
     cloud.onChange = registerFrame;
     const displayShortSide = Math.min(cloudCanvas.clientWidth, cloudCanvas.clientHeight)*(window.devicePixelRatio || 1);
     if(displayShortSide) cloud.scale = Math.min(96,snapshot.width,snapshot.height)*pixelNm/displayShortSide;
+    if(previous) [cloud.cx,cloud.cy,cloud.scale,cloud.tilt,cloud.rot]=previous;
     const rows = new Float32Array(snapshot.xy.length * NCOL);
-    snapshot.xy.forEach(([x,y],i)=>{rows[i*NCOL+1]=x;rows[i*NCOL+2]=y;});
+    snapshot.xy.forEach(([x,y,z],i)=>{rows[i*NCOL+1]=x;rows[i*NCOL+2]=y;rows[i*NCOL+3]=z??0;});
     cloud.append(rows);
     renderedPositions = snapshot.xy;
-    panel.querySelector('.cloud-status')!.textContent = snapshot.xy.length.toLocaleString() + ' fitted spots on XY drift-corrected frames' + (truth ? ' · blue crosses: true bead centers' : '') + ' · scroll to zoom, drag to pan';
+    if(orbit && !previous) frameCloud();
+    cloudCaption();
+  }
+  function cloudCaption(){
+    if(!renderedPositions)return;
+    panel.querySelector('.cloud-status')!.textContent=renderedPositions.length+' fitted spots · '+
+      (orbit ? 'Color shows bead height. Drag to rotate, scroll to zoom.' :
+      'XY drift-corrected frame. Drag to pan, scroll to zoom.'+((truth || volume?.firstFrameXY) ? ' Blue crosses show true positions.' : ''));
   }
   let width = 0,
     height = 0;
-  type Fit = ReturnType<typeof modulation>;
   let inspectField: ReturnType<typeof fieldInspector>;
-  function displayPattern(fit?:Fit) {
-    inspectField(fit,truth?.modulation);
-    if(!truth) return;
+  function displayPattern(fit?:DisplayField) {
+    const actualField=volume?.field ?? truth?.modulation;
+    inspectField(fit,actualField);
+    if(!actualField) return;
     const rows:[string, number,number|undefined][]=[];
-    truth.modulation.patterns.forEach((p,i)=>{
+    actualField.patterns.forEach((p,i)=>{
       const q=fit?.patterns[i], axis=axisName(i);
       for(const [key,label] of [['pitch_nm','pitch (nm)'],['orientation_deg','angle (°)'],['kx_rad_px','kx (rad/px)'],['ky_rad_px','ky (rad/px)']] as const)
         rows.push([axis+' '+label,p[key],q?.[key]]);
@@ -227,11 +275,11 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     function terms(label:string,c:number[],estimate?:number[]) {
       ['1','u','v','u²','uv','v²'].forEach((term,j)=>coefficients.push([label+' · '+term,c[j],estimate?.[j]]));
     }
-    truth.modulation.patterns.forEach((p,i)=>{
+    actualField.patterns.forEach((p,i)=>{
       terms(axisName(i)+' depth',p.depth,fit?.patterns[i]?.depth);
       terms(axisName(i)+' phase offset (rad)',p.phase,fit?.patterns[i]?.phase);
     });
-    truth.modulation.ratios.forEach((c,i)=>terms('A/'+axisName(i+1)+' intensity ratio',c,fit?.ratios[i]));
+    actualField.ratios.forEach((c,i)=>terms('A/'+axisName(i+1)+' intensity ratio',c,fit?.ratios[i]));
     compare('.field-coefficients',coefficients,6);
 
   }
@@ -254,20 +302,47 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     scores: number[][] = [],
     motion: number[][] = [],
     origin: number[] = [];
+  let trueMotion:number[][]|undefined, motionFrames=0;
+  function drawMotion(total:number) {
+    if(!motion.length) return;
+    motionFrames=total;
+    const fig=panel.querySelector<HTMLElement>('.motion')!;
+    fig.hidden=false;
+    const labels=['X','Y','Z'];
+    const rows=trueMotion ? motion.map((r,i)=>[...r,...trueMotion![i]]) : motion;
+    plot(fig.querySelector('canvas')!,rows,total,trueMotion ? [...labels,...labels.map(v=>'True '+v)] : labels,'Frame',selectedFrame);
+  }
   return {
     positions,
+    displayPattern,
+    movie: () => viewer,
+    drift(rows:number[][], actual?:number[][]) {
+      motion=rows;
+      trueMotion=actual;
+      drawMotion(rows.length);
+      if(actual) compare('.drift-values',['X','Y','Z'].map((v,j)=>{
+        const span=(a:number[][])=>Math.max(...a.map(r=>r[j]))-Math.min(...a.map(r=>r[j]));
+        return [v+' peak-to-peak drift (nm)',span(actual),span(rows)];
+      }),1);
+    },
+    setDimensions(w:number,h:number){ width=w; height=h; },
+    output: () => panel,
     depthData: () => imageDepth,
     period: () => schedule.axes * schedule.phases,
-    start() {
+    start(session?: VolumeSession) {
+      volume=session; orbit=!!session;
+      progress=session?.progress ?? slideProgress;
+      selectedFrame=0;
+      zRange=[0,1]; trueMotion=undefined; motionFrames=0;
       imageDepth = undefined;
       schedule = getOrder();
-      truth = getTruth();
+      truth = session ? undefined : getTruth();
       panel = document.querySelector<HTMLElement>('.estimator-live') ?? document.createElement('section');
       panel.className = 'estimator-live';
       document.querySelector('article')!.before(panel);
       const form = document.querySelector<HTMLFormElement>('main form')!;
       const purpose = document.querySelector<HTMLElement>('#purpose')!;
-      const status = document.querySelector<HTMLElement>('main > [role=status]')!;
+      const status = session?.status ?? document.querySelector<HTMLElement>('main > [role=status]')!;
       const example = form.querySelector<HTMLDetailsElement>('.movie-example');
       if (example) example.open = false;
       form.hidden = true;
@@ -282,14 +357,15 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
           </figure>
 
             <div class="psf-column"><div class="compared-psfs"><figure><figcaption>Estimated PSF · XY</figcaption><canvas class="psf" aria-label="Estimated lateral PSF at the current focus"></canvas></figure><figure><figcaption>Estimated PSF · XZ</figcaption><canvas class="psf axial" aria-label="Estimated through-focus PSF at the central Y coordinate"></canvas></figure>
-            ${truth ? '<figure><figcaption class="true-caption">True PSF</figcaption><canvas class="psf reference"></canvas></figure>' : ''}</div><small class="parameters">Preparing optics…</small>
+            ${(truth || session?.reference) ? '<figure><figcaption class="true-caption">True PSF · XY</figcaption><canvas class="psf reference"></canvas></figure>' : ''}${session?.reference ? '<figure><figcaption>True PSF · XZ</figcaption><canvas class="psf true-axial"></canvas></figure>' : ''}</div><small class="parameters">Preparing optics…</small>
             <div class="reconstruction-row"><figure class="reconstruction"><figcaption>Reconstruction</figcaption><small class="cloud-status">Waiting for fitted positions…</small></figure><figure class="pattern-zoom"></figure></div></div>
             <div class="optics-row"><figure class="zernike-chart"><figcaption>Zernike coefficients (mλ RMS)</figcaption><canvas aria-label="Live Zernike coefficients by Noll index"></canvas></figure><div class="pupil-preview"></div></div>
             <section class="modulation-field" hidden></section>
-            ${truth ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
+            ${(truth || session?.coefficients) ? '<section class="truth-comparison"><table class="modes"></table><table class="drift-values"></table><div><h3>Illumination pattern</h3><table class="pattern-values"></table></div><div><details><summary>Field polynomial coefficients</summary><small>u and v run from −1 to +1 across the camera.</small><table class="field-coefficients"></table></details></div></section>' : ''}
             <div class="live-pupil"></div><figure class="objective" hidden><figcaption>Optical search score</figcaption><canvas aria-label="Optical search score by trial"></canvas></figure>
             <figure class="motion" hidden><figcaption>Estimated drift from frame 1 (nm)</figcaption><canvas aria-label="Estimated XYZ drift by frame"></canvas></figure>
         </div>`;
+      cloudHost.classList.toggle('orbit-view',orbit);
       renderedPositions = undefined;
       fittedDrift = [];
       cameraLayer.hidden = truthLayer.hidden = true;
@@ -298,7 +374,8 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       panel.querySelector('header')!.after(progress.host,status);
       progress.start();
       panel.querySelector('button')!.onclick = () => {
-        panel.before(status);
+        if(session) session.onBack();
+        else panel.before(status);
         status.textContent = '';
         panel.hidden = true;
         form.hidden = false;
@@ -309,7 +386,8 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         panel.querySelector('.fit-movie')!,
         panel.querySelector('.pattern-zoom')!,
         'Movie frame being processed',
-        i => { selectedFrame = i; registerFrame(); },
+        i => { selectedFrame = i; registerFrame(); if(motionFrames) drawMotion(motionFrames); },
+        !!session,
       );
       const frame = viewer.display().canvas;
       const wrap = document.createElement('div');
@@ -326,7 +404,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
           y:(event.clientY-box.top)*frame.height*bin/box.height+(1-bin)/2};
       };
       wrap.onpointerdown = event => {
-        if (!cloud || !renderedPositions || event.button !== 0 || drag) return;
+        if (!cloud || cloud.tilt || cloud.rot || !renderedPositions || event.button !== 0 || drag) return;
         const drift = fittedDrift[selectedFrame];
         if (!drift) return;
         const {x,y} = pointerPixels(event), box = marker.getBoundingClientRect();
@@ -347,6 +425,27 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         cloud.request();
       };
       wrap.onlostpointercapture = () => { drag = undefined; };
+      if(session) {
+        renderVolumePupil=moviePupilReport(panel.querySelector('.live-pupil')!);
+        const report=panel.querySelector('.live-pupil section')!;
+        report.id='volume-psf-report';
+        panel.querySelector('header a')!.setAttribute('href','#volume-psf-report');
+        const controls=document.createElement('div');
+        controls.className='reconstruction-controls';
+        const buttons=[true,false].map(isVolume=>{
+          const button=document.createElement('button');
+          button.type='button'; button.textContent=isVolume?'3D volume':'XY overlay';
+          button.setAttribute('aria-pressed',String(isVolume===orbit));
+          button.onclick=()=>{
+            orbit=isVolume;
+            buttons.forEach((b,i)=>b.setAttribute('aria-pressed',String((i===0)===orbit)));
+            cloudHost.classList.toggle('orbit-view',orbit);
+            frameCloud();cloudCaption();
+          };
+          controls.append(button);return button;
+        });
+        panel.querySelector('.reconstruction figcaption')!.after(controls);
+      }
       inspectField = fieldInspector(panel.querySelector('.modulation-field')!);
       displayPattern();
       if (truth) {
@@ -400,10 +499,11 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     pattern(result: ReturnType<typeof modulation>) {
       overlay(result, 'Fitted pattern');
     },
-    async update(dev: GPUDevice, u: MovieIteration) {
+    async update(dev: GPUDevice, u: MovieIteration, slices?:VolumeSlices) {
       if (u.stage==='frame') progress.update(3,u.index/u.total);
       device = dev;
-      const report = document.getElementById('psf-report');
+      if(volume) renderVolumePupil?.(u.model);
+      const report = volume ? panel.querySelector('#volume-psf-report') : document.getElementById('psf-report');
       const destination =
         u.stage === 'final' ? document.querySelector('article') : panel.querySelector('.live-pupil');
       if (report && destination && report.parentElement !== destination) destination.prepend(report);
@@ -415,13 +515,32 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         panel.querySelector('.pupil-preview')!.replaceChildren(preview);
         lastPupilGrid = pupilGrid;
       }
-      const pupilLink = panel.querySelector<HTMLAnchorElement>('a[href="#psf-report"]')!;
-      pupilLink.hidden = !document.querySelector('#psf-report:not([hidden])');
+      const pupilLink = panel.querySelector<HTMLAnchorElement>('header a')!;
+      pupilLink.hidden = !report || (report as HTMLElement).hidden;
       if (!truth && schedule.phases < 3) panel.querySelector('.pattern-zoom small')!.textContent = 'Movie ROI · PSF and photometry only';
       const m = u.model;
       const sets = [{ z: Array.from(m.zcoef), color: '#2f6feb', label: 'Estimated' }];
-      if (truth) sets.push({ z: m.noll.map(n => truth!.coefficients[n-5] ?? 0), color: '#c25d25', label: 'True (simulation)' });
+      const coefficients=volume?.coefficients ?? truth?.coefficients;
+      if (coefficients) sets.push({ z: m.noll.map(n => coefficients[n-5] ?? 0), color: '#c25d25', label: 'True (simulation)' });
       drawZernikeSets(panel.querySelector('.zernike-chart canvas')!, m.noll, sets, 'mλ');
+      if(volume && slices) {
+        const ref=volume.reference;
+        const {side,peakRow,dz}=slices;
+        const row=ref?.peakRow ?? peakRow;
+        const xy=(v:VolumeSlices)=>v.planes.subarray(row*side**2,(row+1)*side**2);
+        const fitted=xy(slices),actual=ref && xy(ref);
+        const xyMax=Math.max(...fitted,...(actual??[]),1e-12),xzMax=Math.max(...slices.axial,...(ref?.axial??[]),1e-12);
+        drawPsf(panel.querySelector('.psf')!,fitted,xyMax);
+        drawPsf(panel.querySelector('.axial')!,slices.axial,xzMax);
+        if(ref && actual){
+          drawPsf(panel.querySelector('.reference')!,actual,xyMax);
+          drawPsf(panel.querySelector('.true-axial')!,ref.axial,xzMax);
+          if(coefficients) compare('.modes',m.noll.map((n,i)=>['Z'+n+' (mλ RMS)',1000*coefficients[i],1000*m.zcoef[i]]),1);
+        }
+        const half=(side-1)*dz/2;
+        panel.querySelector('.parameters')!.textContent='XY at '+(half-row*dz).toFixed(2)+' µm relative focus · XZ spans −'+half.toFixed(1)+' to +'+half.toFixed(1)+' µm, increasing upward.';
+        return;
+      }
       engine ??= new VecEngine(
         dev,
         { ...m.optics, roisize: m.roisize, npupil: m.npupil, oversample: m.oversample, zernike_noll: m.noll },
@@ -449,10 +568,12 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       const exposure = Math.max(...estimated,...axial,...(reference ?? []),1e-12);
       drawPsf(panel.querySelector('.psf')!, estimated, exposure);
       drawPsf(panel.querySelector('.axial')!, axial, exposure);
-      if (truth && reference) {
+      if (coefficients && reference) {
         drawPsf(panel.querySelector('.reference')!, reference, exposure, Math.sqrt(estimated.length));
         compare('.modes', m.noll.flatMap((n, i): [string, number, number][] =>
-          n >= 5 && n <= 11 ? [['Z' + n + ' (mλ RMS)', 1000 * truth!.coefficients[n - 5], 1000 * m.zcoef[i]]] : []), 1);
+          n >= 5 && n <= 11 ? [['Z' + n + ' (mλ RMS)', 1000 * coefficients[n - 5], 1000 * m.zcoef[i]]] : []), 1);
+      }
+      if (truth && reference) {
         const rows: [string, number, number][] = [['Focus relative to bead (nm)',
           truth.firstFocusNm + truth.drift[frameIndex][2], (focusUm - u.emitterHeightUm) * 1000]];
         if (u.driftNm) {
@@ -478,7 +599,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
               ? 'Frame ' + u.index + '/' + u.total
               : 'Final fit · frame '+(frameIndex+1);
       panel.querySelector('.parameters')!.textContent =
-        stage + ' · XZ: focus increases upward, ' + (dz*1000).toFixed(1) + ' nm/row' +
+        (volume ? 'Reference emitter at 5 µm' : stage) + ' · XZ: focus increases upward, ' + (dz*1000).toFixed(1) + ' nm/row' +
         ' · focus relative to bead ' +
         Math.round((focusUm - u.emitterHeightUm) * 1000) +
         ' nm' +
@@ -509,14 +630,13 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         registerFrame();
         if (!origin.length) origin = u.driftNm;
         motion.push(u.driftNm.map((v, i) => v - origin[i]));
-        const fig = panel.querySelector<HTMLElement>('.motion')!;
-        fig.hidden = false;
-        plot(fig.querySelector('canvas')!, motion, u.total, ['X', 'Y', 'Z'], 'Frame');
+        trueMotion=truth && motion.length<=truth.drift.length ? motion.map((_,i)=>truth!.drift[i].map((v,j)=>v-truth!.drift[0][j])) : undefined;
+        drawMotion(u.total);
       }
     },
     end() {
       progress.stop();
-      panel.querySelector('button')!.hidden = false;
+      panel.querySelector<HTMLButtonElement>('header button')!.hidden = false;
 
       const partial = panel.querySelector('.live-pupil #psf-report');
       if (partial) document.querySelector('article')!.prepend(partial);

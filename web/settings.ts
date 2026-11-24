@@ -60,6 +60,7 @@ export function acquisitionSettings() {
   }
   section.addEventListener('input', save);
   diameter.addEventListener('input', save);
+  inputs[keys.indexOf('stepNm')].addEventListener('input',save);
   return () => {
     const data = values();
     if (!keys.every((key) => valid(key, data[key])) || +data.na > +data.immersionIndex)
