@@ -113,6 +113,10 @@ mount(
 );
 
 document.querySelector('#purpose')!.textContent = 'Fit a bead movie to recover the PSF, illumination patterns and field maps.';
+const repoLink = document.createElement('a');
+repoLink.href = 'https://github.com/jcnossen/simcode';
+repoLink.textContent = 'SIMCODE on GitHub';
+document.querySelector('main h1')!.before(repoLink);
 const gpuSubtitle = document.createElement('p');
 gpuSubtitle.className = 'gpu-subtitle';
 document.querySelector('#purpose')!.after(gpuSubtitle);
