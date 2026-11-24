@@ -252,9 +252,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   }
   function cloudCaption(){
     if(!renderedPositions)return;
-    panel.querySelector('.cloud-status')!.textContent=renderedPositions.length+' fitted spots · '+
+    panel.querySelector('.cloud-status')!.textContent=renderedPositions.length+' fitted bead positions · '+
       (orbit ? 'Color shows bead height. Drag to rotate, scroll to zoom.' :
-      'XY drift-corrected frame. Drag to pan, scroll to zoom.'+((truth || volume?.firstFrameXY) ? ' Blue crosses show true positions.' : ''));
+      'One position per bead across the movie. Frame aligned in XY. Drag to pan, scroll to zoom.'+((truth || volume?.firstFrameXY) ? ' Blue crosses show true positions.' : ''));
   }
   let width = 0,
     height = 0;

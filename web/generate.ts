@@ -8,6 +8,7 @@ import type { Acquisition } from './settings';
 
 export const size = 400,
   defaultFrameCount = 40;
+export const defaultBeadDensity = 1.5975; // beads per square micrometre
 export const pitchNm = 200;
 export const angleAt = (i: number, axes: number) => axes === 2 ? [13, 104][i] : 13 + 180 * i / axes;
 export function depthAt(dir: number, u: number, v: number) {
@@ -95,7 +96,7 @@ export async function generateMovie(
   photons = defaultPhotons,
   scan?:{stepNm:number; repeats:number},
   driftNm=400,
-  beadCount=12000,
+  beadCount=Math.round(defaultBeadDensity*(size*s.pixelNm/1000)**2),
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
   const coefficients = exampleCoefficients(noll, aberration);

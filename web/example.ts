@@ -3,7 +3,7 @@ import { defaultAberration } from './example-aberration';
 import { axisName, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
-import { defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, pitchNm, size } from './generate';
+import { defaultBeadDensity, defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, pitchNm, size } from './generate';
 import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
@@ -37,7 +37,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   showScale();
   const densityControl=document.createElement('label');
   densityControl.className='example-density';
-  densityControl.innerHTML='Bead density (beads/µm²) <input type="number" min="0.0001" step="any" value="6.39" required form="generated-movie-options"><output></output>';
+  densityControl.innerHTML=`Bead density (beads/µm²) <input type="number" min="0.0001" step="any" value="${defaultBeadDensity}" required form="generated-movie-options"><output></output>`;
   const density=densityControl.querySelector('input')!;
   const countAt=(side:number)=>Math.round(density.valueAsNumber*(side*settings().pixelNm/1000)**2);
   const readCount=(side:number)=>{
