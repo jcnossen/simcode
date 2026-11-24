@@ -298,7 +298,7 @@ main > h1 { font-size: clamp(1.8rem, 4.4vw, 3rem); }
 .estimate-grid .compared-psfs:has(.true-axial) { grid-template-columns:repeat(2,minmax(0,1fr)); }
 
 main #inputs { display:grid; grid-template-columns:minmax(0,1fr); }
-.input-cards { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem; }
+.input-cards { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.75rem; }
 .input-card { display:grid;align-content:start;gap:.45rem;cursor:pointer;padding:1rem;border:2px dashed #91a4ae;border-radius:8px;min-width:0; }
 .input-card[aria-checked=true] { border:2px solid #2563ad;background:#edf5ff; }
 .input-card:focus-visible {outline:2px solid #174980;outline-offset:2px;}

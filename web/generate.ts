@@ -146,7 +146,7 @@ export async function generateMovie(
     for (let t = 0; t < frameCount; t++) {
       signal.throwIfAborted();
       const dx = xPixels[t], dy = yPixels[t], dz = zNm[t] / 1000;
-      const focus = radius + focusMidpointNm / 1000 + dz;
+      const focus = radius + (scan ? 0 : focusMidpointNm / 1000) + dz;
       const images = [];
       for (let sy = 0; sy < shifts; sy++)
         for (let sx = 0; sx < shifts; sx++)

@@ -10,7 +10,8 @@ import './example.css';
 
 export function installMovieExample(settings: () => Acquisition, getSchedule: () => Schedule, getRepeats:()=>number) {
   const inputs = document.querySelector<HTMLElement>('#inputs')!;
-  let mode:'slide'|'stack'|'gel'='slide';
+  let mode:'slide'|'stack'='slide';
+  const driftByMode={slide:400,stack:0};
   const catalogs=new WeakMap<File,ExampleTruth>();
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
@@ -49,7 +50,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const showCount=()=>{
     const out=densityControl.querySelector('output')!;
     try{
-      const n=countAt(mode==='gel'?64:size);
+      const n=countAt(size);
       out.value=Number.isSafeInteger(n)&&n>=0?n.toLocaleString()+' beads':'';
     }catch{out.value='';}
   };
@@ -105,7 +106,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     }
   };
   function refresh() {
-    if (!form.closest('.gel-selected')) submit.disabled = !selectedMovie || !!active || fitting;
+    submit.disabled = !selectedMovie || !!active || fitting;
   }
   progress.max = frameCount;
   let active: AbortController | null = null;
@@ -119,7 +120,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     status.textContent = 'Generation stopped.';
   }
   async function start() {
-    if (active || mode==='gel') return;
+    if (active) return;
     if (fitting) {
       status.textContent = 'A movie is being fitted. Generate the example when the fit finishes.';
       again.hidden = false;
@@ -151,9 +152,12 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     try {
       const s = settings();
       const schedule = getSchedule();
-      const scan=mode==='stack' ? {stepNm:s.stepNm||100,repeats} : undefined;
+      // Span two axial diffraction scales about the bead plane at the current optics.
+      const planes=countInput.valueAsNumber;
+      const autoStep=2*s.immersionIndex*s.wavelengthNm/(s.na*s.na*(planes-1));
+      const scan=mode==='stack' ? {stepNm:s.stepNm||autoStep,repeats} : undefined;
       const count=readCount(size);
-      description.textContent=size+' × '+size+' pixels · '+count.toLocaleString()+' beads · '+readDriftNm()+' nm peak-to-peak drift per axis'+(scan?' · '+countInput.value+' Z steps of '+scan.stepNm+' nm · '+repeats+' frames per step':'');
+      description.textContent=size+' × '+size+' pixels · '+count.toLocaleString()+' beads · '+readDriftNm()+' nm peak-to-peak drift per axis'+(scan?' · '+countInput.value+' Z steps of '+Number(scan.stepNm.toFixed(2))+' nm ('+Math.round(Math.abs(scan.stepNm)*(planes-1))+' nm span) · '+repeats+(repeats===1?' frame per step':' frames per step'):'');
       viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
       const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, beads) => {
@@ -164,7 +168,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
             firstFrameXY[2*i] = x + motion[0]/s.pixelNm;
             firstFrameXY[2*i+1] = y + motion[1]/s.pixelNm;
           });
-          truth = { firstFrameXY, pixelNm: s.pixelNm, modulation:exampleModulation(s.pixelNm,schedule), coefficients, psfs, drift, firstFocusNm: focusMidpointNm + motion[2], schedule };
+          truth = { firstFrameXY, pixelNm: s.pixelNm, modulation:exampleModulation(s.pixelNm,schedule), coefficients, psfs, drift, firstFocusNm: (scan ? 0 : focusMidpointNm) + motion[2], schedule };
           const table=view.querySelector<HTMLTableElement>('.example-pattern table')!;
           table.innerHTML='<tr><th>Axis</th><th>Pitch (nm)</th><th>Angle (°)</th><th>Steps (°)</th><th>Center depth</th><th>Center A/axis ratio</th></tr>';
           truth.modulation.patterns.forEach((p,i)=>{
@@ -224,7 +228,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   };
   driftSlider.onchange=density.onchange=strength.onchange;
   photonControls.addEventListener('change',()=>{
-    if(!view.closest('.gel-selected') && view.open){cancel();void start();}
+    if(view.open){cancel();void start();}
   });
   again.onclick = () => void start();
   // Selecting a real file or changing its calibration takes priority over an in-flight example.
@@ -250,14 +254,15 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     aberrationControl, readAberration, driftControl, readDriftNm, densityControl,readCount, photonControls, readPhotons,
     setMode(next:typeof mode){
       if(mode!==next){
+        driftByMode[mode]=readDriftNm();
+        driftSlider.value=String(driftByMode[next]);showScale();
         cancel(); mode=next; generated=null; download.hidden=true;viewer.reset();
         progress.value=0; status.textContent=''; description.textContent=slideDescription;
         countInput.min=mode==='stack'?'3':'2';
         view.querySelector('.example-length')!.firstChild!.textContent=mode==='stack'?'Example Z steps ':'Example frames ';
       }
       showCount();
-      densityControl.firstChild!.textContent=mode==='gel' ? 'Projected bead density (beads/µm²) ' : 'Bead density (beads/µm²) ';
-      view.querySelector('summary')!.textContent='Example: randomly generated '+({slide:'2D bead slide movie',stack:'2D bead slide Z stack',gel:'3D bead volume scan'}[next]);
+      view.querySelector('summary')!.textContent='Example: randomly generated '+({slide:'2D bead slide movie',stack:'2D bead slide Z stack'}[next]);
     },
     truth: () => selectedMovie ? catalogs.get(selectedMovie) : undefined,
     select(file?: File) { selectedMovie = file; refresh(); },

@@ -6,12 +6,11 @@ import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
 import { modulation } from './modulation';
 import {validationPanel} from './cross-validation';
-import { gelView } from './gel-view';
-type InputKind='slide'|'stack'|'gel';
+type InputKind='slide'|'stack';
 let kind:InputKind='slide';
 const selected:Partial<Record<InputKind,File>>={};
 const framesPerStep=document.createElement('input');
-const simulation=()=>kind!=='gel' ? example.truth() : undefined;
+const simulation=()=>example.truth();
 const estimator = liveEstimator(simulation, () => order());
 mount(
   'Joint PSF and modulation pattern estimator',
@@ -143,7 +142,6 @@ function installSampleChoice() {
   const inputs = form.querySelector<HTMLElement>('#inputs')!;
   const submit = inputs.querySelector<HTMLButtonElement>('button')!;
   const exampleBox = form.querySelector<HTMLDetailsElement>('.movie-example')!;
-  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons,example.readDriftNm,example.readCount);
   const main = form.closest('main')!;
   const cards=document.createElement('div');
   cards.className='input-cards';
@@ -151,9 +149,9 @@ function installSampleChoice() {
   cards.setAttribute('aria-label','Acquisition input');
   const existing=inputs.querySelectorAll<HTMLLabelElement>('label.drop');
   const controls=inputs.querySelector('.sample-controls')!;
-  const labels=[existing[0],existing[1],existing[0].cloneNode(true) as HTMLLabelElement];
-  const names=['2D bead slide movie','2D bead slide Z stack','3D bead volume (experimental)'];
-  const modes:InputKind[]=['slide','stack','gel'];
+  const labels=[existing[0],existing[1]];
+  const names=['2D bead slide movie','2D bead slide Z stack'];
+  const modes:InputKind[]=['slide','stack'];
   const step=document.querySelector<HTMLInputElement>('#settings input[placeholder]')!;
   const stepLabel=step.closest('label')!;
   stepLabel.replaceChildren('Z stack step (nm)',step);
@@ -181,12 +179,11 @@ function installSampleChoice() {
       if(e.target!==tile)return;
       if(e.key===' '||e.key==='Enter'){e.preventDefault();select();}
       const delta=['ArrowLeft','ArrowUp'].includes(e.key)?-1:['ArrowRight','ArrowDown'].includes(e.key)?1:0;
-      if(delta){e.preventDefault();const j=(i+delta+3)%3;choose(modes[j]);tiles[j].focus();}
+      if(delta){e.preventDefault();const j=(i+delta+modes.length)%modes.length;choose(modes[j]);tiles[j].focus();}
     };
     const set=(file?:File)=>{
       selected[mode]=file;
       filename.textContent=file?.name ?? 'Drop a TIFF here';
-      if(mode==='gel')api.select(file);
       choose(mode,true);
     };
     input.onchange=()=>set(input.files?.[0]);
@@ -196,9 +193,6 @@ function installSampleChoice() {
     return tile;
   });
   inputs.replaceChildren(cards,controls);
-  exampleBox.append(api.options);
-  exampleBox.addEventListener('toggle',()=>{if(exampleBox.open)api.openExample();});
-  form.after(api.panel);
   function choose(next:InputKind,refresh=false){
     if(next===kind && !refresh)return;
     const changed=kind!==next;
@@ -208,19 +202,13 @@ function installSampleChoice() {
       tile.setAttribute('aria-checked',String(current));tile.tabIndex=current?0:-1;
     });
     if(changed)exampleBox.open=false;
-    const gel=kind==='gel',scan=kind==='stack';
-    main.classList.toggle('gel-selected',gel);
+    const scan=kind==='stack';
     main.classList.toggle('stack-selected',scan);
     framesPerStep.disabled=step.disabled=!scan;
     example.setMode(kind);
-    api.activate(gel);
-    const target=gel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
+    const target=exampleBox.querySelector('.example-length')!;
     target.after(example.aberrationControl,example.driftControl,example.densityControl,example.photonControls);
     example.select(selected[kind]);
-    api.panel.hidden=api.options.hidden=!gel;
   }
   choose('slide',true);
-  form.addEventListener('submit',e=>{
-    if(kind==='gel'){e.preventDefault();e.stopImmediatePropagation();api.fit();}
-  },true);
 }
