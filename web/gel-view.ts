@@ -10,10 +10,10 @@ import type { Acquisition } from './settings';
 import { axisAt, phaseAt, phaseRadians, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { moviePupilReport } from 'torch-dense/report';
-export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}, readDriftScale:()=>number) {
+export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}, readDriftNm:()=>number,readCount:(side:number)=>number) {
     const options = document.createElement('div');
     options.innerHTML = `<div class="gel-fields">
-    <label>Beads in the volume<input data-key="beads" type="number" value="160" min="8" max="4000"></label>
+
     <label>Focus cycles over 10 &micro;m<input data-key="planes" type="number" value="101" min="10" max="201"></label>
     <button class="generate-gel" type="button">Regenerate</button><progress class="gel-generation-progress" aria-label="Movie generation progress" hidden></progress><span class="example-files"></span></div>
     <div class="example-content gel-example-preview" hidden>
@@ -295,7 +295,7 @@ export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition:
             displayOffset=a.offset;
             const optics = {pixel_um:a.pixelNm/1000, NA:a.na, wavelength_um:a.wavelengthNm/1000, n_imm:a.immersionIndex, n_med:a.sampleIndex};
             getWorker().postMessage({ action, settings:{optics,diameterUm:a.diameterNm/1000}, acquisition:a, schedule:schedule(),
-                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons(),driftScale:readDriftScale()} : {}), count:val('beads'), planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:document.querySelector<HTMLInputElement>('.random-beads')!.checked });
+                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons(),driftNm:readDriftNm()} : {}), count:action==='generate'?readCount(64):undefined, planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:document.querySelector<HTMLInputElement>('.random-beads')!.checked });
         }
         catch (e) {
             busy = false;
@@ -306,7 +306,7 @@ export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition:
     }
     generate.onclick = () => void start('generate');
     options.addEventListener('change',event=>{
-        if(active && options.closest('details')?.open && (event.target as Element).closest('.example-drift-scale'))
+        if(active && options.closest('details')?.open && (event.target as Element).closest('.example-drift-scale,.example-density'))
             void start('generate');
     });
 

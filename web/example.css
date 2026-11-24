@@ -310,3 +310,6 @@ main #inputs { display:grid; grid-template-columns:minmax(0,1fr); }
 .scan-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(7.5rem,100%),1fr)); gap:.5rem; margin-top:.35rem; }
 .scan-fields label { min-width:0; display:flex; flex-direction:column; justify-content:flex-end; gap:.25rem; } .scan-fields input { width:100%; box-sizing:border-box; } .scan-fields input:disabled { pointer-events:none; }
 @media(max-width:620px){.input-cards{grid-template-columns:1fr;}}
+
+.example-density { display:inline-flex; align-items:center; gap:.4rem; margin:.5rem; }
+.example-density input { width:6rem; }

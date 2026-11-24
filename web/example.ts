@@ -3,7 +3,7 @@ import { defaultAberration } from './example-aberration';
 import { axisName, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
-import { defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, pitchNm, size, zDriftPeakToPeakNm } from './generate';
+import { defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, pitchNm, size } from './generate';
 import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
@@ -15,7 +15,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z excursion · XYZ random walk</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · ${pitchNm} nm illumination pitch</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
   const aberrationControl = view.querySelector<HTMLLabelElement>('.example-aberration')!;
@@ -28,13 +28,33 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   };
   const driftControl=document.createElement('label');
   driftControl.className='example-aberration example-drift-scale';
-  driftControl.innerHTML='XYZ drift scale <input type="range" min="0" max="3" step="0.1" value="1" form="generated-movie-options"><output></output>';
+  driftControl.innerHTML='XYZ drift (peak-to-peak per axis) <input type="range" min="0" max="1200" step="10" value="400" form="generated-movie-options"><output></output>';
   aberrationControl.after(driftControl);
   const driftSlider=driftControl.querySelector('input')!;
-  const readDriftScale=()=>driftSlider.valueAsNumber;
-  const showScale=()=>{driftControl.querySelector('output')!.value=readDriftScale().toFixed(1)+'×';};
+  const readDriftNm=()=>driftSlider.valueAsNumber;
+  const showScale=()=>{driftControl.querySelector('output')!.value=readDriftNm()+' nm';};
   driftSlider.oninput=showScale;
   showScale();
+  const densityControl=document.createElement('label');
+  densityControl.className='example-density';
+  densityControl.innerHTML='Bead density (beads/µm²) <input type="number" min="0.0001" step="any" value="6.39" required form="generated-movie-options"><output></output>';
+  const density=densityControl.querySelector('input')!;
+  const countAt=(side:number)=>Math.round(density.valueAsNumber*(side*settings().pixelNm/1000)**2);
+  const readCount=(side:number)=>{
+    if(!density.reportValidity())throw Error('Enter a positive bead density.');
+    const n=countAt(side);
+    if(n<1 || !Number.isSafeInteger(n))throw Error('The selected density gives no representable bead count in this field.');
+    return n;
+  };
+  const showCount=()=>{
+    const out=densityControl.querySelector('output')!;
+    try{
+      const n=countAt(mode==='gel'?64:size);
+      out.value=Number.isSafeInteger(n)&&n>=0?n.toLocaleString()+' beads':'';
+    }catch{out.value='';}
+  };
+  density.oninput=showCount;
+  document.querySelector('#settings')!.addEventListener('input',showCount);
   const readAberration = () => strength.valueAsNumber;
   const updateStrength = () => { aberrationControl.querySelector('output')!.value = strength.value + ' mλ RMS'; };
   strength.oninput = updateStrength;
@@ -132,7 +152,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       const s = settings();
       const schedule = getSchedule();
       const scan=mode==='stack' ? {stepNm:s.stepNm||100,repeats} : undefined;
-      description.textContent=scan ? countInput.value+' Z steps · '+scan.stepNm+' nm per step · '+repeats+' frames per step · XYZ drift '+readDriftScale().toFixed(1)+'×' : slideDescription?.replace(/−200 to \+200 nm Z excursion/, '−'+Math.round(200*readDriftScale())+' to +'+Math.round(200*readDriftScale())+' nm Z excursion') ?? '';
+      const count=readCount(size);
+      description.textContent=size+' × '+size+' pixels · '+count.toLocaleString()+' beads · '+readDriftNm()+' nm peak-to-peak drift per axis'+(scan?' · '+countInput.value+' Z steps of '+scan.stepNm+' nm · '+repeats+' frames per step':'');
       viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
       const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, beads) => {
@@ -159,7 +180,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
         progress.value = t + 1;
         status.textContent = 'Generating frame ' + (t + 1) + ' of ' + frameCount;
-      }, frameCount, readAberration(), readPhotons(),scan,readDriftScale());
+      }, frameCount, readAberration(), readPhotons(),scan,readDriftNm(),count);
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
@@ -201,7 +222,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       if (view.open) void start();
     }
   };
-  driftSlider.onchange=strength.onchange;
+  driftSlider.onchange=density.onchange=strength.onchange;
   photonControls.addEventListener('change',()=>{
     if(!view.closest('.gel-selected') && view.open){cancel();void start();}
   });
@@ -226,7 +247,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   });
   document.querySelector('#settings')!.addEventListener('input', cancel);
   return {
-    aberrationControl, readAberration, driftControl, readDriftScale, photonControls, readPhotons,
+    aberrationControl, readAberration, driftControl, readDriftNm, densityControl,readCount, photonControls, readPhotons,
     setMode(next:typeof mode){
       if(mode!==next){
         cancel(); mode=next; generated=null; download.hidden=true;viewer.reset();
@@ -234,6 +255,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         countInput.min=mode==='stack'?'3':'2';
         view.querySelector('.example-length')!.firstChild!.textContent=mode==='stack'?'Example Z steps ':'Example frames ';
       }
+      showCount();
+      densityControl.firstChild!.textContent=mode==='gel' ? 'Projected bead density (beads/µm²) ' : 'Bead density (beads/µm²) ';
       view.querySelector('summary')!.textContent='Example: randomly generated '+({slide:'2D bead slide movie',stack:'2D bead slide Z stack',gel:'3D bead volume scan'}[next]);
     },
     truth: () => selectedMovie ? catalogs.get(selectedMovie) : undefined,

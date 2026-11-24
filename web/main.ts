@@ -5,6 +5,7 @@ import { installMovieExample } from './example';
 import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
 import { modulation } from './modulation';
+import {validationPanel} from './cross-validation';
 import { gelView } from './gel-view';
 type InputKind='slide'|'stack'|'gel';
 let kind:InputKind='slide';
@@ -19,6 +20,7 @@ mount(
     const simulated = simulation()?.modulation;
     if(simulated) download(out,'true-modulation.json',JSON.stringify(simulated),'application/json');
     const schedule = order();
+    if(kind==='slide' && selected.slide) validationPanel(out,selected.slide,r.settings,schedule,document.querySelector<HTMLInputElement>('.random-beads')!.checked);
     if (schedule.phases < 3) {
       const message = document.createElement('p');
       message.textContent = 'PSF and bead photometry complete. This phase schedule provides fewer than three steps for the harmonic pattern fit.';
@@ -141,7 +143,7 @@ function installSampleChoice() {
   const inputs = form.querySelector<HTMLElement>('#inputs')!;
   const submit = inputs.querySelector<HTMLButtonElement>('button')!;
   const exampleBox = form.querySelector<HTMLDetailsElement>('.movie-example')!;
-  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons,example.readDriftScale);
+  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons,example.readDriftNm,example.readCount);
   const main = form.closest('main')!;
   const cards=document.createElement('div');
   cards.className='input-cards';
@@ -213,7 +215,7 @@ function installSampleChoice() {
     example.setMode(kind);
     api.activate(gel);
     const target=gel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
-    target.after(example.aberrationControl,example.driftControl,example.photonControls);
+    target.after(example.aberrationControl,example.driftControl,example.densityControl,example.photonControls);
     example.select(selected[kind]);
     api.panel.hidden=api.options.hidden=!gel;
   }

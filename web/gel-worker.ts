@@ -15,7 +15,7 @@ import { axisAt, phaseRadians, defaultSchedule, type Schedule } from './schedule
 import { calibrate } from 'torch-dense/movie';
 const compactSampling = 'SIMCODE PSF sampling: compact-v1';
 const noise = () => Math.sqrt(-2 * Math.log(1 - Math.random())) * Math.cos(2 * Math.PI * Math.random());
-async function generate(device: GPUDevice, settings: GelOptics, count: number, planes: number, gain: number, offset: number, schedule: Schedule, aberration = defaultAberration, photons = defaultPhotons, driftScale=1) {
+async function generate(device: GPUDevice, settings: GelOptics, count: number, planes: number, gain: number, offset: number, schedule: Schedule, aberration = defaultAberration, photons = defaultPhotons, driftNm=400) {
     if (!Number.isInteger(count) || count < 8 || count > 4000 || !Number.isInteger(planes) || planes < 10 || planes > 201)
         throw Error('Use 8–4,000 beads and 10–201 scan planes.');
     const w = 64, h = 64, n = w * h;
@@ -38,8 +38,10 @@ async function generate(device: GPUDevice, settings: GelOptics, count: number, p
         const span = Math.max(...knots) - Math.min(...knots) || 1;
         for (let t = 0; t < stage.length; t++) {
             const v = 5 * t / (stage.length - 1), lo = Math.min(4, Math.floor(v)), f = v - lo;
-            motion[t][d] = ((1 - f) * knots[lo] + f * knots[lo + 1]) * (d === 2 ? .4 : .18) * driftScale / span;
+            motion[t][d] = ((1 - f) * knots[lo] + f * knots[lo + 1]) * (driftNm/1000) / span;
         }
+        const sampled=motion.map(v=>v[d]), measured=Math.max(...sampled)-Math.min(...sampled);
+        if(measured>0) for(const row of motion) row[d]*=driftNm/(1000*measured);
     }
     const focus = stage.map((z,t) => z + motion[t][2]);
     const reference=volumePsfSlices(bank);
@@ -78,7 +80,7 @@ self.onmessage = async ({ data }) => {
         const sequence:Schedule = data.schedule ?? defaultSchedule;
         const period=sequence.axes*sequence.phases;
         if (data.action === 'generate') {
-            await generate(device, settings, data.count, data.planes, data.gain, data.offset, sequence, data.aberration, data.photons,data.driftScale);
+            await generate(device, settings, data.count, data.planes, data.gain, data.offset, sequence, data.aberration, data.photons,data.driftNm);
             return;
         }
         if (!data.movie) throw Error('Select a movie TIFF.');

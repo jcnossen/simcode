@@ -69,9 +69,8 @@ export function illumination(pixelNm: number, x: number, y: number, t: number, s
     Math.cos(k * (x * Math.cos(angle) + y * Math.sin(angle)) + phaseOffset(u,v) + phaseRadians(t, schedule))
   );
 }
-const beadCount = 12000,
-  // Keep the broad, defocused bead footprints in the rendered image.
-  roi = 33,
+// Keep the broad, defocused bead footprints in the rendered image.
+const roi = 33,
   shifts = 3,
   tau = 2 * Math.PI;
 
@@ -95,7 +94,8 @@ export async function generateMovie(
   aberration = defaultAberration,
   photons = defaultPhotons,
   scan?:{stepNm:number; repeats:number},
-  driftScale=1,
+  driftNm=400,
+  beadCount=12000,
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
   const coefficients = exampleCoefficients(noll, aberration);
@@ -138,9 +138,9 @@ export async function generateMovie(
       : [[0, 0, 0]];
     const q = (Math.PI * s.diameterNm) / pitchNm;
     const transfer = q < 0.001 ? 1 : (3 * (Math.sin(q) - q * Math.cos(q))) / q ** 3;
-    const xPixels = randomWalk(frameCount, 0.56*driftScale);
-    const yPixels = randomWalk(frameCount, 0.42*driftScale);
-    const zNm=randomWalk(frameCount,zDriftPeakToPeakNm*driftScale);
+    const xPixels = randomWalk(frameCount, driftNm/s.pixelNm);
+    const yPixels = randomWalk(frameCount, driftNm/s.pixelNm);
+    const zNm=randomWalk(frameCount,driftNm);
     if(scan) for(let i=0;i<frameCount;i++) zNm[i]+=(Math.floor(i/scan.repeats)-(frameCount/scan.repeats-1)/2)*scan.stepNm;
     for (let t = 0; t < frameCount; t++) {
       signal.throwIfAborted();
