@@ -10,7 +10,7 @@ import type { Acquisition } from './settings';
 import { axisAt, phaseAt, phaseRadians, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { moviePupilReport } from 'torch-dense/report';
-export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}) {
+export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition: () => Acquisition, schedule: () => Schedule, estimate: HTMLButtonElement, readAberration: () => number, readPhotons: () => {signal:number;background:number}, readDriftScale:()=>number) {
     const options = document.createElement('div');
     options.innerHTML = `<div class="gel-fields">
     <label>Beads in the volume<input data-key="beads" type="number" value="160" min="8" max="4000"></label>
@@ -295,7 +295,7 @@ export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition:
             displayOffset=a.offset;
             const optics = {pixel_um:a.pixelNm/1000, NA:a.na, wavelength_um:a.wavelengthNm/1000, n_imm:a.immersionIndex, n_med:a.sampleIndex};
             getWorker().postMessage({ action, settings:{optics,diameterUm:a.diameterNm/1000}, acquisition:a, schedule:schedule(),
-                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons()} : {}), count:val('beads'), planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:document.querySelector<HTMLInputElement>('.random-beads')!.checked });
+                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons(),driftScale:readDriftScale()} : {}), count:val('beads'), planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:document.querySelector<HTMLInputElement>('.random-beads')!.checked });
         }
         catch (e) {
             busy = false;
@@ -305,6 +305,10 @@ export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition:
         }
     }
     generate.onclick = () => void start('generate');
+    options.addEventListener('change',event=>{
+        if(active && options.closest('details')?.open && (event.target as Element).closest('.example-drift-scale'))
+            void start('generate');
+    });
 
     return { panel, options, openExample:()=>{if(active && !busy && !generated) void start('generate');}, fit:()=>{if(active && !estimate.disabled) void start('fit');},
         select:(file?:File, calibration?:File)=>{ if(file!==movie) reset(); movie=file; stack=calibration; controls(); },

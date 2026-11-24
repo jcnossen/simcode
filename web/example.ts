@@ -8,9 +8,10 @@ import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
 
-export function installMovieExample(settings: () => Acquisition, getSchedule: () => Schedule) {
+export function installMovieExample(settings: () => Acquisition, getSchedule: () => Schedule, getRepeats:()=>number) {
   const inputs = document.querySelector<HTMLElement>('#inputs')!;
-  const movie = inputs.querySelector<HTMLInputElement>('input[type=file]')!;
+  let mode:'slide'|'stack'|'gel'='slide';
+  const catalogs=new WeakMap<File,ExampleTruth>();
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
@@ -25,6 +26,15 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     if (!fields.every(field=>field.reportValidity())) throw Error('Enter nonnegative signal and background photon counts.');
     return {signal:fields[0].valueAsNumber,background:fields[1].valueAsNumber};
   };
+  const driftControl=document.createElement('label');
+  driftControl.className='example-aberration example-drift-scale';
+  driftControl.innerHTML='XYZ drift scale <input type="range" min="0" max="3" step="0.1" value="1" form="generated-movie-options"><output></output>';
+  aberrationControl.after(driftControl);
+  const driftSlider=driftControl.querySelector('input')!;
+  const readDriftScale=()=>driftSlider.valueAsNumber;
+  const showScale=()=>{driftControl.querySelector('output')!.value=readDriftScale().toFixed(1)+'×';};
+  driftSlider.oninput=showScale;
+  showScale();
   const readAberration = () => strength.valueAsNumber;
   const updateStrength = () => { aberrationControl.querySelector('output')!.value = strength.value + ' mλ RMS'; };
   strength.oninput = updateStrength;
@@ -56,6 +66,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     status = view.querySelector<HTMLElement>('.frame-status')!;
   const again = view.querySelector<HTMLInputElement>('.again')!,
     download = view.querySelector('a')!;
+  const description=view.querySelector<HTMLElement>('.example-actions > p')!;
+  const slideDescription=description.textContent;
   let generated: File | null = null;
   let selectedMovie: File | undefined;
   let fitting = false;
@@ -87,14 +99,17 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     status.textContent = 'Generation stopped.';
   }
   async function start() {
-    if (active || document.querySelector('main.gel-selected,main.stack-selected')) return;
+    if (active || mode==='gel') return;
     if (fitting) {
       status.textContent = 'A movie is being fitted. Generate the example when the fit finishes.';
       again.hidden = false;
       return;
     }
     if (!countInput.reportValidity()) return;
-    frameCount = countInput.valueAsNumber;
+    const repeats=mode==='stack' ? getRepeats() : 1;
+    if(!Number.isSafeInteger(repeats)||repeats<1){status.textContent='Enter a positive whole number of frames per step.';return;}
+    frameCount=countInput.valueAsNumber*repeats;
+    if(frameCount>Number(countInput.max)){status.textContent='Reduce the example length or frames per step.';return;}
     progress.max = frameCount;
     const controller = new AbortController();
     active = controller;
@@ -116,6 +131,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     try {
       const s = settings();
       const schedule = getSchedule();
+      const scan=mode==='stack' ? {stepNm:s.stepNm||100,repeats} : undefined;
+      description.textContent=scan ? countInput.value+' Z steps · '+scan.stepNm+' nm per step · '+repeats+' frames per step · XYZ drift '+readDriftScale().toFixed(1)+'×' : slideDescription?.replace(/−200 to \+200 nm Z excursion/, '−'+Math.round(200*readDriftScale())+' to +'+Math.round(200*readDriftScale())+' nm Z excursion') ?? '';
       viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
       const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, beads) => {
@@ -142,18 +159,21 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
         progress.value = t + 1;
         status.textContent = 'Generating frame ' + (t + 1) + ' of ' + frameCount;
-      }, frameCount, readAberration(), readPhotons());
+      }, frameCount, readAberration(), readPhotons(),scan,readDriftScale());
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
       installing = true;
       try {
+        const movie=inputs.querySelector<HTMLInputElement>('[data-kind='+mode+'] input[type=file]')!;
         movie.files = selection.files;
         movie.dispatchEvent(new Event('change', { bubbles: true }));
       } finally {
         installing = false;
       }
       generated = file;
+      if(truth)catalogs.set(file,{...(truth as ExampleTruth),psfs:psfs.slice(),drift:drift.slice()});
+      download.download=file.name;
       download.href = URL.createObjectURL(file);
       download.hidden = false;
       status.textContent = frameCount + ' frames generated. Movie selected for fitting.';
@@ -181,6 +201,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       if (view.open) void start();
     }
   };
+  driftSlider.onchange=strength.onchange;
   photonControls.addEventListener('change',()=>{
     if(!view.closest('.gel-selected') && view.open){cancel();void start();}
   });
@@ -205,8 +226,17 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   });
   document.querySelector('#settings')!.addEventListener('input', cancel);
   return {
-    aberrationControl, readAberration, photonControls, readPhotons,
-    truth: () => generated ? truth : undefined,
+    aberrationControl, readAberration, driftControl, readDriftScale, photonControls, readPhotons,
+    setMode(next:typeof mode){
+      if(mode!==next){
+        cancel(); mode=next; generated=null; download.hidden=true;viewer.reset();
+        progress.value=0; status.textContent=''; description.textContent=slideDescription;
+        countInput.min=mode==='stack'?'3':'2';
+        view.querySelector('.example-length')!.firstChild!.textContent=mode==='stack'?'Example Z steps ':'Example frames ';
+      }
+      view.querySelector('summary')!.textContent='Example: randomly generated '+({slide:'2D bead slide movie',stack:'2D bead slide Z stack',gel:'3D bead volume scan'}[next]);
+    },
+    truth: () => selectedMovie ? catalogs.get(selectedMovie) : undefined,
     select(file?: File) { selectedMovie = file; refresh(); },
     refresh,
   };

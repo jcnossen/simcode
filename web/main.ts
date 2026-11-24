@@ -10,7 +10,7 @@ type InputKind='slide'|'stack'|'gel';
 let kind:InputKind='slide';
 const selected:Partial<Record<InputKind,File>>={};
 const framesPerStep=document.createElement('input');
-const simulation=()=>kind==='slide' ? example.truth() : undefined;
+const simulation=()=>kind!=='gel' ? example.truth() : undefined;
 const estimator = liveEstimator(simulation, () => order());
 mount(
   'Joint PSF and modulation pattern estimator',
@@ -133,7 +133,7 @@ try { randomBeads.checked = !document.cookie.split('; ').includes('simcode_rando
 randomBeads.onchange = () => {
   try { document.cookie = 'simcode_random_beads='+Number(randomBeads.checked)+'; Max-Age=31536000; Path=/; SameSite=Lax'; } catch {}
 };
-const example = installMovieExample(settings, order);
+const example = installMovieExample(settings, order,()=>framesPerStep.valueAsNumber);
 installSampleChoice();
 
 function installSampleChoice() {
@@ -141,7 +141,7 @@ function installSampleChoice() {
   const inputs = form.querySelector<HTMLElement>('#inputs')!;
   const submit = inputs.querySelector<HTMLButtonElement>('button')!;
   const exampleBox = form.querySelector<HTMLDetailsElement>('.movie-example')!;
-  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons);
+  const api = gelView(estimator, settings, order, submit, example.readAberration, example.readPhotons,example.readDriftScale);
   const main = form.closest('main')!;
   const cards=document.createElement('div');
   cards.className='input-cards';
@@ -154,6 +154,7 @@ function installSampleChoice() {
   const modes:InputKind[]=['slide','stack','gel'];
   const step=document.querySelector<HTMLInputElement>('#settings input[placeholder]')!;
   const stepLabel=step.closest('label')!;
+  stepLabel.replaceChildren('Z stack step (nm)',step);
   const repeatLabel=document.createElement('label');
   framesPerStep.type='number'; framesPerStep.min='1'; framesPerStep.step='1'; framesPerStep.value='1'; framesPerStep.required=true;
   repeatLabel.append('Frames per step',framesPerStep);
@@ -209,10 +210,10 @@ function installSampleChoice() {
     main.classList.toggle('gel-selected',gel);
     main.classList.toggle('stack-selected',scan);
     framesPerStep.disabled=step.disabled=!scan;
-    exampleBox.hidden=scan;
+    example.setMode(kind);
     api.activate(gel);
     const target=gel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
-    target.after(example.aberrationControl,example.photonControls);
+    target.after(example.aberrationControl,example.driftControl,example.photonControls);
     example.select(selected[kind]);
     api.panel.hidden=api.options.hidden=!gel;
   }

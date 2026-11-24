@@ -94,6 +94,8 @@ export async function generateMovie(
   frameCount = defaultFrameCount,
   aberration = defaultAberration,
   photons = defaultPhotons,
+  scan?:{stepNm:number; repeats:number},
+  driftScale=1,
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
   const coefficients = exampleCoefficients(noll, aberration);
@@ -136,9 +138,10 @@ export async function generateMovie(
       : [[0, 0, 0]];
     const q = (Math.PI * s.diameterNm) / pitchNm;
     const transfer = q < 0.001 ? 1 : (3 * (Math.sin(q) - q * Math.cos(q))) / q ** 3;
-    const xPixels = randomWalk(frameCount, 0.56);
-    const yPixels = randomWalk(frameCount, 0.42);
-    const zNm = randomWalk(frameCount, zDriftPeakToPeakNm);
+    const xPixels = randomWalk(frameCount, 0.56*driftScale);
+    const yPixels = randomWalk(frameCount, 0.42*driftScale);
+    const zNm=randomWalk(frameCount,zDriftPeakToPeakNm*driftScale);
+    if(scan) for(let i=0;i<frameCount;i++) zNm[i]+=(Math.floor(i/scan.repeats)-(frameCount/scan.repeats-1)/2)*scan.stepNm;
     for (let t = 0; t < frameCount; t++) {
       signal.throwIfAborted();
       const dx = xPixels[t], dy = yPixels[t], dz = zNm[t] / 1000;
@@ -208,8 +211,8 @@ export async function generateMovie(
     }
     signal.throwIfAborted();
     return new File(
-      [tiffStackBlob(frames, frameCount, 1, size, size, { axis: 'frames' })],
-      'random-bead-movie.tif',
+      [tiffStackBlob(frames, frameCount, 1, size, size, { axis: scan && scan.repeats===1 ? 'slices' : 'frames',stepUm:scan && scan.stepNm/1000 })],
+      scan ? 'random-slide-stack.tif' : 'random-bead-movie.tif',
       { type: 'image/tiff' },
     );
   } finally {
