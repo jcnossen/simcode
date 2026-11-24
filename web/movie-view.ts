@@ -7,6 +7,7 @@ export function movieView(
   zoom: HTMLElement,
   label: string,
   onSelect?: (frame: number) => void,
+  autoRange = false,
 ) {
   container.innerHTML =
     '<canvas class="movie-frame" tabindex="0"></canvas><label class="scrub">Frame <input type="range" min="1" max="1" value="1" step="1"></label><small class="frame-number"></small> <input class="follow" type="button" value="Follow processing" hidden>';
@@ -21,6 +22,7 @@ export function movieView(
     zc = detail.getContext('2d')!,
     caption = zoom.querySelector('small')!;
   detail.width = detail.height = 160;
+  const ranges: [number,number][] = [];
   let images: Uint8ClampedArray[] = [],
     w = 0,
     h = 0,
@@ -82,6 +84,8 @@ export function movieView(
     }
     ctx.putImageData(image, 0, 0);
     text.textContent = (auto ? stage + ' frame ' : 'Frame ') + (i + 1) + ' / ' + total;
+    const range = ranges[i];
+    if (range) text.textContent += ' · Auto range '+range[0].toFixed(1)+'–'+range[1].toFixed(1)+' ADU';
     updateZoom();
     onSelect?.(i);
   }
@@ -113,6 +117,11 @@ export function movieView(
     updateZoom();
   };
   return {
+    processing(index: number, action: string) {
+      last = index;
+      stage = action;
+      if (auto) show(index);
+    },
     display: () => ({canvas, bin}),
     frame(
       pixels: Float32Array,
@@ -122,6 +131,7 @@ export function movieView(
       count: number,
       action: string,
       offset = 0,
+      paint = true,
     ) {
       w = width;
       h = height;
@@ -133,23 +143,35 @@ export function movieView(
         canvas.width = Math.ceil(w / bin);
         canvas.height = Math.ceil(h / bin);
         image = ctx.createImageData(canvas.width, canvas.height);
-        const stride = Math.max(1, Math.floor(pixels.length / 4096));
-        const sample = Float32Array.from(
-          { length: Math.ceil(pixels.length / stride) },
-          (_, i) => pixels[i * stride],
-        ).sort();
-        scale = Math.max(1, sample[Math.floor((sample.length - 1) * 0.995)] - offset);
       }
       if (!images[index]) {
+        let black = offset;
+        if (autoRange || images.length === 0) {
+          const stride = Math.max(1, Math.ceil(pixels.length / 8192));
+          const sample = Float32Array.from({length:Math.ceil(pixels.length/stride)}, (_,i)=>pixels[i*stride]).sort();
+          if (autoRange) {
+            black = sample[Math.floor((sample.length-1)*.01)];
+            const high = sample[Math.ceil((sample.length-1)*.999)];
+            const white = high > black ? high : Math.max(black+1,sample[sample.length-1]);
+            scale = white-black;
+            ranges[index] = [black,white];
+          } else {
+            scale = Math.max(1,sample[Math.floor((sample.length-1)*.995)]-offset);
+          }
+        }
         const a = new Uint8ClampedArray(canvas.width * canvas.height);
-        for (let y = 0; y < canvas.height; y++)
-          for (let x = 0; x < canvas.width; x++)
-            a[y * canvas.width + x] =
-              255 * Math.sqrt(Math.max(0, (pixels[y * bin * w + x * bin] - offset) / scale));
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            const signal = Math.max(0, pixels[y * bin * w + x * bin] - black);
+            a[y * canvas.width + x] = autoRange
+              ? 255 * signal / scale
+              : 255 * Math.sqrt(signal / scale);
+          }
+        }
         images[index] = a;
       }
       slider.max = String(images.length);
-      if (auto) show(index);
+      if (auto && paint) show(index);
     },
     setPattern(pattern: Pattern | null, name: string, order: Schedule) {
       schedule = order;
@@ -159,6 +181,7 @@ export function movieView(
     },
     reset() {
       images = [];
+      ranges.length = 0;
       image = undefined;
       auto = true;
       follow.hidden = true;

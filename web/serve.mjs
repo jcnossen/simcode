@@ -18,6 +18,7 @@ const config = {
   resolve: { alias: { 'torch-dense': join(torch, 'src', 'dense'), 'torch-web': join(torch, 'src') } },
   server: { host: '127.0.0.1', port: 5177, strictPort: true, fs: { allow: [root, torch] } },
   build: { target: 'es2022' },
+  worker: { format: 'es' },
 };
 if (process.argv.includes('--build')) await build(config);
 else {

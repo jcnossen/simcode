@@ -1,3 +1,4 @@
+import {defaultPhotons, photonCount} from './example-photons';
 import {fieldMaps} from './pattern-field';
 import { getDevice } from 'torch-web/gpu/device';
 import { VecEngine } from 'torch-web/gpu/ops';
@@ -6,7 +7,7 @@ import { axisAt, phaseRadians, type Schedule } from './schedule';
 import type { Acquisition } from './settings';
 
 export const size = 400,
-  defaultFrameCount = 100;
+  defaultFrameCount = 40;
 export const pitchNm = 200;
 export const angleAt = (i: number, axes: number) => axes === 2 ? [13, 104][i] : 13 + 180 * i / axes;
 export function depthAt(dir: number, u: number, v: number) {
@@ -76,6 +77,8 @@ const beadCount = 12000,
 
 // Subpixel stamps are shared across beads. Each stamp averages six sphere nodes
 // whose second moments equal those of a uniformly fluorescent solid bead.
+import { defaultAberration, exampleCoefficients } from './example-aberration';
+
 export async function generateMovie(
   s: Acquisition,
   schedule: Schedule,
@@ -89,14 +92,11 @@ export async function generateMovie(
     beads: ReadonlyArray<{x:number; y:number}>,
   ) => void,
   frameCount = defaultFrameCount,
+  aberration = defaultAberration,
+  photons = defaultPhotons,
 ) {
   const noll = [5, 6, 7, 8, 9, 10, 11];
-  // Include appreciable astigmatism and coma in every realization.
-  const coefficients = noll.map(j => {
-    const magnitude = j === 6 ? 0.10 + 0.04 * Math.random()
-      : j === 7 || j === 8 ? 0.05 + 0.04 * Math.random() : 0.015 + 0.04 * Math.random();
-    return (Math.random() < 0.5 ? -1 : 1) * magnitude;
-  });
+  const coefficients = exampleCoefficients(noll, aberration);
   const { device } = await getDevice();
   signal.throwIfAborted();
   const engine = new VecEngine(
@@ -120,7 +120,7 @@ export async function generateMovie(
     const beads = Array.from({ length: beadCount }, () => ({
       x: Math.random() * size,
       y: Math.random() * size,
-      I: 2500 + 4000 * Math.random(),
+      I: photons.signal * (2500 + 4000 * Math.random()) / 4500,
     }));
     const radius = s.diameterNm / 2000,
       node = radius * Math.sqrt(3 / 5);
@@ -166,7 +166,7 @@ export async function generateMovie(
         const base = Math.floor(i / (roi * roi)) * nodes.length * roi * roi + (i % (roi * roi));
         for (let j = 0; j < nodes.length; j++) stamps[i] += bank[base + j * roi * roi] / nodes.length;
       }
-      const frame = new Float32Array(size * size).fill(25);
+      const frame = new Float32Array(size * size).fill(photons.background);
       const dir = axisAt(t, schedule);
       for (const bead of beads) {
         const x = bead.x + dx,
@@ -186,15 +186,14 @@ export async function generateMovie(
             frame[row + px] += flux * stamps[stamp + px];
         }
       }
-      // Normal approximation to photon shot noise (background >= 25 photons).
       for (let i = 0; i < frame.length; i += 2) {
         const a = Math.sqrt(-2 * Math.log(1 - Math.random())),
           b = tau * Math.random();
         frame[i] =
-          s.offset + Math.max(0, Math.round(frame[i] + Math.sqrt(frame[i]) * a * Math.cos(b))) / s.gain;
+          s.offset + photonCount(frame[i], a * Math.cos(b)) / s.gain;
         frame[i + 1] =
           s.offset +
-          Math.max(0, Math.round(frame[i + 1] + Math.sqrt(frame[i + 1]) * a * Math.sin(b))) / s.gain;
+          photonCount(frame[i+1], a * Math.sin(b)) / s.gain;
       }
       frames.push(frame);
       show(

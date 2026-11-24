@@ -1,3 +1,4 @@
+import { fitProgress } from './fit-progress';
 import { fieldInspector } from './field-inspector';
 import { MovieDepth } from './movie-depth';
 import { PointCloudView } from 'torch-web/ui/pointcloud';
@@ -36,6 +37,7 @@ export function plot(
   total: number,
   names: string[],
   xlabel: string,
+  selected?: number,
 ) {
   const w = 410,
     h = 142,
@@ -89,6 +91,15 @@ export function plot(
       else c.moveTo(x, y(row[j]));
     });
     c.stroke();
+    if (selected !== undefined && rows[selected]) {
+      const x = left + selected * (right - left) / Math.max(1, total - 1);
+      c.beginPath();
+      c.arc(x, y(rows[selected][j]), 4, 0, 2 * Math.PI);
+      c.fill();
+      c.strokeStyle = 'white';
+      c.lineWidth = 1;
+      c.stroke();
+    }
     if (rows.length === 1) c.fillRect(left - 1, y(rows[0][j]) - 1, 3, 3);
   });
 }
@@ -121,6 +132,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   cloudCanvas.addEventListener('pointerdown', e => {
     if (e.shiftKey || e.button === 2) e.stopImmediatePropagation();
   }, true);
+  const progress=fitProgress("slide");
   let selectedFrame = 0, pixelNm = 1;
   let fittedDrift: number[][] = [];
   let marker: HTMLDivElement;
@@ -128,9 +140,10 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   function registerFrame() {
     if (!cloud || !renderedPositions || !viewer || !marker || !cloud.scale) return;
     const d = fittedDrift[selectedFrame];
-    marker.hidden = cameraLayer.hidden = !d;
-    truthLayer.hidden = !d || !truth?.drift[selectedFrame];
+    // Keep the previous registered composite until this frame has its own drift.
     if (!d) return;
+    cameraLayer.hidden = false;
+    truthLayer.hidden = !truth?.drift[selectedFrame];
     const W = cloudCanvas.width, H = cloudCanvas.height;
     if (cameraLayer.width !== W) cameraLayer.width = W;
     if (cameraLayer.height !== H) cameraLayer.height = H;
@@ -254,7 +267,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       document.querySelector('article')!.before(panel);
       const form = document.querySelector<HTMLFormElement>('main form')!;
       const purpose = document.querySelector<HTMLElement>('#purpose')!;
-      const status = document.querySelector<HTMLElement>('main [role=status]')!;
+      const status = document.querySelector<HTMLElement>('main > [role=status]')!;
       const example = form.querySelector<HTMLDetailsElement>('.movie-example');
       if (example) example.open = false;
       form.hidden = true;
@@ -282,7 +295,8 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       cameraLayer.hidden = truthLayer.hidden = true;
       cloudHost.hidden = true;
       panel.querySelector('.cloud-status')!.before(cloudHost);
-      panel.querySelector('header')!.after(status);
+      panel.querySelector('header')!.after(progress.host,status);
+      progress.start();
       panel.querySelector('button')!.onclick = () => {
         panel.before(status);
         status.textContent = '';
@@ -356,6 +370,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       total: number,
       stage: 'read' | 'fit',
     ) {
+      progress.update(stage==='read'?0:3,(index-1)/total);
       width = widthArg;
       height = heightArg;
       if (stage==='read' && schedule.phases>=3) {
@@ -363,6 +378,15 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         imageDepth.add(pixels,index-1);
       }
       viewer.frame(pixels, width, height, index - 1, total, stage === 'fit' ? 'Fitting' : 'Reading');
+    },
+    status(message:string) {
+      if(message==='Fit complete') progress.finish();
+      else if(message.includes('Calibrating optics')) progress.update(1);
+      else if(message.includes('Refining bead positions')) progress.update(2);
+      else if(message.includes('grouped positions')) {
+        const round=message.match(/(\d+)\s*\/\s*(\d+)/);
+        if(round) progress.update(2,(Number(round[1])-1)/Number(round[2]));
+      } else if(message.includes('Writing PSF archive')) progress.update(4);
     },
     photometry(snapshot: PhotometrySnapshot) {
       positions(snapshot);
@@ -377,6 +401,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       overlay(result, 'Fitted pattern');
     },
     async update(dev: GPUDevice, u: MovieIteration) {
+      if (u.stage==='frame') progress.update(3,u.index/u.total);
       device = dev;
       const report = document.getElementById('psf-report');
       const destination =
@@ -490,6 +515,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       }
     },
     end() {
+      progress.stop();
       panel.querySelector('button')!.hidden = false;
 
       const partial = panel.querySelector('.live-pupil #psf-report');

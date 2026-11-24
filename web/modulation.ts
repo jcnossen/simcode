@@ -53,7 +53,7 @@ function solve(a: number[][], v: number[]) {
   }
   return m.map((r) => r[n]);
 }
-function regression(x: number[][], y: number[], weights?: number[]) {
+export function regression(x: number[][], y: number[], weights?: number[]) {
   const n = x[0].length,
     a = Array.from({ length: n }, () => Array(n).fill(0)),
     v = Array(n).fill(0);

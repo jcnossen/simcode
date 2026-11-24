@@ -5,12 +5,13 @@ import { installMovieExample } from './example';
 import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
 import { modulation } from './modulation';
-const estimator = liveEstimator(() => example(), () => order());
+import { gelView } from './gel-view';
+const estimator = liveEstimator(() => example.truth(), () => order());
 mount(
   'Joint PSF and modulation pattern estimator',
   async (r, out) => {
     estimator.positions(r);
-    const simulated = example()?.modulation;
+    const simulated = example.truth()?.modulation;
     if(simulated) download(out,'true-modulation.json',JSON.stringify(simulated),'application/json');
     const schedule = order();
     if (schedule.phases < 3) {
@@ -25,7 +26,7 @@ mount(
       out.append(message);
       return;
     }
-    const result = modulation(r, schedule, estimator.depthData());
+    const result = modulation(r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined);
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');
@@ -117,4 +118,72 @@ getDevice().then(({info}) => {
   if (info.isFallback) gpuSubtitle.textContent += ' (software adapter)';
 }).catch(() => { gpuSubtitle.textContent = 'WebGPU unavailable'; });
 const order = scheduleControls();
-const example = installMovieExample(acquisitionSettings(), order);
+const settings = acquisitionSettings();
+const population = document.createElement('label');
+population.innerHTML = '<input class="random-beads" type="checkbox" checked> Uniformly random bead positions (enable image-power depth estimation)';
+document.querySelector('.pattern-order')!.append(population);
+const randomBeads = population.querySelector('input')!;
+try { randomBeads.checked = !document.cookie.split('; ').includes('simcode_random_beads=0'); } catch {}
+randomBeads.onchange = () => {
+  try { document.cookie = 'simcode_random_beads='+Number(randomBeads.checked)+'; Max-Age=31536000; Path=/; SameSite=Lax'; } catch {}
+};
+const example = installMovieExample(settings, order);
+installSampleChoice();
+
+function installSampleChoice() {
+  const form = document.querySelector<HTMLFormElement>('#inputs')!.closest('form')!;
+  const choice = document.createElement('fieldset');
+  choice.className = 'sample-choice';
+  choice.innerHTML = '<legend>Sample geometry</legend>' +
+    '<label><input type="radio" name="sampleGeometry" value="slide" checked> 2D bead slide</label>' +
+    '<label><input type="radio" name="sampleGeometry" value="gel"> 3D bead gel</label>';
+  const inputs = form.querySelector<HTMLElement>('#inputs')!;
+  const submit = inputs.querySelector<HTMLButtonElement>('button')!;
+  const exampleBox = form.querySelector<HTMLDetailsElement>('.movie-example')!;
+  const api = gelView(settings, order, submit, example.readAberration, example.readPhotons);
+  const main = form.closest('main')!;
+  const radios = choice.querySelectorAll<HTMLInputElement>('input');
+  form.prepend(choice);
+  exampleBox.append(api.options);
+  exampleBox.addEventListener('toggle',()=>{ if(exampleBox.open) api.openExample(); });
+  form.after(api.panel);
+  const selected: (File | undefined)[] = [];
+  inputs.querySelectorAll<HTMLLabelElement>('.drop').forEach((drop,i) => {
+    const input = drop.querySelector('input')!;
+    const set = (file?:File) => { selected[i]=file; if (i===0) example.select(file); api.select(selected[0],selected[1]); };
+    input.addEventListener('change', () => set(input.files?.[0]));
+    drop.addEventListener('drop', e => set(e.dataTransfer?.files[0]));
+  });
+  const update = () => {
+    const isGel = radios[1].checked;
+    exampleBox.open = false;
+    main.classList.toggle('gel-selected', isGel);
+    const lengthLabel = isGel ? api.options.querySelector('[data-key=planes]')!.closest('label')! : exampleBox.querySelector('.example-length')!;
+    api.activate(isGel);
+    lengthLabel.after(example.aberrationControl, example.photonControls);
+    example.refresh();
+    api.panel.hidden = !isGel;
+    api.options.hidden = !isGel;
+  };
+  try {
+    if (document.cookie.split('; ').includes('simcode_sample=gel')) radios[1].checked = true;
+  } catch {}
+  const requested = new URLSearchParams(location.search).get('sample');
+  if (requested === 'slide' || requested === 'gel') radios[requested === 'gel' ? 1 : 0].checked = true;
+  update();
+  choice.addEventListener('change', () => {
+    update();
+    try {
+      document.cookie = 'simcode_sample=' + (radios[1].checked ? 'gel' : 'slide') +
+        '; Max-Age=31536000; Path=/; SameSite=Lax';
+    } catch {}
+  });
+  // A gel scan must never enter the planar movie fitter, including via keyboard submission.
+  form.addEventListener('submit', e => {
+    if (radios[1].checked) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      api.fit();
+    }
+  }, true);
+}

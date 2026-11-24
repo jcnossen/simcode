@@ -1,3 +1,5 @@
+import { defaultPhotons } from './example-photons';
+import { defaultAberration } from './example-aberration';
 import { axisName, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
@@ -12,9 +14,21 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span><input type="button" class="estimate-example" value="Estimate generated movie" disabled></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z excursion · XYZ random walk</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · 12,000 beads · ${pitchNm} nm illumination pitch · −${zDriftPeakToPeakNm/2} to +${zDriftPeakToPeakNm/2} nm Z excursion · XYZ random walk</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
+  const aberrationControl = view.querySelector<HTMLLabelElement>('.example-aberration')!;
+  const strength = aberrationControl.querySelector('input')!;
+  const photonControls = view.querySelector<HTMLElement>('.example-photons')!;
+  const readPhotons = () => {
+    const fields = Array.from(photonControls.querySelectorAll('input'));
+    if (!fields.every(field=>field.reportValidity())) throw Error('Enter nonnegative signal and background photon counts.');
+    return {signal:fields[0].valueAsNumber,background:fields[1].valueAsNumber};
+  };
+  const readAberration = () => strength.valueAsNumber;
+  const updateStrength = () => { aberrationControl.querySelector('output')!.value = strength.value + ' mλ RMS'; };
+  strength.oninput = updateStrength;
+  updateStrength();
   // Keep example validation independent of the real-movie upload form.
   const options = document.createElement('form');
   options.id = 'generated-movie-options';
@@ -42,17 +56,25 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     status = view.querySelector<HTMLElement>('.frame-status')!;
   const again = view.querySelector<HTMLInputElement>('.again')!,
     download = view.querySelector('a')!;
-  const estimate = view.querySelector<HTMLInputElement>('.estimate-example')!;
   let generated: File | null = null;
+  let selectedMovie: File | undefined;
+  let fitting = false;
   const form = submit.form!;
-  estimate.onclick = () => {
-    if (!submit.disabled && generated) {
-      form.requestSubmit(submit);
+  const fit = form.onsubmit!;
+  form.onsubmit = async function(event) {
+    event.preventDefault();
+    if (submit.disabled || !selectedMovie || fitting) return;
+    fitting = true;
+    try {
+      await fit.call(form,event);
+    } finally {
+      fitting = false;
+      refresh();
     }
   };
-  new MutationObserver(() => {
-    estimate.disabled = submit.disabled || !generated;
-  }).observe(submit, { attributes: true, attributeFilter: ['disabled'] });
+  function refresh() {
+    if (!form.closest('.gel-selected')) submit.disabled = !selectedMovie || !!active || fitting;
+  }
   progress.max = frameCount;
   let active: AbortController | null = null;
   let installing = false;
@@ -60,13 +82,13 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     if (!active) return;
     active.abort();
     active = null;
-    submit.disabled = false;
+    refresh();
     again.hidden = false;
     status.textContent = 'Generation stopped.';
   }
   async function start() {
-    if (active) return;
-    if (submit.disabled) {
+    if (active || document.querySelector('main.gel-selected')) return;
+    if (fitting) {
       status.textContent = 'A movie is being fitted. Generate the example when the fit finishes.';
       again.hidden = false;
       return;
@@ -76,12 +98,11 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     progress.max = frameCount;
     const controller = new AbortController();
     active = controller;
-    submit.disabled = true;
+    refresh();
     if (download.href) URL.revokeObjectURL(download.href);
     download.removeAttribute('href');
     download.hidden = true;
     again.hidden = true;
-    estimate.disabled = true;
     generated = null;
     viewer.reset();
     truth = undefined;
@@ -121,7 +142,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
         progress.value = t + 1;
         status.textContent = 'Generating frame ' + (t + 1) + ' of ' + frameCount;
-      }, frameCount);
+      }, frameCount, readAberration(), readPhotons());
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
@@ -141,7 +162,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     } finally {
       if (active === controller) {
         active = null;
-        submit.disabled = false;
+        refresh();
         again.hidden = false;
       }
     }
@@ -154,12 +175,20 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     cancel();
     if (countInput.reportValidity() && view.open) void start();
   };
+  strength.onchange = () => {
+    if (!view.closest('.gel-selected')) {
+      cancel();
+      if (view.open) void start();
+    }
+  };
+  photonControls.addEventListener('change',()=>{
+    if(!view.closest('.gel-selected') && view.open){cancel();void start();}
+  });
   again.onclick = () => void start();
   // Selecting a real file or changing its calibration takes priority over an in-flight example.
   function replaced(e: Event) {
     if ((e.target as Element).closest('label') === movie.closest('label')) {
       generated = null;
-      estimate.disabled = true;
     }
     cancel();
   }
@@ -175,5 +204,10 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     if (!installing) replaced(e);
   });
   document.querySelector('#settings')!.addEventListener('input', cancel);
-  return () => generated ? truth : undefined;
+  return {
+    aberrationControl, readAberration, photonControls, readPhotons,
+    truth: () => generated ? truth : undefined,
+    select(file?: File) { selectedMovie = file; refresh(); },
+    refresh,
+  };
 }
