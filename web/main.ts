@@ -115,8 +115,14 @@ mount(
 document.querySelector('#purpose')!.textContent = 'Fit a bead movie to recover the PSF, illumination patterns and field maps.';
 const repoLink = document.createElement('a');
 repoLink.href = 'https://github.com/jcnossen/simcode';
-repoLink.textContent = 'SIMCODE on GitHub';
-document.querySelector('main h1')!.before(repoLink);
+repoLink.textContent = repoLink.href;
+const exampleLink = document.createElement('a');
+exampleLink.href = repoLink.href + '/blob/master/examples/estimate_bead_slide.py';
+exampleLink.textContent = 'Python example (2D bead slide)';
+const resources = document.createElement('nav');
+resources.setAttribute('aria-label', 'Source and examples');
+resources.append(repoLink, ' · ', exampleLink);
+document.querySelector('main h1')!.before(resources);
 const gpuSubtitle = document.createElement('p');
 gpuSubtitle.className = 'gpu-subtitle';
 document.querySelector('#purpose')!.after(gpuSubtitle);
