@@ -21,16 +21,16 @@ def surface(x, y):
     for _ in range(4):
         c = torch.linalg.lstsq(x * weights[:, None], y * weights).solution
         error = (x @ c - y).abs()
-        weights = ((2 * error.median() + 1e-4) / error.clamp_min(1e-10)).clamp_max(1).sqrt()
+        weights = ((2 * error.kthvalue(len(error)//2 + 1).values + 1e-4) / error.clamp_min(1e-10)).clamp_max(1).sqrt()
     return c
 
 
 def carrier(xy, harmonic, width, height):
     z = torch.complex(harmonic[1], harmonic[2])
-    z = z / z.abs().clamp_min(torch.quantile(z.abs(), .85).clamp_min(1))
+    z = z / z.abs().clamp_min(z.abs().kthvalue(int(.85 * len(z)) + 1).values.clamp_min(1))
     z = z - z.mean()
     n = 1 << (2 * max(width, height) - 1).bit_length()
-    x, y = (2 * xy).round().long().T
+    x, y = (2 * xy + .5).floor().long().T
     grid = z.new_zeros(n * n)
     grid.index_add_(0, (y % n) * n + x % n, z)
     freq = torch.fft.fftfreq(n, d=.5, dtype=xy.dtype)
@@ -39,7 +39,7 @@ def carrier(xy, harmonic, width, height):
     iy, ix = divmod(int(power.argmax()), n)
     k = 2 * math.pi * freq[[ix, iy]]
     offsets = torch.cartesian_prod(xy.new_tensor([-1, 0, 1]), xy.new_tensor([-1, 0, 1]))
-    for j in range(1, 7):
+    for j in range(1, 6):
         trials = k + (4 * math.pi / n / 2**j) * offsets
         score = (z[:, None] * torch.exp(-1j * (xy @ trials.T))).sum(0).abs()
         k = trials[score.argmax()]
