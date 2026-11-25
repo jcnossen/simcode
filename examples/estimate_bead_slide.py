@@ -1,101 +1,96 @@
-"""Estimate a planar bead movie and export psf.zip, bead-fit.npz and modulation.json.
+"""Simulate a planar bead movie, recover the PSF and illumination, and plot the fit.
 
-From a clone of this SIMCODE repository, with Python, Node and npm installed:
-
+Install TorchPSF from a source checkout (its reference simulator lives in study/):
     git clone https://github.com/jcnossen/torch-psf ../torch-psf
     python -m pip install -e ../torch-psf
-    npm ci --prefix ../torch-psf/web
-    python examples/estimate_bead_slide.py movie.tif --output fit
+    python -m pip install matplotlib
+    python examples/estimate_bead_slide.py
 
-The TIFF must be grayscale TYX, at least 96 x 96 pixels, with five or more
-complete illumination cycles. Defaults match the web example (A0 A120 A240
-B0 B120 B240). Set the optical and camera arguments for your acquisition.
-Use --structured-beads for a ring or other spatially correlated sample.
-
-TorchPSF fits the shared vectorial PSF, bead positions, frame photometry and
-XYZ drift in Python. The modulation step calls the web app's own estimator
-so both use identical field maps and the same optional image-power depth fit.
+Outputs are written to bead-slide-example/ under the current working directory.
 """
-import argparse
 import json
-import subprocess
+import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import tifffile
+import torch
 import torch_psf
 from torch_psf import DenseBeadEstimator
 from torch_psf.psfzip import save_zip
 
+from bead_slide_modulation import estimate_modulation
 
-def estimate_modulation(movie, fit, optics, schedule, *, random_beads=True):
-    """Estimate field maps from the fitted bead traces and optional random-field image power."""
-    # Compile the shared TypeScript estimator using TorchPSF's web dependencies.
-    package = Path(torch_psf.__file__).resolve().parents[1] / "web/node_modules/esbuild"
-    if not package.is_dir():
-        raise RuntimeError("Install TorchPSF in editable mode and run npm ci --prefix ../torch-psf/web.")
-    with TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        cli = work / "modulation.cjs"
-        source = Path(__file__).with_name("bead_slide_modulation.ts")
-        subprocess.run(["node", "-e",
-                        "require(process.argv[1]).buildSync({entryPoints:[process.argv[2]],"
-                        "platform:'node',bundle:true,outfile:process.argv[3]})",
-                        str(package), str(source), str(cli)], check=True)
-        snapshot = dict(width=movie.shape[2], height=movie.shape[1], xy=fit.xy.tolist(),
-                        intensity=fit.photons.tolist(), drift=fit.drift.tolist(),
-                        settings=dict(diameterNm=1000 * optics["diameter_um"], optics=optics))
-        (work / "input.json").write_text(json.dumps(dict(snapshot=snapshot, schedule=schedule)))
-        if random_beads:
-            movie.astype("<f4", copy=False).tofile(work / "pixels.f32")
-        subprocess.run(["node", str(cli), str(work), str(work / "modulation.json")], check=True)
-        return json.loads((work / "modulation.json").read_text())
+# Reuse the TorchPSF simulation that reproduces the browser's bead-slide example.
+torch_repo = Path(torch_psf.__file__).resolve().parents[1]
+sys.path.insert(0, str(torch_repo / "study/simcode_random_walk"))
+from simcode_bead_movie import OPTICS, simulate
+
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("movie", type=Path)
-    p.add_argument("--output", type=Path, default=Path("bead-slide-fit"))
-    p.add_argument("--pixel-nm", type=float, default=108.33)
-    p.add_argument("--diameter-nm", type=float, default=40)
-    p.add_argument("--wavelength-nm", type=float, default=700)
-    p.add_argument("--na", type=float, default=1.49)
-    p.add_argument("--immersion-index", type=float, default=1.518)
-    p.add_argument("--sample-index", type=float, default=1.33)
-    p.add_argument("--gain", type=float, default=1, help="ADU per photoelectron")
-    p.add_argument("--offset", type=float, default=0, help="camera offset in ADU")
-    p.add_argument("--axes", type=int, default=2)
-    p.add_argument("--phases", type=int, default=3)
-    p.add_argument("--interleaved", action="store_true")
-    p.add_argument("--estimate-phases", action="store_true")
-    p.add_argument("--structured-beads", action="store_true")
-    args = p.parse_args()
+    out = Path("bead-slide-example")
+    out.mkdir(exist_ok=True)
+    seed, n_frames, n_beads = 17, 40, 1200
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if args.gain <= 0 or args.axes < 1 or args.phases < 3:
-        p.error("Use a positive gain, at least one axis and at least three phases for modulation.")
-    movie = tifffile.imread(args.movie).astype(np.float32)
-    period = args.axes * args.phases
-    if movie.ndim != 3 or min(movie.shape[1:]) < 96 or len(movie) < 5 * period:
-        p.error("Vectorial movie calibration requires TYX, at least 96 x 96 pixels and five cycles.")
-    movie -= args.offset
-    movie /= args.gain
-    optics = dict(pixel_um=args.pixel_nm / 1000, diameter_um=args.diameter_nm / 1000,
-                  wavelength_um=args.wavelength_nm / 1000, NA=args.na,
-                  n_med=args.sample_index, n_imm=args.immersion_index, focus_um=0.1)
-    args.output.mkdir(parents=True, exist_ok=True)
-    fit = DenseBeadEstimator.fit_movie(movie, np.arange(len(movie)) % period, optics=optics, radius=6)
-    cfg = getattr(getattr(fit.psf, "optic", None), "cfg", {})
-    if cfg.get("calibrated_psf") is None:
-        raise ValueError("The movie did not yield a calibrated pupil. Check focus diversity and phase order.")
-    save_zip(str(args.output / "psf.zip"), cfg["calibrated_psf"])
-    np.savez_compressed(args.output / "bead-fit.npz", xy_px=fit.xy, photons=fit.photons,
-                        drift_xy_px=fit.drift, drift_z_um=fit.axial_drift_um, background=fit.background)
-    schedule = dict(axes=args.axes, phases=args.phases, interleaved=args.interleaved,
-                    estimatePhases=args.estimate_phases)
-    result = estimate_modulation(movie, fit, optics, schedule, random_beads=not args.structured_beads)
-    (args.output / "modulation.json").write_text(json.dumps(result, indent=2))
+    # Simulate uniformly distributed finite beads, two illumination axes and XYZ drift.
+    simulate(out, seed=seed, frames=n_frames, device=device, bead_count=n_beads)
+    movie = tifffile.imread(out / f"{seed}.tif")
+    fig, axes = plt.subplots(1, 3, figsize=(9, 3))
+    lo, hi = np.percentile(movie[0], [1, 99.7])
+    for t, ax in enumerate(axes):
+        ax.imshow(movie[t, :100, :100], cmap="gray", vmin=lo, vmax=hi, interpolation="nearest")
+        ax.set_title(f"Axis A, phase {120*t}°")
+        ax.axis("off")
+    plt.tight_layout()
+    fig.savefig(out / "movie-frames.png", dpi=160)
+    plt.close(fig)
 
+    # Fit using only movie pixels, nominal optics and exposure labels.
+    optics = dict(OPTICS, diameter_um=0.040, focus_um=0.1)
+    exposure_slot = np.arange(len(movie)) % 6
+    fit = DenseBeadEstimator.fit_movie(movie, exposure_slot, optics=optics, radius=6)
+    pupil = fit.psf.optic.cfg["calibrated_psf"]
+    result = estimate_modulation(movie, fit, optics)
+
+    save_zip(str(out / "psf.zip"), pupil)
+    (out / "modulation.json").write_text(json.dumps(result, indent=2))
+    print(f"Recovered {len(fit.xy)} bead candidates from {len(movie)} frames.")
+
+    # Score the blind estimates against simulation truth.
+    truth = json.loads((out / f"{seed}-truth.json").read_text())
+    print("Axis   pitch (nm)      angle (deg)      center depth")
+    print("       true / fit      true / fit       true / fit")
+    for i, pattern in enumerate(result["patterns"]):
+        print(f"{'AB'[i]}      200 / {pattern['pitch_nm']:.1f}     "
+              f"{[13, 104][i]:3} / {pattern['orientation_deg']:.1f}       "
+              f"{[.84, .88][i]:.2f} / {pattern['depth'][0]:.3f}")
+    print(f"Center A/B intensity ratio: true 1.12, fitted {result['ratio'][0]:.3f}")
+
+    fig, (pax, dax) = plt.subplots(1, 2, figsize=(10, 3.5), layout="constrained")
+    modes = np.arange(5, 12)
+    pax.bar(modes - .2, 1000 * np.array(truth["coef"]), .4, label="True")
+    pax.bar(modes + .2, 1000 * pupil.zcoef.detach().cpu().numpy().ravel(), .4, label="Fitted")
+    pax.set(xlabel="Noll index", ylabel="Zernike coefficient (mλ RMS)")
+    pax.legend()
+
+    u = np.linspace(-1, 1, 100)
+    for i, pattern in enumerate(result["patterns"]):
+        c = pattern["depth"]
+        color = f"C{i}"
+        x = (u + 1) / 2 * (movie.shape[2] - 1)
+        true = .84 + .06*(2*x/movie.shape[2]-1) if i == 0 else np.full_like(u, .88-.05/movie.shape[1])
+        dax.plot(x, true, "--", color=color, label=f"{'AB'[i]} true")
+        dax.plot(x, c[0] + c[1]*u + c[3]*u**2, color=color, label=f"{'AB'[i]} fitted")
+    dax.set(xlabel="Camera x (pixels), field midline", ylabel="Modulation depth")
+    dax.legend(ncol=2)
+    fig.savefig(out / "calibration.png", dpi=160)
+    plt.close(fig)
+    print(f"Saved figures and calibration to {out.resolve()}")
 
 
 if __name__ == "__main__":
