@@ -6,12 +6,13 @@ type Field = PatternField & { maps: Record<string, number>[] };
 
 export function fieldInspector(host: HTMLElement) {
   let x = 16, y = 16;
-  return (fit?: Field, truth?: Field) => {
+  return (fit?: Field, truth?: Field, preliminary=false) => {
     const field = fit ?? truth;
     host.hidden = !field;
     if (!field) return;
     host.innerHTML = '<h3>Modulation across the field</h3><div class="field-layout"><div class="field-tiles"></div><div><p class="field-position"></p><table class="field-values"></table></div></div>';
     const tiles = host.querySelector<HTMLElement>('.field-tiles')!;
+    if(preliminary)host.querySelector('h3')!.textContent='Preliminary modulation across the field';
     const table = host.querySelector<HTMLTableElement>('.field-values')!;
     const fields = [
       ...field.patterns.map((_,i) => ['depth_'+axisName(i), 'Depth '+axisName(i)]),

@@ -214,6 +214,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
+      if(truth)catalogs.set(file,{...(truth as ExampleTruth),psfs:psfs.slice(),drift:drift.slice()});
       installing = true;
       try {
         const movie=inputs.querySelector<HTMLInputElement>('[data-kind='+mode+'] input[type=file]')!;
@@ -223,7 +224,6 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         installing = false;
       }
       generated = file;
-      if(truth)catalogs.set(file,{...(truth as ExampleTruth),psfs:psfs.slice(),drift:drift.slice()});
       download.download=file.name;
       download.href = URL.createObjectURL(file);
       download.hidden = false;

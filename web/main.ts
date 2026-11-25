@@ -141,7 +141,9 @@ population.innerHTML = '<input class="random-beads" type="checkbox" checked> Uni
 document.querySelector('.pattern-order')!.append(population);
 const randomBeads = population.querySelector('input')!;
 try { randomBeads.checked = !document.cookie.split('; ').includes('simcode_random_beads=0'); } catch {}
+let uploadRandomBeads = randomBeads.checked;
 randomBeads.onchange = () => {
+  uploadRandomBeads = randomBeads.checked;
   try { document.cookie = 'simcode_random_beads='+Number(randomBeads.checked)+'; Max-Age=31536000; Path=/; SameSite=Lax'; } catch {}
 };
 const example = installMovieExample(settings, order,()=>framesPerStep.valueAsNumber);
@@ -219,6 +221,10 @@ function installSampleChoice() {
     const target=exampleBox.querySelector('.pitch-warning')!;
     target.after(example.aberrationControl,example.driftControl,example.densityControl,example.photonControls);
     example.select(selected[kind]);
+    const generated = !!example.truth();
+    randomBeads.checked = generated || uploadRandomBeads;
+    randomBeads.disabled = generated;
+    population.title = generated ? 'The example generator samples bead positions uniformly.' : '';
   }
   choose('slide',true);
 }

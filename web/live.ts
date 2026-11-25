@@ -261,9 +261,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
   let width = 0,
     height = 0;
   let inspectField: ReturnType<typeof fieldInspector>;
-  function displayPattern(fit?:DisplayField) {
+  function displayPattern(fit?:DisplayField, preliminary=false) {
     const actualField=volume?.field ?? truth?.modulation;
-    inspectField(fit,actualField);
+    inspectField(fit,actualField,preliminary);
     if(!actualField) return;
     const rows:[string, number,number|undefined][]=[];
     actualField.patterns.forEach((p,i)=>{
@@ -286,7 +286,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
 
   }
   function overlay(result: ReturnType<typeof modulation>, name: string) {
-    displayPattern(result);
+    displayPattern(result,name==='Preliminary fitted pattern');
     viewer.setPattern((x, y, t) => {
       const p = result.patterns[axisAt(t, schedule)],
         u = (2 * x) / (width - 1) - 1,
