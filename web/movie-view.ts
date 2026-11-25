@@ -39,20 +39,22 @@ export function movieView(
     total = 0;
   let schedule = defaultSchedule;
   let image: ImageData | undefined;
+  let region: {left:number; top:number; width:number; height:number} | undefined;
   function updateZoom() {
     const a = images[current];
     if (!a) return;
     const n = detail.width,
       side = Math.min(20, w, h);
-    const left = Math.max(0, Math.min(w - side, px * w - side / 2)),
-      top = Math.max(0, Math.min(h - side, py * h - side / 2));
+    const left = region?.left ?? Math.max(0, Math.min(w - side, px * w - side / 2)),
+      top = region?.top ?? Math.max(0, Math.min(h - side, py * h - side / 2));
     const rgba = zc.createImageData(n, n);
     for (let j = 0; j < n; j++)
       for (let i = 0; i < n; i++) {
-        const x = left + ((i + 0.5) * side) / n - 0.5,
-          y = top + ((j + 0.5) * side) / n - 0.5;
-        const ix = Math.min(canvas.width - 1, Math.floor(Math.max(0, Math.round(x)) / bin)),
-          iy = Math.min(canvas.height - 1, Math.floor(Math.max(0, Math.round(y)) / bin));
+        const x = left + ((i + 0.5) * (region?.width ?? side)) / n - (region ? 0 : 0.5),
+          y = top + ((j + 0.5) * (region?.height ?? side)) / n - (region ? 0 : 0.5);
+        const ix = Math.min(canvas.width - 1, region ? Math.max(0, Math.floor((x-(1-bin)/2)/bin)) : Math.floor(Math.max(0, Math.round(x)) / bin)),
+          iy = Math.min(canvas.height - 1, region ? Math.max(0, Math.floor((y-(1-bin)/2)/bin)) : Math.floor(Math.max(0, Math.round(y)) / bin));
+        if (x < -.5 || y < -.5 || x >= w-.5 || y >= h-.5) { rgba.data[4*(j*n+i)+3]=255; continue; }
         const gray = a[iy * canvas.width + ix],
           alpha = renderPattern?.(x, y, current) ?? 0;
         const blend = 0.53 * Math.max(0, Math.min(1, alpha)),
@@ -68,9 +70,9 @@ export function movieView(
         ? patternLabel + ' · ' + 'axis ' + axisAt(current, schedule) + ' · ' + Number(phaseDegrees(current, schedule).toFixed(2)) + '°'
         : 'Movie ROI · awaiting fitted pattern') +
       ' · x ' +
-      Math.round(left + side / 2) +
+      Math.round(left + (region?.width ?? side) / 2) +
       ', y ' +
-      Math.round(top + side / 2) +
+      Math.round(top + (region?.height ?? side) / 2) +
       ' px';
   }
   function show(i: number) {
@@ -111,12 +113,40 @@ export function movieView(
     { passive: false },
   );
   canvas.onpointermove = (e) => {
+    if (region) return;
     const b = canvas.getBoundingClientRect();
     px = (e.clientX - b.left) / b.width;
     py = (e.clientY - b.top) / b.height;
     updateZoom();
   };
   return {
+    setRegion(left:number, top:number, width:number, height:number) {
+      if (region && region.left===left && region.top===top && region.width===width && region.height===height) return;
+      region={left,top,width,height};
+      updateZoom();
+    },
+    onRegionGesture(change:(dx:number,dy:number,factor:number,anchorX:number,anchorY:number)=>void) {
+      let drag: {id:number;x:number;y:number} | undefined;
+      detail.style.touchAction='none';
+      detail.onpointerdown=e=>{
+        if (!region || e.button!==0) return;
+        drag={id:e.pointerId,x:e.clientX,y:e.clientY}; detail.setPointerCapture(e.pointerId);
+      };
+      detail.onpointermove=e=>{
+        if (drag?.id!==e.pointerId || !drag) return;
+        const box=detail.getBoundingClientRect();
+        change((e.clientX-drag.x)/box.width,(e.clientY-drag.y)/box.height,1,0,0);
+        drag.x=e.clientX; drag.y=e.clientY;
+      };
+      detail.onlostpointercapture=()=>{drag=undefined;};
+      detail.addEventListener('wheel',e=>{
+        if (!region) return;
+        e.preventDefault();
+        const box=detail.getBoundingClientRect();
+        change(0,0,Math.exp(Math.max(-1,Math.min(1,e.deltaY*.0015))),
+          (e.clientX-box.left)/box.width-.5,(e.clientY-box.top)/box.height-.5);
+      },{passive:false});
+    },
     processing(index: number, action: string) {
       last = index;
       stage = action;
@@ -180,6 +210,7 @@ export function movieView(
       updateZoom();
     },
     reset() {
+      region = undefined;
       images = [];
       ranges.length = 0;
       image = undefined;

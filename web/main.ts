@@ -32,7 +32,7 @@ mount(
       out.append(message);
       return;
     }
-    const result = modulation(r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined);
+    const result = modulation(r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined, true);
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');

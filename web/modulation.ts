@@ -80,7 +80,11 @@ function robust(x: number[][], y: number[]) {
   }
   return fit;
 }
-function carrier(r: PhotometrySnapshot, cs: number[][]) {
+export interface Spectrum {
+  overview: Float32Array; zoom: Float32Array; center: number[]; bin: number;
+}
+export const carrierSpectra = new WeakMap<object, Spectrum>();
+function carrier(r: PhotometrySnapshot, cs: number[][], capture?: (s: Spectrum) => void) {
   const amplitudes = cs.map((a) => Math.hypot(a[1], a[2])).sort((a, b) => a - b);
   const cap = Math.max(1, amplitudes[Math.floor(0.85 * amplitudes.length)]);
   const scale = 2,
@@ -115,6 +119,10 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
     }
     fft(col, ci);
     for (let y = 0; y < n; y++) {
+      if (capture) {
+        re[y*n+x] = col[y];
+        im[y*n+x] = ci[y];
+      }
       const fx = ((x < n / 2 ? x : x - n) * scale) / n,
         fy = ((y < n / 2 ? y : y - n) * scale) / n;
       if (Math.hypot(fx, fy) < 2 / Math.max(r.width, r.height)) continue;
@@ -152,9 +160,24 @@ function carrier(r: PhotometrySnapshot, cs: number[][]) {
         }
       }
   }
+  if (capture) {
+    const side = 128, zoomSide = 31;
+    const overview = new Float32Array(side * side), zoom = new Float32Array(zoomSide**2);
+    const bin = scale / n, center = k.map(v => Math.round(v / tau / bin));
+    for (let y=0; y<n; y++) for (let x=0; x<n; x++) {
+      const index = y*n+x;
+      const row = Math.floor(((y+n/2)%n)*side/n), col = Math.floor(((x+n/2)%n)*side/n);
+      overview[row*side+col] = Math.max(overview[row*side+col], Math.hypot(re[index],im[index]));
+    }
+    for (let y=0; y<zoomSide; y++) for (let x=0; x<zoomSide; x++) {
+      const i = ((center[1]+y-15+n)%n)*n + (center[0]+x-15+n)%n;
+      zoom[y*zoomSide+x] = Math.hypot(re[i],im[i]);
+    }
+    capture({overview,zoom,center:center.map(v=>v*bin),bin});
+  }
   return k;
 }
-export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth) {
+export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth, showSpectrum = false) {
   if (schedule.phases < 3) throw Error('The harmonic pattern fit requires three or more phase steps.');
   if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
@@ -182,8 +205,10 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
     };
     let cs = harmonic([0, 0]),
       k = carrier(r, cs);
+    let spectrum: Spectrum | undefined;
+    const capture = showSpectrum ? (s: Spectrum) => { spectrum = s; } : undefined;
     cs = harmonic(k);
-    k = carrier(r, cs);
+    k = carrier(r, cs, schedule.estimatePhases ? undefined : capture);
     cs = harmonic(k);
     if (schedule.estimatePhases) {
       // At a given slot the bead intensity is a sinusoid in spatial position.
@@ -241,7 +266,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
         baseline = cs.map((p) => p[0]);
         if (change < 1e-4) break;
       }
-      k = carrier(r, cs);
+      k = carrier(r, cs, capture);
       cs = harmonic(k);
     }
     const valid = cs
@@ -283,7 +308,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       }
     }
     means.push(cs.map((a) => a[0]));
-    return {
+    const pattern = {
       phase_steps_rad: steps,
       kx_rad_px: k[0],
       ky_rad_px: k[1],
@@ -296,6 +321,8 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       depth_tiles: depthTiles,
       beads: valid.length,
     };
+    if (spectrum) carrierSpectra.set(pattern, spectrum);
+    return pattern;
   });
   const ratios = means.slice(1).map((denom) => {
     const valid = r.xy.map((_, i) => (means[0][i] > 1 && denom[i] > 1 ? i : -1)).filter((i) => i >= 0);

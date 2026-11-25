@@ -187,7 +187,9 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     const left = width/2 + cloud.cx/pixelNm - W*scale/2 + d[0];
     const top = height/2 + cloud.cy/pixelNm - H*scale/2 + d[1];
     const ctx = cameraLayer.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0,0,W,H);
+    viewer.setRegion(left, top, W*scale, H*scale);
     const {canvas, bin} = viewer.display();
     // Each preview sample is taken at the first camera pixel of its bin.
     const edge = (1-bin)/2;
@@ -389,6 +391,13 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
         i => { selectedFrame = i; registerFrame(); if(motionFrames) drawMotion(motionFrames); },
         !!session,
       );
+      viewer.onRegionGesture((dx,dy,factor,anchorX,anchorY) => {
+        if (!cloud || orbit || !renderedPositions) return;
+        cloud.cx += (anchorX*(1-factor)-dx)*cloudCanvas.width*cloud.scale;
+        cloud.cy += (anchorY*(1-factor)-dy)*cloudCanvas.height*cloud.scale;
+        cloud.scale *= factor;
+        cloud.request();
+      });
       const frame = viewer.display().canvas;
       const wrap = document.createElement('div');
       wrap.className = 'movie-with-roi';
@@ -491,7 +500,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       positions(snapshot);
       if (schedule.phases < 3) return;
       try {
-        overlay(modulation(snapshot, schedule, imageDepth), 'Preliminary fitted pattern');
+        overlay(modulation(snapshot, schedule, imageDepth, true), 'Preliminary fitted pattern');
       } catch {
         /* A later exposure group can resolve an underdetermined pattern. */
       }
