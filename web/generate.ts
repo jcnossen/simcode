@@ -9,7 +9,7 @@ import type { Acquisition } from './settings';
 export const size = 400,
   defaultFrameCount = 40;
 export const defaultBeadDensity = 1.5975; // beads per square micrometre
-export const defaultPitchNm = 200;
+export const defaultPitchNm = 240;
 export const angleAt = (i: number, axes: number) => axes === 2 ? [13, 104][i] : 13 + 180 * i / axes;
 export function depthAt(dir: number, u: number, v: number) {
   return dir ? 0.88 + 0.05 * v : 0.84 + 0.06 * u;

@@ -316,3 +316,5 @@ main #inputs { display:grid; grid-template-columns:minmax(0,1fr); }
 
 .example-density { display:inline-flex; align-items:center; gap:.4rem; margin:.5rem; }
 .example-density input { width:6rem; }
+
+.pitch-warning { color: #934913; margin: .25rem 0 .5rem; }

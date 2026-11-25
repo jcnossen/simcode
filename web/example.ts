@@ -19,8 +19,30 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-pitch example-density">True illumination pitch (nm) <input type="number" min="0" step="any" value="${defaultPitchNm}" required form="generated-movie-options"></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
+  const pitchControl = view.querySelector<HTMLLabelElement>('.example-pitch')!;
+  const excitation = document.createElement('label');
+  excitation.className = 'example-density';
+  excitation.innerHTML = 'Excitation wavelength (nm) <input type="number" min="0" step="any" value="642" form="generated-movie-options">';
+  const laser = excitation.querySelector('input')!;
+  const warning = document.createElement('p');
+  warning.className = 'pitch-warning';
+  warning.id = 'pitch-warning';
+  warning.setAttribute('aria-live','polite');
+  pitchControl.before(excitation);
+  pitchControl.after(warning);
   const pitchInput = view.querySelector<HTMLInputElement>('.example-pitch input')!;
-  pitchInput.oninput = () => pitchInput.setCustomValidity('');
+  pitchInput.setAttribute('aria-describedby', warning.id);
+  function checkPitch() {
+    let na=NaN;
+    try { na=settings().na; } catch { /* Incomplete acquisition settings. */ }
+    const minPitch=laser.valueAsNumber/(2*na), pitch=pitchInput.valueAsNumber;
+    warning.hidden=!(minPitch>0 && Number.isFinite(minPitch) && pitch>0 && pitch<minPitch);
+    warning.textContent=warning.hidden ? '' : `Pitch ${pitch} nm is below the two-beam illumination limit of ${minPitch.toFixed(1)} nm at ${laser.valueAsNumber} nm excitation and NA ${na}. Pattern recovery may be unreliable.`;
+  }
+  pitchInput.oninput = () => { pitchInput.setCustomValidity(''); checkPitch(); };
+  laser.oninput=checkPitch;
+  document.querySelector('#settings')!.addEventListener('input',checkPitch);
+  checkPitch();
   const aberrationControl = view.querySelector<HTMLLabelElement>('.example-aberration')!;
   const strength = aberrationControl.querySelector('input')!;
   const photonControls = view.querySelector<HTMLElement>('.example-photons')!;

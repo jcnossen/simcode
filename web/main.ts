@@ -216,7 +216,7 @@ function installSampleChoice() {
     main.classList.toggle('stack-selected',scan);
     framesPerStep.disabled=step.disabled=!scan;
     example.setMode(kind);
-    const target=exampleBox.querySelector('.example-pitch')!;
+    const target=exampleBox.querySelector('.pitch-warning')!;
     target.after(example.aberrationControl,example.driftControl,example.densityControl,example.photonControls);
     example.select(selected[kind]);
   }
