@@ -29,6 +29,30 @@ from torch_psf import DenseBeadEstimator
 from torch_psf.psfzip import save_zip
 
 
+def estimate_modulation(movie, fit, optics, schedule, *, random_beads=True):
+    """Estimate field maps from the fitted bead traces and optional random-field image power."""
+    # Compile the shared TypeScript estimator using TorchPSF's web dependencies.
+    package = Path(torch_psf.__file__).resolve().parents[1] / "web/node_modules/esbuild"
+    if not package.is_dir():
+        raise RuntimeError("Install TorchPSF in editable mode and run npm ci --prefix ../torch-psf/web.")
+    with TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        cli = work / "modulation.cjs"
+        source = Path(__file__).with_name("bead_slide_modulation.ts")
+        subprocess.run(["node", "-e",
+                        "require(process.argv[1]).buildSync({entryPoints:[process.argv[2]],"
+                        "platform:'node',bundle:true,outfile:process.argv[3]})",
+                        str(package), str(source), str(cli)], check=True)
+        snapshot = dict(width=movie.shape[2], height=movie.shape[1], xy=fit.xy.tolist(),
+                        intensity=fit.photons.tolist(), drift=fit.drift.tolist(),
+                        settings=dict(diameterNm=1000 * optics["diameter_um"], optics=optics))
+        (work / "input.json").write_text(json.dumps(dict(snapshot=snapshot, schedule=schedule)))
+        if random_beads:
+            movie.astype("<f4", copy=False).tofile(work / "pixels.f32")
+        subprocess.run(["node", str(cli), str(work), str(work / "modulation.json")], check=True)
+        return json.loads((work / "modulation.json").read_text())
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("movie", type=Path)
@@ -59,35 +83,19 @@ def main():
     optics = dict(pixel_um=args.pixel_nm / 1000, diameter_um=args.diameter_nm / 1000,
                   wavelength_um=args.wavelength_nm / 1000, NA=args.na,
                   n_med=args.sample_index, n_imm=args.immersion_index, focus_um=0.1)
-    # Compile the shared TypeScript estimator using TorchPSF's web dependencies.
-    package = Path(torch_psf.__file__).resolve().parents[1] / "web/node_modules/esbuild"
-    if not package.is_dir():
-        p.error("Install TorchPSF in editable mode and run npm ci --prefix ../torch-psf/web.")
     args.output.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        cli = work / "modulation.cjs"
-        source = Path(__file__).with_name("bead_slide_modulation.ts")
-        subprocess.run(["node", "-e",
-                        "require(process.argv[1]).buildSync({entryPoints:[process.argv[2]],"
-                        "platform:'node',bundle:true,outfile:process.argv[3]})",
-                        str(package), str(source), str(cli)], check=True)
-        fit = DenseBeadEstimator.fit_movie(movie, np.arange(len(movie)) % period, optics=optics, radius=6)
-        cfg = getattr(getattr(fit.psf, "optic", None), "cfg", {})
-        if cfg.get("calibrated_psf") is None:
-            raise ValueError("The movie did not yield a calibrated pupil. Check focus diversity and phase order.")
-        save_zip(str(args.output / "psf.zip"), cfg["calibrated_psf"])
-        np.savez_compressed(args.output / "bead-fit.npz", xy_px=fit.xy, photons=fit.photons,
-                            drift_xy_px=fit.drift, drift_z_um=fit.axial_drift_um, background=fit.background)
-        snapshot = dict(width=movie.shape[2], height=movie.shape[1], xy=fit.xy.tolist(),
-                        intensity=fit.photons.tolist(), drift=fit.drift.tolist(),
-                        settings=dict(diameterNm=args.diameter_nm, optics=optics))
-        schedule = dict(axes=args.axes, phases=args.phases, interleaved=args.interleaved,
-                        estimatePhases=args.estimate_phases)
-        (work / "input.json").write_text(json.dumps(dict(snapshot=snapshot, schedule=schedule)))
-        if not args.structured_beads:
-            movie.astype("<f4", copy=False).tofile(work / "pixels.f32")
-        subprocess.run(["node", str(cli), str(work), str(args.output / "modulation.json")], check=True)
+    fit = DenseBeadEstimator.fit_movie(movie, np.arange(len(movie)) % period, optics=optics, radius=6)
+    cfg = getattr(getattr(fit.psf, "optic", None), "cfg", {})
+    if cfg.get("calibrated_psf") is None:
+        raise ValueError("The movie did not yield a calibrated pupil. Check focus diversity and phase order.")
+    save_zip(str(args.output / "psf.zip"), cfg["calibrated_psf"])
+    np.savez_compressed(args.output / "bead-fit.npz", xy_px=fit.xy, photons=fit.photons,
+                        drift_xy_px=fit.drift, drift_z_um=fit.axial_drift_um, background=fit.background)
+    schedule = dict(axes=args.axes, phases=args.phases, interleaved=args.interleaved,
+                    estimatePhases=args.estimate_phases)
+    result = estimate_modulation(movie, fit, optics, schedule, random_beads=not args.structured_beads)
+    (args.output / "modulation.json").write_text(json.dumps(result, indent=2))
+
 
 
 if __name__ == "__main__":
