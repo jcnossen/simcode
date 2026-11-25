@@ -103,8 +103,12 @@ def estimate_modulation(movie, fit, optics, random_beads=False):
     refit = not random_beads and cfg.get("calibrated_psf") is not None and axial is not None
     if refit:
         from bead_pixel_photometry import exposure_phases, refine_photometry
-        xy, flux = refine_photometry(movie, fit, cfg["calibrated_psf"],
-                                     cfg["focus_um"]+axial, optics["diameter_um"])
+        moving = len(movie) >= 8 and optics.get("frames_per_step") is None and optics.get("frame_focus_offsets_um") is None
+        refined = refine_photometry(movie, fit, cfg["calibrated_psf"], cfg["focus_um"]+axial,
+                                    optics["diameter_um"], refine_motion=moving)
+        xy, flux = refined[:2]
+        if moving:
+            drift = refined[2]
     field = basis(xy, w, h)
     frames = torch.arange(len(movie))
     patterns, means = [], []

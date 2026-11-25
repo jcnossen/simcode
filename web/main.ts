@@ -26,6 +26,10 @@ mount(
     const fit=await refinePhotometry((await getDevice()).device,file,r,
       (message,fraction)=>{document.querySelector('[role=status]')!.textContent=message;estimator.refinementProgress(fraction);});
     estimator.positions(fit);
+    const pixelNm=fit.settings.optics.pixel_um*1000;
+    const relativeMotionNm=fit.drift.map(row=>row.map((v,j)=>
+      (v-fit.drift[0][j])*(j<2?pixelNm:1)));
+    estimator.drift(relativeMotionNm,simulation()?.drift);
     const old=out.querySelector<HTMLAnchorElement>('a[download="bead-fit.json"]');
     if(old){
       const href=URL.createObjectURL(new Blob([JSON.stringify({...fit,

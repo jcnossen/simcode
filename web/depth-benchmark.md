@@ -15,6 +15,32 @@ To isolate the photometry port, Python also started from the browser's fitted pu
 
 TIFF SHA-256 digests are `94ccf7aa9e702e756313db1db22a7dcd06be8f2d2feff0b30c7d8bfb9551770e` (random slide) and `1844dffef7f370dc06b92dc9cb4689ad519f67ceba2f1d56af2b9b5980c43cf5` (annulus).
 
+## Ring upstream-input swap, 240 nm
+
+Each row replays the same ring TIFF with the original six-pass Python photometry and phase fit. The two upstream catalogs each contained 425 beads. The swap preserves camera coordinates by transferring the mean XY drift into catalog positions. Depth is averaged at the same 495 simulated bead locations, used only for scoring.
+
+| Python input substituted into the WebGPU fit | A | B |
+|---|---:|---:|
+| None | 0.82235 | 0.86416 |
+| Catalog (positions and starting photons) | 0.82342 | 0.86472 |
+| Pupil | 0.82126 | 0.86187 |
+| Lateral drift only | 0.82399 | 0.86857 |
+| Focus only | 0.83043 | 0.87235 |
+| Full XYZ trace | 0.83334 | 0.87415 |
+| All inputs | 0.83437 | 0.87478 |
+
+A separate positions-only swap initialized every bead at 5,000 photons in each exposure. Changing WebGPU positions to Python positions moved A/B from 0.82243/0.86388 to 0.82342/0.86472.
+
+The corrected slide fitter updates one shared XYZ translation per exposure during overlapping-bead photometry. It sums the derivatives of all bead footprints at each camera pixel before forming the weighted three-parameter normal equations. A 20 nm axial interpolation grid supplies the focus derivative. Residual detection waits until six passes of motion and catalog fitting, with a final fixed-geometry photon fit on pass 12. The pupil is fixed during these updates.
+
+| Ring | A | B |
+|---|---:|---:|
+| Simulated | 0.83830 | 0.87938 |
+| Corrected native Python | 0.82593 | 0.86650 |
+| Corrected browser upload | 0.82681 | 0.86679 |
+
+Centered motion RMS errors in X/Y/Z fell from 25.2/15.7/47.9 nm to 1.8/3.3/2.0 nm in the browser. The remaining mean-depth underestimate is shared. The original Python fit had smaller depth bias on this movie despite its less accurate motion. The unchanged random-slide TIFF gave corrected WebGPU means of 0.84426/0.88625 against truth 0.83877/0.88053.
+
 ## Earlier 200 nm benchmark
 
 The comparison uses one 400 × 400 field containing 12,000 stationary 40 nm beads at independent uniform XY positions, simulated with the web example (LCG seed 557), 108.33 nm camera pixels and a 200 nm illumination pitch. Each 100-frame movie uses two axes and three equally spaced phases per axis. The two axial excursions share the bead locations, brightnesses, aberrations and illumination parameters. Within each column, every recovery uses the same noisy TIFF.

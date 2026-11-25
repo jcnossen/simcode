@@ -1,3 +1,4 @@
+import {solve} from 'torch-web/fit/linalg';
 import {VecEngine} from 'torch-web/gpu/ops';
 import {TiffMovie} from 'torch-web/io/tiff';
 import type {MovieFit} from 'torch-dense/movie';
@@ -72,6 +73,35 @@ function beadStats(w:number,h:number,geometry:boolean){
   }`;
 }
 
+// Weighted normal equations for one shared translation of all footprints.
+// Z is measured in optical grid steps (20 nm) to keep the solve well scaled.
+function motionStats(w:number,h:number){
+  return bind(0,'tiles','u32')+bind(1,'geom','vec4f')+bind(2,'K','f32')+
+    bind(3,'dZ','f32')+bind(4,'beads','vec2f')+bind(5,'pixel','vec4f')+
+    bind(6,'stats','f32',true)+thread+`
+    if(i*256u>=arrayLength(&pixel)){return;}
+    var acc:array<f32,9>;
+    for(var j=i*256u;j<min(arrayLength(&pixel),(i+1u)*256u);j++){
+      let pos=vec2i(vec2u(j%${w}u,j/${w}u));
+      let tile=u32(pos.y/16)*${Math.ceil(w/16)}u+u32(pos.x/16);
+      var g=vec3f(0.);
+      for(var b=tiles[tile];b<tiles[tile+1u];b++){
+        let n=tiles[b];let d=pos-vec2i(geom[n].xy)+13;
+        if(any(d<vec2i(0)) || any(d>=vec2i(27))){continue;}
+        let k=n*729u+u32(d.y*27+d.x);
+        let l=select(1u,0u,d.x==0);let r=select(1u,0u,d.x==26);
+        let u=select(27u,0u,d.y==0);let v=select(27u,0u,d.y==26);
+        g+=beads[n].x*vec3f((K[k-l]-K[k+r])/f32(l+r),(K[k-u]-K[k+v])/f32((u+v)/27u),dZ[k]);
+      }
+      let p=pixel[j];let wg=p.y*g;
+      for(var a=0u;a<3u;a++){acc[a]+=wg[a]*p.x;}
+      acc[3]+=wg.x*g.x;acc[4]+=wg.x*g.y;acc[5]+=wg.x*g.z;
+      acc[6]+=wg.y*g.y;acc[7]+=wg.y*g.z;acc[8]+=wg.z*g.z;
+    }
+    for(var a=0u;a<9u;a++){stats[9u*i+a]=acc[a];}
+  }`;
+}
+
 function partial(direction:boolean){
   return bind(0,'pixel','vec4f')+bind(1,'part','vec2f',true)+thread+`
     if(i>=arrayLength(&part)){return;}var acc=vec2f(0.);
@@ -89,7 +119,7 @@ const zeroBg=bind(0,'state','f32',true)+thread+'if(i==0u){state[1]=0.;}}';
 const update=bind(0,'beads','vec2f',true)+bind(1,'state','f32')+thread+
   'if(i<arrayLength(&beads)){beads[i].x+=state[2]*beads[i].y;}}';
 
-async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,xy:number[][],motion:number[],initial:number[],w:number,h:number,needResidual:boolean){
+async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,xy:number[][],motion:number[],initial:number[],w:number,h:number,needResidual:boolean,axialDerivative?:Float32Array){
   const n=xy.length,cols=Math.ceil(w/16),rows=Math.ceil(h/16);
   const lists=Array.from({length:cols*rows},()=>[] as number[]);
   const geom=new Float32Array(n*4),beads=new Float32Array(n*2);
@@ -124,10 +154,24 @@ async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,x
       run(projection(w,h,true),proj,w*h);
       run(partial(true),[P,Q],chunks);run(total(true),[Q,S],1);run(update,[F,S],n);
     }
+    let motionNormal:GPUBuffer|undefined;
+    if(axialDerivative){
+      const axialStamps=buf(n*area*4);
+      run(stamps,[buf(axialDerivative),G,axialStamps],n*64);
+      motionNormal=buf(9*chunks*4);
+      run(motionStats(w,h),[T,G,K,axialStamps,F,P,motionNormal],chunks);
+    }
     gpu.device.queue.submit([enc.finish()]);
     const [params,normal,state]=await Promise.all([gpu.read(F),gpu.read(N),gpu.read(S)]);
     const residual=needResidual?await gpu.read(P):undefined;
-    return {flux:Array.from({length:n},(_,i)=>params[2*i]),normal,residual,background:state[0]};
+    let step:number[]|undefined;
+    if(motionNormal){
+      const parts=await gpu.read(motionNormal),sum=new Float64Array(9);
+      for(let i=0;i<parts.length;i++)sum[i%9]+=parts[i];
+      const [x,y,z,a,b,c,d,e,f]=sum;
+      step=Array.from(solve(Float64Array.of(a+1,b,c,b,d+1,e,c,e,f+1),Float64Array.of(x,y,z),3));
+    }
+    return {step,flux:Array.from({length:n},(_,i)=>params[2*i]),normal,residual,background:state[0]};
   }finally{buffers.forEach(b=>b.destroy());}
 }
 
@@ -179,44 +223,66 @@ export async function refinePhotometry(device:GPUDevice,file:File,fit:MovieFit,l
   const {width:w,height:h,model,settings}=fit;
   if(movie.n!==fit.drift.length||movie.W!==w||movie.H!==h)throw Error('The photometry catalog and movie dimensions differ.');
   const engine=new VecEngine(device,{...model.optics,roisize:33,npupil:model.npupil,oversample:model.oversample,zernike_noll:model.noll},[],{maxChunk:48});
-  const banks:Float32Array[]=[];
+  const drift=fit.drift.map(row=>row.slice());
+  const trackMotion=settings.framesPerStep===undefined && movie.n>=8;
+  const grid=new Map<number,Float32Array>();
+  const focusStepNm=20;
+  async function opticalPlane(z:number){
+    if(!grid.has(z))grid.set(z,await opticalBank(engine,fit,z));
+    return grid.get(z)!;
+  }
   try{
     engine.setZernike(model.zcoef);
-    for(const drift of fit.drift)banks.push(await opticalBank(engine,fit,drift[2]));
-  }finally{engine.destroy();}
-  const xy=fit.xy.map(p=>p.slice()),intensity=fit.intensity.map(row=>row.slice()),background=fit.background.slice();
-  for(let round=0;round<6;round++){
-    const normal=new Float64Array(5*xy.length);
-    const residual=round===1?new Float32Array(h*w):undefined;
-    for(let t=0;t<movie.n;t++){
-      log('Refining bead photometry · pass '+(round+1)+' / 6 · frame '+(t+1)+' / '+movie.n,(round+t/movie.n)/6);
-      const image=await movie.read(t,t+1);
-      for(let i=0;i<image.length;i++)image[i]=Math.max(0,(image[i]-settings.offset)*settings.gain);
-      device.pushErrorScope('validation');
-      let r;
-      try{r=await exposure(gpu,banks[t],image,xy,fit.drift[t],intensity[t],w,h,!!residual);}
-      finally{const err=await device.popErrorScope();if(err)throw Error(err.message);}
-      intensity[t]=r.flux;
-      background[t]=r.background;
-      for(let i=0;i<normal.length;i++)normal[i]+=r.normal[i];
-      if(residual && r.residual)addRegistered(residual,r.residual,w,h,fit.drift[t][0],fit.drift[t][1],movie.n);
-    }
-    if(round===5)break;
-    xy.forEach((p,j)=>{
-      const [gx,gy,a,b,c]=normal.subarray(5*j,5*j+5);
-      const det=Math.max(1e-8,a*c-b*b);
-      p[0]+=Math.max(-.5,Math.min(.5,(c*gx-b*gy)/det));
-      p[1]+=Math.max(-.5,Math.min(.5,(a*gy-b*gx)/det));
-    });
-    if(residual){
-      const peaks=residualPeaks(residual,w,h,xy);
-      if(peaks.length){
-        const sorted=Float32Array.from(intensity.flat()).sort();
-        const initial=.25*Math.max(1,sorted[(sorted.length-1)>>1]);
-        for(const p of peaks)xy.push(p);
-        for(const row of intensity)for(let j=0;j<peaks.length;j++)row.push(initial);
+    const xy=fit.xy.map(p=>p.slice()),intensity=fit.intensity.map(row=>row.slice()),background=fit.background.slice();
+    // Let motion settle before treating registered residual peaks as missing beads.
+    const passes=trackMotion?12:6;
+    for(let round=0;round<passes;round++){
+      const normal=new Float64Array(5*xy.length);
+      const residual=round===(trackMotion?5:1)?new Float32Array(h*w):undefined;
+      for(let t=0;t<movie.n;t++){
+        log('Refining bead photometry · pass '+(round+1)+' / '+passes+' · frame '+(t+1)+' / '+movie.n,(round+t/movie.n)/passes);
+        const image=await movie.read(t,t+1);
+        for(let i=0;i<image.length;i++)image[i]=Math.max(0,(image[i]-settings.offset)*settings.gain);
+        device.pushErrorScope('validation');
+        let r;
+        try{
+          const z=drift[t][2];
+          let bank:Float32Array,derivative:Float32Array|undefined;
+          if(trackMotion){
+            const lo=Math.floor(z/focusStepNm)*focusStepNm,alpha=(z-lo)/focusStepNm;
+            const low=await opticalPlane(lo),high=await opticalPlane(lo+focusStepNm);
+            bank=low.map((v,i)=>v+alpha*(high[i]-v));
+            if(round<passes-1)derivative=high.map((v,i)=>v-low[i]);
+          }else bank=await opticalPlane(z);
+          r=await exposure(gpu,bank,image,xy,drift[t],intensity[t],w,h,!!residual,derivative);
+        }
+        finally{const err=await device.popErrorScope();if(err)throw Error(err.message);}
+        intensity[t]=r.flux;
+        background[t]=r.background;
+        for(let i=0;i<normal.length;i++)normal[i]+=r.normal[i];
+        if(residual && r.residual)addRegistered(residual,r.residual,w,h,drift[t][0],drift[t][1],movie.n);
+        if(r.step)for(let j=0;j<3;j++){
+          const bound=j===2?2:.4;
+          drift[t][j]+=.8*Math.max(-bound,Math.min(bound,r.step[j]))*(j===2?focusStepNm:1);
+        }
+      }
+      if(round===passes-1)break;
+      xy.forEach((p,j)=>{
+        const [gx,gy,a,b,c]=normal.subarray(5*j,5*j+5);
+        const det=Math.max(1e-8,a*c-b*b);
+        p[0]+=Math.max(-.5,Math.min(.5,(c*gx-b*gy)/det));
+        p[1]+=Math.max(-.5,Math.min(.5,(a*gy-b*gx)/det));
+      });
+      if(residual){
+        const peaks=residualPeaks(residual,w,h,xy);
+        if(peaks.length){
+          const sorted=Float32Array.from(intensity.flat()).sort();
+          const initial=.25*Math.max(1,sorted[(sorted.length-1)>>1]);
+          for(const p of peaks)xy.push(p);
+          for(const row of intensity)for(let j=0;j<peaks.length;j++)row.push(initial);
+        }
       }
     }
-  }
-  return {...fit,xy,intensity,background,backgroundSlopes:undefined};
+    return {...fit,xy,intensity,background,drift,backgroundSlopes:undefined};
+  }finally{engine.destroy();}
 }

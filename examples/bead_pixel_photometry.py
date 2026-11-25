@@ -27,7 +27,7 @@ def _phase_bank(pupil, diameter_um, focus_um):
     return bank
 
 
-def _exposure(image, xy, bank, initial):
+def _exposure(image, xy, bank, initial, axial=None):
     device = image.device
     h, w = image.shape
     side = bank.shape[-1]
@@ -75,39 +75,67 @@ def _exposure(image, xy, bank, initial):
     rhs = torch.stack([(g*wr).sum(1)*flux for g in (gx, gy)], 1)
     gram = torch.stack([(g*l*weight[pixel]).sum(1)*flux.square()
                         for g, l in ((gx, gx), (gx, gy), (gy, gy))], 1)
-    return flux, rhs, gram, residual.reshape(h, w)
+    step = None
+    if axial is not None:
+        dz = torch.lerp(torch.lerp(axial[iy, ix], axial[iy, ix+1], dx),
+                        torch.lerp(axial[iy+1, ix], axial[iy+1, ix+1], dx), dy)
+        jac = torch.stack([project(flux[:, None]*g) for g in (gx, gy, dz.flatten(1)*valid)])
+        normal = (jac*weight)@jac.T + torch.eye(3, device=device)
+        step = torch.linalg.solve(normal, jac@(weight*residual))
+    return flux, rhs, gram, residual.reshape(h, w), step
 
 
 @torch.no_grad()
-def refine_photometry(movie, fit, pupil, focus_um, diameter_um):
-    """Return refined XY and time-by-bead photons; inputs are never modified."""
+def refine_photometry(movie, fit, pupil, focus_um, diameter_um, *, refine_motion=False):
+    """Optionally return refined XY drift and absolute focus with the catalog and photons."""
     device = pupil.dev
     xy = torch.as_tensor(fit.xy, device=device, dtype=torch.float32).clone()
     flux = torch.as_tensor(fit.photons, device=device, dtype=torch.float32).clone()
     drift = torch.as_tensor(fit.drift, device=device, dtype=torch.float32)
-    bank = _phase_bank(pupil, diameter_um, focus_um)
-    for iteration in range(6):
+    drift = drift.clone()
+    focus = np.array(focus_um, dtype=float, copy=True)
+    planes = {}
+    def plane(z):
+        if z not in planes:
+            planes[z] = _phase_bank(pupil, diameter_um, [z])[0]
+        return planes[z]
+    passes = 12 if refine_motion else 6
+    detect_pass = 5 if refine_motion else 1
+    for iteration in range(passes):
         rhs = torch.zeros_like(xy)
         gram = xy.new_zeros(len(xy), 3)
-        if iteration == 1:
+        if iteration == detect_pass:
             mean_residual = np.zeros(tuple(movie.shape[1:]), dtype=np.float32)
         for t, frame in enumerate(movie):
             image = torch.as_tensor(frame, device=device, dtype=torch.float32)
-            flux[t], gradient, curvature, residual = _exposure(
-                image, xy+drift[t], bank[t].to(device), flux[t])
+            axial = None
+            if refine_motion:
+                z = focus[t]/.02
+                lo = int(np.floor(z))
+                low, high = plane(.02*lo).to(device), plane(.02*(lo+1)).to(device)
+                kernel = torch.lerp(low, high, z-lo)
+                if iteration < passes-1:
+                    axial = high-low
+            else:
+                kernel = plane(focus[t]).to(device)
+            flux[t], gradient, curvature, residual, step = _exposure(
+                image, xy+drift[t], kernel, flux[t], axial)
             rhs += gradient
             gram += curvature
-            if iteration == 1:
+            if iteration == detect_pass:
                 mean_residual += ndimage.shift(residual.cpu().numpy(),
                     -drift[t].flip(0).cpu().numpy(), order=1)/len(movie)
-        if iteration == 5:
+            if step is not None:
+                drift[t] += .8*step[:2].clamp(-.4,.4)
+                focus[t] += .016*float(step[2].clamp(-2,2))
+        if iteration == passes-1:
             break
         a, b, c = gram.T
         det = (a*c-b*b).clamp_min(1e-8)
         delta = torch.stack([(c*rhs[:, 0]-b*rhs[:, 1])/det,
                              (a*rhs[:, 1]-b*rhs[:, 0])/det], 1)
         xy += delta.clamp(-.5, .5)
-        if iteration == 1:
+        if iteration == detect_pass:
             score = ndimage.gaussian_filter(mean_residual, .9) - ndimage.gaussian_filter(mean_residual, 3)
             threshold = max(3., 5*np.median(abs(score-np.median(score))))
             y, x = np.where((score == ndimage.maximum_filter(score, 3)) & (score > threshold))
@@ -117,7 +145,10 @@ def refine_photometry(movie, fit, pupil, focus_um, diameter_um):
                 xy = torch.cat([xy, xy.new_tensor(peaks)])
                 initial = flux.median().clamp_min(1)*.25
                 flux = torch.cat([flux, initial.expand(len(movie), len(peaks))], 1)
-    return xy.cpu().double(), flux.cpu().double()
+    result = xy.cpu().double(), flux.cpu().double()
+    if refine_motion:
+        return (*result, drift.cpu().double(), focus)
+    return result
 
 
 def exposure_phases(flux, nominal):
