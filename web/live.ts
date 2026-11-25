@@ -3,7 +3,7 @@ import type { PatternField } from './pattern-field';
 import { moviePupilReport } from 'torch-dense/report';
 import { fitProgress } from './fit-progress';
 import { fieldInspector } from './field-inspector';
-import { MovieDepth } from './movie-depth';
+
 import { PointCloudView } from 'torch-web/ui/pointcloud';
 import { NCOL } from 'torch-web/smlm/movie';
 import { drawZernikeSets } from 'torch-web/ui/zernike-bars';
@@ -224,7 +224,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
     Object.assign(marker.style,{left:100*(x0-edge)/(canvas.width*bin)+'%',top:100*(y0-edge)/(canvas.height*bin)+'%',
       width:100*(x1-x0)/(canvas.width*bin)+'%',height:100*(y1-y0)/(canvas.height*bin)+'%'});
   }
-  let imageDepth: MovieDepth | undefined;
+
   let device: GPUDevice;
   let cloud: PointCloudView | undefined;
   let renderedPositions: number[][] | undefined;
@@ -328,15 +328,16 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       }),1);
     },
     setDimensions(w:number,h:number){ width=w; height=h; },
+    refinementProgress(fraction:number){progress.update(4,fraction);},
     output: () => panel,
-    depthData: () => imageDepth,
+
     period: () => schedule.axes * schedule.phases,
     start(session?: VolumeSession) {
       volume=session; orbit=!!session;
       progress=session?.progress ?? slideProgress;
       selectedFrame=0;
       zRange=[0,1]; trueMotion=undefined; motionFrames=0;
-      imageDepth = undefined;
+
       schedule = getOrder();
       truth = session ? undefined : getTruth();
       panel = document.querySelector<HTMLElement>('.estimator-live') ?? document.createElement('section');
@@ -480,10 +481,6 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       progress.update(stage==='read'?0:3,(index-1)/total);
       width = widthArg;
       height = heightArg;
-      if (stage==='read' && schedule.phases>=3) {
-        imageDepth ??= new MovieDepth(width,height,schedule);
-        imageDepth.add(pixels,index-1);
-      }
       viewer.frame(pixels, width, height, index - 1, total, stage === 'fit' ? 'Fitting' : 'Reading');
     },
     status(message:string) {
@@ -499,7 +496,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       positions(snapshot);
       if (schedule.phases < 3) return;
       try {
-        overlay(modulation(snapshot, schedule, imageDepth, true), 'Preliminary fitted pattern');
+        overlay(modulation(snapshot, schedule, undefined, true), 'Preliminary fitted pattern');
       } catch {
         /* A later exposure group can resolve an underdetermined pattern. */
       }

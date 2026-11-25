@@ -295,7 +295,7 @@ export function gelView(estimator:ReturnType<typeof liveEstimator>, acquisition:
             displayOffset=a.offset;
             const optics = {pixel_um:a.pixelNm/1000, NA:a.na, wavelength_um:a.wavelengthNm/1000, n_imm:a.immersionIndex, n_med:a.sampleIndex};
             getWorker().postMessage({ action, settings:{optics,diameterUm:a.diameterNm/1000}, acquisition:a, schedule:schedule(),
-                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons(),driftNm:readDriftNm()} : {}), count:action==='generate'?readCount(64):undefined, planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:document.querySelector<HTMLInputElement>('.random-beads')!.checked });
+                ...(action === 'generate' ? {aberration:readAberration(),photons:readPhotons(),driftNm:readDriftNm()} : {}), count:action==='generate'?readCount(64):undefined, planes:val('planes'), movie:uploaded, stack, gain:a.gain, offset:a.offset, randomGel:action==='generate'||!!truth });
         }
         catch (e) {
             busy = false;

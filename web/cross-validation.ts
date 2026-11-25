@@ -3,9 +3,9 @@ import {refineRawPupil} from 'torch-dense/raw-pupil';
 import { getDevice } from 'torch-web/gpu/device';
 import { TiffMovie } from 'torch-web/io/tiff';
 import { tiffStackBlob } from 'torch-web/psfgrab/tiffstack';
-import { MovieDepth } from './movie-depth';
-import {movieModulation} from './dense-slide';
-import { modulation } from './modulation';
+
+import {refinePhotometry} from './pixel-photometry';
+import { modulation, refinedModulation } from './modulation';
 import { axisAt, phaseAt, type Schedule } from './schedule';
 
 type Pattern = ReturnType<typeof modulation>;
@@ -31,7 +31,7 @@ function deviance(observed:Float32Array,estimated:Float32Array,settings:Settings
 }
 // Each fold drops a whole interior cycle before any pupil, drift, catalog, depth,
 // phase or brightness fit. Adjacent retained frames predict the missing motion.
-export async function validateMovie(file:File,settings:Settings,order:Schedule,usePower:boolean,log:(s:string)=>void){
+export async function validateMovie(file:File,settings:Settings,order:Schedule,log:(s:string)=>void){
   const {device}=await getDevice(), movie=await TiffMovie.open([file]);
   const period=order.axes*order.phases, cycles=Math.floor(movie.n/period);
   if(cycles<4)throw Error('Cross-validation needs at least four complete illumination cycles.');
@@ -43,12 +43,12 @@ export async function validateMovie(file:File,settings:Settings,order:Schedule,u
     for(let t=0;t<movie.n;t++) if(t<start || t>=end)train.push(await movie.read(t,t+1));
     const training=new File([tiffStackBlob(train,train.length,1,movie.H,movie.W)],'training-fold.tif');
     train.length=0;
-    const image=usePower && order.phases>=3 ? new MovieDepth(movie.W,movie.H,order) : undefined;
-    const fit=await fitMovie(device,training,null,settings,()=>{},undefined,(pixels,_w,_h,i,_n,stage)=>{
-      if(stage==='read')image?.add(pixels,i-1);
-    });
+    let fit=await fitMovie(device,training,null,settings,()=>{});
     let pattern:Pattern|undefined, patternError='';
-    if(order.phases>=3)try{pattern=await movieModulation(device,training,fit,order,image,false,log);}catch(e){patternError=String(e);}
+    if(order.phases>=3)try{
+      fit=await refinePhotometry(device,training,fit,log);
+      pattern=refinedModulation(fit,order);
+    }catch(e){patternError=String(e);}
     const nb=fit.xy.length, counts=Array(period).fill(0);
     const phaseFlux=Array.from({length:period},()=>Array<number>(nb).fill(0));
     const mean=Array<number>(nb).fill(0),num=mean.slice(),den=mean.slice();
@@ -94,14 +94,14 @@ export async function validateMovie(file:File,settings:Settings,order:Schedule,u
   return folds;
 }
 
-export function validationPanel(out:HTMLElement,file:File,settings:Settings,order:Schedule,usePower:boolean){
+export function validationPanel(out:HTMLElement,file:File,settings:Settings,order:Schedule){
   const box=document.createElement('section'),button=document.createElement('button'),status=document.createElement('p');
   button.type='button';button.textContent='Cross-validate PSF and modulation';
   box.append(button,status);out.append(box);
   button.onclick=async()=>{
     button.disabled=true;
     try{
-      const folds=await validateMovie(file,settings,order,usePower,s=>{status.textContent=s;});
+      const folds=await validateMovie(file,settings,order,s=>{status.textContent=s;});
       const table=document.createElement('table');
       table.innerHTML='<tr><th>Held-out cycle</th><th>Fitted pupil</th><th>Raw-pixel refinement</th><th>Flat pupil</th><th>Fitted pattern</th><th>Constant brightness</th></tr>';
       for(const f of folds){

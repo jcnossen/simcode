@@ -4,7 +4,8 @@ import { liveEstimator } from './live';
 import { installMovieExample } from './example';
 import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
-import { movieModulation } from './dense-slide';
+import { refinePhotometry } from './pixel-photometry';
+import { refinedModulation } from './modulation';
 import {validationPanel} from './cross-validation';
 type InputKind='slide'|'stack';
 let kind:InputKind='slide';
@@ -19,7 +20,19 @@ mount(
     const simulated = simulation()?.modulation;
     if(simulated) download(out,'true-modulation.json',JSON.stringify(simulated),'application/json');
     const schedule = order();
-    if(kind==='slide' && selected.slide) validationPanel(out,selected.slide,r.settings,schedule,document.querySelector<HTMLInputElement>('.random-beads')!.checked);
+    if(kind==='slide' && selected.slide) validationPanel(out,selected.slide,r.settings,schedule);
+    const file=selected[kind];
+    if(!file)throw Error('The selected movie is no longer available.');
+    const fit=await refinePhotometry((await getDevice()).device,file,r,
+      (message,fraction)=>{document.querySelector('[role=status]')!.textContent=message;estimator.refinementProgress(fraction);});
+    estimator.positions(fit);
+    const old=out.querySelector<HTMLAnchorElement>('a[download="bead-fit.json"]');
+    if(old){
+      const href=URL.createObjectURL(new Blob([JSON.stringify({...fit,
+        coordinates:'xy in pixels; drift rows [dx_px,dy_px,stage_focus_nm relative to bead plane]; intensity[frame][bead] in photons',
+        photometry_method:'overlap-refined bead photometry'})],{type:'application/json'}));
+      URL.revokeObjectURL(old.href);old.href=href;
+    }
     if (schedule.phases < 3) {
       const message = document.createElement('p');
       message.textContent = 'PSF and bead photometry complete. This phase schedule provides fewer than three steps for the harmonic pattern fit.';
@@ -32,7 +45,7 @@ mount(
       out.append(message);
       return;
     }
-    const result = await movieModulation((await getDevice()).device,selected[kind],r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined, true, message=>{document.querySelector('[role=status]')!.textContent=message;});
+    const result=refinedModulation(fit,schedule,true);
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');
@@ -136,16 +149,6 @@ getDevice().then(({info}) => {
 }).catch(() => { gpuSubtitle.textContent = 'WebGPU unavailable'; });
 const order = scheduleControls();
 const settings = acquisitionSettings();
-const population = document.createElement('label');
-population.innerHTML = '<input class="random-beads" type="checkbox" checked> Uniformly random bead positions (enable image-power depth estimation)';
-document.querySelector('.pattern-order')!.append(population);
-const randomBeads = population.querySelector('input')!;
-try { randomBeads.checked = !document.cookie.split('; ').includes('simcode_random_beads=0'); } catch {}
-let uploadRandomBeads = randomBeads.checked;
-randomBeads.onchange = () => {
-  uploadRandomBeads = randomBeads.checked;
-  try { document.cookie = 'simcode_random_beads='+Number(randomBeads.checked)+'; Max-Age=31536000; Path=/; SameSite=Lax'; } catch {}
-};
 const example = installMovieExample(settings, order,()=>framesPerStep.valueAsNumber);
 installSampleChoice();
 
@@ -221,10 +224,6 @@ function installSampleChoice() {
     const target=exampleBox.querySelector('.pitch-warning')!;
     target.after(example.aberrationControl,example.driftControl,example.densityControl,example.photonControls);
     example.select(selected[kind]);
-    const generated = !!example.truth();
-    randomBeads.checked = generated || uploadRandomBeads;
-    randomBeads.disabled = generated;
-    population.title = generated ? 'The example generator samples bead positions uniformly.' : '';
   }
   choose('slide',true);
 }

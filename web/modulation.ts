@@ -1,7 +1,7 @@
 import { fieldMaps } from './pattern-field';
 import type { MovieDepth } from './movie-depth';
 import type { PhotometrySnapshot } from 'torch-dense/movie';
-import { axisAt, phaseDegrees, phaseAt, cycle, axisName, defaultSchedule } from './schedule';
+import { axisAt, phaseDegrees, phaseAt, cycle, axisName, defaultSchedule, type Schedule } from './schedule';
 const tau = 2 * Math.PI;
 function fft(a: Float64Array, b: Float64Array) {
   const n = a.length;
@@ -172,7 +172,34 @@ function carrier(r: PhotometrySnapshot, cs: number[][], capture?: (s: Spectrum) 
   }
   return k;
 }
-export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth, showSpectrum = false, dense?: import('./dense-slide').DenseAxis[]) {
+function refineExposurePhases(intensity:number[][], nominal:number[]) {
+  if(nominal.length<6)return nominal;
+  const n=intensity.length,nb=intensity[0].length,phase=nominal.slice();
+  const scale=Array.from({length:nb},(_,j)=>Math.max(1,intensity.reduce((s,row)=>s+row[j],0)/n));
+  for(let it=0;it<16;it++){
+    const rows=phase.map(a=>[1,Math.cos(a),-Math.sin(a)]);
+    const gram=Array.from({length:3},(_,j)=>Array.from({length:3},(_,k)=>rows.reduce((s,r)=>s+r[j]*r[k],0)));
+    let cols:number[][];
+    try{cols=rows.map(r=>solve(gram,r));}catch{return nominal;}
+    const num=Array(n).fill(0),den=Array(n).fill(0);
+    for(let j=0;j<nb;j++){
+      const c=[0,0,0];for(let t=0;t<n;t++)for(let l=0;l<3;l++)c[l]+=cols[t][l]*intensity[t][j]/scale[j];
+      const res=rows.map((r,t)=>intensity[t][j]/scale[j]-dot(r,c));
+      const weight=Math.min(1,.14/Math.max(.001,Math.sqrt(dot(res,res)/n)));
+      for(let t=0;t<n;t++){
+        const g=rows[t][2]*c[1]-rows[t][1]*c[2],wt=weight*Math.min(1,.08/Math.max(.0001,Math.abs(res[t])));
+        num[t]+=res[t]*g*wt;den[t]+=g*g*wt;
+      }
+    }
+    const step=num.map((v,t)=>Math.max(-.3,Math.min(.3,v/Math.max(1,den[t])))),mean=step.reduce((a,b)=>a+b)/n;
+    for(let t=0;t<n;t++)phase[t]+=step[t]-mean;
+  }
+  return phase;
+}
+export function refinedModulation(r: PhotometrySnapshot, schedule:Schedule, showSpectrum=false) {
+  return modulation(r,schedule,undefined,showSpectrum,undefined,true);
+}
+export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth, showSpectrum = false, dense?: import('./dense-slide').DenseAxis[], refined=false) {
   if (schedule.phases < 3) throw Error('The harmonic pattern fit requires three or more phase steps.');
   if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
@@ -269,8 +296,19 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       const rows=dense[dir].angles.map(a=>[1,Math.cos(a),-Math.sin(a)]);
       cs=r.xy.map((_,i)=>regression(rows,frames.map(t=>r.intensity[t][i])));
     }
+    let exposureAngles=dense?.[dir].angles;
+    let dcThreshold:number[]|undefined;
+    if(refined){
+      exposureAngles=refineExposurePhases(frames.map(t=>r.intensity[t]),
+        frames.map(t=>steps[phaseAt(t,schedule)]+k[0]*r.drift[t][0]+k[1]*r.drift[t][1]));
+      const rows=exposureAngles.map(a=>[1,Math.cos(a),-Math.sin(a)]);
+      cs=r.xy.map((_,i)=>regression(rows,frames.map(t=>r.intensity[t][i])));
+      const gram=Array.from({length:3},(_,j)=>Array.from({length:3},(_,k)=>rows.reduce((s,r)=>s+r[j]*r[k],0)));
+      const gain=5*Math.sqrt(solve(gram,[1,0,0])[0]/Math.max(1,rows.length-3));
+      dcThreshold=cs.map((c,i)=>gain*Math.sqrt(frames.reduce((s,t,j)=>s+(r.intensity[t][i]-dot(c,rows[j]))**2,0)));
+    }
     const valid = cs
-      .map((a, i) => (a[0] > 1 && Math.hypot(a[1], a[2]) > 0.01 * a[0] ? i : -1))
+      .map((a, i) => (a[0] > Math.max(1,dcThreshold?.[i]??0) && Math.hypot(a[1], a[2]) > 0.01 * a[0] ? i : -1))
       .filter((i) => i >= 0);
     if (valid.length < 6) throw Error('Too few modulated beads for a quadratic field fit.');
     const q = (Math.hypot(...k) * r.settings.diameterNm) / (2000 * r.settings.optics.pixel_um);
@@ -310,7 +348,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
     means.push(cs.map((a) => a[0]));
     const pattern = {
       phase_steps_rad: steps,
-      ...(dense ? { exposure_frames_zero_based: frames, registered_exposure_phase_rad: dense[dir].angles } : {}),
+      ...(exposureAngles ? { exposure_frames_zero_based: frames, registered_exposure_phase_rad: exposureAngles } : {}),
       kx_rad_px: k[0],
       ky_rad_px: k[1],
       pitch_nm: (tau / Math.hypot(...k)) * r.settings.optics.pixel_um * 1000,
@@ -318,7 +356,7 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       phase,
       depth: dense?.[dir].depth ?? depth,
       bead_depth: beadDepth,
-      depth_method: dense ? 'drift- and transfer-corrected random-bead image power' : depthTiles ? 'random-bead image power' : 'bead photometry',
+      depth_method: refined ? 'overlap-refined bead photometry' : dense ? 'drift- and transfer-corrected random-bead image power' : depthTiles ? 'random-bead image power' : 'bead photometry',
       depth_tiles: dense?.[dir].tiles ?? depthTiles,
       beads: valid.length,
     };

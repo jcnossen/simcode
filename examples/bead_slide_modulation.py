@@ -2,6 +2,9 @@
 
 Inputs are camera frames in photoelectrons, bead photometry and XY drift.
 The optional image-power depth estimator assumes uniformly random beads.
+For structured samples use random_beads=False. A calibrated pupil and the
+frame focus trace from DenseBeadEstimator.fit_movie enable raw-pixel
+photometry refinement. Evaluate spatial maps where beads sample the field.
 """
 import math
 
@@ -88,12 +91,20 @@ def image_depth(movie, axis, k, transfer, bead_count):
     return surface(basis(xy, w, h), (ac.sign() * (ac.abs()/sums[0, keep]).sqrt()).double() / transfer)
 
 
-def estimate_modulation(movie, fit, optics, random_beads=True):
+def estimate_modulation(movie, fit, optics, random_beads=False):
     """Fit a carrier, phase and depth surface per axis, plus the A/B intensity ratio."""
     movie = torch.as_tensor(movie, dtype=torch.float32)
     xy, flux, drift = [torch.as_tensor(a, dtype=torch.float64) for a in
                        (fit.xy, fit.photons, fit.drift)]
     _, h, w = movie.shape
+    optic = getattr(getattr(fit, "psf", None), "optic", None)
+    cfg = getattr(optic, "cfg", {})
+    axial = getattr(fit, "axial_drift_um", None)
+    refit = not random_beads and cfg.get("calibrated_psf") is not None and axial is not None
+    if refit:
+        from bead_pixel_photometry import exposure_phases, refine_photometry
+        xy, flux = refine_photometry(movie, fit, cfg["calibrated_psf"],
+                                     cfg["focus_um"]+axial, optics["diameter_um"])
     field = basis(xy, w, h)
     frames = torch.arange(len(movie))
     patterns, means = [], []
@@ -111,9 +122,6 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
             k = carrier(xy, demodulate(k, sel, steps), w, h)
         waves.append(k)
     fields = None
-    optic = getattr(getattr(fit, "psf", None), "optic", None)
-    cfg = getattr(optic, "cfg", {})
-    axial = getattr(fit, "axial_drift_um", None)
     if (random_beads and len(movie) >= 30 and min(h,w) >= 224 and
             cfg.get("calibrated_psf") is not None and axial is not None and len(xy) >= 6*((w-16)//40)*((h-16)//40)):
         from dense_slide_depth import dense_slide_fields
@@ -123,7 +131,11 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
         sel = frames // 3 % 2 == axis
         steps = (frames[sel] % 3).double() * (2 * math.pi / 3)
         k = fields[axis][1] if fields is not None else waves[axis]
-        if fields is None:
+        if refit:
+            angles = exposure_phases(flux[sel], steps + drift[sel] @ k)
+            design = torch.stack([torch.ones_like(angles), angles.cos(), -angles.sin()], dim=1)
+            harmonic = torch.linalg.lstsq(design, flux[sel]).solution
+        elif fields is None:
             harmonic = demodulate(k, sel, steps)
         else:
             angles = fields[axis][2]
@@ -132,6 +144,13 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
         dc, re, im = harmonic
         amp = torch.hypot(re, im)
         valid = (dc > 1) & (amp > .01*dc)
+        if refit:
+            # Residual detection can add weak candidates supported by few photons.
+            # Require a measured DC above its harmonic regression uncertainty.
+            residual = flux[sel] - design @ harmonic
+            sigma = residual.square().sum(0).div(max(1, len(angles)-3)).sqrt()
+            dc_se = torch.linalg.pinv(design)[0].norm()*sigma
+            valid &= dc > 5*dc_se
         q = k.norm() * optics["diameter_um"] / (2*optics["pixel_um"])
         transfer = 1. if q < .001 else 3*(q.sin()-q*q.cos())/q**3
         if transfer < .1:
@@ -144,12 +163,18 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
         else:
             depth = image_depth(movie, axis, k, transfer, len(xy)) if random_beads else None
             method = "random-bead image power" if depth is not None else "bead photometry"
+            if refit:
+                method = "overlap-refined bead photometry"
         if depth is None:
             depth = surface(field[valid], amp[valid]/dc[valid]/transfer)
-        patterns.append(dict(k_rad_px=k.tolist(), phase=phase.tolist(), depth=depth.tolist(),
+        pattern = dict(k_rad_px=k.tolist(), phase=phase.tolist(), depth=depth.tolist(),
                              pitch_nm=float(2000*math.pi*optics["pixel_um"]/k.norm()),
                              orientation_deg=math.degrees(math.atan2(k[1], k[0])) % 360,
-                             depth_method=method))
+                             depth_method=method)
+        if refit:
+            pattern.update(beads=int(valid.sum()), exposure_frames=frames[sel].tolist(),
+                           exposure_phases_rad=angles.tolist())
+        patterns.append(pattern)
         means.append(dc)
     valid = (means[0] > 1) & (means[1] > 1)
     ratio = surface(field[valid], means[0][valid]/means[1][valid])

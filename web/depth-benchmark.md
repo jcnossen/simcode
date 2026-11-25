@@ -1,5 +1,22 @@
 # Dense-bead modulation-depth benchmark
 
+## Default pixel photometry at 240 nm
+
+Both 400 × 400 TIFFs contain 40 exposures of 40 nm beads. The random slide has 3,000 beads. The annulus has 495. The table averages the quadratic depth maps at the simulated bead positions, so the empty centre of the annulus contributes no samples. Truth was used for scoring only.
+
+| Movie | Axis | Truth | Independent Python fit | WebGPU upload |
+|---|---|---:|---:|---:|
+| Random slide | A | 0.83877 | 0.84298 | 0.84232 |
+| Random slide | B | 0.88053 | 0.88527 | 0.88538 |
+| Annulus | A | 0.83830 | 0.83437 | 0.82235 |
+| Annulus | B | 0.87938 | 0.87478 | 0.86416 |
+
+To isolate the photometry port, Python also started from the browser's fitted pupil, focus, initial XY, drift and intensities. The two implementations then differed by less than 0.000006 at every evaluated bead. The independent runs include differences introduced in the initial optical and bead fits.
+
+TIFF SHA-256 digests are `94ccf7aa9e702e756313db1db22a7dcd06be8f2d2feff0b30c7d8bfb9551770e` (random slide) and `1844dffef7f370dc06b92dc9cb4689ad519f67ceba2f1d56af2b9b5980c43cf5` (annulus).
+
+## Earlier 200 nm benchmark
+
 The comparison uses one 400 × 400 field containing 12,000 stationary 40 nm beads at independent uniform XY positions, simulated with the web example (LCG seed 557), 108.33 nm camera pixels and a 200 nm illumination pitch. Each 100-frame movie uses two axes and three equally spaced phases per axis. The two axial excursions share the bead locations, brightnesses, aberrations and illumination parameters. Within each column, every recovery uses the same noisy TIFF.
 
 ## Where the attenuation enters

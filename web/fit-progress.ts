@@ -3,7 +3,7 @@ export function fitProgress(mode: 'slide' | 'gel') {
   host.className = 'fit-progress';
   host.innerHTML = '<progress max="1" value="0" aria-label="Overall estimation progress"></progress><output></output>';
   const bar = host.querySelector('progress')!, caption = host.querySelector('output')!;
-  const phaseNames = ['Reading movie','Calibrating optics',mode==='gel'?'Refining bead volume':'Refining bead positions','Fitting intensities','Writing results'];
+  const phaseNames = ['Reading movie','Calibrating optics',mode==='gel'?'Refining bead volume':'Refining bead positions','Fitting intensities',mode==='gel'?'Writing results':'Refining bead photometry'];
   const key = 'simcode_fit_stage_ms_v1_'+mode;
   // Milliseconds on the local NVIDIA adapter: 64 x 64 pixels, 18 slide frames
   // or 51 gel focus stops. Successful runs replace these starting measurements.
