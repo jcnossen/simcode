@@ -81,7 +81,7 @@ function robust(x: number[][], y: number[]) {
   return fit;
 }
 export interface Spectrum {
-  overview: Float32Array; zoom: Float32Array; center: number[]; bin: number;
+  zoom: Float32Array; center: number[]; bin: number;
 }
 export const carrierSpectra = new WeakMap<object, Spectrum>();
 function carrier(r: PhotometrySnapshot, cs: number[][], capture?: (s: Spectrum) => void) {
@@ -161,19 +161,14 @@ function carrier(r: PhotometrySnapshot, cs: number[][], capture?: (s: Spectrum) 
       }
   }
   if (capture) {
-    const side = 128, zoomSide = 31;
-    const overview = new Float32Array(side * side), zoom = new Float32Array(zoomSide**2);
+    const zoomSide = 31;
+    const zoom = new Float32Array(zoomSide**2);
     const bin = scale / n, center = k.map(v => Math.round(v / tau / bin));
-    for (let y=0; y<n; y++) for (let x=0; x<n; x++) {
-      const index = y*n+x;
-      const row = Math.floor(((y+n/2)%n)*side/n), col = Math.floor(((x+n/2)%n)*side/n);
-      overview[row*side+col] = Math.max(overview[row*side+col], Math.hypot(re[index],im[index]));
-    }
     for (let y=0; y<zoomSide; y++) for (let x=0; x<zoomSide; x++) {
       const i = ((center[1]+y-15+n)%n)*n + (center[0]+x-15+n)%n;
       zoom[y*zoomSide+x] = Math.hypot(re[i],im[i]);
     }
-    capture({overview,zoom,center:center.map(v=>v*bin),bin});
+    capture({zoom,center:center.map(v=>v*bin),bin});
   }
   return k;
 }

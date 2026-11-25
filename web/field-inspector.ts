@@ -49,14 +49,14 @@ export function fieldInspector(host: HTMLElement) {
         marker.style.top=(y+.5)*100/32+'%';
       }
     }
-    function fieldTile([key,label]:string[]) {
+    function fieldTile([key,label]:string[], source:Field, prefix:string, compare?:Field) {
       const fig=document.createElement('figure'), title=document.createElement('figcaption');
-      title.textContent=(fit?'Fitted ':'True ')+label;
+      title.textContent=prefix+label;
       const tile=document.createElement('div'); tile.className='field-tile';
       const cv=document.createElement('canvas'); cv.width=cv.height=32; cv.tabIndex=0;
       cv.setAttribute('aria-label',title.textContent+'. Drag or use arrow keys to inspect.');
-      const ctx=cv.getContext('2d')!, values=field!.maps.map(v=>read(v,key) ?? NaN);
-      const finite=values.filter(Number.isFinite), lo=Math.min(...finite), hi=Math.max(...finite);
+      const ctx=cv.getContext('2d')!, values=source.maps.map(v=>read(v,key) ?? NaN);
+      const finite=values.concat(compare?.maps.map(v=>read(v,key) ?? NaN) ?? []).filter(Number.isFinite), lo=Math.min(...finite), hi=Math.max(...finite);
       values.forEach((v,i)=>{
         const f=hi>lo?(v-lo)/(hi-lo):.5;
         ctx.fillStyle='rgb('+[26+209*f,58+150*f,100-38*f].map(Math.round).join(',')+')';
@@ -78,13 +78,14 @@ export function fieldInspector(host: HTMLElement) {
       };
       return fig;
     }
-    function fftTile(axis:number, zoom:boolean) {
+    function fftTile(axis:number) {
       const fig=document.createElement('figure'), title=document.createElement('figcaption');
-      title.textContent=zoom?'FFT peak zoom':'FFT peaks';
+      title.textContent='FFT peak zoom';
+      fig.style.gridColumn='3';
       fig.append(title);
       const spectrum=fit && carrierSpectra.get(fit.patterns[axis]);
       if (!spectrum) {fig.append('Awaiting spectrum');return fig;}
-      const values=zoom?spectrum.zoom:spectrum.overview, side=Math.sqrt(values.length);
+      const values=spectrum.zoom, side=Math.sqrt(values.length);
       const cv=document.createElement('canvas'); cv.width=cv.height=side;
       const ctx=cv.getContext('2d')!, image=ctx.createImageData(side,side);
       const peak=Math.max(...values);
@@ -93,18 +94,20 @@ export function fieldInspector(host: HTMLElement) {
         image.data.set([gray,gray,gray,255],4*i);
       }
       ctx.putImageData(image,0,0);
-      if (!zoom) {
-        ctx.strokeStyle='#ff9d46';
-        ctx.strokeRect((spectrum.center[0]+1)*side/2-3,(spectrum.center[1]+1)*side/2-3,6,6);
-      }
       const note=document.createElement('small');
-      note.textContent=zoom?'Peak ('+spectrum.center.map(v=>v.toFixed(3)).join(', ')+') cycles/px':'-1 to +1 cycles/px';
+      note.textContent='Peak ('+spectrum.center.map(v=>v.toFixed(3)).join(', ')+') cycles/px';
       fig.append(cv,note);return fig;
     }
     field.patterns.forEach((_,i)=>{
       const row=document.createElement('div'); row.className='axis-field-row';
-      row.append(fieldTile(fields[i]),fftTile(i,false),fftTile(i,true));
-      if(i) row.append(fieldTile(fields[field.patterns.length+i-1]));
+      if(fit) row.append(fieldTile(fields[i],fit,'Fitted ',truth));
+      if(truth){
+        const actual=fieldTile(fields[i],truth,'True ',fit);
+        actual.style.gridColumn='2';
+        row.append(actual);
+      }
+      row.append(fftTile(i));
+      if(i) row.append(fieldTile(fields[field.patterns.length+i-1],field,fit?'Fitted ':'True '));
       tiles.append(row);
     });
     select(x,y);

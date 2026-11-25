@@ -460,8 +460,7 @@ export function liveEstimator(getTruth: () => ExampleTruth | undefined, getOrder
       if (truth) {
         const simulation=truth;
         const k=simulation.modulation.patterns[0];
-        const pixelNm=Math.hypot(k.kx_rad_px,k.ky_rad_px)*k.pitch_nm/(2*Math.PI);
-        viewer.setPattern((x,y,t)=>(1+illumination(pixelNm,x,y,t,simulation.schedule))/2,'True simulated pattern',simulation.schedule);
+        viewer.setPattern((x,y,t)=>(1+illumination(simulation.pixelNm,x,y,t,simulation.schedule,k.pitch_nm))/2,'True simulated pattern',simulation.schedule);
       }
       panel.focus({ preventScroll: true });
       panel.scrollIntoView({ block: 'start' });

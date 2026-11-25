@@ -9,7 +9,7 @@ import type { Acquisition } from './settings';
 export const size = 400,
   defaultFrameCount = 40;
 export const defaultBeadDensity = 1.5975; // beads per square micrometre
-export const pitchNm = 200;
+export const defaultPitchNm = 200;
 export const angleAt = (i: number, axes: number) => axes === 2 ? [13, 104][i] : 13 + 180 * i / axes;
 export function depthAt(dir: number, u: number, v: number) {
   return dir ? 0.88 + 0.05 * v : 0.84 + 0.06 * u;
@@ -17,7 +17,7 @@ export function depthAt(dir: number, u: number, v: number) {
 export const ratioAt = (u: number) => 1.12 - 0.16 * u;
 const phaseOffset = (u:number,v:number) => 0.25*u*v;
 // Express the generator's camera coordinates in the estimator's edge-to-edge basis.
-export function exampleModulation(pixelNm:number, schedule:Schedule) {
+export function exampleModulation(pixelNm:number, schedule:Schedule, pitchNm=defaultPitchNm) {
   const b=-1/size, s=(size-1)/size;
   function surface(fn:(u:number,v:number)=>number) {
     const c=fn(b,b), x=fn(b+s,b)-c, y=fn(b,b+s)-c;
@@ -59,7 +59,7 @@ function randomWalk(frames: number, span: number): Float64Array {
   const midpoint = (high + low) / 2;
   return path.map(value => (value - midpoint) * span / (high - low));
 }
-export function illumination(pixelNm: number, x: number, y: number, t: number, schedule: Schedule) {
+export function illumination(pixelNm: number, x: number, y: number, t: number, schedule: Schedule, pitchNm=defaultPitchNm) {
   const dir = axisAt(t, schedule),
     angle = (angleAt(dir, schedule.axes) * Math.PI) / 180,
     k = (tau * pixelNm) / pitchNm;
@@ -97,7 +97,9 @@ export async function generateMovie(
   scan?:{stepNm:number; repeats:number},
   driftNm=400,
   beadCount=Math.round(defaultBeadDensity*(size*s.pixelNm/1000)**2),
+  pitchNm=defaultPitchNm,
 ) {
+  if (!Number.isFinite(pitchNm) || pitchNm <= 0) throw Error("Enter a positive illumination pitch in nm.");
   const noll = [5, 6, 7, 8, 9, 10, 11];
   const coefficients = exampleCoefficients(noll, aberration);
   const { device } = await getDevice();
@@ -176,7 +178,7 @@ export async function generateMovie(
         const x = bead.x + dx,
           y = bead.y + dy,
           u = (2 * x) / size - 1;
-        const flux = bead.I * (dir ? 1 : ratioAt(u)) * (1 + transfer * illumination(s.pixelNm, x, y, t, schedule));
+        const flux = bead.I * (dir ? 1 : ratioAt(u)) * (1 + transfer * illumination(s.pixelNm, x, y, t, schedule, pitchNm));
         const xx = Math.round(x * shifts),
           yy = Math.round(y * shifts);
         const left = Math.floor(xx / shifts) - (roi >> 1),

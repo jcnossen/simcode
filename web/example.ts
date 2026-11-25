@@ -3,7 +3,7 @@ import { defaultAberration } from './example-aberration';
 import { axisName, type Schedule } from './schedule';
 import { movieView } from './movie-view';
 import { drawPsf, plot } from './live';
-import { defaultBeadDensity, defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, pitchNm, size } from './generate';
+import { defaultBeadDensity, defaultFrameCount, exampleModulation, focusMidpointNm, generateMovie, illumination, defaultPitchNm, size } from './generate';
 import type { ExampleTruth } from './generate';
 import type { Acquisition } from './settings';
 import './example.css';
@@ -16,9 +16,11 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
   const submit = inputs.closest('form')!.querySelector<HTMLButtonElement>('button')!;
   const view = document.createElement('details');
   view.className = 'movie-example';
-  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels · ${pitchNm} nm illumination pitch</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
+  view.innerHTML = `<summary>Example: randomly generated bead movie</summary><label class="example-length">Example frames <input type="number" min="2" step="1" value="${defaultFrameCount}" required></label><label class="example-pitch example-density">True illumination pitch (nm) <input type="number" min="0" step="any" value="${defaultPitchNm}" required form="generated-movie-options"></label><label class="example-aberration">Pupil aberration <input type="range" min="0" max="500" step="10" value="${defaultAberration}" form="generated-movie-options"><output></output></label><span class="example-photons"><label>Mean signal (photons/bead/exposure) <input class="signal" type="number" min="0" step="any" value="${defaultPhotons.signal}" required form="generated-movie-options"></label><label>Background (photons/pixel/exposure) <input class="background" type="number" min="0" step="any" value="${defaultPhotons.background}" required form="generated-movie-options"></label></span><div class="example-content"><figure><figcaption class="movie-caption"><span>Movie frame</span></figcaption><div class="generated-movie"></div></figure><figure class="pattern-zoom"></figure><figure><figcaption>True PSF · aberrated pupil</figcaption><canvas class="psf" aria-label="True point PSF at the current frame"></canvas><small class="true-modes"></small></figure><figure class="example-drift"><figcaption>True drift from frame 1 (nm)</figcaption><canvas class="trace" aria-label="True XYZ drift by frame"></canvas></figure><div class="example-actions"><p>400 × 400 pixels</p><details class="example-pattern"><summary>True illumination parameters</summary><table></table></details><p class="frame-status" aria-live="polite"></p><progress aria-label="Movie generation progress"></progress><p><input type="button" class="again" value="Generate again" hidden> <a download="random-bead-movie.tif" hidden>Download TIFF</a></p></div></div>`;
   inputs.after(view);
   const countInput = view.querySelector<HTMLInputElement>('.example-length input')!;
+  const pitchInput = view.querySelector<HTMLInputElement>('.example-pitch input')!;
+  pitchInput.oninput = () => pitchInput.setCustomValidity('');
   const aberrationControl = view.querySelector<HTMLLabelElement>('.example-aberration')!;
   const strength = aberrationControl.querySelector('input')!;
   const photonControls = view.querySelector<HTMLElement>('.example-photons')!;
@@ -126,7 +128,9 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       again.hidden = false;
       return;
     }
-    if (!countInput.reportValidity()) return;
+    const pitchNm = pitchInput.valueAsNumber;
+    pitchInput.setCustomValidity(Number.isFinite(pitchNm) && pitchNm > 0 ? '' : 'Enter a positive illumination pitch in nm.');
+    if (!countInput.reportValidity() || !pitchInput.reportValidity()) return;
     const repeats=mode==='stack' ? getRepeats() : 1;
     if(!Number.isSafeInteger(repeats)||repeats<1){status.textContent='Enter a positive whole number of frames per step.';return;}
     frameCount=countInput.valueAsNumber*repeats;
@@ -157,8 +161,8 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
       const autoStep=2*s.immersionIndex*s.wavelengthNm/(s.na*s.na*(planes-1));
       const scan=mode==='stack' ? {stepNm:s.stepNm||autoStep,repeats} : undefined;
       const count=readCount(size);
-      description.textContent=size+' × '+size+' pixels · '+count.toLocaleString()+' beads · '+readDriftNm()+' nm peak-to-peak drift per axis'+(scan?' · '+countInput.value+' Z steps of '+Number(scan.stepNm.toFixed(2))+' nm ('+Math.round(Math.abs(scan.stepNm)*(planes-1))+' nm span) · '+repeats+(repeats===1?' frame per step':' frames per step'):'');
-      viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule)) / 2, 'Simulated pattern', schedule);
+      description.textContent=size+' × '+size+' pixels · '+count.toLocaleString()+' beads, '+pitchNm+' nm pitch · '+readDriftNm()+' nm peak-to-peak drift per axis'+(scan?' · '+countInput.value+' Z steps of '+Number(scan.stepNm.toFixed(2))+' nm ('+Math.round(Math.abs(scan.stepNm)*(planes-1))+' nm span) · '+repeats+(repeats===1?' frame per step':' frames per step'):'');
+      viewer.setPattern((x, y, t) => (1 + illumination(s.pixelNm, x, y, t, schedule, pitchNm)) / 2, 'Simulated pattern', schedule);
       let first: number[] = [];
       const file = await generateMovie(s, schedule, controller.signal, (frame, t, psf, motion, coefficients, beads) => {
         if (!t) {
@@ -168,7 +172,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
             firstFrameXY[2*i] = x + motion[0]/s.pixelNm;
             firstFrameXY[2*i+1] = y + motion[1]/s.pixelNm;
           });
-          truth = { firstFrameXY, pixelNm: s.pixelNm, modulation:exampleModulation(s.pixelNm,schedule), coefficients, psfs, drift, firstFocusNm: (scan ? 0 : focusMidpointNm) + motion[2], schedule };
+          truth = { firstFrameXY, pixelNm: s.pixelNm, modulation:exampleModulation(s.pixelNm,schedule,pitchNm), coefficients, psfs, drift, firstFocusNm: (scan ? 0 : focusMidpointNm) + motion[2], schedule };
           const table=view.querySelector<HTMLTableElement>('.example-pattern table')!;
           table.innerHTML='<tr><th>Axis</th><th>Pitch (nm)</th><th>Angle (°)</th><th>Steps (°)</th><th>Center depth</th><th>Center A/axis ratio</th></tr>';
           truth.modulation.patterns.forEach((p,i)=>{
@@ -184,7 +188,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
         viewer.frame(frame, size, size, t, frameCount, 'Generating', s.offset);
         progress.value = t + 1;
         status.textContent = 'Generating frame ' + (t + 1) + ' of ' + frameCount;
-      }, frameCount, readAberration(), readPhotons(),scan,readDriftNm(),count);
+      }, frameCount, readAberration(), readPhotons(),scan,readDriftNm(),count,pitchNm);
       controller.signal.throwIfAborted();
       const selection = new DataTransfer();
       selection.items.add(file);
@@ -216,7 +220,7 @@ export function installMovieExample(settings: () => Acquisition, getSchedule: ()
     if (!view.open) cancel();
     else if (download.hidden) void start();
   };
-  countInput.onchange = () => {
+  pitchInput.onchange = countInput.onchange = () => {
     cancel();
     if (countInput.reportValidity() && view.open) void start();
   };
