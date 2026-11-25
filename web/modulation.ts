@@ -35,7 +35,7 @@ function fft(a: Float64Array, b: Float64Array) {
     }
   }
 }
-function solve(a: number[][], v: number[]) {
+export function solve(a: number[][], v: number[]) {
   const m = a.map((r, i) => [...r, v[i]]),
     n = v.length;
   for (let k = 0; k < n; k++) {
@@ -177,7 +177,7 @@ function carrier(r: PhotometrySnapshot, cs: number[][], capture?: (s: Spectrum) 
   }
   return k;
 }
-export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth, showSpectrum = false) {
+export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, image?: MovieDepth, showSpectrum = false, dense?: import('./dense-slide').DenseAxis[]) {
   if (schedule.phases < 3) throw Error('The harmonic pattern fit requires three or more phase steps.');
   if (r.drift.length < schedule.phases * schedule.axes || r.xy.length < 6)
     throw Error('Modulation maps need a full illumination cycle and at least six beads across the field.');
@@ -269,6 +269,11 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
       k = carrier(r, cs, capture);
       cs = harmonic(k);
     }
+    if(dense){
+      k=dense[dir].k;
+      const rows=dense[dir].angles.map(a=>[1,Math.cos(a),-Math.sin(a)]);
+      cs=r.xy.map((_,i)=>regression(rows,frames.map(t=>r.intensity[t][i])));
+    }
     const valid = cs
       .map((a, i) => (a[0] > 1 && Math.hypot(a[1], a[2]) > 0.01 * a[0] ? i : -1))
       .filter((i) => i >= 0);
@@ -310,15 +315,16 @@ export function modulation(r: PhotometrySnapshot, schedule = defaultSchedule, im
     means.push(cs.map((a) => a[0]));
     const pattern = {
       phase_steps_rad: steps,
+      ...(dense ? { exposure_frames_zero_based: frames, registered_exposure_phase_rad: dense[dir].angles } : {}),
       kx_rad_px: k[0],
       ky_rad_px: k[1],
       pitch_nm: (tau / Math.hypot(...k)) * r.settings.optics.pixel_um * 1000,
       orientation_deg: ((Math.atan2(k[1], k[0]) * 180) / Math.PI + 360) % 360,
       phase,
-      depth,
+      depth: dense?.[dir].depth ?? depth,
       bead_depth: beadDepth,
-      depth_method: depthTiles ? 'random-bead image power' : 'bead photometry',
-      depth_tiles: depthTiles,
+      depth_method: dense ? 'drift- and transfer-corrected random-bead image power' : depthTiles ? 'random-bead image power' : 'bead photometry',
+      depth_tiles: dense?.[dir].tiles ?? depthTiles,
       beads: valid.length,
     };
     if (spectrum) carrierSpectra.set(pattern, spectrum);

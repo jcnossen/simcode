@@ -4,7 +4,7 @@ import { liveEstimator } from './live';
 import { installMovieExample } from './example';
 import { acquisitionSettings } from './settings';
 import { mount, download } from 'torch-dense/app';
-import { modulation } from './modulation';
+import { movieModulation } from './dense-slide';
 import {validationPanel} from './cross-validation';
 type InputKind='slide'|'stack';
 let kind:InputKind='slide';
@@ -32,7 +32,7 @@ mount(
       out.append(message);
       return;
     }
-    const result = modulation(r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined, true);
+    const result = await movieModulation((await getDevice()).device,selected[kind],r, schedule, document.querySelector<HTMLInputElement>('.random-beads')!.checked ? estimator.depthData() : undefined, true, message=>{document.querySelector('[role=status]')!.textContent=message;});
     estimator.pattern(result);
     download(out, 'modulation.json', JSON.stringify(result), 'application/json');
     const table = document.createElement('table');

@@ -4,6 +4,7 @@ import { getDevice } from 'torch-web/gpu/device';
 import { TiffMovie } from 'torch-web/io/tiff';
 import { tiffStackBlob } from 'torch-web/psfgrab/tiffstack';
 import { MovieDepth } from './movie-depth';
+import {movieModulation} from './dense-slide';
 import { modulation } from './modulation';
 import { axisAt, phaseAt, type Schedule } from './schedule';
 
@@ -47,7 +48,7 @@ export async function validateMovie(file:File,settings:Settings,order:Schedule,u
       if(stage==='read')image?.add(pixels,i-1);
     });
     let pattern:Pattern|undefined, patternError='';
-    if(order.phases>=3)try{pattern=modulation(fit,order,image);}catch(e){patternError=String(e);}
+    if(order.phases>=3)try{pattern=await movieModulation(device,training,fit,order,image,false,log);}catch(e){patternError=String(e);}
     const nb=fit.xy.length, counts=Array(period).fill(0);
     const phaseFlux=Array.from({length:period},()=>Array<number>(nb).fill(0));
     const mean=Array<number>(nb).fill(0),num=mean.slice(),den=mean.slice();

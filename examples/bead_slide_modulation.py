@@ -97,16 +97,38 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
     field = basis(xy, w, h)
     frames = torch.arange(len(movie))
     patterns, means = [], []
+    def demodulate(k, sel, steps):
+        angles = steps + drift[sel] @ k
+        design = torch.stack([torch.ones_like(angles), angles.cos(), -angles.sin()], dim=1)
+        return torch.linalg.lstsq(design, flux[sel]).solution
+
+    waves = []
     for axis in range(2):
         sel = frames // 3 % 2 == axis
         steps = (frames[sel] % 3).double() * (2 * math.pi / 3)
         k = xy.new_zeros(2)
-        for iteration in range(3):
-            angles = steps + drift[sel] @ k
+        for _ in range(2):
+            k = carrier(xy, demodulate(k, sel, steps), w, h)
+        waves.append(k)
+    fields = None
+    optic = getattr(getattr(fit, "psf", None), "optic", None)
+    cfg = getattr(optic, "cfg", {})
+    axial = getattr(fit, "axial_drift_um", None)
+    if (random_beads and len(movie) >= 30 and min(h,w) >= 224 and
+            cfg.get("calibrated_psf") is not None and axial is not None and len(xy) >= 6*((w-16)//40)*((h-16)//40)):
+        from dense_slide_depth import dense_slide_fields
+        fields = dense_slide_fields(movie, drift, cfg["focus_um"]+axial, cfg["calibrated_psf"],
+                                    torch.stack(waves), optics)
+    for axis in range(2):
+        sel = frames // 3 % 2 == axis
+        steps = (frames[sel] % 3).double() * (2 * math.pi / 3)
+        k = fields[axis][1] if fields is not None else waves[axis]
+        if fields is None:
+            harmonic = demodulate(k, sel, steps)
+        else:
+            angles = fields[axis][2]
             design = torch.stack([torch.ones_like(angles), angles.cos(), -angles.sin()], dim=1)
             harmonic = torch.linalg.lstsq(design, flux[sel]).solution
-            if iteration < 2:
-                k = carrier(xy, harmonic, w, h)
         dc, re, im = harmonic
         amp = torch.hypot(re, im)
         valid = (dc > 1) & (amp > .01*dc)
@@ -117,8 +139,11 @@ def estimate_modulation(movie, fit, optics, random_beads=True):
         residual = torch.atan2(im[valid], re[valid]) - xy[valid] @ k
         center = torch.exp(1j*residual).mean().angle()
         phase = surface(field[valid], center + torch.exp(1j*(residual-center)).angle())
-        depth = image_depth(movie, axis, k, transfer, len(xy)) if random_beads else None
-        method = "random-bead image power" if depth is not None else "bead photometry"
+        if fields is not None:
+            depth, method = fields[axis][0], "drift- and transfer-corrected random-bead image power"
+        else:
+            depth = image_depth(movie, axis, k, transfer, len(xy)) if random_beads else None
+            method = "random-bead image power" if depth is not None else "bead photometry"
         if depth is None:
             depth = surface(field[valid], amp[valid]/dc[valid]/transfer)
         patterns.append(dict(k_rad_px=k.tolist(), phase=phase.tolist(), depth=depth.tolist(),
