@@ -31,6 +31,20 @@ const stamps=bind(0,'bank','f32')+bind(1,'geom','vec4f')+bind(2,'K','f32',true)+
   let lo=min(vec2u(c),vec2u(5u));let d=c-vec2f(lo);let s=(lo.y*7u+lo.x)*729u+j;
   K[bead*729u+j]=mix(mix(bank[s],bank[s+729u],d.x),mix(bank[s+5103u],bank[s+5832u],d.x),d.y);}}`;
 
+function residualPixel(robust:boolean){
+  return `let pred=max(1.,raw);let res=image[i]-pred;var wt=1./(pred+4.);
+    ${robust?'wt*=min(1.,4.*sqrt(pred+4.)/max(1.,abs(res)));':''}
+    pixel[i]=vec4f(res,wt,0.,raw);`;
+}
+
+// With geometry fixed, the image is linear in bead flux and background.
+// Reuse the projected line-search direction to advance the unclipped prediction.
+function advancePrediction(robust:boolean){
+  return bind(0,'image','f32')+bind(1,'state','f32')+bind(2,'pixel','vec4f',true)+thread+
+    `if(i>=arrayLength(&image)){return;}
+    let raw=pixel[i].w+state[2]*pixel[i].z+state[3];${residualPixel(robust)}}`;
+}
+
 function projection(w:number,h:number,direction:boolean,robust=false){
   const cols=Math.ceil(w/16);
   return bind(0,'image','f32')+bind(1,'tiles','u32')+bind(2,'geom','vec4f')+bind(3,'K','f32')+
@@ -44,9 +58,7 @@ function projection(w:number,h:number,direction:boolean,robust=false){
     }
     $BODY
   }`.replaceAll('$W',w+'u').replaceAll('$C',cols+'u').replaceAll('$MODE',direction?'1':'0')
-    .replace('$BODY',direction?'pixel[i].z=mu;':`mu=max(1.,mu);let res=image[i]-mu;
-      var wt=1./(mu+4.);${robust?'wt*=min(1.,4.*sqrt(mu+4.)/max(1.,abs(res)));':''}
-      pixel[i]=vec4f(res,wt,0.,0.);`);
+    .replace('$BODY',direction?'pixel[i].z=mu;':'let raw=mu;'+residualPixel(robust));
 }
 
 function beadStats(w:number,h:number,geometry:boolean){
@@ -113,13 +125,20 @@ function total(direction:boolean){
   return bind(0,'part','vec2f')+bind(1,'state','f32',true)+thread+`
     if(i!=0u){return;}var acc=vec2f(0.);
     for(var j=0u;j<arrayLength(&part);j++){acc+=part[j];}
-    ${direction?'state[2]=clamp(acc.x/max(acc.y,1e-8),0.,.7);state[0]=max(0.,state[0]+state[2]*state[1]);':'state[1]=acc.x/max(1e-12,acc.y);'}}`;
+    ${direction?'state[2]=clamp(acc.x/max(acc.y,1e-8),0.,.7);let bg=state[0]+state[2]*state[1];state[0]=max(0.,bg);state[3]=max(0.,-bg);':'state[1]=acc.x/max(1e-12,acc.y);'}}`;
 }
 const zeroBg=bind(0,'state','f32',true)+thread+'if(i==0u){state[1]=0.;}}';
 const update=bind(0,'beads','vec2f',true)+bind(1,'state','f32')+thread+
   'if(i<arrayLength(&beads)){beads[i].x+=state[2]*beads[i].y;}}';
 
-async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,xy:number[][],motion:number[],initial:number[],w:number,h:number,needResidual:boolean,axialDerivative?:Float32Array){
+function initialBackground(image:Float32Array){
+  const stride=Math.max(1,Math.floor(image.length/16000));
+  const sample=Float32Array.from({length:Math.ceil(image.length/stride)},(_,i)=>image[i*stride]).sort();
+  const p=.01*(sample.length-1);
+  return sample[Math.floor(p)]+(p%1)*(sample[Math.ceil(p)]-sample[Math.floor(p)]);
+}
+
+async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,xy:number[][],motion:number[],initial:number[],w:number,h:number,needResidual:boolean,bg:number,axialDerivative?:Float32Array){
   const n=xy.length,cols=Math.ceil(w/16),rows=Math.ceil(h/16);
   const lists=Array.from({length:cols*rows},()=>[] as number[]);
   const geom=new Float32Array(n*4),beads=new Float32Array(n*2);
@@ -131,29 +150,41 @@ async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,x
   });
   const tiles=new Uint32Array(lists.length+1+lists.reduce((s,v)=>s+v.length,0));let k=lists.length+1;
   lists.forEach((l,i)=>{tiles[i]=k;tiles.set(l,k);k+=l.length;});tiles[lists.length]=k;
-  const stride=Math.max(1,Math.floor(image.length/16000));
-  const sample=Float32Array.from({length:Math.ceil(image.length/stride)},(_,i)=>image[i*stride]).sort();
-  const p=.01*(sample.length-1),bg=sample[Math.floor(p)]+(p%1)*(sample[Math.ceil(p)]-sample[Math.floor(p)]);
   const buffers:GPUBuffer[]=[];
   const buf=(v:number|Float32Array)=>{const b=gpu.buffer(v);buffers.push(b);return b;};
   try{
     const lib=buf(bank),G=buf(geom),K=buf(n*area*4),I=buf(image),T=buf(new Float32Array(tiles.buffer)),F=buf(beads);
-    const S=buf(Float32Array.of(Math.max(0,bg),0,0)),P=buf(16*w*h),N=buf(20*n);
+    const S=buf(Float32Array.of(Math.max(0,bg),0,0,0)),P=buf(16*w*h),N=buf(20*n);
     const chunks=Math.ceil(w*h/256),Q=buf(8*chunks);
     const enc=gpu.device.createCommandEncoder();
-    const run=(shader:string,bs:GPUBuffer[],count:number)=>gpu.dispatch(enc,shader,bs,count);
+    const pass=enc.beginComputePass();
+    const run=(shader:string,bs:GPUBuffer[],count:number)=>gpu.kernel(shader,bs,count)(pass);
     run(stamps,[lib,G,K],n*64);
     const proj=[I,T,G,K,F,S,P];
-    for(let it=0;it<=24;it++){
-      run(projection(w,h,false,it>=6),proj,w*h);
-      if(it===24){run(beadStats(w,h,true),[G,K,P,F,N],n*64);break;}
-      // The gradient kernel needs no output normal matrix until the last iteration.
-      run(beadStats(w,h,false),[G,K,P,F],n*64);
-      if(it%3===0){run(partial(false),[P,Q],chunks);run(total(false),[Q,S],1);}
-      else run(zeroBg,[S],1);
-      run(projection(w,h,true),proj,w*h);
-      run(partial(true),[P,Q],chunks);run(total(true),[Q,S],1);run(update,[F,S],n);
+    const project=gpu.kernel(projection(w,h,false),proj,w*h);
+    const projectRobust=gpu.kernel(projection(w,h,false,true),proj,w*h);
+    const advance=gpu.kernel(advancePrediction(false),[I,S,P],w*h);
+    const advanceRobust=gpu.kernel(advancePrediction(true),[I,S,P],w*h);
+    const projectStep=gpu.kernel(projection(w,h,true),proj,w*h);
+    const fitFlux=gpu.kernel(beadStats(w,h,false),[G,K,P,F],n*64);
+    const bgPartial=gpu.kernel(partial(false),[P,Q],chunks);
+    const bgTotal=gpu.kernel(total(false),[Q,S],1);
+    const clearBg=gpu.kernel(zeroBg,[S],1);
+    const stepPartial=gpu.kernel(partial(true),[P,Q],chunks);
+    const stepTotal=gpu.kernel(total(true),[Q,S],1);
+    const applyStep=gpu.kernel(update,[F,S],n);
+    for(let it=0;it<24;it++){
+      // Reproject at the robust-weight transition to limit float32 accumulation.
+      if(it===0)project(pass);
+      else if(it===6)projectRobust(pass);
+      else (it<6?advance:advanceRobust)(pass);
+      fitFlux(pass);
+      if(it%3===0){bgPartial(pass);bgTotal(pass);}
+      else clearBg(pass);
+      projectStep(pass);stepPartial(pass);stepTotal(pass);applyStep(pass);
     }
+    projectRobust(pass);
+    run(beadStats(w,h,true),[G,K,P,F,N],n*64);
     let motionNormal:GPUBuffer|undefined;
     if(axialDerivative){
       const axialStamps=buf(n*area*4);
@@ -161,12 +192,13 @@ async function exposure(gpu:FourierDevice,bank:Float32Array,image:Float32Array,x
       motionNormal=buf(9*chunks*4);
       run(motionStats(w,h),[T,G,K,axialStamps,F,P,motionNormal],chunks);
     }
+    pass.end();
     gpu.device.queue.submit([enc.finish()]);
-    const [params,normal,state]=await Promise.all([gpu.read(F),gpu.read(N),gpu.read(S)]);
-    const residual=needResidual?await gpu.read(P):undefined;
+    const [params,normal,state,residual,parts]=await Promise.all([gpu.read(F),gpu.read(N),gpu.read(S),
+      needResidual?gpu.read(P):undefined,motionNormal?gpu.read(motionNormal):undefined]);
     let step:number[]|undefined;
-    if(motionNormal){
-      const parts=await gpu.read(motionNormal),sum=new Float64Array(9);
+    if(parts){
+      const sum=new Float64Array(9);
       for(let i=0;i<parts.length;i++)sum[i%9]+=parts[i];
       const [x,y,z,a,b,c,d,e,f]=sum;
       step=Array.from(solve(Float64Array.of(a+1,b,c,b,d+1,e,c,e,f+1),Float64Array.of(x,y,z),3));
@@ -236,13 +268,21 @@ export async function refinePhotometry(device:GPUDevice,file:File,fit:MovieFit,l
     const xy=fit.xy.map(p=>p.slice()),intensity=fit.intensity.map(row=>row.slice()),background=fit.background.slice();
     // Let motion settle before treating registered residual peaks as missing beads.
     const passes=trackMotion?12:6;
+    const backgrounds=new Float64Array(movie.n);
+    // Keep larger acquisitions streaming. Cache small movies in calibrated units.
+    const frames:Float32Array[]|undefined=movie.n*w*h*4<=64*1024*1024?[]:undefined;
     for(let round=0;round<passes;round++){
       const normal=new Float64Array(5*xy.length);
       const residual=round===(trackMotion?5:1)?new Float32Array(h*w):undefined;
       for(let t=0;t<movie.n;t++){
         log('Refining bead photometry · pass '+(round+1)+' / '+passes+' · frame '+(t+1)+' / '+movie.n,(round+t/movie.n)/passes);
-        const image=await movie.read(t,t+1);
-        for(let i=0;i<image.length;i++)image[i]=Math.max(0,(image[i]-settings.offset)*settings.gain);
+        let image=frames?.[t];
+        if(!image){
+          image=await movie.read(t,t+1);
+          for(let i=0;i<image.length;i++)image[i]=Math.max(0,(image[i]-settings.offset)*settings.gain);
+          if(frames)frames[t]=image;
+        }
+        if(round===0)backgrounds[t]=initialBackground(image);
         device.pushErrorScope('validation');
         let r;
         try{
@@ -254,7 +294,7 @@ export async function refinePhotometry(device:GPUDevice,file:File,fit:MovieFit,l
             bank=low.map((v,i)=>v+alpha*(high[i]-v));
             if(round<passes-1)derivative=high.map((v,i)=>v-low[i]);
           }else bank=await opticalPlane(z);
-          r=await exposure(gpu,bank,image,xy,drift[t],intensity[t],w,h,!!residual,derivative);
+          r=await exposure(gpu,bank,image,xy,drift[t],intensity[t],w,h,!!residual,backgrounds[t],derivative);
         }
         finally{const err=await device.popErrorScope();if(err)throw Error(err.message);}
         intensity[t]=r.flux;

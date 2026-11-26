@@ -9,16 +9,23 @@ export class FourierDevice {
             this.device.queue.writeBuffer(b, 0, data);
         return b;
     }
-    dispatch(enc: GPUCommandEncoder, code: string, buffers: GPUBuffer[], count: number) {
+    kernel(code: string, buffers: GPUBuffer[], count: number) {
         let p = this.pipelines.get(code);
         if (!p) {
             p = this.device.createComputePipeline({ layout: 'auto', compute: { module: this.device.createShaderModule({ code }), entryPoint: 'main' } });
             this.pipelines.set(code, p);
         }
+        const group = this.device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: buffers.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+        const pipeline = p;
+        return (pass: GPUComputePassEncoder) => {
+            pass.setPipeline(pipeline);
+            pass.setBindGroup(0, group);
+            pass.dispatchWorkgroups(Math.ceil(count / 64));
+        };
+    }
+    dispatch(enc: GPUCommandEncoder, code: string, buffers: GPUBuffer[], count: number) {
         const pass = enc.beginComputePass();
-        pass.setPipeline(p);
-        pass.setBindGroup(0, this.device.createBindGroup({ layout: p.getBindGroupLayout(0), entries: buffers.map((buffer, binding) => ({ binding, resource: { buffer } })) }));
-        pass.dispatchWorkgroups(Math.ceil(count / 64));
+        this.kernel(code, buffers, count)(pass);
         pass.end();
     }
     async read(buffer: GPUBuffer) {
